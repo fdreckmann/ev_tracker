@@ -211,9 +211,16 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <p id="carName">{{ cfg.car_name }}</p>
     </div>
   </div>
-  <div class="pill">
-    <span class="dot" id="sDot"></span>
-    <span id="sTxt" style="font-family:var(--mono)">Verbinde…</span>
+  <div style="display:flex;gap:10px;align-items:center">
+    <div id="updateBadge" style="display:none;background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.4);
+      border-radius:999px;padding:7px 14px;font-size:.75rem;font-family:var(--mono);color:#f59e0b;
+      cursor:pointer;animation:pulse 2s infinite" onclick="tab('backup',document.querySelectorAll('nav button')[4])">
+      ⬆ Update verfügbar
+    </div>
+    <div class="pill">
+      <span class="dot" id="sDot"></span>
+      <span id="sTxt" style="font-family:var(--mono)">Verbinde…</span>
+    </div>
   </div>
 </header>
 
@@ -520,6 +527,22 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
      BACKUP
 ══════════════════════════════════════════════════════ -->
 <div class="panel" id="panel-backup">
+
+  <!-- Update -->
+  <div class="card">
+    <div class="card-title">Software Update</div>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
+      <button class="btn-s" onclick="checkUpdate()">🔍 Auf Updates prüfen</button>
+      <button class="btn-p" id="updateBtn" onclick="doUpdate()" style="display:none">⬆ Update installieren</button>
+      <div id="updateInfo" style="font-size:.78rem;font-family:var(--mono);color:var(--mute)">—</div>
+    </div>
+    <div id="updateChangelog" style="display:none;background:var(--bg);border:1px solid var(--brd);
+      border-radius:10px;padding:14px 16px;font-size:.75rem;font-family:var(--mono);line-height:1.8">
+    </div>
+    <div class="warn-box" style="margin-top:14px">
+      ℹ Update = <code>git pull</code> + Neustart · Nur möglich wenn Repo auf Unraid geklont ist · Daten bleiben erhalten
+    </div>
+  </div>
 
   <!-- Manual backup + upload -->
   <div class="card">
@@ -1143,6 +1166,67 @@ function closeModal(){
 
 // close on Escape
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
+
+// ── Update ───────────────────────────────────────────────────────────────────
+async function checkUpdate(){
+  $('updateInfo').textContent='⏳ Prüfe GitHub…';
+  $('updateBtn').style.display='none';
+  $('updateChangelog').style.display='none';
+
+  const r = await fetch('/api/update/check').then(r=>r.json());
+
+  if(!r.ok){
+    $('updateInfo').innerHTML=`<span style="color:var(--danger)">❌ ${r.error}</span>`;
+    return;
+  }
+
+  if(r.up_to_date){
+    $('updateInfo').innerHTML=`<span style="color:var(--acc)">✅ Aktuell (${r.local_hash})</span>`;
+    $('updateBadge').style.display='none';
+    return;
+  }
+
+  // update available
+  $('updateInfo').innerHTML=`<span style="color:var(--warn)">⬆ ${r.update_count} neues Commit${r.update_count>1?'s':''} verfügbar (${r.local_hash} → ${r.remote_hash})</span>`;
+  $('updateBtn').style.display='';
+  $('updateBadge').style.display='';
+
+  if(r.changelog.length){
+    $('updateChangelog').style.display='';
+    $('updateChangelog').innerHTML='<strong style="color:#fff">Änderungen:</strong><br>' +
+      r.changelog.map(l=>`<span style="color:var(--acc2)">▸</span> ${l}`).join('<br>');
+  }
+}
+
+async function doUpdate(){
+  if(!confirm('Update installieren?\n\nDer Container wird kurz neu gestartet.')) return;
+  const btn=$('updateBtn');
+  btn.disabled=true; btn.textContent='⏳ Update läuft…';
+  $('updateInfo').textContent='git pull wird ausgeführt…';
+
+  const r = await fetch('/api/update/pull',{method:'POST'}).then(r=>r.json());
+
+  if(!r.ok){
+    $('updateInfo').innerHTML=`<span style="color:var(--danger)">❌ ${r.error}</span>`;
+    btn.disabled=false; btn.textContent='⬆ Update installieren';
+    return;
+  }
+
+  $('updateInfo').innerHTML=`<span style="color:var(--acc)">✅ Update erfolgreich — Seite lädt in 5s neu…</span>`;
+  $('updateBadge').style.display='none';
+  setTimeout(()=>location.reload(), 5000);
+}
+
+// auto-check on load (silent)
+setTimeout(async ()=>{
+  try{
+    const r=await fetch('/api/update/check').then(r=>r.json());
+    if(r.ok && !r.up_to_date){
+      $('updateBadge').style.display='';
+      $('updateBadge').textContent=`⬆ ${r.update_count} Update${r.update_count>1?'s':''} verfügbar`;
+    }
+  }catch(e){}
+}, 3000);
 
 // ── Backup ───────────────────────────────────────────────────────────────────
 async function loadBackups(){

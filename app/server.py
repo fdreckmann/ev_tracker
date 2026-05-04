@@ -771,6 +771,61 @@ def api_backup_delete(filename):
     if path.exists(): path.unlink()
     return jsonify({"ok":True})
 
+# ── Update / Git ──────────────────────────────────────────────────────────────
+import subprocess
+
+GIT_REPO = Path(os.environ.get("GIT_DIR", str(DATA_DIR.parent / "ev-tracker-src")))
+
+def git_run(*args):
+    try:
+        r = subprocess.run(
+            ["git"] + list(args),
+            cwd=str(GIT_REPO),
+            capture_output=True, text=True, timeout=30
+        )
+        return r.returncode, (r.stdout + r.stderr).strip()
+    except Exception as e:
+        return 1, str(e)
+
+def get_update_info():
+    rc, local_hash = git_run("rev-parse", "HEAD")
+    if rc != 0:
+        return {"ok": False, "error": "Kein Git-Repo — siehe GITHUB_SETUP.md"}
+    rc2, _ = git_run("fetch", "origin", "main")
+    if rc2 != 0:
+        return {"ok": False, "error": "GitHub nicht erreichbar"}
+    rc3, remote_hash = git_run("rev-parse", "origin/main")
+    up_to_date = local_hash[:8] == remote_hash[:8]
+    changelog = []
+    if not up_to_date:
+        rc4, log_out = git_run("log", "--oneline", "HEAD..origin/main")
+        if rc4 == 0 and log_out:
+            changelog = [l.strip() for l in log_out.splitlines() if l.strip()]
+    return {
+        "ok": True,
+        "up_to_date": up_to_date,
+        "local_hash": local_hash[:8],
+        "remote_hash": remote_hash[:8],
+        "changelog": changelog,
+        "update_count": len(changelog),
+    }
+
+@app.route("/api/update/check")
+def api_update_check():
+    return jsonify(get_update_info())
+
+@app.route("/api/update/pull", methods=["POST"])
+def api_update_pull():
+    rc, out = git_run("pull", "origin", "main")
+    if rc != 0:
+        return jsonify({"ok": False, "error": out})
+    def restart():
+        time.sleep(2)
+        os.execv("/usr/local/bin/python", ["python", "server.py"])
+    threading.Thread(target=restart, daemon=True).start()
+    return jsonify({"ok": True, "output": out, "restarting": True})
+
+
 if __name__ == "__main__":
     init_db(); start_tracker(); schedule_backup()
     app.run(host="0.0.0.0", port=8080, debug=False)
