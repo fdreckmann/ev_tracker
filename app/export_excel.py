@@ -73,7 +73,7 @@ NUM_FMT = {
     "row_num":     "0",
 }
 
-LOCATION_LABELS = {"home": "🏠 Zuhause", "extern": "⚡ Extern", "unknown": "—"}
+LOCATION_LABELS = {"home": "Zuhause", "extern": "Extern", "unknown": "—"}
 
 def match_column(txt):
     if not txt: return None
