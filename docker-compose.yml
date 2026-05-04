@@ -1,0 +1,12 @@
+services:
+  ev-tracker:
+    build: .
+    container_name: ev-tracker
+    restart: unless-stopped
+    ports:
+      - "8054:8080"
+    volumes:
+      - /mnt/user/appdata/ev-tracker:/data
+    environment:
+      DATA_DIR: "/data"
+      TZ: "Europe/Berlin"

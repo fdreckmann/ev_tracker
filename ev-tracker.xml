@@ -1,0 +1,83 @@
+<?xml version="1.0"?>
+<Container version="2">
+
+  <!-- ═══════════════════════════════════════════════════════════
+       EV Tracker — VW ID.7 Ladeprotokoll für Home Assistant
+       Manuelles CA Template — kein CA Store / Docker Hub nötig
+  ════════════════════════════════════════════════════════════ -->
+
+  <Name>ev-tracker</Name>
+  <Repository>ev-tracker:latest</Repository>
+  <Registry></Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support/>
+  <Project/>
+  <Overview>
+    EV Ladeprotokoll für VW ID.7 via Home Assistant WeConnect.
+    Erfasst automatisch Ladevorgänge (SOC, Kilometerstand, kWh, Kosten)
+    und exportiert Monatsberichte als Excel — mit eigenem Template.
+    Web UI auf Port 8080.
+  </Overview>
+  <Category>Tools:</Category>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <TemplateURL/>
+  <Icon>https://raw.githubusercontent.com/home-assistant/brands/master/custom_integrations/volkswagen_we_connect_id/icon.png</Icon>
+  <ExtraParams>--restart unless-stopped</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+
+  <!-- ── Port ─────────────────────────────────────────────────── -->
+  <Config
+    Name="Web UI Port"
+    Target="8080"
+    Default="8080"
+    Mode="tcp"
+    Description="Port für das Web-Dashboard und die Konfiguration"
+    Type="Port"
+    Display="always"
+    Required="true"
+    Mask="false">8080</Config>
+
+  <!-- ── Volume ────────────────────────────────────────────────── -->
+  <Config
+    Name="Daten-Verzeichnis"
+    Target="/data"
+    Default="/mnt/user/appdata/ev-tracker"
+    Mode="rw"
+    Description="Speicherort für Konfiguration, Datenbank, Templates und Excel-Exporte"
+    Type="Path"
+    Display="always"
+    Required="true"
+    Mask="false">/mnt/user/appdata/ev-tracker</Config>
+
+  <!-- ── Environment Variables ─────────────────────────────────── -->
+  <Config
+    Name="DATA_DIR"
+    Target="DATA_DIR"
+    Default="/data"
+    Mode=""
+    Description="Interner Datenpfad (nicht ändern)"
+    Type="Variable"
+    Display="advanced"
+    Required="true"
+    Mask="false">/data</Config>
+
+  <Config
+    Name="Strompreis (€/kWh)"
+    Target="PRICE_PER_KWH"
+    Default="0.30"
+    Mode=""
+    Description="Dein Strompreis pro kWh in Euro — wird für die Kostenkalkulation verwendet"
+    Type="Variable"
+    Display="always"
+    Required="false"
+    Mask="false">0.30</Config>
+
+</Container>

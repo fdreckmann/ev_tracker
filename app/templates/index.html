@@ -1,0 +1,1246 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EV Tracker – {{ cfg.car_name }}</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#080b10;--surf:#0e1319;--brd:#1c2430;--brd2:#253040;
+  --txt:#c8d4e3;--mute:#4a5c72;--acc:#3ddc97;--acc2:#00b4ff;
+  --warn:#f59e0b;--danger:#ef4444;--home:#3ddc97;--ext:#f59e0b;
+  --mono:'DM Mono',monospace;--sans:'Syne',sans-serif;--r:12px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font-family:var(--sans);min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  background-size:256px;opacity:.35}
+body::after{content:'';position:fixed;top:-300px;left:50%;transform:translateX(-50%);
+  width:800px;height:500px;z-index:0;pointer-events:none;
+  background:radial-gradient(ellipse at center,rgba(61,220,151,.07) 0%,transparent 70%)}
+.shell{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:0 24px 80px}
+
+/* Header */
+header{display:flex;align-items:center;justify-content:space-between;padding:32px 0 28px;
+  border-bottom:1px solid var(--brd);margin-bottom:36px}
+.logo{display:flex;align-items:center;gap:14px}
+.logo-ic{width:42px;height:42px;background:linear-gradient(135deg,var(--acc),var(--acc2));
+  border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px}
+.logo h1{font-size:1.1rem;font-weight:700;color:#fff}
+.logo p{font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-top:1px}
+.pill{display:flex;align-items:center;gap:8px;background:var(--surf);
+  border:1px solid var(--brd);border-radius:999px;padding:8px 16px 8px 10px;
+  font-size:.78rem;font-family:var(--mono)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--mute)}
+.dot.ok{background:var(--acc);box-shadow:0 0 8px var(--acc);animation:pulse 2s infinite}
+.dot.charging{background:var(--warn);box-shadow:0 0 8px var(--warn);animation:pulse 1s infinite}
+.dot.err{background:var(--danger)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* Nav */
+nav{display:flex;gap:4px;background:var(--surf);border:1px solid var(--brd);
+  border-radius:var(--r);padding:4px;margin-bottom:32px;width:fit-content;flex-wrap:wrap}
+nav button{background:none;border:none;cursor:pointer;font-family:var(--sans);font-size:.82rem;
+  font-weight:600;color:var(--mute);padding:8px 18px;border-radius:8px;transition:all .18s}
+nav button:hover{color:var(--txt)}
+nav button.active{background:var(--brd2);color:#fff}
+
+/* Panels */
+.panel{display:none;animation:fadeUp .22s ease}
+.panel.active{display:block}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* Cards */
+.card{background:var(--surf);border:1px solid var(--brd);border-radius:var(--r);padding:26px 30px;margin-bottom:18px}
+.card-title{font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;
+  letter-spacing:.12em;margin-bottom:18px;display:flex;align-items:center;gap:10px}
+.card-title::after{content:'';flex:1;height:1px;background:var(--brd)}
+
+/* Stats grid */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:18px}
+.stat{background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:16px 18px}
+.sl{font-size:.67rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.1em;margin-bottom:7px}
+.sv{font-size:1.55rem;font-weight:800;color:#fff;line-height:1}
+.sv.g{color:var(--acc)}.sv.b{color:var(--acc2)}.sv.w{color:var(--warn)}.sv.r{color:var(--danger)}
+.su{font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-top:3px}
+
+/* Charge bar */
+.cbar-wrap{background:var(--bg);border:1px solid var(--brd);border-radius:10px;
+  padding:16px 18px;margin-bottom:18px;display:none}
+.cbar-wrap.vis{display:block}
+.cbar-lbl{font-size:.7rem;font-family:var(--mono);color:var(--warn);margin-bottom:8px}
+.cbar{height:6px;background:var(--brd);border-radius:3px;overflow:hidden}
+.cbar-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--acc),var(--acc2));
+  transition:width 1s;box-shadow:0 0 10px var(--acc)}
+
+/* Charts */
+.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px}
+@media(max-width:700px){.chart-grid{grid-template-columns:1fr}}
+.chart-box{background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:18px;height:220px;position:relative}
+.chart-title{font-size:.68rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px}
+
+/* Form */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:600px){.form-grid{grid-template-columns:1fr}}
+.fg{display:flex;flex-direction:column;gap:5px}
+.fg.full{grid-column:1/-1}
+label{font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em}
+input,select{background:var(--bg);border:1px solid var(--brd);border-radius:8px;
+  color:var(--txt);font-family:var(--mono);font-size:.84rem;padding:9px 13px;outline:none;
+  transition:border-color .15s,box-shadow .15s;width:100%}
+input:focus,select:focus{border-color:var(--acc2);box-shadow:0 0 0 3px rgba(0,180,255,.12)}
+.hint{font-size:.67rem;font-family:var(--mono);color:var(--mute);margin-top:1px}
+.warn-box{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:8px;
+  padding:10px 14px;font-size:.74rem;font-family:var(--mono);color:var(--warn)}
+
+/* Buttons */
+.btn-row{display:flex;gap:10px;align-items:center;margin-top:22px;flex-wrap:wrap}
+button{font-family:var(--sans);font-weight:600;border:none;cursor:pointer;
+  border-radius:8px;transition:all .15s;font-size:.82rem}
+.btn-p{background:var(--acc);color:#041810;padding:10px 22px}
+.btn-p:hover{background:#5aeaaa;transform:translateY(-1px)}
+.btn-s{background:var(--brd2);color:var(--txt);padding:10px 20px}
+.btn-s:hover{background:#2d3d52}
+.btn-g{background:transparent;border:1px solid var(--brd2);color:var(--mute);padding:9px 18px}
+.btn-g:hover{border-color:var(--acc);color:var(--acc)}
+.btn-d{background:rgba(239,68,68,.12);color:var(--danger);padding:10px 20px;border:1px solid rgba(239,68,68,.25)}
+.btn-d:hover{background:rgba(239,68,68,.22)}
+
+/* Conn result */
+.conn-res{margin-top:12px;font-size:.77rem;font-family:var(--mono);padding:10px 14px;border-radius:8px;display:none}
+.conn-res.ok{background:rgba(61,220,151,.1);color:var(--acc);border:1px solid rgba(61,220,151,.3)}
+.conn-res.err{background:rgba(239,68,68,.1);color:var(--danger);border:1px solid rgba(239,68,68,.3)}
+
+/* Table */
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.8rem;font-family:var(--mono)}
+thead th{text-align:left;font-size:.65rem;text-transform:uppercase;letter-spacing:.1em;
+  color:var(--mute);padding:7px 12px 10px;border-bottom:1px solid var(--brd)}
+tbody tr{border-bottom:1px solid var(--brd);transition:background .1s}
+tbody tr:hover{background:rgba(255,255,255,.02)}
+td{padding:11px 12px;color:var(--txt)}
+td.num{color:#fff;font-weight:500}
+td.g{color:var(--acc)}td.w{color:var(--warn)}
+.loc-home{color:var(--home);font-size:.72rem}
+.loc-ext{color:var(--ext);font-size:.72rem}
+.loc-unk{color:var(--mute);font-size:.72rem}
+.empty{text-align:center;padding:40px;font-family:var(--mono);font-size:.78rem;color:var(--mute)}
+
+/* Filter row */
+.filter-row{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+.filter-row select{width:auto;min-width:160px}
+.filter-row span{font-size:.7rem;font-family:var(--mono);color:var(--mute)}
+
+/* Drop zone */
+.drop-zone{border:2px dashed var(--brd2);border-radius:var(--r);padding:36px 24px;
+  text-align:center;cursor:pointer;transition:all .2s;background:var(--bg);margin-top:14px}
+.drop-zone:hover,.drop-zone.drag{border-color:var(--acc2);background:rgba(0,180,255,.04)}
+.dz-icon{font-size:2rem;margin-bottom:10px;opacity:.6}
+.dz-title{font-size:.88rem;font-weight:700;color:#fff;margin-bottom:5px}
+.dz-sub{font-size:.73rem;font-family:var(--mono);color:var(--mute)}
+#tplFile{display:none}
+
+/* Template status */
+.tpl-status{display:flex;align-items:center;gap:12px;background:var(--bg);
+  border:1px solid var(--brd);border-radius:10px;padding:13px 16px;margin-bottom:14px}
+.tpl-meta{font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-top:4px}
+
+/* Column mapping preview */
+.mapping-table{width:100%;border-collapse:collapse;font-size:.78rem;font-family:var(--mono);margin-top:14px}
+.mapping-table th{font-size:.65rem;text-transform:uppercase;letter-spacing:.08em;color:var(--mute);
+  padding:6px 10px 9px;border-bottom:1px solid var(--brd);text-align:left}
+.mapping-table td{padding:9px 10px;border-bottom:1px solid var(--brd)}
+.mapping-table select{padding:5px 8px;font-size:.75rem;width:100%;min-width:160px}
+.map-ok{color:var(--acc)}
+.map-miss{color:var(--mute)}
+
+/* Export */
+.exp-grid{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+.exp-grid select{width:auto;min-width:140px}
+
+/* Toast */
+.toasts{position:fixed;bottom:26px;right:26px;z-index:999;display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--surf);border:1px solid var(--brd2);border-radius:10px;padding:11px 16px;
+  font-size:.8rem;font-family:var(--mono);display:flex;align-items:center;gap:9px;
+  animation:slideIn .22s ease;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.toast.ok{border-color:var(--acc)}.toast.err{border-color:var(--danger)}
+@keyframes slideIn{from{transform:translateX(36px);opacity:0}to{transform:none;opacity:1}}
+
+/* Section divider label */
+.sec-lbl{font-size:.68rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;
+  letter-spacing:.1em;margin:20px 0 10px}
+
+/* ── Session detail modal ── */
+.modal-overlay{
+  position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.75);
+  display:flex;align-items:center;justify-content:center;
+  animation:fadeIn .2s ease;
+}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.modal{
+  background:var(--surf);border:1px solid var(--brd2);border-radius:var(--r);
+  width:min(820px,95vw);max-height:90vh;overflow-y:auto;
+  padding:28px 32px;position:relative;
+  animation:slideUp .22s ease;
+}
+@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:none;opacity:1}}
+.modal-close{
+  position:absolute;top:16px;right:16px;
+  background:var(--brd2);border:none;color:var(--txt);
+  border-radius:6px;padding:5px 12px;cursor:pointer;font-size:.8rem;
+}
+.modal-close:hover{background:var(--danger);color:#fff}
+.modal h2{font-size:1rem;font-weight:700;color:#fff;margin-bottom:6px}
+.modal-meta{font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:20px}
+.modal-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:20px}
+.modal-chart{height:240px;margin-bottom:16px}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<!-- ── Header ── -->
+<header>
+  <div class="logo">
+    <div class="logo-ic">⚡</div>
+    <div>
+      <h1>EV Tracker</h1>
+      <p id="carName">{{ cfg.car_name }}</p>
+    </div>
+  </div>
+  <div class="pill">
+    <span class="dot" id="sDot"></span>
+    <span id="sTxt" style="font-family:var(--mono)">Verbinde…</span>
+  </div>
+</header>
+
+<!-- ── Nav ── -->
+<nav>
+  <button class="active" onclick="tab('dashboard',this)">Dashboard</button>
+  <button onclick="tab('sessions',this)">Ladevorgänge</button>
+  <button onclick="tab('config',this)">Konfiguration</button>
+  <button onclick="tab('export',this)">Export</button>
+  <button onclick="tab('backup',this)">Backup</button>
+</nav>
+
+<!-- ══════════════════════════════════════════════════════
+     DASHBOARD
+══════════════════════════════════════════════════════ -->
+<div class="panel active" id="panel-dashboard">
+
+  <!-- Charge bar -->
+  <div class="cbar-wrap" id="cbarWrap">
+    <div class="cbar-lbl">⚡ Ladevorgang aktiv — <span id="cbarSession"></span></div>
+    <div class="cbar"><div class="cbar-fill" id="cbarFill" style="width:0%"></div></div>
+  </div>
+
+  <!-- Live stats -->
+  <div class="stats">
+    <div class="stat"><div class="sl">Status</div><div class="sv" id="dSt">—</div><div class="su" id="dStSub">—</div></div>
+    <div class="stat"><div class="sl">Standort</div><div class="sv" id="dLoc">—</div><div class="su">Auto Position</div></div>
+    <div class="stat"><div class="sl">SOC</div><div class="sv g" id="dSoc">—</div><div class="su">Prozent</div></div>
+    <div class="stat"><div class="sl">Kilometerstand</div><div class="sv b" id="dOdo">—</div><div class="su">km</div></div>
+    <div class="stat"><div class="sl">Ladertyp</div><div class="sv" id="dType">—</div><div class="su" id="dPwr">— kW</div></div>
+    <div class="stat"><div class="sl">ENTSO-E Spot</div><div class="sv" id="dSpot" style="font-size:1rem">—</div><div class="su">aktueller Preis</div></div>
+    <div class="stat"><div class="sl">Letztes Update</div><div class="sv" id="dPoll" style="font-size:1rem">—</div><div class="su">HA Polling</div></div>
+  </div>
+
+  <!-- Charts -->
+  <div class="chart-grid">
+    <div class="card" style="padding:18px">
+      <div class="chart-title">Ladekosten pro Monat (€)</div>
+      <div style="height:170px"><canvas id="chartCost"></canvas></div>
+    </div>
+    <div class="card" style="padding:18px">
+      <div class="chart-title">Geladene kWh pro Monat</div>
+      <div style="height:170px"><canvas id="chartKwh"></canvas></div>
+    </div>
+    <div class="card" style="padding:18px">
+      <div class="chart-title">SOC Verlauf (letzte Sessions)</div>
+      <div style="height:170px"><canvas id="chartSoc"></canvas></div>
+    </div>
+    <div class="card" style="padding:18px">
+      <div class="chart-title">Verbrauch kWh/100km</div>
+      <div style="height:170px"><canvas id="chartKm"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Recent sessions -->
+  <div class="card">
+    <div class="card-title">Letzte Ladevorgänge</div>
+    <div class="tbl-wrap" id="recentTbl"><div class="empty">Noch keine Daten</div></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     SESSIONS
+══════════════════════════════════════════════════════ -->
+<div class="panel" id="panel-sessions">
+  <div class="card">
+    <div class="card-title">Alle Ladevorgänge</div>
+    <div class="filter-row">
+      <select id="sFilter" onchange="loadSessions()">
+        <option value="all">🔁 Alle Standorte</option>
+        <option value="home">🏠 Nur Zuhause</option>
+        <option value="extern">⚡ Nur Extern</option>
+      </select>
+      <span>✕ = Session löschen</span>
+    </div>
+    <div class="tbl-wrap" id="allTbl"><div class="empty">Lade…</div></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     KONFIGURATION
+══════════════════════════════════════════════════════ -->
+<div class="panel" id="panel-config">
+
+  <div class="card">
+    <div class="card-title">Fahrzeug & Home Assistant</div>
+    <div class="form-grid">
+      <div class="fg full"><label>Fahrzeugname</label>
+        <input id="c_car" value="{{ cfg.car_name }}"></div>
+      <div class="fg"><label>Home Assistant URL</label>
+        <input id="c_url" value="{{ cfg.ha_url }}" placeholder="http://192.168.x.x:8123"></div>
+      <div class="fg"><label>Long-Lived Access Token</label>
+        <input type="password" id="c_tok" value="{{ cfg.ha_token }}" placeholder="eyJ0eXAi…">
+        <span class="hint">HA → Profil → Langlebige Zugriffstoken</span></div>
+    </div>
+    <div style="margin-top:14px">
+      <button class="btn-g" onclick="testConn()">🔗 Verbindung testen</button>
+      <div class="conn-res" id="connRes"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Sensoren (VW ID.7 WeConnect)</div>
+    <div class="form-grid">
+      <div class="fg full"><label>Ladestatus Sensor / Switch</label>
+        <input id="c_chg" value="{{ cfg.charging_sensor }}">
+        <span class="hint">state = charging / on wenn Laden aktiv · sensor.* oder switch.*</span></div>
+      <div class="fg"><label>Kilometerstand Sensor</label>
+        <input id="c_odo" value="{{ cfg.odo_sensor }}"></div>
+      <div class="fg"><label>SOC Sensor (%)</label>
+        <input id="c_soc" value="{{ cfg.soc_sensor }}"></div>
+      <div class="fg"><label>Ladeleistung Sensor (kW)</label>
+        <input id="c_pwr" value="{{ cfg.power_sensor }}">
+        <span class="hint">Für AC/DC Erkennung via Schwellwert · &gt;{{ cfg.dc_threshold_kw|int }} kW = DC</span></div>
+      <div class="fg"><label>Ladetyp Sensor (AC/DC) — optional</label>
+        <input id="c_chgtype" value="{{ cfg.charge_type_sensor }}" placeholder="sensor.volkswagen_id_id_7_charge_type">
+        <span class="hint">Hat Vorrang vor Leistungsschwelle · state muss "ac" oder "dc" enthalten</span></div>
+      <div class="fg"><label>Ladegeschwindigkeit Sensor (kW) — optional</label>
+        <input id="c_chgspeed" value="{{ cfg.charge_speed_sensor }}" placeholder="sensor.volkswagen_id_id_7_charge_power">
+        <span class="hint">Separater kW-Sensor wenn vorhanden — sonst wird Ladeleistungs-Sensor verwendet</span></div>
+      <div class="fg"><label>Standort Sensor / Device Tracker</label>
+        <input id="c_loc" value="{{ cfg.location_sensor }}">
+        <span class="hint">device_tracker.* oder sensor.* · state = home wenn Zuhause</span></div>
+      <div class="fg"><label>"Zuhause" States (kommagetrennt)</label>
+        <input id="c_home" value="{{ cfg.home_states }}" placeholder="home,zuhause">
+        <span class="hint">Welche Sensor-Werte gelten als Zuhause</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Preismodell</div>
+    <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:16px;line-height:1.7">
+      🏠 <strong style="color:#fff">Zuhause:</strong> Fixer Tarif deines Stromanbieters<br>
+      🔌 <strong style="color:#fff">Extern AC:</strong> ENTSO-E Spot × AC-Faktor (Fallback: Fixpreis)<br>
+      ⚡ <strong style="color:#fff">Extern DC:</strong> ENTSO-E Spot × DC-Faktor (Fallback: Fixpreis)<br>
+      ✎ Jede Session manuell korrigierbar
+    </div>
+    <div class="form-grid">
+      <div class="fg"><label>🏠 Heimpreis (€/kWh)</label>
+        <input type="number" id="c_price_home" value="{{ cfg.price_per_kwh_home }}" step="0.001" min="0">
+        <span class="hint">Dein fixer Stromtarif zuhause</span></div>
+      <div class="fg"><label>Batteriekapazität</label>
+        <select id="c_bat">
+          <option value="77.0" {% if cfg.battery_capacity_kwh==77.0 %}selected{% endif %}>77 kWh — ID.7 Pro</option>
+          <option value="86.0" {% if cfg.battery_capacity_kwh==86.0 %}selected{% endif %}>86 kWh — ID.7 Pro S</option>
+        </select></div>
+      <div class="fg"><label>DC-Schwellwert (kW)</label>
+        <input type="number" id="c_dc_thresh" value="{{ cfg.dc_threshold_kw }}" step="1" min="1">
+        <span class="hint">Ladeleistung ab der DC erkannt wird (Standard: 22 kW)</span></div>
+      <div class="fg"><label>Polling-Intervall (s)</label>
+        <input type="number" id="c_poll" value="{{ cfg.poll_interval }}" min="30" max="600">
+        <span class="hint">60s empfohlen</span></div>
+      <div class="fg"><label>🔌 Extern AC Fallback (€/kWh)</label>
+        <input type="number" id="c_price_ac" value="{{ cfg.price_per_kwh_ac }}" step="0.01" min="0">
+        <span class="hint">Wenn kein ENTSO-E Key vorhanden</span></div>
+      <div class="fg"><label>⚡ Extern DC Fallback (€/kWh)</label>
+        <input type="number" id="c_price_dc" value="{{ cfg.price_per_kwh_dc }}" step="0.01" min="0">
+        <span class="hint">Wenn kein ENTSO-E Key vorhanden</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">ENTSO-E Strompreis API</div>
+    <div class="warn-box" style="margin-bottom:16px">
+      <strong>Registrierung erforderlich (kostenlos):</strong><br>
+      1. Registrieren auf <strong>transparency.entsoe.eu</strong><br>
+      2. Email an <strong>transparency@entsoe.eu</strong> mit Betreff "Restful API access"<br>
+      3. Deine Registrierungs-Email in der Mail angeben<br>
+      4. API Key kommt per Email (meist innerhalb weniger Tage)<br><br>
+      <span style="color:var(--mute)">Hinweis: Day-Ahead Preise sind Großhandelspreise (~0.05–0.15 €/kWh).
+      Der Aufschlagsfaktor rechnet das auf typische Ladesäulenpreise hoch.</span>
+    </div>
+    <div class="form-grid">
+      <div class="fg full"><label>ENTSO-E API Key</label>
+        <input type="password" id="c_entsoe_key" value="{{ cfg.entsoe_api_key }}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+        <span class="hint">Leer lassen = Fallback-Fixpreise werden verwendet</span></div>
+      <div class="fg"><label>🔌 AC Aufschlagsfaktor</label>
+        <input type="number" id="c_ac_markup" value="{{ cfg.entsoe_ac_markup }}" step="0.1" min="1">
+        <span class="hint">Spot × Faktor = AC Preis (z.B. 0.06 × 3 = 0.18 €/kWh)</span></div>
+      <div class="fg"><label>⚡ DC Aufschlagsfaktor</label>
+        <input type="number" id="c_dc_markup" value="{{ cfg.entsoe_dc_markup }}" step="0.1" min="1">
+        <span class="hint">Spot × Faktor = DC Preis (z.B. 0.06 × 6 = 0.36 €/kWh)</span></div>
+    </div>
+    <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="btn-g" onclick="testEntsoe()">🔗 ENTSO-E Verbindung testen</button>
+      <div id="entsoeRes" style="font-size:.78rem;font-family:var(--mono);color:var(--mute)"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Push Notifications (Home Assistant)</div>
+    <div class="form-grid">
+      <div class="fg full"><label>Notify Service</label>
+        <input id="c_notify" value="{{ cfg.notify_service }}" placeholder="notify.mobile_app_mein_iphone">
+        <span class="hint">HA → Einstellungen → Integrationen → Companion App → Service Name</span></div>
+    </div>
+    <div class="warn-box" style="margin-top:12px">
+      Benachrichtigung beim Start und Ende jedes Ladevorgangs mit kWh, Kosten und Standort.
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn-p" onclick="saveConfig()">💾 Speichern</button>
+    <button class="btn-s" onclick="loadConfig()">↺ Zurücksetzen</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     EXPORT
+══════════════════════════════════════════════════════ -->
+<div class="panel" id="panel-export">
+
+  <!-- Template upload -->
+  <div class="card">
+    <div class="card-title">Excel-Vorlage (Template)</div>
+    <div class="tpl-status" id="tplStatus">
+      <span class="dot" id="tplDot" style="background:var(--mute)"></span>
+      <span id="tplLbl" style="font-family:var(--mono);font-size:.78rem;color:var(--mute)">
+        Kein Template — eingebautes Format wird verwendet
+      </span>
+      <button class="btn-d" id="tplDelBtn" onclick="deleteTpl()"
+        style="margin-left:auto;font-size:.72rem;padding:5px 12px;display:none">✕ Entfernen</button>
+    </div>
+    <div class="tpl-meta" id="tplMeta"></div>
+
+    <div class="drop-zone" id="dropZone"
+         onclick="document.getElementById('tplFile').click()"
+         ondragover="ev.preventDefault();this.classList.add('drag')"
+         ondragleave="this.classList.remove('drag')"
+         ondrop="handleDrop(event)">
+      <div class="dz-icon">📊</div>
+      <div class="dz-title">Excel-Vorlage hochladen</div>
+      <div class="dz-sub">Drag & Drop oder klicken · .xlsx · max. 10 MB</div>
+    </div>
+    <input type="file" id="tplFile" accept=".xlsx" onchange="uploadTpl(this.files[0])">
+
+    <!-- Column mapping preview -->
+    <div id="mappingSection" style="display:none;margin-top:20px">
+      <div class="card-title" style="margin-bottom:10px">Spalten-Zuordnung Vorschau</div>
+      <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:10px">
+        Erkannte Spalten aus deiner Vorlage. Nicht erkannte Spalten kannst du manuell zuordnen.
+      </p>
+      <div class="tbl-wrap">
+        <table class="mapping-table" id="mappingTbl">
+          <thead><tr><th>Spalte</th><th>Kopfzeile im Template</th><th>Zugeordnet zu</th></tr></thead>
+          <tbody id="mappingBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div style="margin-top:18px;padding:16px;background:var(--bg);border:1px solid var(--brd);border-radius:10px">
+      <div style="font-size:.68rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px">Erkannte Schlüsselwörter</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;font-size:.7rem;font-family:var(--mono)">
+        <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">Datum / Date</span>
+        <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">Start / Beginn</span>
+        <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">Ende / End</span>
+        <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">KM Start / KM Ende</span>
+        <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">SOC Start / SOC Ende</span>
+        <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">kWh / Geladen</span>
+        <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">Kosten / Cost</span>
+        <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">Standort / Location</span>
+        <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">Nr / #</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export config -->
+  <div class="card">
+    <div class="card-title">Monatsbericht exportieren</div>
+    <div class="exp-grid">
+      <select id="expY"></select>
+      <select id="expM">
+        <option value="1">Januar</option><option value="2">Februar</option>
+        <option value="3">März</option><option value="4">April</option>
+        <option value="5">Mai</option><option value="6">Juni</option>
+        <option value="7">Juli</option><option value="8">August</option>
+        <option value="9">September</option><option value="10">Oktober</option>
+        <option value="11">November</option><option value="12">Dezember</option>
+      </select>
+      <select id="expLoc" onchange="loadExpPreview()">
+        <option value="all">🔁 Alle Standorte</option>
+        <option value="home">🏠 Nur Zuhause</option>
+        <option value="extern">⚡ Nur Extern</option>
+      </select>
+      <button class="btn-p" onclick="doExport()">⬇ Excel herunterladen</button>
+    </div>
+  </div>
+
+  <!-- Preview stats -->
+  <div class="card">
+    <div class="card-title">Vorschau</div>
+    <div class="stats">
+      <div class="stat"><div class="sl">Ladevorgänge</div><div class="sv" id="es_n">—</div></div>
+      <div class="stat"><div class="sl">Zuhause</div><div class="sv g" id="es_home">—</div></div>
+      <div class="stat"><div class="sl">Extern</div><div class="sv w" id="es_ext">—</div></div>
+      <div class="stat"><div class="sl">Gesamt kWh</div><div class="sv b" id="es_kwh">—</div></div>
+      <div class="stat"><div class="sl">Gesamtkosten</div><div class="sv w" id="es_cost">—</div></div>
+      <div class="stat"><div class="sl">Verbrauch</div><div class="sv" id="es_eff">—</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     BACKUP
+══════════════════════════════════════════════════════ -->
+<div class="panel" id="panel-backup">
+
+  <!-- Manual backup + upload -->
+  <div class="card">
+    <div class="card-title">Manuelles Backup</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">
+      <button class="btn-p" onclick="createBackup()">💾 Backup jetzt erstellen</button>
+      <button class="btn-s" onclick="document.getElementById('restoreFile').click()">⬆ Backup hochladen & wiederherstellen</button>
+      <input type="file" id="restoreFile" accept=".zip" style="display:none" onchange="uploadRestore(this.files[0])">
+    </div>
+    <div class="warn-box">
+      ⚠ Beim Wiederherstellen werden aktuelle Daten überschrieben. Vorher ein manuelles Backup erstellen empfohlen.
+    </div>
+  </div>
+
+  <!-- Auto backup schedule -->
+  <div class="card">
+    <div class="card-title">Automatisches Backup</div>
+    <div class="form-grid">
+      <div class="fg full">
+        <label>Cron-Zeitplan</label>
+        <div style="display:flex;gap:8px">
+          <input id="backupCron" placeholder="z.B. 0 3 * * * (täglich 03:00)" style="flex:1">
+          <button class="btn-p" onclick="saveCron()" style="white-space:nowrap">Speichern</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+          <button class="btn-g" onclick="setCron('0 3 * * *')" style="font-size:.72rem;padding:5px 12px">Täglich 03:00</button>
+          <button class="btn-g" onclick="setCron('0 3 * * 0')" style="font-size:.72rem;padding:5px 12px">Wöchentlich So 03:00</button>
+          <button class="btn-g" onclick="setCron('0 3 1 * *')" style="font-size:.72rem;padding:5px 12px">Monatlich 1. 03:00</button>
+          <button class="btn-g" onclick="setCron('')" style="font-size:.72rem;padding:5px 12px;color:var(--danger)">Deaktivieren</button>
+        </div>
+      </div>
+    </div>
+    <div id="cronInfo" style="margin-top:12px;font-size:.78rem;font-family:var(--mono);color:var(--mute)"></div>
+
+    <div style="margin-top:16px;padding:14px;background:var(--bg);border:1px solid var(--brd);border-radius:10px;font-size:.73rem;font-family:var(--mono);color:var(--mute);line-height:1.8">
+      <strong style="color:#fff">Cron Format:</strong> MIN STUNDE TAG MONAT WOCHENTAG<br>
+      <code style="color:var(--acc2)">0 3 * * *</code> = Täglich um 03:00<br>
+      <code style="color:var(--acc2)">0 3 * * 0</code> = Jeden Sonntag um 03:00<br>
+      <code style="color:var(--acc2)">0 3 1 * *</code> = Jeden 1. des Monats um 03:00<br>
+      <code style="color:var(--acc2)">30 2 * * 1,5</code> = Mo + Fr um 02:30<br>
+      Max. 10 Backups werden aufbewahrt — älteste werden automatisch gelöscht.
+    </div>
+  </div>
+
+  <!-- Backup list -->
+  <div class="card">
+    <div class="card-title">Vorhandene Backups</div>
+    <div id="backupList"><div class="empty">Lade…</div></div>
+  </div>
+
+</div>
+
+<!-- ── Session Detail Modal ── -->
+<div class="modal-overlay" id="sessionModal" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">✕ Schließen</button>
+    <h2 id="modalTitle">Session Details</h2>
+    <div class="modal-meta" id="modalMeta"></div>
+    <div class="modal-stats" id="modalStats"></div>
+    <div class="card-title" style="margin-bottom:12px">Ladekurve</div>
+    <div class="modal-chart"><canvas id="modalChart"></canvas></div>
+    <div id="modalNoData" style="display:none;text-align:center;padding:40px;font-family:var(--mono);font-size:.78rem;color:var(--mute)">
+      Keine Messpunkte vorhanden — Ladekurve wird ab der nächsten Session aufgezeichnet
+    </div>
+  </div>
+</div>
+
+</div><!-- shell -->
+
+<!-- Toasts -->
+<div class="toasts" id="toasts"></div>
+
+<script>
+// ── Helpers ──────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+function toast(msg, type='ok'){
+  const el=document.createElement('div');
+  el.className=`toast ${type}`;
+  el.innerHTML=(type==='ok'?'✅':'❌')+' '+msg;
+  $('toasts').appendChild(el);
+  setTimeout(()=>el.remove(), 3500);
+}
+function fmt(v,d=2){return v!=null&&v!==''?Number(v).toFixed(d):'—'}
+function fmtDate(ts){if(!ts)return'—';const d=new Date(ts);
+  return d.toLocaleDateString('de-DE')+' '+d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})}
+function fmtTime(ts){return ts?new Date(ts).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}):'—'}
+
+// ── Nav ───────────────────────────────────────────────────────────────────────
+function tab(id, btn){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
+  $('panel-'+id).classList.add('active');
+  if(btn) btn.classList.add('active');
+  if(id==='sessions') loadSessions();
+  if(id==='export'){loadExpPreview();refreshTplInfo();}
+  if(id==='backup') loadBackups();
+  if(id==='dashboard') loadCharts();
+}
+
+// ── Status polling ────────────────────────────────────────────────────────────
+async function refreshStatus(){
+  try{
+    const s = await fetch('/api/status').then(r=>r.json());
+    const dot=$('sDot'), txt=$('sTxt');
+
+    if(!s.running){
+      dot.className='dot err'; txt.textContent='Gestoppt';
+    } else if(s.charging){
+      dot.className='dot charging'; txt.textContent='Lädt ⚡';
+    } else {
+      dot.className='dot ok'; txt.textContent='Aktiv';
+    }
+
+    $('dSoc').textContent = s.soc_current!=null ? fmt(s.soc_current,0)+'%' : '—';
+    $('dOdo').textContent = s.odo_current!=null ? Math.round(s.odo_current).toLocaleString('de') : '—';
+    $('dPoll').textContent= s.last_poll ? s.last_poll.substring(11,16) : '—';
+
+    // Location
+    const locEl=$('dLoc');
+    if(s.location==='home'){locEl.textContent='🏠 Heim';locEl.className='sv g';}
+    else if(s.location==='extern'){locEl.textContent='⚡ Extern';locEl.className='sv w';}
+    else{locEl.textContent='—';locEl.className='sv';}
+    // Charger type
+    const typeEl=$('dType');
+    if(typeEl){
+      if(s.charger_type==='dc'){typeEl.textContent='⚡ DC';typeEl.className='sv w';}
+      else if(s.charger_type==='ac'){typeEl.textContent='🔌 AC';typeEl.className='sv b';}
+      else{typeEl.textContent='—';typeEl.className='sv';}
+      if($('dPwr') && s.power_kw!=null) $('dPwr').textContent=Number(s.power_kw).toFixed(1)+' kW';
+    }
+    // ENTSO-E spot
+    const spotEl=$('dSpot');
+    if(spotEl){
+      if(s.entsoe_spot!=null){
+        spotEl.textContent=Number(s.entsoe_spot*1000).toFixed(2)+' €/MWh';
+        spotEl.className='sv g';
+      } else {
+        spotEl.textContent=s.entsoe_ok===false&&s.location==='extern'?'Kein Key':'—';
+        spotEl.className='sv';
+      }
+    }
+
+    // Status
+    if(s.charging){
+      $('dSt').textContent='Laden'; $('dSt').className='sv w';
+      $('dStSub').textContent='Session #'+(s.session_id||'?');
+      $('cbarWrap').classList.add('vis');
+      $('cbarFill').style.width=(s.soc_current||0)+'%';
+      $('cbarSession').textContent=`Session #${s.session_id||'?'} · SOC ${fmt(s.soc_current,0)}%`;
+    } else {
+      $('dSt').textContent=s.running?'Bereit':'Gestoppt';
+      $('dSt').className='sv'+(s.running?' g':'');
+      $('dStSub').textContent=s.last_error||'Kein Ladevorgang';
+      $('cbarWrap').classList.remove('vis');
+    }
+
+    // Recent
+    const rows = await fetch('/api/sessions').then(r=>r.json());
+    renderTbl($('recentTbl'), rows.slice(0,5), false);
+
+  } catch(e){
+    $('sDot').className='dot err'; $('sTxt').textContent='Fehler';
+  }
+}
+
+// ── Table rendering ───────────────────────────────────────────────────────────
+function locBadge(loc){
+  if(loc==='home')   return '<span class="loc-home">🏠 Zuhause</span>';
+  if(loc==='extern') return '<span class="loc-ext">⚡ Extern</span>';
+  return '<span class="loc-unk">—</span>';
+}
+function typeBadge(t,kw){
+  const pw=kw?` ${Number(kw).toFixed(1)} kW`:'';
+  if(t==='dc') return `<span style="color:#f59e0b;font-size:.7rem">⚡ DC${pw}</span>`;
+  if(t==='ac') return `<span style="color:#00b4ff;font-size:.7rem">🔌 AC${pw}</span>`;
+  return `<span style="color:var(--mute);font-size:.7rem">—</span>`;
+}
+
+function renderTbl(el, rows, showDel=true){
+  if(!rows.length){el.innerHTML='<div class="empty">Keine Ladevorgänge</div>';return;}
+  el.innerHTML=`<table>
+    <thead><tr>
+      <th>#</th><th>Datum</th><th>Start→Ende</th>
+      <th>SOC</th><th>Lader</th><th>kWh</th><th>Preis</th><th>Kosten</th><th>Standort</th>
+      ${showDel?'<th></th>':''}
+    </tr></thead>
+    <tbody>${rows.map(r=>`<tr style='cursor:pointer' onclick='showSessionDetail(${r.id})'>
+      <td class="num">${r.id}</td>
+      <td>${fmtDate(r.start_ts).split(' ')[0]}</td>
+      <td>${fmtTime(r.start_ts)} → ${r.end_ts?fmtTime(r.end_ts):'…'}</td>
+      <td>${fmt(r.soc_start,0)}% → ${fmt(r.soc_end,0)}%</td>
+      <td>${typeBadge(r.charger_type,r.max_power_kw)}</td>
+      <td class="g">${fmt(r.kwh_charged)} kWh</td>
+      <td style="font-size:.72rem;color:var(--mute)">${r.price_per_kwh?fmt(r.price_per_kwh,4)+' €/kWh':'—'}${r.entsoe_spot?'<br><span style="color:#4a5c72">Spot:'+fmt(r.entsoe_spot,4)+'</span>':''}</td>
+      <td class="w" id="cost_${r.id}">
+        ${r.cost_eur!=null?fmt(r.cost_eur)+' €':'—'}
+        ${r.cost_manual?'<span title="Manuell" style="color:var(--acc);font-size:.65rem"> ✎</span>':''}
+      </td>
+      <td>${locBadge(r.location)}</td>
+      ${showDel?`<td style="display:flex;gap:4px;padding:8px 4px">
+        <button onclick="editCost(${r.id},${r.kwh_charged||0},${r.price_per_kwh||0})"
+          style="background:rgba(0,180,255,.12);color:#00b4ff;border:1px solid rgba(0,180,255,.25);
+          border-radius:6px;padding:3px 8px;font-size:.65rem;cursor:pointer">✎</button>
+        <button onclick="delSession(${r.id})"
+          style="background:rgba(239,68,68,.12);color:#ef4444;border:1px solid rgba(239,68,68,.25);
+          border-radius:6px;padding:3px 8px;font-size:.65rem;cursor:pointer">✕</button>
+      </td>`:''}
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+async function editCost(id, kwh, currentPrice){
+  const newPrice = prompt(
+    `Session #${id} — ${fmt(kwh,2)} kWh
+
+Neuen Preis pro kWh eingeben (€):
+(aktuell: ${fmt(currentPrice,4)} €/kWh)
+
+Oder leer lassen um Gesamtbetrag direkt einzugeben:`,
+    fmt(currentPrice,4)
+  );
+  if(newPrice===null) return;
+
+  let body;
+  if(newPrice.trim()===''){
+    const totalCost=prompt(`Gesamtkosten für Session #${id} (${fmt(kwh,2)} kWh) in €:`);
+    if(!totalCost||isNaN(parseFloat(totalCost))) return;
+    body={cost_eur:parseFloat(totalCost)};
+  } else {
+    if(isNaN(parseFloat(newPrice))) return;
+    body={price_per_kwh:parseFloat(newPrice),cost_eur:0};
+  }
+
+  const r=await fetch(`/api/sessions/${id}/cost`,{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+  if(r.ok){ toast(`Session #${id} Kosten aktualisiert: ${fmt(r.cost_eur,2)} €`); loadSessions(); }
+  else toast('Fehler','err');
+}
+
+async function loadSessions(){
+  const loc = $('sFilter')?.value||'all';
+  const rows = await fetch(`/api/sessions?location=${loc}`).then(r=>r.json());
+  renderTbl($('allTbl'), rows, true);
+}
+
+async function delSession(id){
+  if(!confirm('Session #'+id+' wirklich löschen?')) return;
+  await fetch('/api/sessions/'+id, {method:'DELETE'});
+  toast('Session #'+id+' gelöscht');
+  loadSessions(); loadCharts();
+}
+
+// ── Charts ────────────────────────────────────────────────────────────────────
+let charts = {};
+
+function destroyCharts(){
+  Object.values(charts).forEach(c=>c?.destroy());
+  charts={};
+}
+
+function chartDefaults(){
+  return {
+    responsive:true, maintainAspectRatio:false,
+    plugins:{legend:{display:false}},
+    scales:{
+      x:{grid:{color:'#1c2430'},ticks:{color:'#4a5c72',font:{family:'DM Mono',size:10}}},
+      y:{grid:{color:'#1c2430'},ticks:{color:'#4a5c72',font:{family:'DM Mono',size:10}}}
+    }
+  };
+}
+
+async function loadCharts(){
+  const monthly = await fetch('/api/stats/monthly').then(r=>r.json());
+  const sessions= await fetch('/api/sessions').then(r=>r.json());
+  destroyCharts();
+
+  const months  = monthly.map(m=>m.month).reverse();
+  const costs   = monthly.map(m=>+(m.total_cost||0).toFixed(2)).reverse();
+  const kwhs    = monthly.map(m=>+(m.total_kwh||0).toFixed(2)).reverse();
+
+  // Cost chart
+  charts.cost = new Chart($('chartCost'), {
+    type:'bar',
+    data:{labels:months, datasets:[{data:costs,
+      backgroundColor:'rgba(245,158,11,.35)',borderColor:'#f59e0b',borderWidth:1.5,borderRadius:4}]},
+    options:{...chartDefaults(), plugins:{...chartDefaults().plugins,
+      tooltip:{callbacks:{label:c=>`${c.raw} €`}}}}
+  });
+
+  // kWh chart
+  charts.kwh = new Chart($('chartKwh'), {
+    type:'bar',
+    data:{labels:months, datasets:[{data:kwhs,
+      backgroundColor:'rgba(0,180,255,.25)',borderColor:'#00b4ff',borderWidth:1.5,borderRadius:4}]},
+    options:{...chartDefaults(), plugins:{...chartDefaults().plugins,
+      tooltip:{callbacks:{label:c=>`${c.raw} kWh`}}}}
+  });
+
+  // SOC verlauf (last 10 sessions)
+  const last10 = sessions.slice(0,10).reverse();
+  const socStart= last10.map(s=>s.soc_start||0);
+  const socEnd  = last10.map(s=>s.soc_end||0);
+  const socLabels=last10.map(s=>new Date(s.start_ts).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'}));
+  charts.soc = new Chart($('chartSoc'), {
+    type:'line',
+    data:{labels:socLabels, datasets:[
+      {label:'SOC Start',data:socStart,borderColor:'#4a5c72',backgroundColor:'rgba(74,92,114,.1)',
+       fill:true,tension:.3,pointRadius:3},
+      {label:'SOC Ende', data:socEnd,  borderColor:'#3ddc97',backgroundColor:'rgba(61,220,151,.1)',
+       fill:true,tension:.3,pointRadius:3},
+    ]},
+    options:{...chartDefaults(), plugins:{legend:{display:true,labels:{color:'#4a5c72',font:{family:'DM Mono',size:9}}}},
+      scales:{...chartDefaults().scales, y:{...chartDefaults().scales.y,
+        min:0,max:100,ticks:{...chartDefaults().scales.y.ticks,callback:v=>v+'%'}}}}
+  });
+
+  // Verbrauch kWh/100km per month
+  const eff = monthly.map(m=>{
+    if(!m.km_driven||m.km_driven<=0) return null;
+    return +(m.total_kwh/m.km_driven*100).toFixed(1);
+  }).reverse();
+  charts.km = new Chart($('chartKm'), {
+    type:'line',
+    data:{labels:months, datasets:[{data:eff,
+      borderColor:'#3ddc97',backgroundColor:'rgba(61,220,151,.08)',
+      fill:true,tension:.3,pointRadius:4,spanGaps:true}]},
+    options:{...chartDefaults(), plugins:{...chartDefaults().plugins,
+      tooltip:{callbacks:{label:c=>`${c.raw} kWh/100km`}}}}
+  });
+}
+
+// ── Config ────────────────────────────────────────────────────────────────────
+async function loadConfig(){
+  const c = await fetch('/api/config').then(r=>r.json());
+  const m = {c_car:'car_name',c_url:'ha_url',c_tok:'ha_token',
+             c_chg:'charging_sensor',c_odo:'odo_sensor',c_soc:'soc_sensor',
+             c_pwr:'power_sensor',
+             c_chgtype:'charge_type_sensor',
+             c_chgspeed:'charge_speed_sensor',
+             c_loc:'location_sensor',c_home:'home_states',c_notify:'notify_service',
+             c_bat:'battery_capacity_kwh',
+             c_price_home:'price_per_kwh_home',c_price_ac:'price_per_kwh_ac',c_price_dc:'price_per_kwh_dc',
+             c_dc_thresh:'dc_threshold_kw',
+             c_entsoe_key:'entsoe_api_key',c_ac_markup:'entsoe_ac_markup',c_dc_markup:'entsoe_dc_markup',
+             c_poll:'poll_interval'};
+  for(const[id,key] of Object.entries(m)){const el=$(id);if(el)el.value=c[key]||'';}
+}
+
+async function saveConfig(){
+  const cfg={
+    car_name:        $('c_car').value,
+    ha_url:          $('c_url').value.trim(),
+    ha_token:        $('c_tok').value.trim(),
+    charging_sensor:      $('c_chg').value.trim(),
+    odo_sensor:           $('c_odo').value.trim(),
+    soc_sensor:           $('c_soc').value.trim(),
+    power_sensor:         $('c_pwr')?.value.trim()||'',
+    charge_type_sensor:   $('c_chgtype')?.value.trim()||'',
+    charge_speed_sensor:  $('c_chgspeed')?.value.trim()||'',
+    location_sensor:      $('c_loc').value.trim(),
+    home_states:          $('c_home').value.trim(),
+    notify_service:       $('c_notify').value.trim(),
+    battery_capacity_kwh: parseFloat($('c_bat').value),
+    price_per_kwh_home:   parseFloat($('c_price_home').value),
+    price_per_kwh_ac:     parseFloat($('c_price_ac').value),
+    price_per_kwh_dc:     parseFloat($('c_price_dc').value),
+    dc_threshold_kw:      parseFloat($('c_dc_thresh').value),
+    entsoe_api_key:       $('c_entsoe_key').value.trim(),
+    entsoe_ac_markup:     parseFloat($('c_ac_markup').value),
+    entsoe_dc_markup:     parseFloat($('c_dc_markup').value),
+    poll_interval:        parseInt($('c_poll').value),
+  };
+  const r = await fetch('/api/config',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+  if(r.ok){ toast('Konfiguration gespeichert'); $('carName').textContent=cfg.car_name; }
+  else toast('Fehler beim Speichern','err');
+}
+
+async function testEntsoe(){
+  const res=$('entsoeRes'); res.textContent='⏳ Teste ENTSO-E…';
+  let key=$('c_entsoe_key').value.trim();
+  if(!key){ const c=await fetch('/api/config').then(r=>r.json()); key=c.entsoe_api_key||''; }
+  if(!key){ res.textContent='⚠ Kein API Key eingetragen'; return; }
+  const r=await fetch('/api/entsoe/test',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({entsoe_api_key:key})}).then(r=>r.json());
+  if(r.ok) res.innerHTML=`<span style="color:var(--acc)">✅ ${r.price_kwh.toFixed(4)} €/kWh (${r.price_mwh} €/MWh) — DE Spotpreis</span>`;
+  else res.innerHTML=`<span style="color:var(--danger)">❌ ${r.error}</span>`;
+}
+
+async function testConn(){
+  const res=$('connRes');
+  res.className='conn-res'; res.style.display='block'; res.textContent='⏳ Teste…';
+  // use saved token if field empty
+  let tok=$('c_tok').value.trim();
+  if(!tok){ const c=await fetch('/api/config').then(r=>r.json()); tok=c.ha_token||''; }
+  const r=await fetch('/api/test-connection',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ha_url:$('c_url').value, ha_token:tok,
+      charging_sensor:$('c_chg').value, location_sensor:$('c_loc').value,
+      charge_type_sensor:$('c_chgtype')?.value})
+  }).then(r=>r.json());
+  if(r.ok){
+    res.className='conn-res ok';
+    res.textContent=`✅ ${r.name} · Zustand: "${r.state}"${r.loc_info||''}${r.pwr_info||''}${r.type_info||''}`;
+  } else {
+    res.className='conn-res err'; res.textContent='❌ '+r.error;
+  }
+}
+
+// ── Template upload ───────────────────────────────────────────────────────────
+async function refreshTplInfo(){
+  const info=await fetch('/api/template/info').then(r=>r.json());
+  const dot=$('tplDot'), lbl=$('tplLbl'), meta=$('tplMeta'), delBtn=$('tplDelBtn');
+  if(info.exists){
+    dot.style.background='var(--acc)'; dot.style.boxShadow='0 0 6px var(--acc)';
+    lbl.style.color='var(--acc)';
+    lbl.textContent='✓ Template aktiv — deine Vorlage wird beim Export verwendet';
+    meta.textContent=`${(info.size/1024).toFixed(1)} KB · ${info.modified.replace('T',' ')}`;
+    delBtn.style.display='';
+    loadMappingPreview();
+  } else {
+    dot.style.background='var(--mute)'; dot.style.boxShadow='none';
+    lbl.style.color='var(--mute)';
+    lbl.textContent='Kein Template — eingebautes Format wird verwendet';
+    meta.textContent=''; delBtn.style.display='none';
+    $('mappingSection').style.display='none';
+  }
+}
+
+async function loadMappingPreview(){
+  const data = await fetch('/api/template/preview').then(r=>r.json());
+  if(!data.ok){ $('mappingSection').style.display='none'; return; }
+  $('mappingSection').style.display='';
+
+  const FIELDS = ['','row_num','date','start_time','end_time','odo_start','odo_end',
+                  'soc_start','soc_end','kwh_charged','cost_eur','location'];
+  const LABELS = {'':'— nicht zugewiesen —','row_num':'Nr.','date':'Datum',
+    'start_time':'Start Uhrzeit','end_time':'Ende Uhrzeit','odo_start':'KM-Stand Start',
+    'odo_end':'KM-Stand Ende','soc_start':'SOC Start (%)','soc_end':'SOC Ende (%)',
+    'kwh_charged':'Geladene kWh','cost_eur':'Kosten (€)','location':'Standort'};
+
+  const body = $('mappingBody');
+  body.innerHTML = Object.entries(data.columns).map(([ci, col])=>`
+    <tr>
+      <td style="color:var(--mute)">${col.col_letter}</td>
+      <td><strong style="color:#fff">${col.header||'—'}</strong></td>
+      <td>
+        <select onchange="mappingChanged()" data-col="${ci}"
+          style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;
+          color:var(--txt);font-family:var(--mono);font-size:.75rem;padding:5px 8px;width:100%">
+          ${FIELDS.map(f=>`<option value="${f}" ${col.mapped_to===f?'selected':''}>${LABELS[f]}</option>`).join('')}
+        </select>
+      </td>
+    </tr>`).join('');
+}
+
+function mappingChanged(){ /* mapping changes are read at export time */ }
+
+function getColOverride(){
+  const overrides={};
+  document.querySelectorAll('#mappingBody select[data-col]').forEach(sel=>{
+    overrides[sel.dataset.col] = sel.value;
+  });
+  return Object.keys(overrides).length ? overrides : null;
+}
+
+async function uploadTpl(file){
+  if(!file) return;
+  if(!file.name.endsWith('.xlsx')){ toast('Nur .xlsx Dateien','err'); return; }
+  const fd=new FormData(); fd.append('file',file);
+  const r=await fetch('/api/template',{method:'POST',body:fd}).then(r=>r.json());
+  if(r.ok){ toast(`Template hochgeladen: ${r.filename}`); refreshTplInfo(); }
+  else toast('Upload fehlgeschlagen: '+r.error,'err');
+  $('tplFile').value='';
+}
+
+function handleDrop(e){
+  e.preventDefault();
+  $('dropZone').classList.remove('drag');
+  uploadTpl(e.dataTransfer.files[0]);
+}
+
+async function deleteTpl(){
+  await fetch('/api/template',{method:'DELETE'});
+  toast('Template entfernt'); refreshTplInfo();
+}
+
+// ── Export ────────────────────────────────────────────────────────────────────
+function initExpSelects(){
+  const now=new Date(); const yEl=$('expY');
+  for(let y=now.getFullYear();y>=now.getFullYear()-3;y--){
+    const o=document.createElement('option');o.value=y;o.textContent=y;yEl.appendChild(o);
+  }
+  $('expM').value=now.getMonth()+1;
+}
+
+async function loadExpPreview(){
+  const y=$('expY').value, m=$('expM').value, loc=$('expLoc')?.value||'all';
+  const rows=await fetch(`/api/sessions?year=${y}&month=${m}&location=${loc}`).then(r=>r.json());
+  const homeN = rows.filter(r=>r.location==='home').length;
+  const extN  = rows.filter(r=>r.location==='extern').length;
+  const kwh   = rows.reduce((s,r)=>s+(r.kwh_charged||0),0);
+  const cost  = rows.reduce((s,r)=>s+(r.cost_eur||0),0);
+  // calc efficiency
+  const oStart= rows.length ? (rows[rows.length-1].odo_start||0) : 0;
+  const oEnd  = rows.length ? (rows[0].odo_end||0) : 0;
+  const km    = oEnd - oStart;
+  const eff   = km>0 ? (kwh/km*100).toFixed(1)+' kWh/100km' : '—';
+  $('es_n').textContent    = rows.length;
+  $('es_home').textContent = homeN;
+  $('es_ext').textContent  = extN;
+  $('es_kwh').textContent  = fmt(kwh)+' kWh';
+  $('es_cost').textContent = fmt(cost)+' €';
+  $('es_eff').textContent  = eff;
+}
+
+$('expY')?.addEventListener('change',loadExpPreview);
+$('expM')?.addEventListener('change',loadExpPreview);
+
+function doExport(){
+  const y=$('expY').value, m=$('expM').value, loc=$('expLoc').value;
+  const override=getColOverride();
+  let url=`/api/export?year=${y}&month=${m}&location=${loc}`;
+  if(override) url+=`&col_override=${encodeURIComponent(JSON.stringify(override))}`;
+  window.location.href=url;
+}
+
+// ── Session Detail Modal ─────────────────────────────────────────────────────
+let _modalChart = null;
+
+async function showSessionDetail(id){
+  // fetch session
+  const rows = await fetch('/api/sessions').then(r=>r.json());
+  const s = rows.find(r=>r.id===id);
+  if(!s) return;
+
+  $('sessionModal').style.display='flex';
+
+  const dt = d => new Date(d).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  $('modalTitle').textContent = `Session #${s.id} — ${new Date(s.start_ts).toLocaleDateString('de-DE')}`;
+  $('modalMeta').innerHTML = `${dt(s.start_ts)} → ${s.end_ts?dt(s.end_ts):'läuft noch'} &nbsp;·&nbsp; ${locBadge(s.location)} &nbsp;·&nbsp; ${typeBadge(s.charger_type,s.max_power_kw)}`;
+
+  $('modalStats').innerHTML = [
+    {l:'SOC Start',   v:fmt(s.soc_start,0)+'%'},
+    {l:'SOC Ende',    v:fmt(s.soc_end,0)+'%'},
+    {l:'Geladen',     v:fmt(s.kwh_charged)+' kWh'},
+    {l:'KM Start',    v:s.odo_start?Math.round(s.odo_start).toLocaleString('de')+' km':'—'},
+    {l:'KM Ende',     v:s.odo_end?Math.round(s.odo_end).toLocaleString('de')+' km':'—'},
+    {l:'Preis/kWh',   v:s.price_per_kwh?fmt(s.price_per_kwh,4)+' €':'—'},
+    {l:'Kosten',      v:s.cost_eur!=null?fmt(s.cost_eur)+' €':'—'},
+    {l:'Max. Leistung',v:s.max_power_kw?Number(s.max_power_kw).toFixed(1)+' kW':'—'},
+  ].map(x=>`<div class="stat"><div class="sl">${x.l}</div><div class="sv" style="font-size:1.1rem">${x.v}</div></div>`).join('');
+
+  // fetch charge curve points
+  const pts = await fetch(`/api/sessions/${id}/points`).then(r=>r.json());
+
+  if(_modalChart){ _modalChart.destroy(); _modalChart=null; }
+
+  if(!pts.length){
+    $('modalChart').style.display='none';
+    $('modalNoData').style.display='block';
+    return;
+  }
+  $('modalChart').style.display='';
+  $('modalNoData').style.display='none';
+
+  const labels  = pts.map(p=>new Date(p.ts).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}));
+  const socData = pts.map(p=>p.soc);
+  const pwrData = pts.map(p=>p.power_kw);
+
+  _modalChart = new Chart($('modalChart'),{
+    type:'line',
+    data:{
+      labels,
+      datasets:[
+        {
+          label:'SOC (%)',
+          data:socData,
+          borderColor:'#3ddc97',
+          backgroundColor:'rgba(61,220,151,.08)',
+          fill:true,tension:.3,pointRadius:2,
+          yAxisID:'ySoc',
+        },
+        {
+          label:'Leistung (kW)',
+          data:pwrData,
+          borderColor:'#f59e0b',
+          backgroundColor:'rgba(245,158,11,.08)',
+          fill:true,tension:.3,pointRadius:2,
+          yAxisID:'yPwr',
+        }
+      ]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{
+        legend:{display:true,labels:{color:'#4a5c72',font:{family:'DM Mono',size:9}}},
+        tooltip:{callbacks:{
+          label:c=>c.dataset.label+': '+Number(c.raw||0).toFixed(1)+(c.dataset.yAxisID==='ySoc'?'%':' kW')
+        }}
+      },
+      scales:{
+        x:{grid:{color:'#1c2430'},ticks:{color:'#4a5c72',font:{family:'DM Mono',size:9},maxTicksLimit:12}},
+        ySoc:{position:'left',min:0,max:100,
+          grid:{color:'#1c2430'},
+          ticks:{color:'#3ddc97',font:{family:'DM Mono',size:9},callback:v=>v+'%'}},
+        yPwr:{position:'right',min:0,
+          grid:{drawOnChartArea:false},
+          ticks:{color:'#f59e0b',font:{family:'DM Mono',size:9},callback:v=>v+' kW'}},
+      }
+    }
+  });
+}
+
+function closeModal(){
+  $('sessionModal').style.display='none';
+  if(_modalChart){_modalChart.destroy();_modalChart=null;}
+}
+
+// close on Escape
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
+
+// ── Backup ───────────────────────────────────────────────────────────────────
+async function loadBackups(){
+  const data = await fetch('/api/backup/list').then(r=>r.json());
+  // update cron info
+  $('backupCron').value = data.cron||'';
+  if(data.next_backup){
+    $('cronInfo').innerHTML=`<span style="color:var(--acc)">⏰ Nächstes Backup: ${data.next_backup}</span>`;
+  } else if(data.cron) {
+    $('cronInfo').textContent='⚠ Ungültiger Cron-Ausdruck';
+  } else {
+    $('cronInfo').textContent='Kein automatisches Backup konfiguriert';
+  }
+
+  const el=$('backupList');
+  if(!data.backups.length){
+    el.innerHTML='<div class="empty">Noch keine Backups vorhanden</div>'; return;
+  }
+  el.innerHTML=`<table>
+    <thead><tr><th>Dateiname</th><th>Größe</th><th>Erstellt</th><th></th></tr></thead>
+    <tbody>${data.backups.map(b=>`<tr>
+      <td style="font-family:var(--mono);font-size:.75rem;color:#fff">${b.name}</td>
+      <td style="font-family:var(--mono);font-size:.75rem">${(b.size/1024).toFixed(1)} KB</td>
+      <td style="font-family:var(--mono);font-size:.75rem">${b.modified.replace('T',' ')}</td>
+      <td style="display:flex;gap:5px;padding:8px 4px">
+        <button onclick="downloadBackup('${b.name}')"
+          style="background:rgba(0,180,255,.12);color:#00b4ff;border:1px solid rgba(0,180,255,.25);
+          border-radius:6px;padding:3px 10px;font-size:.68rem;cursor:pointer">⬇</button>
+        <button onclick="restoreBackup('${b.name}')"
+          style="background:rgba(245,158,11,.12);color:#f59e0b;border:1px solid rgba(245,158,11,.25);
+          border-radius:6px;padding:3px 10px;font-size:.68rem;cursor:pointer">↩ Restore</button>
+        <button onclick="deleteBackup('${b.name}')"
+          style="background:rgba(239,68,68,.12);color:#ef4444;border:1px solid rgba(239,68,68,.25);
+          border-radius:6px;padding:3px 10px;font-size:.68rem;cursor:pointer">✕</button>
+      </td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+async function createBackup(){
+  const btn=event.target; btn.disabled=true; btn.textContent='⏳ Erstelle…';
+  const r=await fetch('/api/backup/create',{method:'POST'}).then(r=>r.json());
+  btn.disabled=false; btn.textContent='💾 Backup jetzt erstellen';
+  if(r.ok){ toast(`Backup erstellt: ${r.name} (${(r.size/1024).toFixed(1)} KB)`); loadBackups(); }
+  else toast('Fehler: '+r.error,'err');
+}
+
+function downloadBackup(name){
+  window.location.href='/api/backup/download/'+encodeURIComponent(name);
+}
+
+async function restoreBackup(name){
+  if(!confirm(`Backup "${name}" wiederherstellen?
+
+Aktuelle Daten werden überschrieben!`)) return;
+  const r=await fetch('/api/backup/restore',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name})}).then(r=>r.json());
+  if(r.ok){ toast('Restore erfolgreich — Seite wird neu geladen…'); setTimeout(()=>location.reload(),2000); }
+  else toast('Restore fehlgeschlagen: '+r.error,'err');
+}
+
+async function uploadRestore(file){
+  if(!file) return;
+  if(!confirm(`Backup "${file.name}" hochladen und wiederherstellen?
+
+Aktuelle Daten werden überschrieben!`)) return;
+  const fd=new FormData(); fd.append('file',file);
+  const r=await fetch('/api/backup/upload',{method:'POST',body:fd}).then(r=>r.json());
+  if(r.ok){ toast('Restore erfolgreich — Seite wird neu geladen…'); setTimeout(()=>location.reload(),2000); }
+  else toast('Fehler: '+r.error,'err');
+  $('restoreFile').value='';
+}
+
+async function deleteBackup(name){
+  if(!confirm(`Backup "${name}" löschen?`)) return;
+  await fetch('/api/backup/delete/'+encodeURIComponent(name),{method:'DELETE'});
+  toast('Backup gelöscht'); loadBackups();
+}
+
+function setCron(val){ $('backupCron').value=val; saveCron(); }
+
+async function saveCron(){
+  const cron=$('backupCron').value.trim();
+  const r=await fetch('/api/backup/cron',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({cron})}).then(r=>r.json());
+  if(r.ok){
+    toast(cron?`Auto-Backup: ${r.next}`:'Auto-Backup deaktiviert');
+    loadBackups();
+  } else toast('Fehler','err');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+initExpSelects();
+refreshStatus();
+loadCharts();
+setInterval(refreshStatus, 20000);
+</script>
+</body>
+</html>
