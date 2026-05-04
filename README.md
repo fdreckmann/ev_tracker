@@ -77,7 +77,7 @@ http://<unraid-ip>:8054
 | Kilometerstand | `sensor.volkswagen_id_id_7_mileage` |
 | SOC (%) | `sensor.volkswagen_id_id_7_state_of_charge` |
 | Ladeleistung (kW) | `sensor.volkswagen_id_id_7_charge_power` |
-| Standort | `device_tracker.wvwzzzed8se059543_position` |
+| Standort | `device_tracker.volkswagen_id7_position` |
 
 > Entity-IDs in HA → Einstellungen → Entitäten → "volkswagen" suchen
 
