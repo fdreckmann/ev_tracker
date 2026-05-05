@@ -1,6 +1,6 @@
 services:
   ev-tracker:
-    image: 19121412/ev-tracker:latest    # direkt von Docker Hub
+    image: 19121412/ev-tracker:latest
     container_name: ev-tracker
     restart: unless-stopped
     ports:

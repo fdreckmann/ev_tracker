@@ -252,6 +252,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     <div class="stat"><div class="sl">Kilometerstand</div><div class="sv b" id="dOdo">—</div><div class="su">km</div></div>
     <div class="stat"><div class="sl">Ladertyp</div><div class="sv" id="dType">—</div><div class="su" id="dPwr">— kW</div></div>
     <div class="stat"><div class="sl">ENTSO-E Spot</div><div class="sv" id="dSpot" style="font-size:1rem">—</div><div class="su">aktueller Preis</div></div>
+    <div class="stat"><div class="sl">Datenquelle</div><div class="sv" id="dProviderName" style="font-size:.85rem">—</div><div class="su">Provider</div></div>
     <div class="stat"><div class="sl">Letztes Update</div><div class="sv" id="dPoll" style="font-size:1rem">—</div><div class="su">HA Polling</div></div>
   </div>
 
@@ -306,16 +307,43 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 <div class="panel" id="panel-config">
 
   <div class="card">
-    <div class="card-title">Fahrzeug & Home Assistant</div>
+    <div class="card-title">Fahrzeug & Datenquelle</div>
     <div class="form-grid">
       <div class="fg full"><label>Fahrzeugname</label>
         <input id="c_car" value="{{ cfg.car_name }}"></div>
-      <div class="fg"><label>Home Assistant URL</label>
-        <input id="c_url" value="{{ cfg.ha_url }}" placeholder="http://192.168.x.x:8123"></div>
-      <div class="fg"><label>Long-Lived Access Token</label>
-        <input type="password" id="c_tok" value="{{ cfg.ha_token }}" placeholder="eyJ0eXAi…">
-        <span class="hint">HA → Profil → Langlebige Zugriffstoken</span></div>
+      <div class="fg full">
+        <label>Datenquelle</label>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px;margin-top:8px" id="providerGrid">
+          {% for p in all_providers %}
+          <div onclick="selectProvider('{{ p.provider_id }}')" id="pcard_{{ p.provider_id }}"
+            style="background:var(--bg);border:2px solid {% if cfg.provider==p.provider_id %}var(--acc){% else %}var(--brd){% endif %};
+            border-radius:10px;padding:12px 14px;cursor:pointer;transition:all .15s">
+            <div style="font-weight:700;font-size:.8rem;color:{% if cfg.provider==p.provider_id %}var(--acc){% else %}#fff{% endif %}">
+              {{ p.provider_name }}</div>
+            <div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);margin-top:5px;line-height:1.7">
+              {% if p.charging_state %}✅{% else %}❌{% endif %} Laden &nbsp;
+              {% if p.soc %}✅{% else %}❌{% endif %} SOC<br>
+              {% if p.odometer %}✅{% else %}❌{% endif %} KM &nbsp;
+              {% if p.charge_power %}✅{% else %}❌{% endif %} kW &nbsp;
+              {% if p.location %}✅{% else %}❌{% endif %} Standort
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <input type="hidden" id="c_provider" value="{{ cfg.provider }}">
+      </div>
     </div>
+    {% for p in all_providers %}{% if p.notes %}
+    <div id="notes_{{ p.provider_id }}" style="display:{% if cfg.provider==p.provider_id %}block{% else %}none{% endif %};
+      margin-top:12px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);
+      border-radius:8px;padding:10px 14px;font-size:.72rem;font-family:var(--mono);color:var(--warn);line-height:1.8">
+      {% for note in p.notes %}⚠ {{ note }}<br>{% endfor %}</div>
+    {% endif %}{% endfor %}
+  </div>
+
+  <div class="card" id="providerConfigCard">
+    <div class="card-title">Verbindung konfigurieren</div>
+    <div class="form-grid" id="providerFields"></div>
     <div style="margin-top:14px">
       <button class="btn-g" onclick="testConn()">🔗 Verbindung testen</button>
       <div class="conn-res" id="connRes"></div>
@@ -877,34 +905,231 @@ async function loadCharts(){
 // ── Config ────────────────────────────────────────────────────────────────────
 async function loadConfig(){
   const c = await fetch('/api/config').then(r=>r.json());
-  const m = {c_car:'car_name',c_url:'ha_url',c_tok:'ha_token',
-             c_chg:'charging_sensor',c_odo:'odo_sensor',c_soc:'soc_sensor',
-             c_pwr:'power_sensor',
-             c_chgtype:'charge_type_sensor',
-             c_chgspeed:'charge_speed_sensor',
-             c_loc:'location_sensor',c_home:'home_states',c_notify:'notify_service',
+  const m = {c_car:'car_name',c_notify:'notify_service',
              c_bat:'battery_capacity_kwh',
              c_price_home:'price_per_kwh_home',c_price_ac:'price_per_kwh_ac',c_price_dc:'price_per_kwh_dc',
              c_dc_thresh:'dc_threshold_kw',
              c_entsoe_key:'entsoe_api_key',c_ac_markup:'entsoe_ac_markup',c_dc_markup:'entsoe_dc_markup',
              c_poll:'poll_interval'};
-  for(const[id,key] of Object.entries(m)){const el=$(id);if(el)el.value=c[key]||'';}
+  for(const[id,key]of Object.entries(m)){const el=$(id);if(el)el.value=c[key]||'';}
+  await loadProviderFields(c.provider||'ha');
+  document.querySelectorAll('[id^="pf_"]').forEach(el=>{
+    const key=el.id.replace('pf_','');
+    if(c[key]!==undefined&&el.type!=='password') el.value=c[key]||el.value;
+  });
+}
+// ── Provider selection ───────────────────────────────────────────────────────
+function selectProvider(id){
+  $('c_provider').value=id;
+  document.querySelectorAll('[id^="pcard_"]').forEach(el=>{
+    const pid=el.id.replace('pcard_','');
+    el.style.border=pid===id?'2px solid var(--acc)':'2px solid var(--brd)';
+    el.querySelector('div').style.color=pid===id?'var(--acc)':'#fff';
+  });
+  document.querySelectorAll('[id^="notes_"]').forEach(el=>{
+    el.style.display=el.id===`notes_${id}`?'block':'none';
+  });
+  loadProviderFields(id);
+}
+
+async function loadProviderFields(pid){
+  if(!pid) return;
+  const fields=await fetch(`/api/providers/${pid}/fields`).then(r=>r.json()).catch(()=>[]);
+  const cfg=await fetch('/api/config').then(r=>r.json()).catch(()=>({}));
+  const container=$('providerFields');
+  if(!container) return;
+  container.innerHTML=fields.map(f=>{
+    const val=cfg[f.id]||'';
+    const w=fields.length<=2?'full':'';
+    const inp=f.type==='select'
+      ?`<select id="pf_${f.id}" style="background:var(--bg);border:1px solid var(--brd);border-radius:8px;color:var(--txt);font-family:var(--mono);font-size:.84rem;padding:9px 13px;width:100%">${(f.options||[]).map(o=>`<option value="${o}" ${val===o?'selected':''}>${o}</option>`).join('')}</select>`
+      :`<input type="${f.type||'text'}" id="pf_${f.id}" value="${f.type==='password'?'':val}" placeholder="${f.placeholder||''}">`;
+    return `<div class="fg ${w}">
+      <label>${f.label}${!f.required?' <span style="color:var(--mute);font-size:.65rem">(optional)</span>':''}</label>
+      ${inp}${f.hint?`<span class="hint">${f.hint}</span>`:''}
+    </div>`;
+  }).join('');
 }
 
 async function saveConfig(){
   const cfg={
-    car_name:        $('c_car').value,
-    ha_url:          $('c_url').value.trim(),
-    ha_token:        $('c_tok').value.trim(),
-    charging_sensor:      $('c_chg').value.trim(),
-    odo_sensor:           $('c_odo').value.trim(),
-    soc_sensor:           $('c_soc').value.trim(),
-    power_sensor:         $('c_pwr')?.value.trim()||'',
-    charge_type_sensor:   $('c_chgtype')?.value.trim()||'',
-    charge_speed_sensor:  $('c_chgspeed')?.value.trim()||'',
-    location_sensor:      $('c_loc').value.trim(),
-    home_states:          $('c_home').value.trim(),
-    notify_service:       $('c_notify').value.trim(),
+    provider:       $('c_provider')?.value||'ha',
+    car_name:       $('c_car').value,
+    notify_service: $('c_notify')?.value.trim()||'',
+    battery_capacity_kwh: parseFloat($('c_bat').value),
+    price_per_kwh_home:   parseFloat($('c_price_home').value),
+    price_per_kwh_ac:     parseFloat($('c_price_ac').value),
+    price_per_kwh_dc:     parseFloat($('c_price_dc').value),
+    dc_threshold_kw:      parseFloat($('c_dc_thresh').value),
+    entsoe_api_key:       $('c_entsoe_key').value.trim(),
+    entsoe_ac_markup:     parseFloat($('c_ac_markup').value),
+    entsoe_dc_markup:     parseFloat($('c_dc_markup').value),
+    poll_interval:        parseInt($('c_poll').value),
+  };
+  const r = await fetch('/api/config',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+  if(r.ok){ toast('Konfiguration gespeichert'); $('carName').textContent=cfg.car_name; }
+  else toast('Fehler beim Speichern','err');
+}
+
+async function testEntsoe(){
+  const res=$('entsoeRes'); res.textContent='⏳ Teste ENTSO-E…';
+  let key=$('c_entsoe_key').value.trim();
+  if(!key){ const c=await fetch('/api/config').then(r=>r.json()); key=c.entsoe_api_key||''; }
+  if(!key){ res.textContent='⚠ Kein API Key eingetragen'; return; }
+  const r=await fetch('/api/entsoe/test',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({entsoe_api_key:key})}).then(r=>r.json());
+  if(r.ok) res.innerHTML=`<span style="color:var(--acc)">✅ ${r.price_kwh.toFixed(4)} €/kWh (${r.price_mwh} €/MWh) — DE Spotpreis</span>`;
+  else res.innerHTML=`<span style="color:var(--danger)">❌ ${r.error}</span>`;
+}
+
+async function testConn(){
+  const res=$('connRes');
+  res.className='conn-res';res.style.display='block';res.textContent='⏳ Teste Verbindung…';
+  const body={provider:$('c_provider')?.value||'ha'};
+  document.querySelectorAll('[id^="pf_"]').forEach(el=>{ body[el.id.replace('pf_','')]=el.value; });
+  const saved=await fetch('/api/config').then(r=>r.json()).catch(()=>({}));
+  if(!body.ha_token) body.ha_token=saved.ha_token||'';
+  const r=await fetch('/api/test-connection',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+  if(r.ok){ res.className='conn-res ok'; res.textContent=r.message; }
+  else{ res.className='conn-res err'; res.textContent='❌ '+(r.message||r.error||'Fehler'); }
+}
+
+// ── Charts ────────────────────────────────────────────────────────────────────
+let charts = {};
+
+function destroyCharts(){
+  Object.values(charts).forEach(c=>c?.destroy());
+  charts={};
+}
+
+function chartDefaults(){
+  return {
+    responsive:true, maintainAspectRatio:false,
+    plugins:{legend:{display:false}},
+    scales:{
+      x:{grid:{color:'#1c2430'},ticks:{color:'#4a5c72',font:{family:'DM Mono',size:10}}},
+      y:{grid:{color:'#1c2430'},ticks:{color:'#4a5c72',font:{family:'DM Mono',size:10}}}
+    }
+  };
+}
+
+async function loadCharts(){
+  const monthly = await fetch('/api/stats/monthly').then(r=>r.json());
+  const sessions= await fetch('/api/sessions').then(r=>r.json());
+  destroyCharts();
+
+  const months  = monthly.map(m=>m.month).reverse();
+  const costs   = monthly.map(m=>+(m.total_cost||0).toFixed(2)).reverse();
+  const kwhs    = monthly.map(m=>+(m.total_kwh||0).toFixed(2)).reverse();
+
+  // Cost chart
+  charts.cost = new Chart($('chartCost'), {
+    type:'bar',
+    data:{labels:months, datasets:[{data:costs,
+      backgroundColor:'rgba(245,158,11,.35)',borderColor:'#f59e0b',borderWidth:1.5,borderRadius:4}]},
+    options:{...chartDefaults(), plugins:{...chartDefaults().plugins,
+      tooltip:{callbacks:{label:c=>`${c.raw} €`}}}}
+  });
+
+  // kWh chart
+  charts.kwh = new Chart($('chartKwh'), {
+    type:'bar',
+    data:{labels:months, datasets:[{data:kwhs,
+      backgroundColor:'rgba(0,180,255,.25)',borderColor:'#00b4ff',borderWidth:1.5,borderRadius:4}]},
+    options:{...chartDefaults(), plugins:{...chartDefaults().plugins,
+      tooltip:{callbacks:{label:c=>`${c.raw} kWh`}}}}
+  });
+
+  // SOC verlauf (last 10 sessions)
+  const last10 = sessions.slice(0,10).reverse();
+  const socStart= last10.map(s=>s.soc_start||0);
+  const socEnd  = last10.map(s=>s.soc_end||0);
+  const socLabels=last10.map(s=>new Date(s.start_ts).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'}));
+  charts.soc = new Chart($('chartSoc'), {
+    type:'line',
+    data:{labels:socLabels, datasets:[
+      {label:'SOC Start',data:socStart,borderColor:'#4a5c72',backgroundColor:'rgba(74,92,114,.1)',
+       fill:true,tension:.3,pointRadius:3},
+      {label:'SOC Ende', data:socEnd,  borderColor:'#3ddc97',backgroundColor:'rgba(61,220,151,.1)',
+       fill:true,tension:.3,pointRadius:3},
+    ]},
+    options:{...chartDefaults(), plugins:{legend:{display:true,labels:{color:'#4a5c72',font:{family:'DM Mono',size:9}}}},
+      scales:{...chartDefaults().scales, y:{...chartDefaults().scales.y,
+        min:0,max:100,ticks:{...chartDefaults().scales.y.ticks,callback:v=>v+'%'}}}}
+  });
+
+  // Verbrauch kWh/100km per month
+  const eff = monthly.map(m=>{
+    if(!m.km_driven||m.km_driven<=0) return null;
+    return +(m.total_kwh/m.km_driven*100).toFixed(1);
+  }).reverse();
+  charts.km = new Chart($('chartKm'), {
+    type:'line',
+    data:{labels:months, datasets:[{data:eff,
+      borderColor:'#3ddc97',backgroundColor:'rgba(61,220,151,.08)',
+      fill:true,tension:.3,pointRadius:4,spanGaps:true}]},
+    options:{...chartDefaults(), plugins:{...chartDefaults().plugins,
+      tooltip:{callbacks:{label:c=>`${c.raw} kWh/100km`}}}}
+  });
+}
+
+// ── Config ────────────────────────────────────────────────────────────────────
+async function loadConfig(){
+  const c = await fetch('/api/config').then(r=>r.json());
+  const m = {c_car:'car_name',c_notify:'notify_service',
+             c_bat:'battery_capacity_kwh',
+             c_price_home:'price_per_kwh_home',c_price_ac:'price_per_kwh_ac',c_price_dc:'price_per_kwh_dc',
+             c_dc_thresh:'dc_threshold_kw',
+             c_entsoe_key:'entsoe_api_key',c_ac_markup:'entsoe_ac_markup',c_dc_markup:'entsoe_dc_markup',
+             c_poll:'poll_interval'};
+  for(const[id,key]of Object.entries(m)){const el=$(id);if(el)el.value=c[key]||'';}
+  await loadProviderFields(c.provider||'ha');
+  document.querySelectorAll('[id^="pf_"]').forEach(el=>{
+    const key=el.id.replace('pf_','');
+    if(c[key]!==undefined&&el.type!=='password') el.value=c[key]||el.value;
+  });
+}
+// ── Provider selection ───────────────────────────────────────────────────────
+function selectProvider(id){
+  $('c_provider').value=id;
+  document.querySelectorAll('[id^="pcard_"]').forEach(el=>{
+    const pid=el.id.replace('pcard_','');
+    el.style.border=pid===id?'2px solid var(--acc)':'2px solid var(--brd)';
+    el.querySelector('div').style.color=pid===id?'var(--acc)':'#fff';
+  });
+  document.querySelectorAll('[id^="notes_"]').forEach(el=>{
+    el.style.display=el.id===`notes_${id}`?'block':'none';
+  });
+  loadProviderFields(id);
+}
+
+async function loadProviderFields(pid){
+  if(!pid) return;
+  const fields=await fetch(`/api/providers/${pid}/fields`).then(r=>r.json()).catch(()=>[]);
+  const cfg=await fetch('/api/config').then(r=>r.json()).catch(()=>({}));
+  const container=$('providerFields');
+  if(!container) return;
+  container.innerHTML=fields.map(f=>{
+    const val=cfg[f.id]||'';
+    const w=fields.length<=2?'full':'';
+    const inp=f.type==='select'
+      ?`<select id="pf_${f.id}" style="background:var(--bg);border:1px solid var(--brd);border-radius:8px;color:var(--txt);font-family:var(--mono);font-size:.84rem;padding:9px 13px;width:100%">${(f.options||[]).map(o=>`<option value="${o}" ${val===o?'selected':''}>${o}</option>`).join('')}</select>`
+      :`<input type="${f.type||'text'}" id="pf_${f.id}" value="${f.type==='password'?'':val}" placeholder="${f.placeholder||''}">`;
+    return `<div class="fg ${w}">
+      <label>${f.label}${!f.required?' <span style="color:var(--mute);font-size:.65rem">(optional)</span>':''}</label>
+      ${inp}${f.hint?`<span class="hint">${f.hint}</span>`:''}
+    </div>`;
+  }).join('');
+}
+
+async function saveConfig(){
+  const cfg={
+    provider:       $('c_provider')?.value||'ha',
+    car_name:       $('c_car').value,
+    notify_service: $('c_notify')?.value.trim()||'',
     battery_capacity_kwh: parseFloat($('c_bat').value),
     price_per_kwh_home:   parseFloat($('c_price_home').value),
     price_per_kwh_ac:     parseFloat($('c_price_ac').value),
@@ -1324,6 +1549,14 @@ async function saveCron(){
 initExpSelects();
 refreshStatus();
 loadCharts();
+loadProviderFields('{{ cfg.provider }}').then(()=>{
+  const cfg_saved = {};
+  {% for key, val in cfg.items() %}cfg_saved['{{ key }}']='{{ val }}';{% endfor %}
+  document.querySelectorAll('[id^="pf_"]').forEach(el=>{
+    const key=el.id.replace('pf_','');
+    if(cfg_saved[key]&&el.type!=='password') el.value=cfg_saved[key];
+  });
+});
 setInterval(refreshStatus, 20000);
 </script>
 </body>

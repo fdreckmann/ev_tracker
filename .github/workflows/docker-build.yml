@@ -3,7 +3,7 @@ name: Build & Push Docker Image
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch:
+  workflow_dispatch:  # manuell auslösbar
 
 jobs:
   build-and-push:
@@ -26,3 +26,11 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/ev-tracker:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/ev-tracker:${{ github.sha }}
+
+      - name: Update Docker Hub description
+        uses: peter-evans/dockerhub-description@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/ev-tracker
+          short-description: "EV Ladeprotokoll für VW ID.7 via Home Assistant"
