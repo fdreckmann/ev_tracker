@@ -393,6 +393,17 @@ def api_session_points(sid):
     rows=con.execute("SELECT ts,soc,power_kw FROM session_points WHERE session_id=? ORDER BY ts",(sid,)).fetchall()
     con.close(); return jsonify([dict(r) for r in rows])
 
+@app.route("/api/sessions/<int:sid>/location", methods=["POST"])
+def api_update_location(sid):
+    loc = request.json.get("location","unknown")
+    if loc not in ("home","extern","unknown"):
+        return jsonify({"ok":False,"error":"Ungültiger Standort"}), 400
+    con = sqlite3.connect(DB_PATH)
+    con.execute("UPDATE sessions SET location=? WHERE id=?", (loc, sid))
+    con.commit(); con.close()
+    log.info("Session #%d Standort → %s", sid, loc)
+    return jsonify({"ok":True})
+
 @app.route("/api/sessions/<int:sid>/cost", methods=["POST"])
 def api_update_cost(sid):
     data=request.json; cost=float(data["cost_eur"]); price_kwh=data.get("price_per_kwh")
