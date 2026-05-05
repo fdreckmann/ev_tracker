@@ -1150,25 +1150,7 @@ async function testEntsoe(){
   else res.innerHTML=`<span style="color:var(--danger)">❌ ${r.error}</span>`;
 }
 
-async function testConn(){
-  const res=$('connRes');
-  res.className='conn-res'; res.style.display='block'; res.textContent='⏳ Teste…';
-  // use saved token if field empty
-  let tok=$('c_tok').value.trim();
-  if(!tok){ const c=await fetch('/api/config').then(r=>r.json()); tok=c.ha_token||''; }
-  const r=await fetch('/api/test-connection',{method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({ha_url:$('c_url').value, ha_token:tok,
-      charging_sensor:$('c_chg').value, location_sensor:$('c_loc').value,
-      charge_type_sensor:$('c_chgtype')?.value})
-  }).then(r=>r.json());
-  if(r.ok){
-    res.className='conn-res ok';
-    res.textContent=`✅ ${r.name} · Zustand: "${r.state}"${r.loc_info||''}${r.pwr_info||''}${r.type_info||''}`;
-  } else {
-    res.className='conn-res err'; res.textContent='❌ '+r.error;
-  }
-}
+
 
 // ── Template upload ───────────────────────────────────────────────────────────
 async function refreshTplInfo(){
