@@ -507,7 +507,12 @@ def api_export():
         saved = cfg.get("template_mapping") or {}
         if saved:
             override = {k: v for k, v in saved.items() if v}
-    return send_file(export(y,m,loc,col_override=override),as_attachment=True)
+    try:
+        path = export(y, m, loc, col_override=override)
+        return send_file(path, as_attachment=True)
+    except Exception as e:
+        log.exception("Export fehlgeschlagen")
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 # ── Backup ────────────────────────────────────────────────────────────────────
 import zipfile, subprocess
