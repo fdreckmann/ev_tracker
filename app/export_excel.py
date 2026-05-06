@@ -186,16 +186,21 @@ def export_with_template(year, month, sessions, location, col_override=None):
             except Exception:
                 pass
 
-    # clear old data rows
+    # clear old data rows (skip merged cells — they are read-only in openpyxl)
+    from openpyxl.cell.cell import MergedCell
     for r in range(ds, max_row + 1):
         for cell in ws[r]:
-            cell.value = None
+            if not isinstance(cell, MergedCell):
+                cell.value = None
 
     # write data
     for i, s in enumerate(sessions):
         rd = to_row(s, i + 1); tr = ds + i
         for ci, field in col_map.items():
-            cell = ws.cell(row=tr, column=ci, value=rd.get(field))
+            cell = ws.cell(row=tr, column=ci)
+            if isinstance(cell, MergedCell):
+                continue
+            cell.value = rd.get(field)
             if ci in tstyles:
                 st = tstyles[ci]
                 try:
