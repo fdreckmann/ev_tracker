@@ -1482,10 +1482,19 @@ async function doUpdate(){
   const adv=()=>{ if(si<steps.length){ const s=steps[si++]; bar.style.width=s.w; lbl.textContent=s.t; setTimeout(adv,s.d); }};
   adv();
 
-  const r = await fetch('/api/update/pull',{method:'POST'}).then(r=>r.json());
+  let r;
+  try {
+    r = await fetch('/api/update/pull',{method:'POST'}).then(res=>res.json());
+  } catch(_) {
+    // connection dropped = container is restarting — treat as success
+    bar.style.width='100%'; lbl.textContent='✅ Fertig!';
+    $('updateInfo').innerHTML='<span style="color:var(--acc)">✅ Update erfolgreich — Seite lädt in 5s neu…</span>';
+    setTimeout(()=>location.reload(), 5000);
+    return;
+  }
   if(!r.ok){
     bar.style.width='0%'; wrap.style.display='none';
-    $('updateInfo').innerHTML=`<span style="color:var(--danger)">❌ ${r.error}</span>`;
+    $('updateInfo').innerHTML=`<span style="color:var(--danger)">❌ ${r.output||r.error||'Unbekannter Fehler'}</span>`;
     btn.disabled=false; btn.textContent='⬆ Update installieren';
     return;
   }
