@@ -470,7 +470,8 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         </table>
       </div>
       <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
-        <button class="btn-p" onclick="saveMapping()">💾 Zuordnung speichern</button>
+        <button class="btn-p" onclick="openMappingModal()">✏️ Spalten zuweisen</button>
+        <button class="btn-s" onclick="saveMapping()">💾 Speichern</button>
         <div id="mappingSaveInfo" style="font-size:.75rem;font-family:var(--mono);color:var(--mute)"></div>
       </div>
     </div>
@@ -626,6 +627,35 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     <div id="backupList"><div class="empty">Lade…</div></div>
   </div>
 
+</div>
+
+<!-- ── Template Mapping Modal ── -->
+<div class="modal-overlay" id="mappingModal" style="display:none" onclick="if(event.target===this)closeMappingModal()">
+  <div class="modal" style="max-width:680px">
+    <button class="modal-close" onclick="closeMappingModal()">✕ Schließen</button>
+    <h2 style="margin-bottom:4px">Spalten zuweisen</h2>
+    <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:20px">
+      Weise jeder Spalte deiner Vorlage ein Datenfeld zu. Einmal speichern — gilt für alle künftigen Exporte.
+    </p>
+    <div class="tbl-wrap">
+      <table class="mapping-table">
+        <thead>
+          <tr>
+            <th style="width:48px">Spalte</th>
+            <th>Kopfzeile</th>
+            <th>Beispielwert</th>
+            <th>Zugeordnet zu</th>
+          </tr>
+        </thead>
+        <tbody id="mappingModalBody"></tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:18px;flex-wrap:wrap">
+      <button class="btn-p" onclick="saveMappingModal()">💾 Speichern & schließen</button>
+      <button class="btn-s" onclick="closeMappingModal()">Abbrechen</button>
+      <div id="mappingModalInfo" style="font-size:.75rem;font-family:var(--mono);color:var(--mute)"></div>
+    </div>
+  </div>
 </div>
 
 <!-- ── Session Detail Modal ── -->
@@ -1203,6 +1233,66 @@ async function refreshTplInfo(){
   }
 }
 
+const MAPPING_FIELDS = ['','row_num','date','start_time','end_time','odo_start','odo_end',
+                        'soc_start','soc_end','kwh_charged','cost_eur','location'];
+const MAPPING_LABELS = {'':'— nicht zugewiesen —','row_num':'Nr.','date':'Datum',
+  'start_time':'Start Uhrzeit','end_time':'Ende Uhrzeit','odo_start':'KM-Stand Start',
+  'odo_end':'KM-Stand Ende','soc_start':'SOC Start (%)','soc_end':'SOC Ende (%)',
+  'kwh_charged':'Geladene kWh','cost_eur':'Kosten (€)','location':'Standort'};
+
+function buildMappingRows(columns, saved, bodyId){
+  const body = $(bodyId);
+  body.innerHTML = Object.entries(columns).map(([ci, col])=>{
+    const effective = (saved && saved[ci] !== undefined) ? saved[ci] : (col.mapped_to || '');
+    return `<tr>
+      <td style="color:var(--mute);font-weight:bold">${col.col_letter}</td>
+      <td><strong style="color:#fff">${col.header||'—'}</strong></td>
+      <td style="color:var(--mute);font-size:.72rem">${col.sample||''}</td>
+      <td>
+        <select data-col="${ci}"
+          style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;
+          color:var(--txt);font-family:var(--mono);font-size:.75rem;padding:5px 8px;width:100%">
+          ${MAPPING_FIELDS.map(f=>`<option value="${f}" ${effective===f?'selected':''}>${MAPPING_LABELS[f]}</option>`).join('')}
+        </select>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function openMappingModal(){
+  const [data, saved] = await Promise.all([
+    fetch('/api/template/preview').then(r=>r.json()),
+    fetch('/api/template/mapping').then(r=>r.json()),
+  ]);
+  if(!data.ok){ toast('Template konnte nicht gelesen werden: '+(data.error||''),'err'); return; }
+  buildMappingRows(data.columns, saved, 'mappingModalBody');
+  $('mappingModalInfo').textContent = '';
+  $('mappingModal').style.display='flex';
+}
+
+function closeMappingModal(){
+  $('mappingModal').style.display='none';
+  loadMappingPreview(); // refresh inline summary
+}
+
+async function saveMappingModal(){
+  const overrides = {};
+  document.querySelectorAll('#mappingModalBody select[data-col]').forEach(sel=>{
+    overrides[sel.dataset.col] = sel.value;
+  });
+  const r = await fetch('/api/template/mapping',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(overrides)
+  }).then(r=>r.json());
+  if(r.ok){
+    toast('Spalten-Zuordnung gespeichert');
+    closeMappingModal();
+  } else {
+    $('mappingModalInfo').style.color='var(--danger)';
+    $('mappingModalInfo').textContent='❌ Fehler beim Speichern';
+  }
+}
+
 async function loadMappingPreview(){
   const [data, saved] = await Promise.all([
     fetch('/api/template/preview').then(r=>r.json()),
@@ -1210,32 +1300,9 @@ async function loadMappingPreview(){
   ]);
   if(!data.ok){ $('mappingSection').style.display='none'; return; }
   $('mappingSection').style.display='';
-
-  const FIELDS = ['','row_num','date','start_time','end_time','odo_start','odo_end',
-                  'soc_start','soc_end','kwh_charged','cost_eur','location'];
-  const LABELS = {'':'— nicht zugewiesen —','row_num':'Nr.','date':'Datum',
-    'start_time':'Start Uhrzeit','end_time':'Ende Uhrzeit','odo_start':'KM-Stand Start',
-    'odo_end':'KM-Stand Ende','soc_start':'SOC Start (%)','soc_end':'SOC Ende (%)',
-    'kwh_charged':'Geladene kWh','cost_eur':'Kosten (€)','location':'Standort'};
-
-  const body = $('mappingBody');
-  body.innerHTML = Object.entries(data.columns).map(([ci, col])=>{
-    const effective = (saved && saved[ci] !== undefined) ? saved[ci] : (col.mapped_to || '');
-    return `<tr>
-      <td style="color:var(--mute)">${col.col_letter}</td>
-      <td><strong style="color:#fff">${col.header||'—'}</strong></td>
-      <td>
-        <select data-col="${ci}"
-          style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;
-          color:var(--txt);font-family:var(--mono);font-size:.75rem;padding:5px 8px;width:100%">
-          ${FIELDS.map(f=>`<option value="${f}" ${effective===f?'selected':''}>${LABELS[f]}</option>`).join('')}
-        </select>
-      </td>
-    </tr>`;
-  }).join('');
-
+  buildMappingRows(data.columns, saved, 'mappingBody');
   if(saved && Object.keys(saved).length)
-    $('mappingSaveInfo').textContent='✓ Gespeicherte Zuordnung geladen';
+    $('mappingSaveInfo').textContent='✓ Gespeicherte Zuordnung aktiv';
 }
 
 function getColOverride(){
@@ -1256,7 +1323,7 @@ async function saveMapping(){
   if(r.ok){
     info.style.color='var(--acc)';
     info.textContent='✓ Gespeichert';
-    setTimeout(()=>{ info.style.color='var(--mute)'; info.textContent=''; }, 2500);
+    setTimeout(()=>{ info.style.color='var(--mute)'; info.textContent='✓ Gespeicherte Zuordnung aktiv'; }, 2500);
   } else {
     info.style.color='var(--danger)'; info.textContent='❌ Fehler beim Speichern';
   }
@@ -1267,8 +1334,11 @@ async function uploadTpl(file){
   if(!file.name.endsWith('.xlsx')){ toast('Nur .xlsx Dateien','err'); return; }
   const fd=new FormData(); fd.append('file',file);
   const r=await fetch('/api/template',{method:'POST',body:fd}).then(r=>r.json());
-  if(r.ok){ toast(`Template hochgeladen: ${r.filename}`); refreshTplInfo(); }
-  else toast('Upload fehlgeschlagen: '+r.error,'err');
+  if(r.ok){
+    toast(`Template hochgeladen: ${r.filename}`);
+    await refreshTplInfo();
+    openMappingModal(); // sofort Spalten zuweisen
+  } else toast('Upload fehlgeschlagen: '+r.error,'err');
   $('tplFile').value='';
 }
 
