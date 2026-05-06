@@ -474,16 +474,36 @@ def api_template_preview():
     try:
         import openpyxl
         from export_excel import match_column
-        wb=openpyxl.load_workbook(TEMPLATE_PATH,read_only=True); ws=wb.active; col_map={}
-        for row in ws.iter_rows(values_only=False):
-            filled=[c for c in row if c.value is not None and str(c.value).strip()]
-            if len(filled)>=2:
-                for cell in row:
-                    col_map[cell.column]={"header":str(cell.value) if cell.value else "",
-                                          "mapped_to":match_column(cell.value),"col_letter":cell.column_letter}
+        wb  = openpyxl.load_workbook(TEMPLATE_PATH, read_only=True, data_only=True)
+        ws  = wb.active
+        col_map = {}
+        header_row_idx = None
+        rows = list(ws.iter_rows(values_only=True))
+        for ri, row in enumerate(rows):
+            filled = [v for v in row if v is not None and str(v).strip()]
+            if len(filled) >= 2:
+                header_row_idx = ri
+                for ci, val in enumerate(row, 1):
+                    from openpyxl.utils import get_column_letter
+                    col_map[ci] = {
+                        "header":    str(val) if val is not None else "",
+                        "mapped_to": match_column(val),
+                        "col_letter":get_column_letter(ci),
+                        "sample":    "",
+                    }
                 break
-        wb.close(); return jsonify({"ok":True,"columns":col_map})
-    except Exception as e: return jsonify({"ok":False,"error":str(e)})
+        # grab sample values from next non-empty row
+        if header_row_idx is not None:
+            for row in rows[header_row_idx + 1:]:
+                if any(v is not None for v in row):
+                    for ci, val in enumerate(row, 1):
+                        if ci in col_map and val is not None:
+                            col_map[ci]["sample"] = str(val)
+                    break
+        wb.close()
+        return jsonify({"ok": True, "columns": col_map})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
 
 @app.route("/api/template/mapping", methods=["GET","POST"])
 def api_template_mapping():
