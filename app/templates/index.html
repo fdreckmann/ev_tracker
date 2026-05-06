@@ -457,17 +457,21 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     </div>
     <input type="file" id="tplFile" accept=".xlsx" onchange="uploadTpl(this.files[0])">
 
-    <!-- Column mapping preview -->
+    <!-- Column mapping -->
     <div id="mappingSection" style="display:none;margin-top:20px">
-      <div class="card-title" style="margin-bottom:10px">Spalten-Zuordnung Vorschau</div>
+      <div class="card-title" style="margin-bottom:10px">Spalten-Zuordnung</div>
       <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:10px">
-        Erkannte Spalten aus deiner Vorlage. Nicht erkannte Spalten kannst du manuell zuordnen.
+        Ordne jede Spalte deiner Vorlage einem Datenfeld zu. Die Zuordnung wird gespeichert und beim Export verwendet.
       </p>
       <div class="tbl-wrap">
         <table class="mapping-table" id="mappingTbl">
           <thead><tr><th>Spalte</th><th>Kopfzeile im Template</th><th>Zugeordnet zu</th></tr></thead>
           <tbody id="mappingBody"></tbody>
         </table>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
+        <button class="btn-p" onclick="saveMapping()">💾 Zuordnung speichern</button>
+        <div id="mappingSaveInfo" style="font-size:.75rem;font-family:var(--mono);color:var(--mute)"></div>
       </div>
     </div>
 
@@ -1200,7 +1204,10 @@ async function refreshTplInfo(){
 }
 
 async function loadMappingPreview(){
-  const data = await fetch('/api/template/preview').then(r=>r.json());
+  const [data, saved] = await Promise.all([
+    fetch('/api/template/preview').then(r=>r.json()),
+    fetch('/api/template/mapping').then(r=>r.json()),
+  ]);
   if(!data.ok){ $('mappingSection').style.display='none'; return; }
   $('mappingSection').style.display='';
 
@@ -1212,21 +1219,24 @@ async function loadMappingPreview(){
     'kwh_charged':'Geladene kWh','cost_eur':'Kosten (€)','location':'Standort'};
 
   const body = $('mappingBody');
-  body.innerHTML = Object.entries(data.columns).map(([ci, col])=>`
-    <tr>
+  body.innerHTML = Object.entries(data.columns).map(([ci, col])=>{
+    const effective = (saved && saved[ci] !== undefined) ? saved[ci] : (col.mapped_to || '');
+    return `<tr>
       <td style="color:var(--mute)">${col.col_letter}</td>
       <td><strong style="color:#fff">${col.header||'—'}</strong></td>
       <td>
-        <select onchange="mappingChanged()" data-col="${ci}"
+        <select data-col="${ci}"
           style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;
           color:var(--txt);font-family:var(--mono);font-size:.75rem;padding:5px 8px;width:100%">
-          ${FIELDS.map(f=>`<option value="${f}" ${col.mapped_to===f?'selected':''}>${LABELS[f]}</option>`).join('')}
+          ${FIELDS.map(f=>`<option value="${f}" ${effective===f?'selected':''}>${LABELS[f]}</option>`).join('')}
         </select>
       </td>
-    </tr>`).join('');
-}
+    </tr>`;
+  }).join('');
 
-function mappingChanged(){ /* mapping changes are read at export time */ }
+  if(saved && Object.keys(saved).length)
+    $('mappingSaveInfo').textContent='✓ Gespeicherte Zuordnung geladen';
+}
 
 function getColOverride(){
   const overrides={};
@@ -1234,6 +1244,22 @@ function getColOverride(){
     overrides[sel.dataset.col] = sel.value;
   });
   return Object.keys(overrides).length ? overrides : null;
+}
+
+async function saveMapping(){
+  const overrides = getColOverride() || {};
+  const r = await fetch('/api/template/mapping',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(overrides)
+  }).then(r=>r.json());
+  const info = $('mappingSaveInfo');
+  if(r.ok){
+    info.style.color='var(--acc)';
+    info.textContent='✓ Gespeichert';
+    setTimeout(()=>{ info.style.color='var(--mute)'; info.textContent=''; }, 2500);
+  } else {
+    info.style.color='var(--danger)'; info.textContent='❌ Fehler beim Speichern';
+  }
 }
 
 async function uploadTpl(file){

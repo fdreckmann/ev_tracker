@@ -83,6 +83,7 @@ DEFAULT_CONFIG = {
     "poll_interval":        60,
     "backup_cron":          "",
     "update_channel":       "latest",  # latest | nightly | dev
+    "template_mapping":     {},        # {col_index_str: field_name}
 }
 
 def load_config():
@@ -484,6 +485,16 @@ def api_template_preview():
         wb.close(); return jsonify({"ok":True,"columns":col_map})
     except Exception as e: return jsonify({"ok":False,"error":str(e)})
 
+@app.route("/api/template/mapping", methods=["GET","POST"])
+def api_template_mapping():
+    cfg = load_config()
+    if request.method == "POST":
+        mapping = request.get_json(force=True)
+        cfg["template_mapping"] = mapping
+        save_config(cfg)
+        return jsonify({"ok": True})
+    return jsonify(cfg.get("template_mapping", {}))
+
 @app.route("/api/export")
 def api_export():
     from export_excel import export
@@ -491,6 +502,11 @@ def api_export():
     m=request.args.get("month",datetime.now().month,type=int)
     loc=request.args.get("location","all")
     override=json.loads(request.args.get("col_override","null") or "null")
+    if override is None:
+        cfg = load_config()
+        saved = cfg.get("template_mapping") or {}
+        if saved:
+            override = {k: v for k, v in saved.items() if v}
     return send_file(export(y,m,loc,col_override=override),as_attachment=True)
 
 # ── Backup ────────────────────────────────────────────────────────────────────
