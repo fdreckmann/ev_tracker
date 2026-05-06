@@ -8,6 +8,8 @@ from providers import get_provider, get_all_capabilities, get_config_fields, PRO
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
+APP_VERSION   = "1.1.0"
+
 DATA_DIR      = Path(os.environ.get("DATA_DIR", "/data"))
 CONFIG_FILE   = DATA_DIR / "config.json"
 DB_PATH       = DATA_DIR / "sessions.db"
@@ -343,7 +345,8 @@ def index():
                            has_template=TEMPLATE_PATH.exists(),
                            all_providers=caps,
                            provider_fields=provider_fields,
-                           provider_names={k:v.PROVIDER_NAME for k,v in PROVIDERS.items()})
+                           provider_names={k:v.PROVIDER_NAME for k,v in PROVIDERS.items()},
+                           app_version=APP_VERSION)
 
 @app.route("/api/config", methods=["GET"])
 def api_get_config(): return jsonify(load_config())

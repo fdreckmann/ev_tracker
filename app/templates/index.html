@@ -364,11 +364,9 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <div class="fg"><label>🏠 Heimpreis (€/kWh)</label>
         <input type="number" id="c_price_home" value="{{ cfg.price_per_kwh_home }}" step="0.001" min="0">
         <span class="hint">Dein fixer Stromtarif zuhause</span></div>
-      <div class="fg"><label>Batteriekapazität</label>
-        <select id="c_bat">
-          <option value="77.0" {% if cfg.battery_capacity_kwh==77.0 %}selected{% endif %}>77 kWh — ID.7 Pro</option>
-          <option value="86.0" {% if cfg.battery_capacity_kwh==86.0 %}selected{% endif %}>86 kWh — ID.7 Pro S</option>
-        </select></div>
+      <div class="fg"><label>Batteriekapazität (kWh)</label>
+        <input type="number" id="c_bat" value="{{ cfg.battery_capacity_kwh }}" step="0.1" min="1">
+        <span class="hint">Nutzbare Kapazität deines Fahrzeugs</span></div>
       <div class="fg"><label>DC-Schwellwert (kW)</label>
         <input type="number" id="c_dc_thresh" value="{{ cfg.dc_threshold_kw }}" step="1" min="1">
         <span class="hint">Ladeleistung ab der DC erkannt wird (Standard: 22 kW)</span></div>
@@ -530,44 +528,62 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 ══════════════════════════════════════════════════════ -->
 <div class="panel" id="panel-backup">
 
-  <!-- Update -->
-  <div class="card">
-    <div class="card-title">Software Update</div>
+  <!-- Update + Manual Backup side by side -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px">
 
-    <!-- Channel selector -->
-    <div style="margin-bottom:16px">
-      <label style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:8px">Update-Kanal</label>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <button id="ch_latest"  onclick="setChannel('latest')"  class="btn-s" style="font-size:.78rem;padding:7px 16px">🟢 Latest (stabil)</button>
-        <button id="ch_nightly" onclick="setChannel('nightly')" class="btn-s" style="font-size:.78rem;padding:7px 16px">🌙 Nightly (täglich)</button>
-        <button id="ch_dev"     onclick="setChannel('dev')"     class="btn-s" style="font-size:.78rem;padding:7px 16px">🔧 Dev</button>
+    <!-- Update card -->
+    <div class="card" style="margin-bottom:0">
+      <div class="card-title">Software Update</div>
+
+      <!-- Version -->
+      <div style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
+        Installierte Version: <span style="color:#fff">v{{ app_version }}</span>
       </div>
-      <div id="channelInfo" style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-top:8px"></div>
+
+      <!-- Channel selector -->
+      <div style="margin-bottom:16px">
+        <label style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:8px">Update-Kanal</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button id="ch_latest"  onclick="setChannel('latest')"  class="btn-s" style="font-size:.78rem;padding:7px 16px">🟢 Latest (stabil)</button>
+          <button id="ch_nightly" onclick="setChannel('nightly')" class="btn-s" style="font-size:.78rem;padding:7px 16px">🌙 Nightly (täglich)</button>
+          <button id="ch_dev"     onclick="setChannel('dev')"     class="btn-s" style="font-size:.78rem;padding:7px 16px">🔧 Dev</button>
+        </div>
+        <div id="channelInfo" style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-top:8px"></div>
+      </div>
+
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+        <button class="btn-s" onclick="checkUpdate()">🔍 Auf Updates prüfen</button>
+        <button class="btn-p" id="updateBtn" onclick="doUpdate()" style="display:none">⬆ Update installieren</button>
+      </div>
+      <div id="updateInfo" style="font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-bottom:10px">—</div>
+
+      <!-- Progress bar (hidden until install) -->
+      <div id="updateProgressWrap" style="display:none;margin-bottom:12px">
+        <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-bottom:6px" id="updateProgressLabel">Docker Pull läuft…</div>
+        <div style="background:var(--brd);border-radius:6px;height:8px;overflow:hidden">
+          <div id="updateProgressBar" style="height:100%;width:0%;background:var(--accent);border-radius:6px;transition:width .4s ease"></div>
+        </div>
+      </div>
+
+      <div class="warn-box">
+        ℹ Benötigt Docker Socket Mount: <code>-v /var/run/docker.sock:/var/run/docker.sock</code><br>
+        Daten in <code>/data</code> bleiben beim Update erhalten.
+      </div>
     </div>
 
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
-      <button class="btn-s" onclick="checkUpdate()">🔍 Auf Updates prüfen</button>
-      <button class="btn-p" id="updateBtn" onclick="doUpdate()" style="display:none">⬆ Update installieren</button>
-      <div id="updateInfo" style="font-size:.78rem;font-family:var(--mono);color:var(--mute)">—</div>
+    <!-- Manual backup card -->
+    <div class="card" style="margin-bottom:0">
+      <div class="card-title">Manuelles Backup</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">
+        <button class="btn-p" onclick="createBackup()">💾 Backup jetzt erstellen</button>
+        <button class="btn-s" onclick="document.getElementById('restoreFile').click()">⬆ Backup hochladen & wiederherstellen</button>
+        <input type="file" id="restoreFile" accept=".zip" style="display:none" onchange="uploadRestore(this.files[0])">
+      </div>
+      <div class="warn-box">
+        ⚠ Beim Wiederherstellen werden aktuelle Daten überschrieben. Vorher ein manuelles Backup erstellen empfohlen.
+      </div>
     </div>
 
-    <div class="warn-box">
-      ℹ Benötigt Docker Socket Mount: <code>-v /var/run/docker.sock:/var/run/docker.sock</code><br>
-      Daten in <code>/data</code> bleiben beim Update erhalten.
-    </div>
-  </div>
-
-  <!-- Manual backup + upload -->
-  <div class="card">
-    <div class="card-title">Manuelles Backup</div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">
-      <button class="btn-p" onclick="createBackup()">💾 Backup jetzt erstellen</button>
-      <button class="btn-s" onclick="document.getElementById('restoreFile').click()">⬆ Backup hochladen & wiederherstellen</button>
-      <input type="file" id="restoreFile" accept=".zip" style="display:none" onchange="uploadRestore(this.files[0])">
-    </div>
-    <div class="warn-box">
-      ⚠ Beim Wiederherstellen werden aktuelle Daten überschrieben. Vorher ein manuelles Backup erstellen empfohlen.
-    </div>
   </div>
 
   <!-- Auto backup schedule -->
@@ -1423,13 +1439,31 @@ async function doUpdate(){
   if(!confirm(`Update auf ${_updateChannel} installieren?\n\nDer Container wird kurz neu gestartet.`)) return;
   const btn=$('updateBtn');
   btn.disabled=true; btn.textContent='⏳ Update läuft…';
-  $('updateInfo').textContent='docker pull läuft…';
+  $('updateInfo').textContent='';
+
+  // show progress bar
+  const wrap=$('updateProgressWrap'), bar=$('updateProgressBar'), lbl=$('updateProgressLabel');
+  wrap.style.display='block';
+  bar.style.width='0%';
+
+  const steps=[
+    {w:'15%', t:'Docker Pull startet…', d:400},
+    {w:'35%', t:'Image wird heruntergeladen…', d:1200},
+    {w:'65%', t:'Image wird entpackt…', d:2000},
+    {w:'85%', t:'Container wird neu gestartet…', d:800},
+  ];
+  let si=0;
+  const adv=()=>{ if(si<steps.length){ const s=steps[si++]; bar.style.width=s.w; lbl.textContent=s.t; setTimeout(adv,s.d); }};
+  adv();
+
   const r = await fetch('/api/update/pull',{method:'POST'}).then(r=>r.json());
   if(!r.ok){
+    bar.style.width='0%'; wrap.style.display='none';
     $('updateInfo').innerHTML=`<span style="color:var(--danger)">❌ ${r.error}</span>`;
     btn.disabled=false; btn.textContent='⬆ Update installieren';
     return;
   }
+  bar.style.width='100%'; lbl.textContent='✅ Fertig!';
   $('updateInfo').innerHTML='<span style="color:var(--acc)">✅ Update erfolgreich — Seite lädt in 5s neu…</span>';
   $('updateBadge').style.display='none';
   setTimeout(()=>location.reload(), 5000);
