@@ -2,7 +2,7 @@ name: Build & Push Docker Image
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "dev" ]
   schedule:
     - cron: '0 2 * * *'   # nightly um 02:00 UTC
   workflow_dispatch:
@@ -29,6 +29,8 @@ jobs:
           SHA_SHORT=$(echo ${{ github.sha }} | cut -c1-8)
           if [ "${{ github.event_name }}" = "schedule" ]; then
             echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/ev-tracker:nightly" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref }}" = "refs/heads/dev" ]; then
+            echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/ev-tracker:dev" >> $GITHUB_OUTPUT
           else
             echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/ev-tracker:latest,${{ secrets.DOCKERHUB_USERNAME }}/ev-tracker:$SHA_SHORT" >> $GITHUB_OUTPUT
           fi
