@@ -2,6 +2,7 @@ import os, sys, sqlite3, shutil, json
 from datetime import datetime
 from pathlib import Path
 import openpyxl
+from openpyxl.cell.cell import MergedCell
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
@@ -187,7 +188,6 @@ def export_with_template(year, month, sessions, location, col_override=None):
                 pass
 
     # clear old data rows (skip merged cells — they are read-only in openpyxl)
-    from openpyxl.cell.cell import MergedCell
     for r in range(ds, max_row + 1):
         for cell in ws[r]:
             if not isinstance(cell, MergedCell):
@@ -213,10 +213,11 @@ def export_with_template(year, month, sessions, location, col_override=None):
             if field in NUM_FMT:
                 cell.number_format = NUM_FMT[field]
 
-    # update title cell
+    # update title cell (skip merged cells)
     if header_row > 1:
         for row in ws.iter_rows(max_row=header_row - 1):
             for cell in row:
+                if isinstance(cell, MergedCell): continue
                 if cell.value and any(w in str(cell.value).lower()
                         for w in ("monat","month","bericht","protokoll","ladeprotokoll")):
                     cell.value = f"EV Ladeprotokoll – {ml}"; break
