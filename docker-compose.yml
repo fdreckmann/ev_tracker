@@ -7,6 +7,7 @@ services:
       - "8054:8080"
     volumes:
       - /mnt/user/appdata/ev-tracker:/data
+      - /var/run/docker.sock:/var/run/docker.sock  # für Auto-Update
     environment:
       DATA_DIR: "/data"
       TZ: "Europe/Berlin"

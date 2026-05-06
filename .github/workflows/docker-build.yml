@@ -3,6 +3,8 @@ name: Build & Push Docker Image
 on:
   push:
     branches: [ "main" ]
+  schedule:
+    - cron: '0 2 * * *'   # nightly um 02:00 UTC
   workflow_dispatch:
 
 env:
@@ -21,11 +23,19 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Set tags
+        id: tags
+        run: |
+          SHA_SHORT=$(echo ${{ github.sha }} | cut -c1-8)
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/ev-tracker:nightly" >> $GITHUB_OUTPUT
+          else
+            echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/ev-tracker:latest,${{ secrets.DOCKERHUB_USERNAME }}/ev-tracker:$SHA_SHORT" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/ev-tracker:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/ev-tracker:${{ github.sha }}
+          tags: ${{ steps.tags.outputs.tags }}

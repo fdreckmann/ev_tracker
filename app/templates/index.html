@@ -533,16 +533,27 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   <!-- Update -->
   <div class="card">
     <div class="card-title">Software Update</div>
-    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
+
+    <!-- Channel selector -->
+    <div style="margin-bottom:16px">
+      <label style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:8px">Update-Kanal</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button id="ch_latest"  onclick="setChannel('latest')"  class="btn-s" style="font-size:.78rem;padding:7px 16px">🟢 Latest (stabil)</button>
+        <button id="ch_nightly" onclick="setChannel('nightly')" class="btn-s" style="font-size:.78rem;padding:7px 16px">🌙 Nightly (täglich)</button>
+        <button id="ch_dev"     onclick="setChannel('dev')"     class="btn-s" style="font-size:.78rem;padding:7px 16px">🔧 Dev</button>
+      </div>
+      <div id="channelInfo" style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-top:8px"></div>
+    </div>
+
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
       <button class="btn-s" onclick="checkUpdate()">🔍 Auf Updates prüfen</button>
       <button class="btn-p" id="updateBtn" onclick="doUpdate()" style="display:none">⬆ Update installieren</button>
       <div id="updateInfo" style="font-size:.78rem;font-family:var(--mono);color:var(--mute)">—</div>
     </div>
-    <div id="updateChangelog" style="display:none;background:var(--bg);border:1px solid var(--brd);
-      border-radius:10px;padding:14px 16px;font-size:.75rem;font-family:var(--mono);line-height:1.8">
-    </div>
-    <div class="warn-box" style="margin-top:14px">
-      ℹ Update = <code>git pull</code> + Neustart · Nur möglich wenn Repo auf Unraid geklont ist · Daten bleiben erhalten
+
+    <div class="warn-box">
+      ℹ Benötigt Docker Socket Mount: <code>-v /var/run/docker.sock:/var/run/docker.sock</code><br>
+      Daten in <code>/data</code> bleiben beim Update erhalten.
     </div>
   </div>
 
@@ -1367,51 +1378,59 @@ function closeModal(){
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
 
 // ── Update ───────────────────────────────────────────────────────────────────
-async function checkUpdate(){
-  $('updateInfo').textContent='⏳ Prüfe GitHub…';
+let _updateChannel = '{{ cfg.update_channel or "latest" }}';
+
+const CHANNEL_INFO = {
+  'latest':  '🟢 Stabile Releases — empfohlen für den Produktiveinsatz',
+  'nightly': '🌙 Täglicher automatischer Build — neueste Features, weniger getestet',
+  'dev':     '🔧 Entwicklungsversion — instabil, nur zum Testen',
+};
+
+function setChannel(ch){
+  _updateChannel = ch;
+  ['latest','nightly','dev'].forEach(c=>{
+    const btn=$('ch_'+c);
+    if(btn) btn.style.background = c===ch ? 'var(--accent)' : '';
+    if(btn) btn.style.color = c===ch ? '#041810' : '';
+  });
+  $('channelInfo').textContent = CHANNEL_INFO[ch]||'';
+  // save to config
+  fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({update_channel:ch})});
+  $('updateInfo').textContent='—';
   $('updateBtn').style.display='none';
-  $('updateChangelog').style.display='none';
+}
 
+async function checkUpdate(){
+  $('updateInfo').textContent='⏳ Prüfe Docker Hub…';
+  $('updateBtn').style.display='none';
   const r = await fetch('/api/update/check').then(r=>r.json());
-
   if(!r.ok){
     $('updateInfo').innerHTML=`<span style="color:var(--danger)">❌ ${r.error}</span>`;
     return;
   }
-
   if(r.up_to_date){
-    $('updateInfo').innerHTML=`<span style="color:var(--acc)">✅ Aktuell (${r.local_hash})</span>`;
+    $('updateInfo').innerHTML=`<span style="color:var(--acc)">✅ Aktuell · ${r.tag} · ${r.local_digest}</span>`;
     $('updateBadge').style.display='none';
     return;
   }
-
-  // update available
-  $('updateInfo').innerHTML=`<span style="color:var(--warn)">⬆ ${r.update_count} neues Commit${r.update_count>1?'s':''} verfügbar (${r.local_hash} → ${r.remote_hash})</span>`;
-  $('updateBtn').style.display='';
-  $('updateBadge').style.display='';
-
-  if(r.changelog.length){
-    $('updateChangelog').style.display='';
-    $('updateChangelog').innerHTML='<strong style="color:#fff">Änderungen:</strong><br>' +
-      r.changelog.map(l=>`<span style="color:var(--acc2)">▸</span> ${l}`).join('<br>');
-  }
+  $('updateInfo').innerHTML=`<span style="color:var(--warn)">⬆ Neues Image verfügbar · ${r.tag} · lokal: ${r.local_digest} → remote: ${r.remote_digest}</span>`;
+  if(r.has_socket){ $('updateBtn').style.display=''; $('updateBadge').style.display=''; }
+  else $('updateInfo').innerHTML+='<br><span style="color:var(--mute);font-size:.7rem">⚠ Docker Socket nicht gemountet — manuelles Update nötig</span>';
 }
 
 async function doUpdate(){
-  if(!confirm('Update installieren?\n\nDer Container wird kurz neu gestartet.')) return;
+  if(!confirm(`Update auf ${_updateChannel} installieren?\n\nDer Container wird kurz neu gestartet.`)) return;
   const btn=$('updateBtn');
   btn.disabled=true; btn.textContent='⏳ Update läuft…';
-  $('updateInfo').textContent='git pull wird ausgeführt…';
-
+  $('updateInfo').textContent='docker pull läuft…';
   const r = await fetch('/api/update/pull',{method:'POST'}).then(r=>r.json());
-
   if(!r.ok){
     $('updateInfo').innerHTML=`<span style="color:var(--danger)">❌ ${r.error}</span>`;
     btn.disabled=false; btn.textContent='⬆ Update installieren';
     return;
   }
-
-  $('updateInfo').innerHTML=`<span style="color:var(--acc)">✅ Update erfolgreich — Seite lädt in 5s neu…</span>`;
+  $('updateInfo').innerHTML='<span style="color:var(--acc)">✅ Update erfolgreich — Seite lädt in 5s neu…</span>';
   $('updateBadge').style.display='none';
   setTimeout(()=>location.reload(), 5000);
 }
@@ -1419,10 +1438,11 @@ async function doUpdate(){
 // auto-check on load (silent)
 setTimeout(async ()=>{
   try{
+    setChannel(_updateChannel);
     const r=await fetch('/api/update/check').then(r=>r.json());
     if(r.ok && !r.up_to_date){
       $('updateBadge').style.display='';
-      $('updateBadge').textContent=`⬆ ${r.update_count} Update${r.update_count>1?'s':''} verfügbar`;
+      $('updateBadge').textContent='⬆ Update verfügbar ('+r.tag+')';
     }
   }catch(e){}
 }, 3000);

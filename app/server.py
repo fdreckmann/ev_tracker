@@ -80,6 +80,7 @@ DEFAULT_CONFIG = {
     # System
     "poll_interval":        60,
     "backup_cron":          "",
+    "update_channel":       "latest",  # latest | nightly | dev
 }
 
 def load_config():
@@ -609,42 +610,100 @@ def api_backup_delete(filename):
     if path.exists(): path.unlink()
     return jsonify({"ok":True})
 
-# ── Update ────────────────────────────────────────────────────────────────────
-GIT_REPO=DATA_DIR.parent/"ev-tracker-src"
+# ── Update via Docker Hub ────────────────────────────────────────────────────
+DOCKER_HUB_REPO = "19121412/ev-tracker"
+DOCKER_SOCKET   = "/var/run/docker.sock"
 
-def git_run(*args):
+def get_dockerhub_digest(tag: str) -> str | None:
+    """Fetch latest digest from Docker Hub for given tag."""
     try:
-        r=subprocess.run(["git"]+list(args),cwd=str(GIT_REPO),
-                         capture_output=True,text=True,timeout=30)
-        return r.returncode,(r.stdout+r.stderr).strip()
-    except Exception as e: return 1,str(e)
+        # Get token
+        r = requests.get(
+            f"https://auth.docker.io/token?service=registry.docker.io&scope=repository:{DOCKER_HUB_REPO}:pull",
+            timeout=10)
+        token = r.json().get("token")
+        # Get manifest digest
+        r2 = requests.get(
+            f"https://registry-1.docker.io/v2/{DOCKER_HUB_REPO}/manifests/{tag}",
+            headers={"Authorization": f"Bearer {token}",
+                     "Accept": "application/vnd.docker.distribution.manifest.v2+json"},
+            timeout=10)
+        return r2.headers.get("Docker-Content-Digest","")
+    except Exception as e:
+        log.warning("Docker Hub check error: %s", e)
+        return None
+
+def get_local_digest(tag: str) -> str | None:
+    """Get local image digest via Docker socket."""
+    if not os.path.exists(DOCKER_SOCKET):
+        return None
+    try:
+        import socket, json as _json
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.connect(DOCKER_SOCKET)
+        req = f"GET /images/{DOCKER_HUB_REPO}:{tag}/json HTTP/1.0\r\nHost: localhost\r\n\r\n"
+        sock.send(req.encode())
+        resp = b""
+        while chunk := sock.recv(4096): resp += chunk
+        sock.close()
+        body = resp.split(b"\r\n\r\n", 1)[-1]
+        data = _json.loads(body)
+        digests = data.get("RepoDigests", [])
+        for d in digests:
+            if "@" in d: return d.split("@")[1]
+        return None
+    except Exception as e:
+        log.warning("Docker socket error: %s", e)
+        return None
+
+def docker_pull_and_restart(tag: str):
+    """Pull new image and restart container via Docker socket."""
+    import socket, json as _json
+    # Use docker CLI if available
+    try:
+        r = subprocess.run(["docker","pull",f"{DOCKER_HUB_REPO}:{tag}"],
+                           capture_output=True, text=True, timeout=120)
+        if r.returncode != 0:
+            return False, r.stderr
+        # Get container name
+        container = os.environ.get("HOSTNAME","ev-tracker")
+        # Restart via docker CLI
+        r2 = subprocess.run(["docker","restart",container],
+                            capture_output=True, text=True, timeout=30)
+        return True, "Pull erfolgreich — Container wird neu gestartet"
+    except FileNotFoundError:
+        return False, "Docker CLI nicht verfügbar — Socket-Zugriff nicht möglich"
+    except Exception as e:
+        return False, str(e)
 
 def get_update_info():
-    rc,local_hash=git_run("rev-parse","HEAD")
-    if rc!=0: return {"ok":False,"error":"Kein Git-Repo gefunden"}
-    rc2,_=git_run("fetch","origin","main")
-    if rc2!=0: return {"ok":False,"error":"GitHub nicht erreichbar"}
-    rc3,remote_hash=git_run("rev-parse","origin/main")
-    up_to_date=local_hash[:8]==remote_hash[:8]
-    changelog=[]
-    if not up_to_date:
-        rc4,log_out=git_run("log","--oneline","HEAD..origin/main")
-        if rc4==0 and log_out: changelog=[l.strip() for l in log_out.splitlines() if l.strip()]
-    return {"ok":True,"up_to_date":up_to_date,"local_hash":local_hash[:8],
-            "remote_hash":remote_hash[:8],"changelog":changelog,"update_count":len(changelog)}
+    cfg = load_config()
+    tag = cfg.get("update_channel", "latest")
+    remote = get_dockerhub_digest(tag)
+    local  = get_local_digest(tag)
+    if not remote:
+        return {"ok": False, "error": "Docker Hub nicht erreichbar"}
+    up_to_date = (remote == local) if local else False
+    has_socket = os.path.exists(DOCKER_SOCKET)
+    return {
+        "ok":          True,
+        "up_to_date":  up_to_date,
+        "local_digest": (local or "unbekannt")[:19],
+        "remote_digest": remote[:19],
+        "tag":         tag,
+        "has_socket":  has_socket,
+        "update_count": 0 if up_to_date else 1,
+    }
 
 @app.route("/api/update/check")
 def api_update_check(): return jsonify(get_update_info())
 
-@app.route("/api/update/pull",methods=["POST"])
+@app.route("/api/update/pull", methods=["POST"])
 def api_update_pull():
-    rc,out=git_run("pull","origin","main")
-    if rc!=0: return jsonify({"ok":False,"error":out})
-    def restart():
-        time.sleep(2)
-        os.execv("/usr/local/bin/python",["python","server.py"])
-    threading.Thread(target=restart,daemon=True).start()
-    return jsonify({"ok":True,"output":out,"restarting":True})
+    cfg = load_config()
+    tag = cfg.get("update_channel","latest")
+    ok, msg = docker_pull_and_restart(tag)
+    return jsonify({"ok": ok, "output": msg, "restarting": ok})
 
 if __name__=="__main__":
     init_db(); start_tracker(); schedule_backup()
