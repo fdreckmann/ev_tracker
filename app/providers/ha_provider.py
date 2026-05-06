@@ -123,7 +123,7 @@ class HomeAssistantProvider(BaseProvider):
              "hint":"Hat Vorrang vor Ladeleistungs-Sensor wenn gesetzt"},
             {"id":"charge_type_sensor", "label":"Ladetyp Sensor (AC/DC)",       "type":"text",     "placeholder":"sensor.volkswagen_id_id_7_charge_type",     "required":False,
              "hint":"state muss 'ac' oder 'dc' enthalten"},
-            {"id":"location_sensor",    "label":"Standort Sensor / Device Tracker","type":"text",  "placeholder":"device_tracker.wvwzzzed8se059543_position", "required":False},
+            {"id":"location_sensor",    "label":"Standort Sensor / Device Tracker","type":"text",  "placeholder":"device_tracker.mein_auto_position", "required":False},
             {"id":"home_states",        "label":"'Zuhause' States",             "type":"text",     "placeholder":"home,zuhause",                               "required":False,
              "hint":"Kommagetrennte Werte die als Zuhause gelten"},
             {"id":"dc_threshold_kw",    "label":"DC-Schwellwert (kW)",          "type":"number",   "placeholder":"22",                                         "required":False,

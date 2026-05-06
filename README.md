@@ -1,9 +1,22 @@
-# EV Tracker — VW ID.7 Ladeprotokoll
+# EV Tracker — Ladeprotokoll für Elektrofahrzeuge
 
-Automatisches Ladeprotokoll für den VW ID.7 via Home Assistant WeConnect ID Integration. Läuft als Docker Container auf Unraid.
+Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API oder Home Assistant. Läuft als Docker Container auf Unraid oder jedem anderen Docker-Host.
 
 ![Docker Hub](https://img.shields.io/docker/pulls/19121412/ev-tracker)
 ![GitHub Actions](https://github.com/fdreckmann/ev_tracker/actions/workflows/docker-build.yml/badge.svg)
+
+---
+
+## Unterstützte Fahrzeuge / Provider
+
+| Provider | Laden | SOC | KM | Leistung | Standort | AC/DC |
+|----------|-------|-----|----|----------|----------|-------|
+| 🏠 Home Assistant | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 🚗 VW / Audi / Skoda / Seat | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ |
+| ⚡ Tesla | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 🔵 Volvo | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| 🔷 BMW / Mini | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| ⭐ Mercedes-Benz | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 
 ---
 
@@ -12,15 +25,15 @@ Automatisches Ladeprotokoll für den VW ID.7 via Home Assistant WeConnect ID Int
 | Feature | Beschreibung |
 |---------|-------------|
 | ⚡ Auto-Erkennung | Ladevorgänge werden automatisch erkannt und gespeichert |
-| 🏠 Standort | Unterscheidet Zuhause / Extern via HA device_tracker |
+| 🏠 Standort | Unterscheidet Zuhause / Extern — manuell korrigierbar |
 | 🔌 AC / DC | Ladertyp-Erkennung via Leistungssensor oder HA Sensor |
 | 💰 Preismodell | Heimtarif fix · Extern via ENTSO-E Spotpreis + Aufschlag |
-| ✎ Manuelle Korrektur | Kosten pro Session überschreibbar |
+| ✎ Manuelle Korrektur | Kosten und Standort pro Session überschreibbar |
 | 📊 Dashboard | Live-Status, 4 Charts, Ladekurve pro Session |
-| 📋 Excel Export | Eingebautes Format oder eigenes Template |
+| 📋 Excel Export | Eingebautes Format oder eigenes Template mit Spalten-Mapping |
 | 🔔 Push | Benachrichtigungen via Home Assistant notify |
 | 💾 Backup | Manuell + automatisch per Cron-Zeitplan |
-| ⬆ Auto-Update | Update-Check direkt im Web UI |
+| ⬆ Auto-Update | Update direkt im Web UI — Latest, Nightly oder Dev Kanal |
 
 ---
 
@@ -40,13 +53,14 @@ cat > /boot/config/plugins/dockerMan/templates-user/ev-tracker.xml << 'XMLEOF'
   <Registry>https://hub.docker.com/r/19121412/ev-tracker</Registry>
   <Network>bridge</Network>
   <Privileged>false</Privileged>
-  <Overview>EV Ladeprotokoll für VW ID.7 via Home Assistant WeConnect.</Overview>
+  <Overview>EV Ladeprotokoll für Elektrofahrzeuge via Home Assistant oder direkter Hersteller-API.</Overview>
   <Category>Tools:</Category>
   <WebUI>http://[IP]:[PORT:8054]/</WebUI>
   <Icon>https://raw.githubusercontent.com/home-assistant/brands/master/custom_integrations/volkswagen_we_connect_id/icon.png</Icon>
   <ExtraParams>--restart unless-stopped</ExtraParams>
   <Config Name="Web UI Port" Target="8080" Default="8054" Mode="tcp" Type="Port" Display="always" Required="true" Mask="false">8054</Config>
   <Config Name="Daten-Verzeichnis" Target="/data" Default="/mnt/user/appdata/ev-tracker" Mode="rw" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/ev-tracker</Config>
+  <Config Name="Docker Socket" Target="/var/run/docker.sock" Default="/var/run/docker.sock" Mode="rw" Type="Path" Display="always" Required="false" Mask="false">/var/run/docker.sock</Config>
   <Config Name="DATA_DIR" Target="DATA_DIR" Default="/data" Type="Variable" Display="advanced" Required="true" Mask="false">/data</Config>
   <Config Name="TZ" Target="TZ" Default="Europe/Berlin" Type="Variable" Display="always" Required="true" Mask="false">Europe/Berlin</Config>
 </Container>
@@ -55,7 +69,7 @@ XMLEOF
 
 ### Schritt 2 — Container starten
 
-Browser neu laden (F5) → Unraid → Docker → **"Add Container"** → Template **"ev-tracker"** auswählen → **Apply**
+Browser neu laden (F5) → Unraid → Docker → **"Add Container"** → Template **"ev-tracker"** → **Apply**
 
 ### Schritt 3 — Web UI öffnen
 
@@ -63,25 +77,40 @@ Browser neu laden (F5) → Unraid → Docker → **"Add Container"** → Templat
 http://<unraid-ip>:8054
 ```
 
-→ **Konfiguration** Tab → HA URL + Token eingeben → Sensoren prüfen → Speichern
+→ **Konfiguration** Tab → Provider wählen → Verbindung einrichten → Speichern
 
 ---
 
-## Konfiguration
+## Installation (normales Docker)
 
-### Home Assistant Sensoren (VW ID.7 WeConnect)
+```bash
+docker run -d --name ev-tracker \
+  --restart unless-stopped \
+  -p 8054:8080 \
+  -v $(pwd)/data:/data \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -e DATA_DIR=/data \
+  -e TZ=Europe/Berlin \
+  19121412/ev-tracker:latest
+```
 
-| Sensor | Entity-ID |
-|--------|-----------|
-| Ladestatus | `sensor.volkswagen_id_id_7_charging_state` |
-| Kilometerstand | `sensor.volkswagen_id_id_7_mileage` |
-| SOC (%) | `sensor.volkswagen_id_id_7_state_of_charge` |
-| Ladeleistung (kW) | `sensor.volkswagen_id_id_7_charge_power` |
-| Standort | `device_tracker.volkswagen_id7_position` |
+> Der Docker Socket `/var/run/docker.sock` ist optional — wird nur für den Auto-Update Button im Web UI benötigt.
 
-> Entity-IDs in HA → Einstellungen → Entitäten → "volkswagen" suchen
+---
 
-### Preismodell
+## Update-Kanäle
+
+| Kanal | Beschreibung | Wann |
+|-------|-------------|------|
+| 🟢 `latest` | Stabile Releases | Bei jedem Push auf `main` |
+| 🌙 `nightly` | Automatischer Build | Täglich um 02:00 UTC |
+| 🔧 `dev` | Entwicklungsversion | Manuell |
+
+Update-Kanal wählbar im Web UI → **Backup Tab** → **Software Update**.
+
+---
+
+## Preismodell
 
 ```
 🏠 Zuhause  → Fixer Heimtarif (z.B. 0.30 €/kWh)
@@ -90,16 +119,16 @@ http://<unraid-ip>:8054
 ✎ Manuell   → Jede Session einzeln korrigierbar
 ```
 
-### ENTSO-E API Key (optional, für automatische Strompreise)
+### ENTSO-E API Key (optional)
 
 1. Registrieren auf [transparency.entsoe.eu](https://transparency.entsoe.eu)
 2. Email an `transparency@entsoe.eu` — Betreff: "Restful API access"
-3. Key kommt per Email (wenige Tage)
-4. In der Web UI unter Konfiguration → ENTSO-E eintragen
+3. Key per Email erhalten (wenige Tage)
+4. Im Web UI → Konfiguration → ENTSO-E eintragen
 
 ---
 
-## Dateistruktur auf Unraid
+## Dateistruktur
 
 ```
 /mnt/user/appdata/ev-tracker/
@@ -112,38 +141,19 @@ http://<unraid-ip>:8054
 
 ---
 
-## Updates
-
-Updates werden automatisch eingespielt wenn **Auto Update** in Unraid aktiviert ist:
-
-> Unraid → Docker → ev-tracker → Edit → Auto Update: **Yes**
-
-Oder manuell über das Web UI → **Backup Tab** → **"Auf Updates prüfen"**
-
----
-
 ## Entwicklung
 
 ```bash
-# Repo klonen
 git clone https://github.com/fdreckmann/ev_tracker.git
 cd ev_tracker
-
-# Lokal bauen und testen
 docker build -t ev-tracker:latest .
 docker run -d --name ev-tracker -p 8054:8080 \
-  -v $(pwd)/data:/data \
-  -e DATA_DIR=/data \
-  -e TZ=Europe/Berlin \
+  -v $(pwd)/data:/data -e DATA_DIR=/data -e TZ=Europe/Berlin \
   ev-tracker:latest
 
 # Änderungen pushen → GitHub Actions baut automatisch
-git add .
-git commit -m "Beschreibung der Änderung"
-git push
+git add . && git commit -m "Beschreibung" && git push
 ```
-
-Bei jedem Push auf `main` wird automatisch ein neues Docker Image gebaut und auf Docker Hub veröffentlicht.
 
 ---
 
@@ -153,5 +163,5 @@ Bei jedem Push auf `main` wird automatisch ein neues Docker Image gebaut und auf
 - **Datenbank:** SQLite
 - **Frontend:** Vanilla JS + Chart.js
 - **Excel:** openpyxl
-- **Container:** Docker auf Unraid
 - **CI/CD:** GitHub Actions → Docker Hub
+- **Hosting:** Docker auf Unraid
