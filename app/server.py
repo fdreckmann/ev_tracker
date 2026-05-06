@@ -681,14 +681,14 @@ def get_local_digest(tag: str) -> str | None:
         return None
 
 def docker_socket_request(method: str, path: str, body: dict = None) -> dict:
-    """Make HTTP request to Docker socket."""
+    """Make HTTP request to Docker socket using HTTP/1.0 so connection closes after response."""
     import socket as _socket, json as _json
     sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
     sock.settimeout(30)
     sock.connect(DOCKER_SOCKET)
     body_bytes = _json.dumps(body).encode() if body else b""
     headers = (
-        f"{method} {path} HTTP/1.1\r\n"
+        f"{method} {path} HTTP/1.0\r\n"
         f"Host: localhost\r\n"
         f"Content-Type: application/json\r\n"
         f"Content-Length: {len(body_bytes)}\r\n"
