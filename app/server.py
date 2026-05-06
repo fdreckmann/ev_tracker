@@ -703,12 +703,11 @@ def docker_socket_request(method: str, path: str, body: dict = None) -> dict:
     return {"status": status, "data": data}
 
 def docker_pull_and_restart(tag: str):
-    """Pull new image and restart container via Docker socket."""
+    """Pull new image, then stop/remove/recreate container so the new image is used."""
     if not os.path.exists(DOCKER_SOCKET):
         return False, "Docker Socket nicht gefunden"
     try:
-        import _thread
-        # 1. Create image pull (POST /images/create)
+        # 1. Pull new image
         result = docker_socket_request(
             "POST",
             f"/images/create?fromImage={DOCKER_HUB_REPO}&tag={tag}"
@@ -716,26 +715,48 @@ def docker_pull_and_restart(tag: str):
         if result["status"] not in (200, 204):
             return False, f"Pull fehlgeschlagen: HTTP {result['status']}"
 
-        # 2. Find our container by name
+        # 2. Find container and read its full config
         containers = docker_socket_request("GET", "/containers/json?all=1")
         container_id = None
+        container_name = None
         for c in containers.get("data", []):
             names = c.get("Names", [])
             if any("ev-tracker" in n for n in names):
                 container_id = c["Id"]
+                container_name = names[0].lstrip("/") if names else "ev-tracker"
                 break
 
         if not container_id:
             return False, "Container 'ev-tracker' nicht gefunden"
 
-        # 3. Restart container after short delay
-        def delayed_restart():
+        inspect = docker_socket_request("GET", f"/containers/{container_id}/json")
+        if inspect["status"] != 200:
+            return False, "Container-Konfiguration nicht lesbar"
+
+        old_cfg = inspect["data"]
+        host_config = old_cfg.get("HostConfig", {})
+        env         = old_cfg.get("Config", {}).get("Env", [])
+        labels      = old_cfg.get("Config", {}).get("Labels", {})
+
+        def recreate():
             import time as _time
             _time.sleep(2)
-            docker_socket_request("POST", f"/containers/{container_id}/restart")
-        threading.Thread(target=delayed_restart, daemon=True).start()
+            docker_socket_request("POST",   f"/containers/{container_id}/stop")
+            _time.sleep(1)
+            docker_socket_request("DELETE", f"/containers/{container_id}")
+            _time.sleep(1)
+            new = docker_socket_request(
+                "POST",
+                f"/containers/create?name={container_name}",
+                {"Image": f"{DOCKER_HUB_REPO}:{tag}",
+                 "Env": env, "Labels": labels, "HostConfig": host_config}
+            )
+            new_id = (new.get("data") or {}).get("Id")
+            if new_id:
+                docker_socket_request("POST", f"/containers/{new_id}/start")
 
-        return True, f"Pull erfolgreich · Container wird neu gestartet"
+        threading.Thread(target=recreate, daemon=True).start()
+        return True, "Pull erfolgreich · Container wird neu erstellt"
     except Exception as e:
         return False, str(e)
 
