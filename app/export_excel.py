@@ -139,7 +139,8 @@ def export_with_template(year, month, sessions, location, col_override=None):
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
     out = EXPORT_DIR / f"EV_Ladeprotokoll_{year:04d}-{month:02d}{suffix}.xlsx"
     shutil.copy(TEMPLATE_PATH, out)
-    wb = openpyxl.load_workbook(out); ws = wb.active
+    wb = openpyxl.load_workbook(out, keep_vba=False)
+    ws = wb.active
 
     # detect header row
     header_row = None; col_map = {}
@@ -155,35 +156,40 @@ def export_with_template(year, month, sessions, location, col_override=None):
     # apply manual overrides from UI mapping
     if col_override:
         for col_str, field in col_override.items():
-            col_idx = int(col_str)
+            try: col_idx = int(col_str)
+            except (ValueError, TypeError): continue
             if field:
                 col_map[col_idx] = field
             elif col_idx in col_map:
                 del col_map[col_idx]
 
     if not header_row or not col_map:
-        header_row = ws.max_row
+        header_row = ws.max_row or 1
         col_map    = {1:"row_num",2:"date",3:"start_time",4:"end_time",
                       5:"odo_start",6:"odo_end",7:"kwh_charged",8:"cost_eur",9:"location"}
 
-    ds = header_row + 1
+    ds       = header_row + 1
+    max_row  = ws.max_row or 0
 
-    # capture template row styles
+    # capture template row styles from first data row
     tstyles = {}
-    if ws.max_row >= ds:
+    if max_row >= ds:
         for ci in col_map:
             c = ws.cell(row=ds, column=ci)
-            tstyles[ci] = {
-                "font":      c.font.copy()      if c.font      else None,
-                "fill":      c.fill.copy()      if c.fill      else None,
-                "border":    c.border.copy()    if c.border    else None,
-                "alignment": c.alignment.copy() if c.alignment else None,
-            }
+            try:
+                tstyles[ci] = {
+                    "font":      c.font.copy()      if c.font      else None,
+                    "fill":      c.fill.copy()      if c.fill      else None,
+                    "border":    c.border.copy()    if c.border    else None,
+                    "alignment": c.alignment.copy() if c.alignment else None,
+                }
+            except Exception:
+                pass
 
-    # clear old data
-    for r in range(ds, ws.max_row + 1):
-        for col in ws.iter_cols(min_row=r, max_row=r):
-            for cell in col: cell.value = None
+    # clear old data rows
+    for r in range(ds, max_row + 1):
+        for cell in ws[r]:
+            cell.value = None
 
     # write data
     for i, s in enumerate(sessions):
@@ -192,18 +198,23 @@ def export_with_template(year, month, sessions, location, col_override=None):
             cell = ws.cell(row=tr, column=ci, value=rd.get(field))
             if ci in tstyles:
                 st = tstyles[ci]
-                if st["font"]:      cell.font      = st["font"]
-                if st["fill"]:      cell.fill      = st["fill"]
-                if st["border"]:    cell.border    = st["border"]
-                if st["alignment"]: cell.alignment = st["alignment"]
-            if field in NUM_FMT: cell.number_format = NUM_FMT[field]
+                try:
+                    if st["font"]:      cell.font      = st["font"]
+                    if st["fill"]:      cell.fill      = st["fill"]
+                    if st["border"]:    cell.border    = st["border"]
+                    if st["alignment"]: cell.alignment = st["alignment"]
+                except Exception:
+                    pass
+            if field in NUM_FMT:
+                cell.number_format = NUM_FMT[field]
 
     # update title cell
-    for row in ws.iter_rows(max_row=max(1, header_row - 1)):
-        for cell in row:
-            if cell.value and any(w in str(cell.value).lower()
-                    for w in ("monat","month","bericht","protokoll","ladeprotokoll")):
-                cell.value = f"EV Ladeprotokoll – {ml}"; break
+    if header_row > 1:
+        for row in ws.iter_rows(max_row=header_row - 1):
+            for cell in row:
+                if cell.value and any(w in str(cell.value).lower()
+                        for w in ("monat","month","bericht","protokoll","ladeprotokoll")):
+                    cell.value = f"EV Ladeprotokoll – {ml}"; break
 
     wb.save(out)
     print(f"✅ Template-Export: {out} ({len(sessions)} Sessions)")
