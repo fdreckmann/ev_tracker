@@ -187,20 +187,21 @@ def export_with_template(year, month, sessions, location, col_override=None):
             except Exception:
                 pass
 
-    # clear old data rows (skip merged cells — they are read-only in openpyxl)
+    def safe_set(cell, value):
+        try: cell.value = value
+        except (AttributeError, TypeError): pass
+
+    # clear old data rows
     for r in range(ds, max_row + 1):
         for cell in ws[r]:
-            if not isinstance(cell, MergedCell):
-                cell.value = None
+            safe_set(cell, None)
 
     # write data
     for i, s in enumerate(sessions):
         rd = to_row(s, i + 1); tr = ds + i
         for ci, field in col_map.items():
             cell = ws.cell(row=tr, column=ci)
-            if isinstance(cell, MergedCell):
-                continue
-            cell.value = rd.get(field)
+            safe_set(cell, rd.get(field))
             if ci in tstyles:
                 st = tstyles[ci]
                 try:
@@ -210,17 +211,18 @@ def export_with_template(year, month, sessions, location, col_override=None):
                     if st["alignment"]: cell.alignment = st["alignment"]
                 except Exception:
                     pass
-            if field in NUM_FMT:
-                cell.number_format = NUM_FMT[field]
+            try:
+                if field in NUM_FMT: cell.number_format = NUM_FMT[field]
+            except Exception:
+                pass
 
-    # update title cell (skip merged cells)
+    # update title cell
     if header_row > 1:
         for row in ws.iter_rows(max_row=header_row - 1):
             for cell in row:
-                if isinstance(cell, MergedCell): continue
                 if cell.value and any(w in str(cell.value).lower()
                         for w in ("monat","month","bericht","protokoll","ladeprotokoll")):
-                    cell.value = f"EV Ladeprotokoll – {ml}"; break
+                    safe_set(cell, f"EV Ladeprotokoll – {ml}"); break
 
     wb.save(out)
     print(f"✅ Template-Export: {out} ({len(sessions)} Sessions)")
