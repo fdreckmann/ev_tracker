@@ -656,23 +656,67 @@ def get_local_digest(tag: str) -> str | None:
         log.warning("Docker socket error: %s", e)
         return None
 
+def docker_socket_request(method: str, path: str, body: dict = None) -> dict:
+    """Make HTTP request to Docker socket."""
+    import socket as _socket, json as _json
+    sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    sock.settimeout(30)
+    sock.connect(DOCKER_SOCKET)
+    body_bytes = _json.dumps(body).encode() if body else b""
+    headers = (
+        f"{method} {path} HTTP/1.1\r\n"
+        f"Host: localhost\r\n"
+        f"Content-Type: application/json\r\n"
+        f"Content-Length: {len(body_bytes)}\r\n"
+        f"\r\n"
+    )
+    sock.send(headers.encode() + body_bytes)
+    resp = b""
+    while True:
+        chunk = sock.recv(4096)
+        if not chunk: break
+        resp += chunk
+    sock.close()
+    header, _, body_raw = resp.partition(b"\r\n\r\n")
+    status = int(header.split(b" ")[1])
+    try: data = _json.loads(body_raw)
+    except: data = {}
+    return {"status": status, "data": data}
+
 def docker_pull_and_restart(tag: str):
     """Pull new image and restart container via Docker socket."""
-    import socket, json as _json
-    # Use docker CLI if available
+    if not os.path.exists(DOCKER_SOCKET):
+        return False, "Docker Socket nicht gefunden"
     try:
-        r = subprocess.run(["docker","pull",f"{DOCKER_HUB_REPO}:{tag}"],
-                           capture_output=True, text=True, timeout=120)
-        if r.returncode != 0:
-            return False, r.stderr
-        # Get container name
-        container = os.environ.get("HOSTNAME","ev-tracker")
-        # Restart via docker CLI
-        r2 = subprocess.run(["docker","restart",container],
-                            capture_output=True, text=True, timeout=30)
-        return True, "Pull erfolgreich — Container wird neu gestartet"
-    except FileNotFoundError:
-        return False, "Docker CLI nicht verfügbar — Socket-Zugriff nicht möglich"
+        import _thread
+        # 1. Create image pull (POST /images/create)
+        result = docker_socket_request(
+            "POST",
+            f"/images/create?fromImage={DOCKER_HUB_REPO}&tag={tag}"
+        )
+        if result["status"] not in (200, 204):
+            return False, f"Pull fehlgeschlagen: HTTP {result['status']}"
+
+        # 2. Find our container by name
+        containers = docker_socket_request("GET", "/containers/json?all=1")
+        container_id = None
+        for c in containers.get("data", []):
+            names = c.get("Names", [])
+            if any("ev-tracker" in n for n in names):
+                container_id = c["Id"]
+                break
+
+        if not container_id:
+            return False, "Container 'ev-tracker' nicht gefunden"
+
+        # 3. Restart container after short delay
+        def delayed_restart():
+            import time as _time
+            _time.sleep(2)
+            docker_socket_request("POST", f"/containers/{container_id}/restart")
+        threading.Thread(target=delayed_restart, daemon=True).start()
+
+        return True, f"Pull erfolgreich · Container wird neu gestartet"
     except Exception as e:
         return False, str(e)
 
