@@ -703,19 +703,12 @@ def docker_socket_request(method: str, path: str, body: dict = None) -> dict:
     return {"status": status, "data": data}
 
 def docker_pull_and_restart(tag: str):
-    """Pull new image, then stop/remove/recreate container so the new image is used."""
+    """Pull new image in background, then stop/remove/recreate container."""
     if not os.path.exists(DOCKER_SOCKET):
         return False, "Docker Socket nicht gefunden"
-    try:
-        # 1. Pull new image
-        result = docker_socket_request(
-            "POST",
-            f"/images/create?fromImage={DOCKER_HUB_REPO}&tag={tag}"
-        )
-        if result["status"] not in (200, 204):
-            return False, f"Pull fehlgeschlagen: HTTP {result['status']}"
 
-        # 2. Find container and read its full config
+    # Read container config before starting background thread
+    try:
         containers = docker_socket_request("GET", "/containers/json?all=1")
         container_id = None
         container_name = None
@@ -725,7 +718,6 @@ def docker_pull_and_restart(tag: str):
                 container_id = c["Id"]
                 container_name = names[0].lstrip("/") if names else "ev-tracker"
                 break
-
         if not container_id:
             return False, "Container 'ev-tracker' nicht gefunden"
 
@@ -733,14 +725,42 @@ def docker_pull_and_restart(tag: str):
         if inspect["status"] != 200:
             return False, "Container-Konfiguration nicht lesbar"
 
-        old_cfg = inspect["data"]
+        old_cfg     = inspect["data"]
         host_config = old_cfg.get("HostConfig", {})
         env         = old_cfg.get("Config", {}).get("Env", [])
         labels      = old_cfg.get("Config", {}).get("Labels", {})
+    except Exception as e:
+        return False, str(e)
 
-        def recreate():
-            import time as _time
-            _time.sleep(2)
+    def pull_and_recreate():
+        import time as _time
+        import socket as _socket, json as _json
+        try:
+            # Pull with long timeout (no limit via raw socket)
+            sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+            sock.settimeout(600)
+            sock.connect(DOCKER_SOCKET)
+            req = (f"POST /images/create?fromImage={DOCKER_HUB_REPO}&tag={tag} HTTP/1.1\r\n"
+                   f"Host: localhost\r\nContent-Length: 0\r\n\r\n")
+            sock.send(req.encode())
+            # drain response (streaming JSON lines from Docker)
+            buf = b""
+            while True:
+                chunk = sock.recv(4096)
+                if not chunk: break
+                buf += chunk
+            sock.close()
+            header = buf.split(b"\r\n")[0]
+            status = int(header.split(b" ")[1]) if len(header.split(b" ")) > 1 else 0
+            if status not in (200, 204):
+                log.error("Pull fehlgeschlagen: HTTP %s", status)
+                return
+        except Exception as e:
+            log.error("Pull error: %s", e)
+            return
+
+        _time.sleep(1)
+        try:
             docker_socket_request("POST",   f"/containers/{container_id}/stop")
             _time.sleep(1)
             docker_socket_request("DELETE", f"/containers/{container_id}")
@@ -754,11 +774,11 @@ def docker_pull_and_restart(tag: str):
             new_id = (new.get("data") or {}).get("Id")
             if new_id:
                 docker_socket_request("POST", f"/containers/{new_id}/start")
+        except Exception as e:
+            log.error("Recreate error: %s", e)
 
-        threading.Thread(target=recreate, daemon=True).start()
-        return True, "Pull erfolgreich · Container wird neu erstellt"
-    except Exception as e:
-        return False, str(e)
+    threading.Thread(target=pull_and_recreate, daemon=True).start()
+    return True, "Update läuft im Hintergrund · Seite lädt neu sobald der Container bereit ist"
 
 def get_update_info():
     cfg = load_config()

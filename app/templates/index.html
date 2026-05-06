@@ -1498,10 +1498,19 @@ async function doUpdate(){
     btn.disabled=false; btn.textContent='⬆ Update installieren';
     return;
   }
-  bar.style.width='100%'; lbl.textContent='✅ Fertig!';
-  $('updateInfo').innerHTML='<span style="color:var(--acc)">✅ Update erfolgreich — Seite lädt in 5s neu…</span>';
+  bar.style.width='90%'; lbl.textContent='Image wird heruntergeladen…';
+  $('updateInfo').innerHTML='<span style="color:var(--mute)">⏳ Pull läuft im Hintergrund — warte auf Neustart…</span>';
   $('updateBadge').style.display='none';
-  setTimeout(()=>location.reload(), 5000);
+  // poll until server is back up
+  const poll=async()=>{
+    try{
+      await fetch('/api/status',{cache:'no-store'});
+      bar.style.width='100%'; lbl.textContent='✅ Fertig!';
+      $('updateInfo').innerHTML='<span style="color:var(--acc)">✅ Update erfolgreich — Seite lädt neu…</span>';
+      setTimeout(()=>location.reload(), 1500);
+    } catch(_){ setTimeout(poll, 2000); }
+  };
+  setTimeout(poll, 8000);
 }
 
 // auto-check on load (silent)
