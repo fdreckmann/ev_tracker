@@ -84,6 +84,7 @@ DEFAULT_CONFIG = {
     "backup_cron":          "",
     "update_channel":       "latest",  # latest | nightly | dev
     "template_mapping":     {},        # {col_index_str: field_name}
+    "template_start_row":   None,      # row number where data starts (1-based)
 }
 
 def load_config():
@@ -473,35 +474,43 @@ def api_template_preview():
     if not TEMPLATE_PATH.exists(): return jsonify({"ok":False,"error":"Kein Template"})
     try:
         import openpyxl
+        from openpyxl.utils import get_column_letter
         from export_excel import match_column
         wb  = openpyxl.load_workbook(TEMPLATE_PATH, read_only=True, data_only=True)
         ws  = wb.active
-        col_map = {}
-        header_row_idx = None
-        rows = list(ws.iter_rows(values_only=True))
-        for ri, row in enumerate(rows):
-            filled = [v for v in row if v is not None and str(v).strip()]
-            if len(filled) >= 2:
-                header_row_idx = ri
-                for ci, val in enumerate(row, 1):
-                    from openpyxl.utils import get_column_letter
-                    col_map[ci] = {
-                        "header":    str(val) if val is not None else "",
-                        "mapped_to": match_column(val),
-                        "col_letter":get_column_letter(ci),
-                        "sample":    "",
-                    }
-                break
-        # grab sample values from next non-empty row
-        if header_row_idx is not None:
-            for row in rows[header_row_idx + 1:]:
-                if any(v is not None for v in row):
-                    for ci, val in enumerate(row, 1):
-                        if ci in col_map and val is not None:
-                            col_map[ci]["sample"] = str(val)
-                    break
+        all_rows = []
+        max_col  = 0
+        raw_rows = list(ws.iter_rows(values_only=True, max_row=40))
+        for row in raw_rows:
+            last = max((i for i,v in enumerate(row) if v is not None), default=-1)
+            if last >= 0: max_col = max(max_col, last + 1)
+        max_col = max(max_col, 1)
+        for ri, row in enumerate(raw_rows):
+            cells = []
+            for ci in range(max_col):
+                v = row[ci] if ci < len(row) else None
+                cells.append(str(v) if v is not None else "")
+            all_rows.append({"row": ri + 1, "cells": cells})
+        # auto-detect header row (first row with >= 2 filled cells)
+        auto_header = None
+        for r in all_rows:
+            if sum(1 for c in r["cells"] if c.strip()) >= 2:
+                auto_header = r["row"]; break
+        # build column letters
+        col_letters = [get_column_letter(i+1) for i in range(max_col)]
+        # build column mapping suggestions from auto-header row
+        col_suggestions = {}
+        if auto_header:
+            hrow = next(r for r in all_rows if r["row"] == auto_header)
+            for ci, val in enumerate(hrow["cells"], 1):
+                col_suggestions[ci] = {
+                    "header": val,
+                    "mapped_to": match_column(val) if val else None,
+                    "col_letter": get_column_letter(ci),
+                }
         wb.close()
-        return jsonify({"ok": True, "columns": col_map})
+        return jsonify({"ok": True, "rows": all_rows, "col_letters": col_letters,
+                        "auto_header": auto_header, "col_suggestions": col_suggestions})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 
@@ -509,11 +518,13 @@ def api_template_preview():
 def api_template_mapping():
     cfg = load_config()
     if request.method == "POST":
-        mapping = request.get_json(force=True)
-        cfg["template_mapping"] = mapping
+        body = request.get_json(force=True)
+        cfg["template_mapping"]   = body.get("mapping", {})
+        cfg["template_start_row"] = body.get("start_row")
         save_config(cfg)
         return jsonify({"ok": True})
-    return jsonify(cfg.get("template_mapping", {}))
+    return jsonify({"mapping": cfg.get("template_mapping", {}),
+                    "start_row": cfg.get("template_start_row")})
 
 @app.route("/api/export")
 def api_export():
@@ -522,13 +533,14 @@ def api_export():
     m=request.args.get("month",datetime.now().month,type=int)
     loc=request.args.get("location","all")
     override=json.loads(request.args.get("col_override","null") or "null")
+    cfg = load_config()
     if override is None:
-        cfg = load_config()
         saved = cfg.get("template_mapping") or {}
         if saved:
             override = {k: v for k, v in saved.items() if v}
+    start_row = cfg.get("template_start_row")
     try:
-        path = export(y, m, loc, col_override=override)
+        path = export(y, m, loc, col_override=override, start_row=start_row)
         return send_file(path, as_attachment=True)
     except Exception as e:
         log.exception("Export fehlgeschlagen")

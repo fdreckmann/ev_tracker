@@ -134,7 +134,7 @@ def row_bg(s):
     return C_ALT
 
 # ── Template-based export ─────────────────────────────────────────────────────
-def export_with_template(year, month, sessions, location, col_override=None):
+def export_with_template(year, month, sessions, location, col_override=None, start_row=None):
     ml     = datetime(year, month, 1).strftime("%B %Y")
     suffix = f"_{location}" if location != "all" else ""
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
@@ -143,33 +143,41 @@ def export_with_template(year, month, sessions, location, col_override=None):
     wb = openpyxl.load_workbook(out, keep_vba=False)
     ws = wb.active
 
-    # detect header row
-    header_row = None; col_map = {}
-    for row in ws.iter_rows():
-        filled = [c for c in row if c.value is not None and str(c.value).strip()]
-        if len(filled) >= 2:
-            header_row = row[0].row
-            for cell in row:
-                f = match_column(cell.value)
-                if f: col_map[cell.column] = f
-            break
-
-    # apply manual overrides from UI mapping
+    # build column map from explicit mapping (col_override already contains saved mapping)
+    col_map = {}
     if col_override:
         for col_str, field in col_override.items():
             try: col_idx = int(col_str)
             except (ValueError, TypeError): continue
             if field:
                 col_map[col_idx] = field
-            elif col_idx in col_map:
-                del col_map[col_idx]
 
-    if not header_row or not col_map:
-        header_row = ws.max_row or 1
-        col_map    = {1:"row_num",2:"date",3:"start_time",4:"end_time",
-                      5:"odo_start",6:"odo_end",7:"kwh_charged",8:"cost_eur",9:"location"}
+    # fallback: auto-detect from header keywords if no mapping provided
+    if not col_map:
+        for row in ws.iter_rows():
+            filled = [c for c in row if c.value is not None and str(c.value).strip()]
+            if len(filled) >= 2:
+                for cell in row:
+                    f = match_column(cell.value)
+                    if f: col_map[cell.column] = f
+                break
 
-    ds       = header_row + 1
+    # determine data start row
+    if start_row:
+        ds = int(start_row)
+    else:
+        # auto-detect: first row with >= 2 filled cells + 1
+        detected = None
+        for row in ws.iter_rows():
+            filled = [c for c in row if c.value is not None and str(c.value).strip()]
+            if len(filled) >= 2:
+                detected = row[0].row; break
+        ds = (detected + 1) if detected else (ws.max_row or 1)
+
+    if not col_map:
+        col_map = {1:"row_num",2:"date",3:"start_time",4:"end_time",
+                   5:"odo_start",6:"odo_end",7:"kwh_charged",8:"cost_eur",9:"location"}
+
     max_row  = ws.max_row or 0
 
     # capture template row styles from first data row
@@ -338,10 +346,10 @@ def export_builtin(year, month, sessions, location):
     return str(out)
 
 # ── Entry point ───────────────────────────────────────────────────────────────
-def export(year, month, location="all", col_override=None):
+def export(year, month, location="all", col_override=None, start_row=None):
     sessions = fetch_sessions(year, month, location)
     if TEMPLATE_PATH.exists():
-        return export_with_template(year, month, sessions, location, col_override)
+        return export_with_template(year, month, sessions, location, col_override, start_row)
     return export_builtin(year, month, sessions, location)
 
 if __name__ == "__main__":
