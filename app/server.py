@@ -2,7 +2,7 @@ import os, json, time, sqlite3, logging, threading, requests
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file, make_response
 from providers import get_provider, get_all_capabilities, get_config_fields, PROVIDERS
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -343,12 +343,16 @@ def index():
     cfg = load_config()
     caps = get_all_capabilities()
     provider_fields = get_config_fields(cfg.get("provider","ha"))
-    return render_template("index.html", cfg=cfg, state=_state,
+    resp = make_response(render_template("index.html", cfg=cfg, state=_state,
                            has_template=TEMPLATE_PATH.exists(),
                            all_providers=caps,
                            provider_fields=provider_fields,
                            provider_names={k:v.PROVIDER_NAME for k,v in PROVIDERS.items()},
-                           app_version=APP_VERSION)
+                           app_version=APP_VERSION))
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"]        = "no-cache"
+    resp.headers["Expires"]       = "0"
+    return resp
 
 @app.route("/api/config", methods=["GET"])
 def api_get_config(): return jsonify(load_config())
