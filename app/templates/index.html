@@ -355,13 +355,13 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   <div class="card">
     <div class="card-title">Preismodell</div>
     <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:16px;line-height:1.7">
-      🏠 <strong style="color:#fff">Zuhause:</strong> Fixer Tarif deines Stromanbieters<br>
-      🔌 <strong style="color:#fff">Extern AC:</strong> ENTSO-E Spot × AC-Faktor (Fallback: Fixpreis)<br>
-      ⚡ <strong style="color:#fff">Extern DC:</strong> ENTSO-E Spot × DC-Faktor (Fallback: Fixpreis)<br>
-      ✎ Jede Session manuell korrigierbar
+       <strong style="color:#fff">Zuhause:</strong> Fixer Tarif deines Stromanbieters<br>
+       <strong style="color:#fff">Extern AC:</strong> ENTSO-E Spot × AC-Faktor (Fallback: Fixpreis)<br>
+       <strong style="color:#fff">Extern DC:</strong> ENTSO-E Spot × DC-Faktor (Fallback: Fixpreis)<br>
+       Jede Session manuell korrigierbar
     </div>
     <div class="form-grid">
-      <div class="fg"><label>🏠 Heimpreis (€/kWh)</label>
+      <div class="fg"><label Heimpreis (€/kWh)</label>
         <input type="number" id="c_price_home" value="{{ cfg.price_per_kwh_home }}" step="0.001" min="0">
         <span class="hint">Dein fixer Stromtarif zuhause</span></div>
       <div class="fg"><label>Batteriekapazität (kWh)</label>
@@ -373,10 +373,10 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <div class="fg"><label>Polling-Intervall (s)</label>
         <input type="number" id="c_poll" value="{{ cfg.poll_interval }}" min="30" max="600">
         <span class="hint">60s empfohlen</span></div>
-      <div class="fg"><label>🔌 Extern AC Fallback (€/kWh)</label>
+      <div class="fg"><label> Extern AC Fallback (€/kWh)</label>
         <input type="number" id="c_price_ac" value="{{ cfg.price_per_kwh_ac }}" step="0.01" min="0">
         <span class="hint">Wenn kein ENTSO-E Key vorhanden</span></div>
-      <div class="fg"><label>⚡ Extern DC Fallback (€/kWh)</label>
+      <div class="fg"><label> Extern DC Fallback (€/kWh)</label>
         <input type="number" id="c_price_dc" value="{{ cfg.price_per_kwh_dc }}" step="0.01" min="0">
         <span class="hint">Wenn kein ENTSO-E Key vorhanden</span></div>
     </div>
@@ -725,8 +725,8 @@ async function refreshStatus(){
 
     // Location
     const locEl=$('dLoc');
-    if(s.location==='home'){locEl.textContent='🏠 Heim';locEl.className='sv g';}
-    else if(s.location==='extern'){locEl.textContent='⚡ Extern';locEl.className='sv w';}
+    if(s.location==='home'){locEl.textContent=' Heim';locEl.className='sv g';}
+    else if(s.location==='extern'){locEl.textContent=' Extern';locEl.className='sv w';}
     else{locEl.textContent='—';locEl.className='sv';}
     // Charger type
     const typeEl=$('dType');
