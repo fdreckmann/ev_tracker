@@ -514,6 +514,99 @@ def api_template_preview():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 
+@app.route("/api/template/render")
+def api_template_render():
+    if not TEMPLATE_PATH.exists(): return jsonify({"ok": False, "error": "Kein Template"})
+    try:
+        import openpyxl
+        from openpyxl.utils import get_column_letter
+        wb = openpyxl.load_workbook(TEMPLATE_PATH, data_only=True)
+        ws = wb.active
+
+        # merged cell lookup
+        merged_topleft = {}   # (r,c) -> (rowspan, colspan)
+        merged_skip    = set()
+        for rng in ws.merged_cells.ranges:
+            merged_topleft[(rng.min_row, rng.min_col)] = (
+                rng.max_row - rng.min_row + 1,
+                rng.max_col - rng.min_col + 1,
+            )
+            for r in range(rng.min_row, rng.max_row + 1):
+                for c in range(rng.min_col, rng.max_col + 1):
+                    if (r, c) != (rng.min_row, rng.min_col):
+                        merged_skip.add((r, c))
+
+        max_row = min(ws.max_row or 1, 40)
+        max_col = ws.max_column or 1
+
+        def hex_color(color_obj):
+            if color_obj is None: return None
+            try:
+                if color_obj.type == "rgb":
+                    rgb = color_obj.rgb
+                    if rgb and rgb not in ("00000000", "FF000000", "FFFFFFFF"):
+                        return "#" + rgb[-6:]
+                if color_obj.type == "theme":
+                    return None
+            except Exception:
+                pass
+            return None
+
+        rows = []
+        for ri in range(1, max_row + 1):
+            cells = []
+            for ci in range(1, max_col + 1):
+                if (ri, ci) in merged_skip:
+                    cells.append(None)
+                    continue
+                cell = ws.cell(row=ri, column=ci)
+                rs, cs = merged_topleft.get((ri, ci), (1, 1))
+                bg = bold = fg = None
+                try:
+                    if cell.fill and cell.fill.patternType not in (None, "none"):
+                        bg = hex_color(cell.fill.fgColor)
+                except Exception: pass
+                try:
+                    if cell.font:
+                        bold = bool(cell.font.bold)
+                        fg   = hex_color(cell.font.color)
+                except Exception: pass
+                cells.append({
+                    "v": str(cell.value) if cell.value is not None else "",
+                    "bg": bg, "fg": fg, "bold": bold,
+                    "rs": rs, "cs": cs, "r": ri, "c": ci,
+                })
+            rows.append(rows.__class__() or None)  # placeholder replaced below
+            rows[-1] = {"row": ri, "cells": cells}
+
+        # column widths (approximate em)
+        col_widths = []
+        for ci in range(1, max_col + 1):
+            letter = get_column_letter(ci)
+            dim = ws.column_dimensions.get(letter)
+            w = dim.width if dim and dim.width else 8
+            col_widths.append(round(min(max(w, 4), 25), 1))
+
+        col_letters = [get_column_letter(i) for i in range(1, max_col + 1)]
+        wb.close()
+        return jsonify({"ok": True, "rows": rows, "col_letters": col_letters,
+                        "col_widths": col_widths, "max_col": max_col})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/api/sessions/sample")
+def api_sessions_sample():
+    """Return one recent completed session for live export preview."""
+    try:
+        con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+        row = con.execute(
+            "SELECT * FROM sessions WHERE end_ts IS NOT NULL ORDER BY start_ts DESC LIMIT 1"
+        ).fetchone()
+        con.close()
+        return jsonify(dict(row) if row else {})
+    except Exception:
+        return jsonify({})
+
 @app.route("/api/template/mapping", methods=["GET","POST"])
 def api_template_mapping():
     cfg = load_config()
