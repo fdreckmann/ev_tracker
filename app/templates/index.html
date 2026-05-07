@@ -631,26 +631,37 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
 <!-- ── Template Mapping Modal ── -->
 <div class="modal-overlay" id="mappingModal" style="display:none" onclick="if(event.target===this)closeMappingModal()">
-  <div class="modal" style="max-width:680px">
+  <div class="modal" style="max-width:820px;max-height:90vh;display:flex;flex-direction:column">
     <button class="modal-close" onclick="closeMappingModal()">✕ Schließen</button>
-    <h2 style="margin-bottom:4px">Spalten zuweisen</h2>
-    <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:20px">
-      Weise jeder Spalte deiner Vorlage ein Datenfeld zu. Einmal speichern — gilt für alle künftigen Exporte.
+    <h2 style="margin-bottom:4px">Template konfigurieren</h2>
+    <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:16px">
+      <strong style="color:#fff">Schritt 1:</strong> Klicke auf die Zeile, ab der Daten eingetragen werden sollen.<br>
+      <strong style="color:#fff">Schritt 2:</strong> Weise jeder Spalte ein Datenfeld zu.
     </p>
-    <div class="tbl-wrap">
+
+    <!-- Template preview grid -->
+    <div style="font-size:.68rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">
+      Template-Vorschau — Startzeile anklicken
+    </div>
+    <div class="tbl-wrap" style="max-height:220px;overflow-y:auto;margin-bottom:18px;flex-shrink:0">
+      <table class="mapping-table" id="tplPreviewTable" style="font-size:.72rem">
+        <thead><tr id="tplPreviewHead"></tr></thead>
+        <tbody id="tplPreviewBody"></tbody>
+      </table>
+    </div>
+
+    <!-- Column mapping -->
+    <div style="font-size:.68rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">
+      Spalten-Zuordnung
+    </div>
+    <div class="tbl-wrap" style="flex:1;overflow-y:auto;margin-bottom:18px">
       <table class="mapping-table">
-        <thead>
-          <tr>
-            <th style="width:48px">Spalte</th>
-            <th>Kopfzeile</th>
-            <th>Beispielwert</th>
-            <th>Zugeordnet zu</th>
-          </tr>
-        </thead>
+        <thead><tr><th style="width:48px">Spalte</th><th>Inhalt (Startzeile)</th><th>Zugeordnet zu</th></tr></thead>
         <tbody id="mappingModalBody"></tbody>
       </table>
     </div>
-    <div style="display:flex;gap:10px;align-items:center;margin-top:18px;flex-wrap:wrap">
+
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;flex-shrink:0">
       <button class="btn-p" onclick="saveMappingModal()">💾 Speichern & schließen</button>
       <button class="btn-s" onclick="closeMappingModal()">Abbrechen</button>
       <div id="mappingModalInfo" style="font-size:.75rem;font-family:var(--mono);color:var(--mute)"></div>
@@ -1240,19 +1251,45 @@ const MAPPING_LABELS = {'':'— nicht zugewiesen —','row_num':'Nr.','date':'Da
   'odo_end':'KM-Stand Ende','soc_start':'SOC Start (%)','soc_end':'SOC Ende (%)',
   'kwh_charged':'Geladene kWh','cost_eur':'Kosten (€)','location':'Standort'};
 
-function buildMappingRows(columns, saved, bodyId){
-  const body = $(bodyId);
-  body.innerHTML = Object.entries(columns).map(([ci, col])=>{
-    const effective = (saved && saved[ci] !== undefined) ? saved[ci] : (col.mapped_to || '');
+let _tplData = null;   // cached preview data
+let _selectedStartRow = null;
+
+function selectStartRow(row){
+  _selectedStartRow = row;
+  document.querySelectorAll('#tplPreviewBody tr').forEach(tr=>{
+    const isSelected = parseInt(tr.dataset.row) === row;
+    tr.style.background    = isSelected ? 'rgba(0,200,120,.15)' : '';
+    tr.style.outline       = isSelected ? '2px solid var(--acc)' : '';
+    tr.style.outlineOffset = isSelected ? '-2px' : '';
+  });
+  $('mappingModalInfo').textContent = `Startzeile: Zeile ${row}`;
+  // rebuild mapping dropdowns showing values from selected start row
+  buildMappingDropdowns();
+}
+
+function buildMappingDropdowns(){
+  if(!_tplData) return;
+  const saved   = _tplData._saved || {};
+  const startRow = _selectedStartRow;
+  const rowData  = startRow ? (_tplData.rows.find(r=>r.row===startRow)||{cells:[]}).cells : [];
+  const numCols  = _tplData.col_letters.length;
+  const body = $('mappingModalBody');
+  body.innerHTML = Array.from({length:numCols},(_,i)=>{
+    const ci   = i + 1;
+    const letter = _tplData.col_letters[i];
+    const cellVal = rowData[i] || '';
+    // saved mapping key is ci as string
+    const savedField = saved.mapping && saved.mapping[String(ci)] !== undefined
+      ? saved.mapping[String(ci)]
+      : (_tplData.col_suggestions[ci] ? _tplData.col_suggestions[ci].mapped_to || '' : '');
     return `<tr>
-      <td style="color:var(--mute);font-weight:bold">${col.col_letter}</td>
-      <td><strong style="color:#fff">${col.header||'—'}</strong></td>
-      <td style="color:var(--mute);font-size:.72rem">${col.sample||''}</td>
+      <td style="color:var(--mute);font-weight:bold">${letter}</td>
+      <td style="color:#fff;font-size:.78rem">${cellVal||'—'}</td>
       <td>
         <select data-col="${ci}"
           style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;
           color:var(--txt);font-family:var(--mono);font-size:.75rem;padding:5px 8px;width:100%">
-          ${MAPPING_FIELDS.map(f=>`<option value="${f}" ${effective===f?'selected':''}>${MAPPING_LABELS[f]}</option>`).join('')}
+          ${MAPPING_FIELDS.map(f=>`<option value="${f}" ${savedField===f?'selected':''}>${MAPPING_LABELS[f]}</option>`).join('')}
         </select>
       </td>
     </tr>`;
@@ -1265,27 +1302,46 @@ async function openMappingModal(){
     fetch('/api/template/mapping').then(r=>r.json()),
   ]);
   if(!data.ok){ toast('Template konnte nicht gelesen werden: '+(data.error||''),'err'); return; }
-  buildMappingRows(data.columns, saved, 'mappingModalBody');
-  $('mappingModalInfo').textContent = '';
+  _tplData = data;
+  _tplData._saved = saved;
+  _selectedStartRow = saved.start_row || data.auto_header || null;
+
+  // build preview table header (column letters)
+  $('tplPreviewHead').innerHTML = '<th style="width:36px;color:var(--mute)">#</th>'
+    + data.col_letters.map(l=>`<th style="color:var(--mute)">${l}</th>`).join('');
+
+  // build preview table rows
+  $('tplPreviewBody').innerHTML = data.rows.map(r=>{
+    const isStart = r.row === _selectedStartRow;
+    return `<tr data-row="${r.row}" onclick="selectStartRow(${r.row})"
+      style="cursor:pointer;${isStart?'background:rgba(0,200,120,.15);outline:2px solid var(--acc);outline-offset:-2px':''}"
+      title="Als Startzeile wählen">
+      <td style="color:var(--mute);font-size:.7rem">${r.row}</td>
+      ${r.cells.map(v=>`<td style="max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.72rem">${v||''}</td>`).join('')}
+    </tr>`;
+  }).join('');
+
+  $('mappingModalInfo').textContent = _selectedStartRow ? `Startzeile: Zeile ${_selectedStartRow}` : 'Bitte Startzeile anklicken';
+  buildMappingDropdowns();
   $('mappingModal').style.display='flex';
 }
 
 function closeMappingModal(){
   $('mappingModal').style.display='none';
-  loadMappingPreview(); // refresh inline summary
+  loadMappingPreview();
 }
 
 async function saveMappingModal(){
-  const overrides = {};
+  const mapping = {};
   document.querySelectorAll('#mappingModalBody select[data-col]').forEach(sel=>{
-    overrides[sel.dataset.col] = sel.value;
+    mapping[sel.dataset.col] = sel.value;
   });
   const r = await fetch('/api/template/mapping',{
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(overrides)
+    body: JSON.stringify({mapping, start_row: _selectedStartRow})
   }).then(r=>r.json());
   if(r.ok){
-    toast('Spalten-Zuordnung gespeichert');
+    toast('Template-Konfiguration gespeichert');
     closeMappingModal();
   } else {
     $('mappingModalInfo').style.color='var(--danger)';
@@ -1300,33 +1356,21 @@ async function loadMappingPreview(){
   ]);
   if(!data.ok){ $('mappingSection').style.display='none'; return; }
   $('mappingSection').style.display='';
-  buildMappingRows(data.columns, saved, 'mappingBody');
-  if(saved && Object.keys(saved).length)
-    $('mappingSaveInfo').textContent='✓ Gespeicherte Zuordnung aktiv';
+  const sr = saved.start_row;
+  const mapped = Object.values(saved.mapping||{}).filter(v=>v).length;
+  $('mappingSaveInfo').textContent = mapped
+    ? `✓ ${mapped} Spalten zugewiesen · Startzeile: ${sr||'auto'}`
+    : '';
 }
 
 function getColOverride(){
-  const overrides={};
-  document.querySelectorAll('#mappingBody select[data-col]').forEach(sel=>{
-    overrides[sel.dataset.col] = sel.value;
-  });
-  return Object.keys(overrides).length ? overrides : null;
+  // export always uses saved mapping — no inline override needed
+  return null;
 }
 
 async function saveMapping(){
-  const overrides = getColOverride() || {};
-  const r = await fetch('/api/template/mapping',{
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(overrides)
-  }).then(r=>r.json());
-  const info = $('mappingSaveInfo');
-  if(r.ok){
-    info.style.color='var(--acc)';
-    info.textContent='✓ Gespeichert';
-    setTimeout(()=>{ info.style.color='var(--mute)'; info.textContent='✓ Gespeicherte Zuordnung aktiv'; }, 2500);
-  } else {
-    info.style.color='var(--danger)'; info.textContent='❌ Fehler beim Speichern';
-  }
+  // delegate to modal
+  await openMappingModal();
 }
 
 async function uploadTpl(file){
