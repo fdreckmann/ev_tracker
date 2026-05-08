@@ -8,9 +8,15 @@ from providers import get_provider, get_all_capabilities, get_config_fields, PRO
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.4.6"
+APP_VERSION   = "1.5.0"
 
 CHANGELOG = [
+    {"version": "1.5.0", "changes": [
+        "Zählerstand-Quelle auf Konfig-Seite verschoben",
+        "Update: Container-Erkennung per Image (nicht mehr per Name) — funktioniert jetzt auf Unraid",
+        "Update: Remote-Versionsnummer und Changelog vor Installation sichtbar",
+        "Update-Status: Log-Ausgabe wird in Echtzeit im Browser angezeigt",
+    ]},
     {"version": "1.4.6", "changes": [
         "Zählerstand im Dashboard als eigene Kachel (nur wenn Daten vorhanden)",
         "Zählerstand Alt→Neu in der Ladevorgänge-Liste (Spalte erscheint nur wenn Daten vorhanden)",
@@ -1028,24 +1034,46 @@ def docker_socket_request(method: str, path: str, body: dict = None) -> dict:
     except: data = {}
     return {"status": status, "data": data}
 
+_update_log: list[str] = []
+_update_running = False
+
+def _ulog(msg: str):
+    _update_log.append(msg)
+    if len(_update_log) > 200:
+        _update_log.pop(0)
+    log.info("Update: %s", msg)
+
 def docker_pull_and_restart(tag: str):
     """Pull new image in background, then stop/remove/recreate container."""
+    global _update_running
     if not os.path.exists(DOCKER_SOCKET):
         return False, "Docker Socket nicht gefunden"
 
-    # Read container config before starting background thread
+    # Find container by image name (works regardless of container name on Unraid)
     try:
         containers = docker_socket_request("GET", "/containers/json?all=1")
         container_id = None
         container_name = None
-        for c in containers.get("data", []):
-            names = c.get("Names", [])
-            if any("ev-tracker" in n for n in names):
+        clist = containers.get("data", [])
+        if not isinstance(clist, list):
+            clist = []
+        for c in clist:
+            img = c.get("Image", "")
+            if DOCKER_HUB_REPO in img:
                 container_id = c["Id"]
+                names = c.get("Names", [])
                 container_name = names[0].lstrip("/") if names else "ev-tracker"
                 break
         if not container_id:
-            return False, "Container 'ev-tracker' nicht gefunden"
+            # Fallback: search by container name keywords
+            for c in clist:
+                names = c.get("Names", [])
+                if any("ev" in n.lower() and "track" in n.lower() for n in names):
+                    container_id = c["Id"]
+                    container_name = names[0].lstrip("/") if names else "ev-tracker"
+                    break
+        if not container_id:
+            return False, f"Container für Image '{DOCKER_HUB_REPO}' nicht gefunden — {len(clist)} Container auf dem Host"
 
         inspect = docker_socket_request("GET", f"/containers/{container_id}/json")
         if inspect["status"] != 200:
@@ -1058,10 +1086,14 @@ def docker_pull_and_restart(tag: str):
     except Exception as e:
         return False, str(e)
 
+    _update_running = True
+    _update_log.clear()
+
     def pull_and_recreate():
+        global _update_running
         import time as _time
         import socket as _socket, json as _json
-        log.info("Update: starte Pull für %s:%s", DOCKER_HUB_REPO, tag)
+        _ulog(f"Starte Pull für {DOCKER_HUB_REPO}:{tag}")
         try:
             # Use HTTP/1.0 so Docker closes connection after response (avoids keep-alive hang)
             sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
@@ -1080,37 +1112,58 @@ def docker_pull_and_restart(tag: str):
             first_line = buf.split(b"\r\n")[0]
             parts = first_line.split(b" ")
             status = int(parts[1]) if len(parts) > 1 else 0
-            log.info("Update: Pull HTTP-Status %s", status)
+            _ulog(f"Pull HTTP-Status {status}")
             if status not in (200, 204):
-                log.error("Update: Pull fehlgeschlagen — HTTP %s", status)
+                _ulog(f"FEHLER: Pull fehlgeschlagen — HTTP {status}")
+                _update_running = False
                 return
+            # Check response body for error JSON lines
+            body_part = buf.split(b"\r\n\r\n", 1)[-1].decode(errors="replace")
+            for line in body_part.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    j = _json.loads(line)
+                    if "error" in j:
+                        _ulog(f"FEHLER vom Docker-Daemon: {j['error']}")
+                        _update_running = False
+                        return
+                    if "status" in j:
+                        _ulog(j["status"])
+                except Exception:
+                    pass
         except Exception as e:
-            log.error("Update: Pull-Fehler — %s", e)
+            _ulog(f"FEHLER beim Pull: {e}")
+            _update_running = False
             return
 
-        log.info("Update: Pull fertig, starte Stop/Remove/Recreate")
+        _ulog("Pull abgeschlossen — starte Stop/Remove/Recreate")
         _time.sleep(2)
         try:
-            # Stop with short grace period so we don't wait too long
+            _ulog(f"Stoppe Container {container_name} ({container_id[:12]})")
             docker_socket_request("POST", f"/containers/{container_id}/stop?t=5")
             _time.sleep(2)
+            _ulog("Container gestoppt — lösche alten Container")
             docker_socket_request("DELETE", f"/containers/{container_id}?force=1")
             _time.sleep(1)
+            _ulog(f"Erstelle neuen Container '{container_name}' mit Image {DOCKER_HUB_REPO}:{tag}")
             new = docker_socket_request(
                 "POST",
                 f"/containers/create?name={container_name}",
                 {"Image": f"{DOCKER_HUB_REPO}:{tag}",
                  "Env": env, "Labels": labels, "HostConfig": host_config}
             )
-            log.info("Update: Container erstellt — %s", new)
             new_id = (new.get("data") or {}).get("Id")
             if new_id:
+                _ulog(f"Container erstellt ({new_id[:12]}) — starte...")
                 docker_socket_request("POST", f"/containers/{new_id}/start")
-                log.info("Update: Container gestartet — %s", new_id[:12])
+                _ulog("Container gestartet — Update abgeschlossen!")
             else:
-                log.error("Update: Keine Container-ID erhalten — %s", new)
+                _ulog(f"FEHLER: Keine Container-ID erhalten — {new}")
         except Exception as e:
-            log.error("Update: Recreate-Fehler — %s", e)
+            _ulog(f"FEHLER beim Recreate: {e}")
+        _update_running = False
 
     threading.Thread(target=pull_and_recreate, daemon=True).start()
     return True, "Update läuft im Hintergrund · Seite lädt neu sobald der Container bereit ist"
@@ -1134,8 +1187,26 @@ def get_update_info():
         "update_count": 0 if up_to_date else 1,
     }
 
+def fetch_remote_version(tag: str) -> dict:
+    """Fetch version.json from GitHub to get remote version number and changelog."""
+    try:
+        url = f"https://raw.githubusercontent.com/fdreckmann/ev_tracker/{'main' if tag == 'latest' else 'dev'}/version.json"
+        r = requests.get(url, timeout=8)
+        if r.status_code == 200:
+            return r.json()
+    except Exception:
+        pass
+    return {}
+
 @app.route("/api/update/check")
-def api_update_check(): return jsonify(get_update_info())
+def api_update_check():
+    info = get_update_info()
+    if info.get("ok") and not info.get("up_to_date"):
+        tag = info.get("tag", "latest")
+        remote_ver = fetch_remote_version(tag)
+        info["remote_version"] = remote_ver.get("version", "")
+        info["remote_changelog"] = remote_ver.get("changelog", [])
+    return jsonify(info)
 
 @app.route("/api/update/pull", methods=["POST"])
 def api_update_pull():
@@ -1143,6 +1214,10 @@ def api_update_pull():
     tag = cfg.get("update_channel","latest")
     ok, msg = docker_pull_and_restart(tag)
     return jsonify({"ok": ok, "output": msg, "restarting": ok})
+
+@app.route("/api/update/log")
+def api_update_log():
+    return jsonify({"running": _update_running, "lines": list(_update_log)})
 
 if __name__=="__main__":
     init_db(); start_tracker(); schedule_backup()

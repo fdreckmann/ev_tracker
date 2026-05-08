@@ -424,6 +424,68 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     </div>
   </div>
 
+  <!-- Meter source config -->
+  <div class="card">
+    <div class="card-title">Zählerstand-Quelle</div>
+    <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
+      Wird beim Start und Ende jeder Ladesession automatisch abgelesen.
+    </p>
+    <div class="fg full" style="margin-bottom:10px">
+      <label class="lbl">Quelle</label>
+      <select class="inp" id="c_meter_source" onchange="updateMeterSourceUI()">
+        <option value="none">— Keine / manuell —</option>
+        <optgroup label="Smarte Steckdosen / Energiemesser">
+          <option value="ha">Home Assistant Sensor</option>
+          <option value="shelly">Shelly EM / 1PM (lokal)</option>
+          <option value="tasmota">Tasmota (lokal)</option>
+        </optgroup>
+        <optgroup label="Wallboxen">
+          <option value="go_e">go-e Charger (v1 + v2)</option>
+          <option value="openwb">openWB (v1 / Series 2)</option>
+          <option value="warp">WARP Charger 1 / 2 / 3</option>
+          <option value="evcc">EVCC · KEBA · ABL · Mennekes · Heidelberg · Wallbe · NRGKick u.v.m.</option>
+          <option value="webasto">Webasto Next / Live</option>
+          <option value="alfen">Alfen Eve Single / Double</option>
+          <option value="juice">Juice Charger Me³ / Pro</option>
+        </optgroup>
+      </select>
+    </div>
+    <div id="meterHaFields" style="display:none">
+      <div class="fg full">
+        <label class="lbl">HA Entity ID</label>
+        <input class="inp" type="text" id="c_meter_sensor" placeholder="sensor.stromzaehler_total_kwh">
+        <span class="hint">muss in kWh liefern — z.B. sensor.shelly_em_total_energy</span>
+      </div>
+    </div>
+    <div id="meterDeviceFields" style="display:none">
+      <div class="fg full">
+        <label class="lbl">Geräte-IP</label>
+        <input class="inp" type="text" id="c_meter_device_ip" placeholder="192.168.1.100">
+      </div>
+    </div>
+    <div id="meterEvccFields" style="display:none;display:grid;gap:10px;grid-template-columns:1fr 1fr">
+      <div>
+        <label class="lbl">EVCC Port</label>
+        <input class="inp" type="number" id="c_meter_evcc_port" placeholder="7070">
+      </div>
+      <div>
+        <label class="lbl">Loadpoint (0 = erster)</label>
+        <input class="inp" type="number" id="c_meter_evcc_lp" placeholder="0">
+      </div>
+    </div>
+    <div id="meterAlfenFields" style="display:none">
+      <div class="fg full">
+        <label class="lbl">Alfen Web-Passwort</label>
+        <input class="inp" type="password" id="c_meter_alfen_pass" placeholder="admin">
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
+      <button class="btn-s" onclick="saveMeterSource()">💾 Speichern</button>
+      <button class="btn-s" onclick="testMeterSource()">🔍 Verbindung testen</button>
+      <span id="meterTestRes" style="font-size:.77rem;font-family:var(--mono)"></span>
+    </div>
+  </div>
+
   <div class="btn-row">
     <button class="btn-p" onclick="saveConfig()">💾 Speichern</button>
     <button class="btn-s" onclick="loadConfig()">↺ Zurücksetzen</button>
@@ -493,68 +555,6 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">Standort / Location</span>
         <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">Nr / #</span>
       </div>
-    </div>
-  </div>
-
-  <!-- Meter source config -->
-  <div class="card">
-    <div class="card-title">Zählerstand-Quelle</div>
-    <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
-      Wird beim Start und Ende jeder Ladesession automatisch abgelesen.
-    </p>
-    <div class="fg full" style="margin-bottom:10px">
-      <label class="lbl">Quelle</label>
-      <select class="inp" id="c_meter_source" onchange="updateMeterSourceUI()">
-        <option value="none">— Keine / manuell —</option>
-        <optgroup label="Smarte Steckdosen / Energiemesser">
-          <option value="ha">Home Assistant Sensor</option>
-          <option value="shelly">Shelly EM / 1PM (lokal)</option>
-          <option value="tasmota">Tasmota (lokal)</option>
-        </optgroup>
-        <optgroup label="Wallboxen">
-          <option value="go_e">go-e Charger (v1 + v2)</option>
-          <option value="openwb">openWB (v1 / Series 2)</option>
-          <option value="warp">WARP Charger 1 / 2 / 3</option>
-          <option value="evcc">EVCC · KEBA · ABL · Mennekes · Heidelberg · Wallbe · NRGKick u.v.m.</option>
-          <option value="webasto">Webasto Next / Live</option>
-          <option value="alfen">Alfen Eve Single / Double</option>
-          <option value="juice">Juice Charger Me³ / Pro</option>
-        </optgroup>
-      </select>
-    </div>
-    <div id="meterHaFields" style="display:none">
-      <div class="fg full">
-        <label class="lbl">HA Entity ID</label>
-        <input class="inp" type="text" id="c_meter_sensor" placeholder="sensor.stromzaehler_total_kwh">
-        <span class="hint">muss in kWh liefern — z.B. sensor.shelly_em_total_energy</span>
-      </div>
-    </div>
-    <div id="meterDeviceFields" style="display:none">
-      <div class="fg full">
-        <label class="lbl">Geräte-IP</label>
-        <input class="inp" type="text" id="c_meter_device_ip" placeholder="192.168.1.100">
-      </div>
-    </div>
-    <div id="meterEvccFields" style="display:none;display:grid;gap:10px;grid-template-columns:1fr 1fr">
-      <div>
-        <label class="lbl">EVCC Port</label>
-        <input class="inp" type="number" id="c_meter_evcc_port" placeholder="7070">
-      </div>
-      <div>
-        <label class="lbl">Loadpoint (0 = erster)</label>
-        <input class="inp" type="number" id="c_meter_evcc_lp" placeholder="0">
-      </div>
-    </div>
-    <div id="meterAlfenFields" style="display:none">
-      <div class="fg full">
-        <label class="lbl">Alfen Web-Passwort</label>
-        <input class="inp" type="password" id="c_meter_alfen_pass" placeholder="admin">
-      </div>
-    </div>
-    <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
-      <button class="btn-s" onclick="saveMeterSource()">💾 Speichern</button>
-      <button class="btn-s" onclick="testMeterSource()">🔍 Verbindung testen</button>
-      <span id="meterTestRes" style="font-size:.77rem;font-family:var(--mono)"></span>
     </div>
   </div>
 
@@ -715,12 +715,22 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       </div>
       <div id="updateInfo" style="font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-bottom:10px">—</div>
 
+      <!-- Remote version preview (shown when update available) -->
+      <div id="remoteVersionWrap" style="display:none;margin-bottom:14px;padding:14px;background:rgba(0,210,120,.06);border:1px solid rgba(0,210,120,.2);border-radius:10px">
+        <div style="font-size:.72rem;font-family:var(--mono);color:var(--acc);font-weight:bold;margin-bottom:8px">
+          Verfügbar: <span id="remoteVersionLabel">—</span>
+        </div>
+        <ul id="remoteChangelogList" style="margin:0;padding-left:16px;list-style:none"></ul>
+      </div>
+
       <!-- Progress bar -->
       <div id="updateProgressWrap" style="display:none;margin-bottom:12px">
         <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-bottom:6px" id="updateProgressLabel">Docker Pull läuft…</div>
         <div style="background:var(--brd);border-radius:6px;height:8px;overflow:hidden">
           <div id="updateProgressBar" style="height:100%;width:0%;background:var(--accent);border-radius:6px;transition:width .4s ease"></div>
         </div>
+        <!-- Live log -->
+        <div id="updateLogBox" style="margin-top:10px;background:var(--bg);border:1px solid var(--brd);border-radius:8px;padding:10px;max-height:160px;overflow-y:auto;font-size:.7rem;font-family:var(--mono);color:var(--mute)"></div>
       </div>
 
       <div class="warn-box">
@@ -1941,6 +1951,7 @@ function setChannel(ch){
 async function checkUpdate(){
   $('updateInfo').textContent='⏳ Prüfe Docker Hub…';
   $('updateBtn').style.display='none';
+  $('remoteVersionWrap').style.display='none';
   const r = await fetch('/api/update/check').then(r=>r.json());
   if(!r.ok){
     $('updateInfo').innerHTML=`<span style="color:var(--danger)">❌ ${r.error}</span>`;
@@ -1952,6 +1963,19 @@ async function checkUpdate(){
     return;
   }
   $('updateInfo').innerHTML=`<span style="color:var(--warn)">⬆ Neues Image verfügbar · ${r.tag} · lokal: ${r.local_digest} → remote: ${r.remote_digest}</span>`;
+  // Show remote version + changelog if available
+  if(r.remote_version){
+    $('remoteVersionLabel').textContent = 'v' + r.remote_version;
+    const ul = $('remoteChangelogList');
+    ul.innerHTML = '';
+    (r.remote_changelog||[]).forEach(c=>{
+      const li=document.createElement('li');
+      li.style.cssText='font-size:.73rem;font-family:var(--mono);color:var(--mute);padding:2px 0;line-height:1.5';
+      li.innerHTML=`<span style="color:var(--acc2);margin-right:6px">›</span>${c}`;
+      ul.appendChild(li);
+    });
+    $('remoteVersionWrap').style.display='';
+  }
   if(r.has_socket){ $('updateBtn').style.display=''; $('updateBadge').style.display=''; }
   else $('updateInfo').innerHTML+='<br><span style="color:var(--mute);font-size:.7rem">⚠ Docker Socket nicht gemountet — manuelles Update nötig</span>';
 }
@@ -1962,26 +1986,16 @@ async function doUpdate(){
   btn.disabled=true; btn.textContent='⏳ Update läuft…';
   $('updateInfo').textContent='';
 
-  // show progress bar
+  // show progress bar + log
   const wrap=$('updateProgressWrap'), bar=$('updateProgressBar'), lbl=$('updateProgressLabel');
-  wrap.style.display='block';
-  bar.style.width='0%';
-
-  const steps=[
-    {w:'15%', t:'Docker Pull startet…', d:400},
-    {w:'35%', t:'Image wird heruntergeladen…', d:1200},
-    {w:'65%', t:'Image wird entpackt…', d:2000},
-    {w:'85%', t:'Container wird neu gestartet…', d:800},
-  ];
-  let si=0;
-  const adv=()=>{ if(si<steps.length){ const s=steps[si++]; bar.style.width=s.w; lbl.textContent=s.t; setTimeout(adv,s.d); }};
-  adv();
+  const logBox=$('updateLogBox');
+  wrap.style.display='block'; logBox.innerHTML='';
+  bar.style.width='5%'; lbl.textContent='Starte Update…';
 
   let r;
   try {
     r = await fetch('/api/update/pull',{method:'POST'}).then(res=>res.json());
   } catch(_) {
-    // connection dropped = container is restarting — treat as success
     bar.style.width='100%'; lbl.textContent='✅ Fertig!';
     $('updateInfo').innerHTML='<span style="color:var(--acc)">✅ Update erfolgreich — Seite lädt in 5s neu…</span>';
     setTimeout(()=>location.reload(), 5000);
@@ -1993,19 +2007,56 @@ async function doUpdate(){
     btn.disabled=false; btn.textContent='⬆ Update installieren';
     return;
   }
-  bar.style.width='90%'; lbl.textContent='Image wird heruntergeladen…';
-  $('updateInfo').innerHTML='<span style="color:var(--mute)">⏳ Pull läuft im Hintergrund — warte auf Neustart…</span>';
+  bar.style.width='15%'; lbl.textContent='Docker Pull läuft…';
+  $('updateInfo').innerHTML='<span style="color:var(--mute)">⏳ Pull läuft im Hintergrund…</span>';
   $('updateBadge').style.display='none';
-  // poll until server is back up
-  const poll=async()=>{
+
+  // Poll log endpoint for live output
+  let lastCount=0, restarting=false;
+  const pollLog=async()=>{
     try{
-      await fetch('/api/status',{cache:'no-store'});
-      bar.style.width='100%'; lbl.textContent='✅ Fertig!';
-      $('updateInfo').innerHTML='<span style="color:var(--acc)">✅ Update erfolgreich — Seite lädt neu…</span>';
-      setTimeout(()=>location.reload(), 1500);
-    } catch(_){ setTimeout(poll, 2000); }
+      const lg=await fetch('/api/update/log',{cache:'no-store'}).then(r=>r.json());
+      const lines=lg.lines||[];
+      for(let i=lastCount;i<lines.length;i++){
+        const d=document.createElement('div');
+        const txt=lines[i];
+        d.style.color=txt.startsWith('FEHLER')?'var(--danger)':txt.includes('abgeschlossen')||txt.includes('Fertig')?'var(--acc)':'var(--mute)';
+        d.textContent='› '+txt;
+        logBox.appendChild(d);
+        logBox.scrollTop=logBox.scrollHeight;
+      }
+      lastCount=lines.length;
+      // Update progress based on log content
+      const allText=lines.join(' ');
+      if(allText.includes('Pull abgeschlossen')) bar.style.width='75%';
+      else if(allText.includes('Image wird')) bar.style.width='40%';
+      if(allText.includes('FEHLER')){
+        bar.style.width='0%'; lbl.textContent='❌ Fehler aufgetreten';
+        $('updateInfo').innerHTML=`<span style="color:var(--danger)">❌ Fehler — Details im Log</span>`;
+        btn.disabled=false; btn.textContent='⬆ Update installieren';
+        return;
+      }
+      if(allText.includes('Container gestartet')){
+        restarting=true;
+        bar.style.width='90%'; lbl.textContent='Container neu gestartet — warte auf Server…';
+      }
+    }catch(_){}
+    if(restarting){
+      // Now poll until server comes back
+      const pollBack=async()=>{
+        try{
+          await fetch('/api/status',{cache:'no-store'});
+          bar.style.width='100%'; lbl.textContent='✅ Fertig!';
+          $('updateInfo').innerHTML='<span style="color:var(--acc)">✅ Update erfolgreich — Seite lädt neu…</span>';
+          setTimeout(()=>location.reload(), 1500);
+        }catch(_){ setTimeout(pollBack, 2000); }
+      };
+      setTimeout(pollBack, 3000);
+    } else {
+      setTimeout(pollLog, 1500);
+    }
   };
-  setTimeout(poll, 8000);
+  setTimeout(pollLog, 2000);
 }
 
 // auto-check on load (silent)
@@ -2014,8 +2065,9 @@ setTimeout(async ()=>{
     setChannel(_updateChannel);
     const r=await fetch('/api/update/check').then(r=>r.json());
     if(r.ok && !r.up_to_date){
+      const verStr = r.remote_version ? ` → v${r.remote_version}` : ` (${r.tag})`;
       $('updateBadge').style.display='';
-      $('updateBadge').textContent='⬆ Update verfügbar ('+r.tag+')';
+      $('updateBadge').textContent='⬆ Update verfügbar' + verStr;
     }
   }catch(e){}
 }, 3000);
