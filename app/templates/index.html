@@ -772,6 +772,18 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 <script>
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
+
+// Cache-Buster: reload without query param if version changed
+(function(){
+  const v='{{ app_version }}';
+  const stored=localStorage.getItem('ev_version');
+  if(stored && stored!==v){
+    localStorage.setItem('ev_version',v);
+    if(!window.location.search) window.location.replace(window.location.pathname+'?v='+v);
+  } else {
+    localStorage.setItem('ev_version',v);
+  }
+})();
 function toast(msg, type='ok'){
   const el=document.createElement('div');
   el.className=`toast ${type}`;
