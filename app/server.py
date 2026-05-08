@@ -8,9 +8,14 @@ from providers import get_provider, get_all_capabilities, get_config_fields, PRO
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.4.2"
+APP_VERSION   = "1.4.3"
 
 CHANGELOG = [
+    {"version": "1.4.3", "changes": [
+        "Zählerstand-Quelle: Home Assistant, Shelly oder Tasmota",
+        "Zählerstand wird beim Start und Ende jeder Session automatisch erfasst",
+        "Fallback auf berechneten Zählerstand wenn keine Quelle konfiguriert",
+    ]},
     {"version": "1.4.2", "changes": [
         "Zählerstand Alt/Neu wird automatisch aus Anfangszählerstand + kumulierten kWh berechnet",
         "Neues Konfigurationsfeld: Anfangszählerstand (kWh) im Export-Panel",
@@ -124,7 +129,10 @@ DEFAULT_CONFIG = {
     "template_kennzeichen":   "",      # license plate for template header
     "template_abteilung":     "",      # department for template header
     "template_kostenstelle":  "",      # cost center for template header
-    "template_meter_start":   0.0,    # starting electricity meter reading (kWh)
+    "template_meter_start":   0.0,    # starting electricity meter reading (kWh) fallback
+    "meter_source":           "none", # none | ha | shelly | tasmota
+    "meter_sensor":           "",     # HA entity_id for meter reading
+    "meter_device_ip":        "",     # IP for Shelly / Tasmota
 }
 
 def load_config():
@@ -154,8 +162,13 @@ def init_db():
         max_power_kw  REAL,
         price_per_kwh REAL,
         entsoe_spot   REAL,
-        provider      TEXT DEFAULT 'ha'
+        provider      TEXT DEFAULT 'ha',
+        meter_old     REAL, meter_new REAL
     )""")
+    # migrate existing DB: add meter columns if missing
+    for col in ("meter_old", "meter_new"):
+        try: con.execute(f"ALTER TABLE sessions ADD COLUMN {col} REAL")
+        except Exception: pass
     con.execute("""CREATE TABLE IF NOT EXISTS session_points (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         session_id INTEGER NOT NULL,
@@ -272,6 +285,37 @@ _state = {
 }
 _stop = threading.Event()
 
+def read_meter_value():
+    cfg = load_config()
+    source = cfg.get("meter_source", "none")
+    try:
+        if source == "ha":
+            entity = cfg.get("meter_sensor", "").strip()
+            if not entity: return None
+            url = cfg.get("ha_url","").rstrip("/") + f"/api/states/{entity}"
+            r = requests.get(url, headers={"Authorization": f"Bearer {cfg.get('ha_token','')}"},
+                             timeout=5)
+            return float(r.json()["state"])
+        elif source == "shelly":
+            ip = cfg.get("meter_device_ip","").strip()
+            if not ip: return None
+            # Shelly EM: /emeter/0 → total in Wh; Shelly PM: /meter/0 → total in Wh
+            for endpoint in ("/emeter/0", "/meter/0"):
+                try:
+                    r = requests.get(f"http://{ip}{endpoint}", timeout=5)
+                    data = r.json()
+                    if "total" in data:
+                        return round(data["total"] / 1000, 3)  # Wh → kWh
+                except Exception: pass
+        elif source == "tasmota":
+            ip = cfg.get("meter_device_ip","").strip()
+            if not ip: return None
+            r = requests.get(f"http://{ip}/cm?cmnd=Status%208", timeout=5)
+            return float(r.json()["StatusSNS"]["ENERGY"]["Total"])
+    except Exception as e:
+        log.warning("Meter read error (%s): %s", source, e)
+    return None
+
 def tracker_loop():
     _state["running"] = True
     session_active = False; session_id = None
@@ -310,16 +354,18 @@ def tracker_loop():
 
             if charging and not session_active:
                 soc_start = soc; odo_start = odo; peak_power = power_kw or 0
+                meter_start_val = read_meter_value()
                 spot = fetch_entsoe_spot(cfg.get("entsoe_api_key","")) if location=="extern" else None
                 _state["entsoe_spot"] = spot
                 price_kwh = (cfg["price_per_kwh_home"] if location=="home"
                              else calc_extern_price(cfg, charger_type, spot))
                 cur.execute("""INSERT INTO sessions
                     (start_ts,odo_start,soc_start,location,charger_type,
-                     max_power_kw,price_per_kwh,entsoe_spot,provider)
-                    VALUES (?,?,?,?,?,?,?,?,?)""",
+                     max_power_kw,price_per_kwh,entsoe_spot,provider,meter_old)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)""",
                     (datetime.now().isoformat(timespec="seconds"),
-                     odo_start,soc_start,location,charger_type,power_kw,price_kwh,spot,provider_id))
+                     odo_start,soc_start,location,charger_type,power_kw,price_kwh,spot,provider_id,
+                     meter_start_val))
                 con.commit(); session_id=cur.lastrowid; session_active=True
                 _state["session_id"]=session_id
                 cur.execute("INSERT INTO session_points (session_id,ts,soc,power_kw) VALUES (?,?,?,?)",
@@ -355,11 +401,14 @@ def tracker_loop():
                     kwh  = round(max(0.0,soc-soc_start)/100.0*cfg["battery_capacity_kwh"],2)
                     if not cost_manual:
                         cost = round(kwh*(db_price or cfg["price_per_kwh_home"]),2)
+                meter_end_val = read_meter_value()
                 cur.execute("""UPDATE sessions
                     SET end_ts=?,odo_end=?,soc_end=?,kwh_charged=?,
-                    cost_eur=CASE WHEN cost_manual=1 THEN cost_eur ELSE ? END,max_power_kw=?
+                    cost_eur=CASE WHEN cost_manual=1 THEN cost_eur ELSE ? END,
+                    max_power_kw=?,meter_new=?
                     WHERE id=?""",
-                    (datetime.now().isoformat(timespec="seconds"),odo,soc,kwh,cost,peak_power,session_id))
+                    (datetime.now().isoformat(timespec="seconds"),odo,soc,kwh,cost,peak_power,
+                     meter_end_val,session_id))
                 con.commit(); session_active=False
                 _state.update(session_active=False,session_id=None)
                 log.info("✅ Session #%d | %.2f kWh | %.2f €",session_id,kwh or 0,cost or 0)
@@ -484,6 +533,13 @@ def api_test():
         return jsonify(result)
     except Exception as e:
         return jsonify({"ok":False,"message":str(e)})
+
+@app.route("/api/meter/test", methods=["POST"])
+def api_meter_test():
+    val = read_meter_value()
+    if val is not None:
+        return jsonify({"ok": True, "value": val, "message": f"✅ Zählerstand: {val:.3f} kWh"})
+    return jsonify({"ok": False, "message": "❌ Kein Wert erhalten — Quelle prüfen"})
 
 @app.route("/api/entsoe/test", methods=["POST"])
 def api_entsoe_test():

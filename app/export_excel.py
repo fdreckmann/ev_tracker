@@ -273,17 +273,19 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
             except Exception:
                 pass
 
-    # pre-calculate cumulative meter readings (Zählerstand Alt/Neu)
-    meter_start = float(header_info.get("meter_start_value") or 0)
-    cumulative = meter_start
-    enriched = []
-    for s in sessions:
-        s = dict(s)
-        s["meter_old"] = round(cumulative, 3)
-        cumulative += float(s.get("kwh_charged") or 0)
-        s["meter_new"] = round(cumulative, 3)
-        enriched.append(s)
-    sessions = enriched
+    # meter readings: use stored values if available, else calculate from meter_start_value
+    has_stored = any(s.get("meter_old") is not None for s in sessions)
+    if not has_stored:
+        meter_start = float(header_info.get("meter_start_value") or 0)
+        cumulative = meter_start
+        enriched = []
+        for s in sessions:
+            s = dict(s)
+            s["meter_old"] = round(cumulative, 3)
+            cumulative += float(s.get("kwh_charged") or 0)
+            s["meter_new"] = round(cumulative, 3)
+            enriched.append(s)
+        sessions = enriched
 
     # clear old data rows
     for r in range(ds, max_row + 1):

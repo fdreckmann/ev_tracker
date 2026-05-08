@@ -495,6 +495,42 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     </div>
   </div>
 
+  <!-- Meter source config -->
+  <div class="card">
+    <div class="card-title">Zählerstand-Quelle</div>
+    <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
+      Wird beim Start und Ende jeder Ladesession automatisch abgelesen.
+    </p>
+    <div class="fg full" style="margin-bottom:10px">
+      <label class="lbl">Quelle</label>
+      <select class="inp" id="c_meter_source" onchange="updateMeterSourceUI()">
+        <option value="none">— Keine / manuell —</option>
+        <option value="ha">Home Assistant Sensor</option>
+        <option value="shelly">Shelly (lokal)</option>
+        <option value="tasmota">Tasmota (lokal)</option>
+      </select>
+    </div>
+    <div id="meterHaFields" style="display:none">
+      <div class="fg full">
+        <label class="lbl">HA Entity ID</label>
+        <input class="inp" type="text" id="c_meter_sensor" placeholder="sensor.stromzaehler_total_kwh">
+        <span class="hint">z.B. sensor.shelly_em_total_energy — muss in kWh liefern</span>
+      </div>
+    </div>
+    <div id="meterDeviceFields" style="display:none">
+      <div class="fg full">
+        <label class="lbl">Geräte-IP</label>
+        <input class="inp" type="text" id="c_meter_device_ip" placeholder="192.168.1.100">
+        <span class="hint">Shelly: /emeter/0 oder /meter/0 · Tasmota: /cm?cmnd=Status%208</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
+      <button class="btn-s" onclick="saveMeterSource()">💾 Speichern</button>
+      <button class="btn-s" onclick="testMeterSource()">🔍 Verbindung testen</button>
+      <span id="meterTestRes" style="font-size:.77rem;font-family:var(--mono)"></span>
+    </div>
+  </div>
+
   <!-- Template header fields -->
   <div class="card" id="tplHeaderCard" style="display:none">
     <div class="card-title">Kopfzeilen-Daten (Template)</div>
@@ -1255,6 +1291,12 @@ async function loadCharts(){
 // ── Config ────────────────────────────────────────────────────────────────────
 async function loadConfig(){
   const c = await fetch('/api/config').then(r=>r.json());
+  if($('c_meter_source')) {
+    $('c_meter_source').value = c.meter_source||'none';
+    if($('c_meter_sensor'))    $('c_meter_sensor').value    = c.meter_sensor||'';
+    if($('c_meter_device_ip')) $('c_meter_device_ip').value = c.meter_device_ip||'';
+    updateMeterSourceUI();
+  }
   const m = {c_car:'car_name',c_notify:'notify_service',
              c_bat:'battery_capacity_kwh',
              c_price_home:'price_per_kwh_home',c_price_ac:'price_per_kwh_ac',c_price_dc:'price_per_kwh_dc',
@@ -1625,6 +1667,31 @@ function handleDrop(e){
 async function deleteTpl(){
   await fetch('/api/template',{method:'DELETE'});
   toast('Template entfernt'); refreshTplInfo();
+}
+
+function updateMeterSourceUI(){
+  const s=$('c_meter_source').value;
+  $('meterHaFields').style.display   = s==='ha'                  ? '' : 'none';
+  $('meterDeviceFields').style.display = (s==='shelly'||s==='tasmota') ? '' : 'none';
+}
+async function saveMeterSource(){
+  const cfg={
+    meter_source:    $('c_meter_source').value,
+    meter_sensor:    ($('c_meter_sensor')||{value:''}).value.trim(),
+    meter_device_ip: ($('c_meter_device_ip')||{value:''}).value.trim(),
+  };
+  const r=await fetch('/api/config',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+  if(r.ok) toast('Zählerstand-Quelle gespeichert');
+  else toast('Fehler beim Speichern','err');
+}
+async function testMeterSource(){
+  const res=$('meterTestRes'); res.textContent='⏳ Teste…'; res.style.color='var(--mute)';
+  // save first
+  await saveMeterSource();
+  const r=await fetch('/api/meter/test',{method:'POST'}).then(r=>r.json());
+  res.textContent=r.message;
+  res.style.color=r.ok?'var(--acc)':'var(--danger)';
 }
 
 async function saveTplHeaderFields(){
