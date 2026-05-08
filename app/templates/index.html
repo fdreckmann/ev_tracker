@@ -483,14 +483,44 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">Datum / Date</span>
         <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">Start / Beginn</span>
         <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">Ende / End</span>
+        <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">Kilometerstand</span>
         <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">KM Start / KM Ende</span>
         <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">SOC Start / SOC Ende</span>
-        <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">kWh / Geladen</span>
-        <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">Kosten / Cost</span>
+        <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">kWh / Geladen / Lademenge</span>
+        <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">Ladekosten / Kosten</span>
+        <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">Ladedauer / Dauer</span>
         <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">Standort / Location</span>
         <span style="background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:5px;padding:3px 9px;color:var(--acc2)">Nr / #</span>
       </div>
     </div>
+  </div>
+
+  <!-- Template header fields -->
+  <div class="card" id="tplHeaderCard" style="display:none">
+    <div class="card-title">Kopfzeilen-Daten (Template)</div>
+    <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
+      Diese Felder werden automatisch in die Kopfzeilen deiner Vorlage eingetragen (z.B. Fahrer, Kennzeichen).
+    </p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div>
+        <label class="lbl">Fahrer</label>
+        <input class="inp" type="text" id="c_template_fahrer" placeholder="Max Mustermann">
+      </div>
+      <div>
+        <label class="lbl">Kennzeichen</label>
+        <input class="inp" type="text" id="c_template_kennzeichen" placeholder="WI-EV 123">
+      </div>
+      <div>
+        <label class="lbl">Abteilung</label>
+        <input class="inp" type="text" id="c_template_abteilung" placeholder="IT / Vertrieb">
+      </div>
+      <div>
+        <label class="lbl">Kostenstelle</label>
+        <input class="inp" type="text" id="c_template_kostenstelle" placeholder="1234">
+      </div>
+    </div>
+    <button class="btn-s" style="margin-top:12px" onclick="saveTplHeaderFields()">💾 Speichern</button>
+    <span id="tplHeaderSaveInfo" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-left:10px"></span>
   </div>
 
   <!-- Export config -->
@@ -1279,22 +1309,30 @@ async function refreshTplInfo(){
     lbl.textContent='✓ Template aktiv — deine Vorlage wird beim Export verwendet';
     meta.textContent=`${(info.size/1024).toFixed(1)} KB · ${info.modified.replace('T',' ')}`;
     delBtn.style.display='';
+    $('tplHeaderCard').style.display='';
     loadMappingPreview();
+    // load saved header field values
+    const cfg=await fetch('/api/config').then(r=>r.json()).catch(()=>({}));
+    ['fahrer','kennzeichen','abteilung','kostenstelle'].forEach(k=>{
+      const el=$('c_template_'+k); if(el) el.value=cfg['template_'+k]||'';
+    });
   } else {
     dot.style.background='var(--mute)'; dot.style.boxShadow='none';
     lbl.style.color='var(--mute)';
     lbl.textContent='Kein Template — eingebautes Format wird verwendet';
     meta.textContent=''; delBtn.style.display='none';
     $('mappingSection').style.display='none';
+    $('tplHeaderCard').style.display='none';
   }
 }
 
 const MAPPING_FIELDS = ['','row_num','date','start_time','end_time','odo_start','odo_end',
-                        'soc_start','soc_end','kwh_charged','cost_eur','location'];
+                        'soc_start','soc_end','kwh_charged','cost_eur','duration','location'];
 const MAPPING_LABELS = {'':'— nicht zugewiesen —','row_num':'Nr.','date':'Datum',
   'start_time':'Start Uhrzeit','end_time':'Ende Uhrzeit','odo_start':'KM-Stand Start',
-  'odo_end':'KM-Stand Ende','soc_start':'SOC Start (%)','soc_end':'SOC Ende (%)',
-  'kwh_charged':'Geladene kWh','cost_eur':'Kosten (€)','location':'Standort'};
+  'odo_end':'KM-Stand Ende / Kilometerstand','soc_start':'SOC Start (%)','soc_end':'SOC Ende (%)',
+  'kwh_charged':'Geladene kWh / Lademenge','cost_eur':'Kosten (€) / Ladekosten',
+  'duration':'Ladedauer','location':'Standort'};
 
 let _tplRender = null;
 let _tplMeta   = null;
@@ -1546,6 +1584,20 @@ function handleDrop(e){
 async function deleteTpl(){
   await fetch('/api/template',{method:'DELETE'});
   toast('Template entfernt'); refreshTplInfo();
+}
+
+async function saveTplHeaderFields(){
+  const cfg={
+    template_fahrer:        $('c_template_fahrer').value.trim(),
+    template_kennzeichen:   $('c_template_kennzeichen').value.trim(),
+    template_abteilung:     $('c_template_abteilung').value.trim(),
+    template_kostenstelle:  $('c_template_kostenstelle').value.trim(),
+  };
+  const r=await fetch('/api/config',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+  const info=$('tplHeaderSaveInfo');
+  if(r.ok){ info.textContent='✓ Gespeichert'; setTimeout(()=>info.textContent='',2500); }
+  else { info.textContent='Fehler'; }
 }
 
 // ── Export ────────────────────────────────────────────────────────────────────

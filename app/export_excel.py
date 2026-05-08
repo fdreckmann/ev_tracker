@@ -14,36 +14,45 @@ PRICE_PER_KWH = float(os.environ.get("PRICE_PER_KWH", "0.30"))
 
 # ── Column keyword → field name mapping ───────────────────────────────────────
 COLUMN_KEYWORDS = {
-    "datum":       "date",
-    "date":        "date",
-    "start":       "start_time",
-    "beginn":      "start_time",
-    "ende":        "end_time",
-    "end":         "end_time",
-    "km start":    "odo_start",
-    "km-start":    "odo_start",
-    "start km":    "odo_start",
-    "odometer":    "odo_start",
-    "km ende":     "odo_end",
-    "km-ende":     "odo_end",
-    "end km":      "odo_end",
-    "kwh":         "kwh_charged",
-    "geladen":     "kwh_charged",
-    "energie":     "kwh_charged",
-    "energy":      "kwh_charged",
-    "kosten":      "cost_eur",
-    "cost":        "cost_eur",
-    "betrag":      "cost_eur",
-    "soc start":   "soc_start",
-    "soc anfang":  "soc_start",
-    "soc ende":    "soc_end",
-    "soc end":     "soc_end",
-    "standort":    "location",
-    "ort":         "location",
-    "location":    "location",
-    "nr":          "row_num",
-    "#":           "row_num",
-    "lfd":         "row_num",
+    "datum":            "date",
+    "date":             "date",
+    "start":            "start_time",
+    "beginn":           "start_time",
+    "ende":             "end_time",
+    "end":              "end_time",
+    "km start":         "odo_start",
+    "km-start":         "odo_start",
+    "start km":         "odo_start",
+    "odometer":         "odo_start",
+    "km ende":          "odo_end",
+    "km-ende":          "odo_end",
+    "end km":           "odo_end",
+    "kilometerstand":   "odo_end",
+    "kilome":           "odo_end",
+    "kwh":              "kwh_charged",
+    "geladen":          "kwh_charged",
+    "energie":          "kwh_charged",
+    "energy":           "kwh_charged",
+    "lademenge":        "kwh_charged",
+    "ladedauer":        "duration",
+    "ladezeit":         "duration",
+    "dauer":            "duration",
+    "kosten":           "cost_eur",
+    "cost":             "cost_eur",
+    "betrag":           "cost_eur",
+    "ladekosten":       "cost_eur",
+    "soc start":        "soc_start",
+    "soc anfang":       "soc_start",
+    "soc ende":         "soc_end",
+    "soc end":          "soc_end",
+    "standort":         "location",
+    "ort":              "location",
+    "location":         "location",
+    "nr":               "row_num",
+    "#":                "row_num",
+    "lfd":              "row_num",
+    "zählerstand alt":  None,
+    "zählerstand neu":  None,
 }
 
 FIELD_LABELS = {
@@ -51,11 +60,12 @@ FIELD_LABELS = {
     "start_time":  "Start Uhrzeit",
     "end_time":    "Ende Uhrzeit",
     "odo_start":   "KM-Stand Start",
-    "odo_end":     "KM-Stand Ende",
+    "odo_end":     "KM-Stand Ende / Kilometerstand",
     "soc_start":   "SOC Start (%)",
     "soc_end":     "SOC Ende (%)",
-    "kwh_charged": "Geladene kWh",
-    "cost_eur":    "Kosten (€)",
+    "kwh_charged": "Geladene kWh / Lademenge",
+    "cost_eur":    "Kosten (€) / Ladekosten",
+    "duration":    "Ladedauer",
     "location":    "Standort",
     "row_num":     "Nr.",
     None:          "— nicht zugewiesen —",
@@ -71,10 +81,25 @@ NUM_FMT = {
     "soc_end":     '0"%"',
     "kwh_charged": '0.00 "kWh"',
     "cost_eur":    '€#,##0.00',
+    "duration":    '[h]:MM',
     "row_num":     "0",
 }
 
 LOCATION_LABELS = {"home": "🏠 Zuhause", "extern": "⚡ Extern", "unknown": "—"}
+
+# ── Header label → data key mapping for auto-fill ────────────────────────────
+HEADER_KEYWORDS = {
+    "abrechnungsmonat": "month_year",
+    "gesamtkosten":     "total_cost",
+    "kennzeichen":      "kennzeichen",
+    "fahrer":           "fahrer",
+    "abteilung":        "abteilung",
+    "kostenstelle":     "kostenstelle",
+    "kosten pro kw":    "price_per_kwh",
+    "kosten pro kwh":   "price_per_kwh",
+    "preis pro kwh":    "price_per_kwh",
+    "monat":            "month_year",
+}
 
 def match_column(txt):
     if not txt: return None
@@ -97,11 +122,15 @@ def fetch_sessions(year, month, location="all"):
 def to_row(s, idx):
     dt_s = datetime.fromisoformat(s["start_ts"])
     dt_e = datetime.fromisoformat(s["end_ts"]) if s.get("end_ts") else None
+    duration = None
+    if dt_e:
+        duration = (dt_e - dt_s).total_seconds() / 86400  # fraction of day for [h]:MM format
     return {
         "row_num":     idx,
         "date":        dt_s.date(),
         "start_time":  dt_s.time(),
         "end_time":    dt_e.time() if dt_e else None,
+        "duration":    duration,
         "odo_start":   s.get("odo_start"),
         "odo_end":     s.get("odo_end"),
         "soc_start":   s.get("soc_start"),
@@ -133,8 +162,50 @@ def row_bg(s):
     if loc == "extern": return C_EXT
     return C_ALT
 
+def safe_set(cell, value):
+    try: cell.value = value
+    except (AttributeError, TypeError): pass
+
+# ── Header section auto-fill ──────────────────────────────────────────────────
+def fill_header_section(ws, data_start_row, header_data):
+    """Scan rows before data_start_row for label-value pairs and auto-fill."""
+    for row_idx in range(1, data_start_row):
+        for cell in ws[row_idx]:
+            if not cell.value or isinstance(cell, MergedCell):
+                continue
+            key = str(cell.value).lower().strip().rstrip(':').strip()
+
+            # Match against known header labels
+            matched_field = None
+            for kw, field in HEADER_KEYWORDS.items():
+                if kw in key:
+                    matched_field = field
+                    break
+
+            if matched_field and matched_field in header_data and header_data[matched_field] is not None:
+                # Fill the next writable cell to the right
+                target = ws.cell(row=cell.row, column=cell.column + 1)
+                if not isinstance(target, MergedCell):
+                    safe_set(target, header_data[matched_field])
+                    if matched_field == "total_cost":
+                        try: target.number_format = '€#,##0.00'
+                        except Exception: pass
+                    elif matched_field == "price_per_kwh":
+                        try: target.number_format = '€0.00'
+                        except Exception: pass
+
+            # Special: cell ending with ", den" → fill date in next cell
+            if key.endswith(", den") or key.endswith(",den"):
+                target = ws.cell(row=cell.row, column=cell.column + 1)
+                if not isinstance(target, MergedCell) and not target.value:
+                    safe_set(target, datetime.today().date())
+                    try: target.number_format = 'DD.MM.YYYY'
+                    except Exception: pass
+
 # ── Template-based export ─────────────────────────────────────────────────────
-def export_with_template(year, month, sessions, location, col_override=None, start_row=None):
+def export_with_template(year, month, sessions, location, col_override=None, start_row=None, header_info=None):
+    if header_info is None:
+        header_info = {}
     ml     = datetime(year, month, 1).strftime("%B %Y")
     suffix = f"_{location}" if location != "all" else ""
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
@@ -143,7 +214,7 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
     wb = openpyxl.load_workbook(out, keep_vba=False)
     ws = wb.active
 
-    # build column map from explicit mapping (col_override already contains saved mapping)
+    # build column map from explicit mapping
     col_map = {}
     if col_override:
         for col_str, field in col_override.items():
@@ -160,13 +231,13 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
                 for cell in row:
                     f = match_column(cell.value)
                     if f: col_map[cell.column] = f
-                break
+                if col_map:
+                    break
 
     # determine data start row
     if start_row:
         ds = int(start_row)
     else:
-        # auto-detect: first row with >= 2 filled cells + 1
         detected = None
         for row in ws.iter_rows():
             filled = [c for c in row if c.value is not None and str(c.value).strip()]
@@ -178,7 +249,7 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
         col_map = {1:"row_num",2:"date",3:"start_time",4:"end_time",
                    5:"odo_start",6:"odo_end",7:"kwh_charged",8:"cost_eur",9:"location"}
 
-    max_row  = ws.max_row or 0
+    max_row = ws.max_row or 0
 
     # capture template row styles from first data row
     tstyles = {}
@@ -195,16 +266,12 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
             except Exception:
                 pass
 
-    def safe_set(cell, value):
-        try: cell.value = value
-        except (AttributeError, TypeError): pass
-
     # clear old data rows
     for r in range(ds, max_row + 1):
         for cell in ws[r]:
             safe_set(cell, None)
 
-    # write data
+    # write data rows
     for i, s in enumerate(sessions):
         rd = to_row(s, i + 1); tr = ds + i
         for ci, field in col_map.items():
@@ -224,13 +291,18 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
             except Exception:
                 pass
 
-    # update title cell
-    if header_row > 1:
-        for row in ws.iter_rows(max_row=header_row - 1):
-            for cell in row:
-                if cell.value and any(w in str(cell.value).lower()
-                        for w in ("monat","month","bericht","protokoll","ladeprotokoll")):
-                    safe_set(cell, f"EV Ladeprotokoll – {ml}"); break
+    # auto-fill header section (Abrechnungsmonat, Kennzeichen, Fahrer, etc.)
+    total_cost = sum(s.get("cost_eur") or 0 for s in sessions)
+    header_data = {
+        "month_year":   ml,
+        "total_cost":   total_cost if total_cost else None,
+        "kennzeichen":  header_info.get("kennzeichen") or None,
+        "fahrer":       header_info.get("fahrer") or None,
+        "abteilung":    header_info.get("abteilung") or None,
+        "kostenstelle": header_info.get("kostenstelle") or None,
+        "price_per_kwh": header_info.get("price_per_kwh") or None,
+    }
+    fill_header_section(ws, ds, header_data)
 
     wb.save(out)
     print(f"✅ Template-Export: {out} ({len(sessions)} Sessions)")
@@ -346,10 +418,10 @@ def export_builtin(year, month, sessions, location):
     return str(out)
 
 # ── Entry point ───────────────────────────────────────────────────────────────
-def export(year, month, location="all", col_override=None, start_row=None):
+def export(year, month, location="all", col_override=None, start_row=None, header_info=None):
     sessions = fetch_sessions(year, month, location)
     if TEMPLATE_PATH.exists():
-        return export_with_template(year, month, sessions, location, col_override, start_row)
+        return export_with_template(year, month, sessions, location, col_override, start_row, header_info)
     return export_builtin(year, month, sessions, location)
 
 if __name__ == "__main__":

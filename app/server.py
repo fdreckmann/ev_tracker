@@ -8,9 +8,15 @@ from providers import get_provider, get_all_capabilities, get_config_fields, PRO
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.3.0"
+APP_VERSION   = "1.4.0"
 
 CHANGELOG = [
+    {"version": "1.4.0", "changes": [
+        "Template-Kopfzeilen automatisch befüllen (Abrechnungsmonat, Kennzeichen, Fahrer, Abteilung, Kostenstelle, Gesamtkosten)",
+        "Neue Template-Felder: Ladedauer, Kilometerstand, Ladekosten, Lademenge",
+        "Konfigurationsfelder für Fahrer, Kennzeichen, Abteilung, Kostenstelle",
+        "Kritischer Export-Fehler (NameError) behoben",
+    ]},
     {"version": "1.3.0", "changes": [
         "Update-Tab als eigener Reiter neben Backup",
         "Changelog mit Versionshistorie im Update-Tab",
@@ -106,6 +112,10 @@ DEFAULT_CONFIG = {
     "update_channel":       "latest",  # latest | nightly | dev
     "template_mapping":     {},        # {col_index_str: field_name}
     "template_start_row":   None,      # row number where data starts (1-based)
+    "template_fahrer":      "",        # driver name for template header
+    "template_kennzeichen": "",        # license plate for template header
+    "template_abteilung":   "",        # department for template header
+    "template_kostenstelle":"",        # cost center for template header
 }
 
 def load_config():
@@ -658,8 +668,15 @@ def api_export():
         if saved:
             override = {k: v for k, v in saved.items() if v}
     start_row = cfg.get("template_start_row")
+    header_info = {
+        "fahrer":        cfg.get("template_fahrer", ""),
+        "kennzeichen":   cfg.get("template_kennzeichen", ""),
+        "abteilung":     cfg.get("template_abteilung", ""),
+        "kostenstelle":  cfg.get("template_kostenstelle", ""),
+        "price_per_kwh": cfg.get("price_per_kwh_home", 0.30),
+    }
     try:
-        path = export(y, m, loc, col_override=override, start_row=start_row)
+        path = export(y, m, loc, col_override=override, start_row=start_row, header_info=header_info)
         return send_file(path, as_attachment=True)
     except Exception as e:
         log.exception("Export fehlgeschlagen")
