@@ -8,7 +8,28 @@ from providers import get_provider, get_all_capabilities, get_config_fields, PRO
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.1.0"
+APP_VERSION   = "1.3.0"
+
+CHANGELOG = [
+    {"version": "1.3.0", "changes": [
+        "Update-Tab als eigener Reiter neben Backup",
+        "Changelog mit Versionshistorie im Update-Tab",
+        "Update-Badge öffnet direkt Update-Tab und prüft automatisch",
+        "Browser-Cache deaktiviert — kein manuelles Löschen mehr nötig",
+    ]},
+    {"version": "1.2.0", "changes": [
+        "Excel-Template Editor mit visueller Vorschau",
+        "Startzeile per Klick wählbar, Live-Vorschau mit echten Daten",
+        "Template-Spalten-Zuordnung wird persistent gespeichert",
+        "Export-Fehler werden als Toast angezeigt",
+    ]},
+    {"version": "1.1.0", "changes": [
+        "Software-Update Kachel neben Backup",
+        "Fortschrittsbalken beim Update-Install",
+        "Dev-Channel und dev-Branch eingeführt",
+        "Batteriekapazität als freies Zahlenfeld",
+    ]},
+]
 
 DATA_DIR      = Path(os.environ.get("DATA_DIR", "/data"))
 CONFIG_FILE   = DATA_DIR / "config.json"
@@ -348,7 +369,8 @@ def index():
                            all_providers=caps,
                            provider_fields=provider_fields,
                            provider_names={k:v.PROVIDER_NAME for k,v in PROVIDERS.items()},
-                           app_version=APP_VERSION))
+                           app_version=APP_VERSION,
+                           changelog=CHANGELOG))
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     resp.headers["Pragma"]        = "no-cache"
     resp.headers["Expires"]       = "0"
