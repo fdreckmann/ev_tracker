@@ -8,9 +8,13 @@ from providers import get_provider, get_all_capabilities, get_config_fields, PRO
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.4.4"
+APP_VERSION   = "1.4.5"
 
 CHANGELOG = [
+    {"version": "1.4.5", "changes": [
+        "Update-Mechanismus: HTTP/1.0 für Pull behoben (HTTP/1.1 Keep-Alive verhinderte Abschluss)",
+        "Stop mit Force-Delete, besseres Logging für Fehlerdiagnose",
+    ]},
     {"version": "1.4.4", "changes": [
         "Wallbox-Quellen: go-e Charger, openWB, WARP Charger, EVCC, Webasto, Alfen, Juice Charger",
         "EVCC als Universalquelle für KEBA, ABL, Mennekes, Heidelberg, Wallbe, NRGKick u.v.m.",
@@ -1052,35 +1056,40 @@ def docker_pull_and_restart(tag: str):
     def pull_and_recreate():
         import time as _time
         import socket as _socket, json as _json
+        log.info("Update: starte Pull für %s:%s", DOCKER_HUB_REPO, tag)
         try:
-            # Pull with long timeout (no limit via raw socket)
+            # Use HTTP/1.0 so Docker closes connection after response (avoids keep-alive hang)
             sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
             sock.settimeout(600)
             sock.connect(DOCKER_SOCKET)
-            req = (f"POST /images/create?fromImage={DOCKER_HUB_REPO}&tag={tag} HTTP/1.1\r\n"
+            req = (f"POST /images/create?fromImage={DOCKER_HUB_REPO}&tag={tag} HTTP/1.0\r\n"
                    f"Host: localhost\r\nContent-Length: 0\r\n\r\n")
             sock.send(req.encode())
-            # drain response (streaming JSON lines from Docker)
             buf = b""
             while True:
-                chunk = sock.recv(4096)
+                chunk = sock.recv(8192)
                 if not chunk: break
                 buf += chunk
             sock.close()
-            header = buf.split(b"\r\n")[0]
-            status = int(header.split(b" ")[1]) if len(header.split(b" ")) > 1 else 0
+            # parse status from first line: "HTTP/1.0 200 OK"
+            first_line = buf.split(b"\r\n")[0]
+            parts = first_line.split(b" ")
+            status = int(parts[1]) if len(parts) > 1 else 0
+            log.info("Update: Pull HTTP-Status %s", status)
             if status not in (200, 204):
-                log.error("Pull fehlgeschlagen: HTTP %s", status)
+                log.error("Update: Pull fehlgeschlagen — HTTP %s", status)
                 return
         except Exception as e:
-            log.error("Pull error: %s", e)
+            log.error("Update: Pull-Fehler — %s", e)
             return
 
-        _time.sleep(1)
+        log.info("Update: Pull fertig, starte Stop/Remove/Recreate")
+        _time.sleep(2)
         try:
-            docker_socket_request("POST",   f"/containers/{container_id}/stop")
-            _time.sleep(1)
-            docker_socket_request("DELETE", f"/containers/{container_id}")
+            # Stop with short grace period so we don't wait too long
+            docker_socket_request("POST", f"/containers/{container_id}/stop?t=5")
+            _time.sleep(2)
+            docker_socket_request("DELETE", f"/containers/{container_id}?force=1")
             _time.sleep(1)
             new = docker_socket_request(
                 "POST",
@@ -1088,11 +1097,15 @@ def docker_pull_and_restart(tag: str):
                 {"Image": f"{DOCKER_HUB_REPO}:{tag}",
                  "Env": env, "Labels": labels, "HostConfig": host_config}
             )
+            log.info("Update: Container erstellt — %s", new)
             new_id = (new.get("data") or {}).get("Id")
             if new_id:
                 docker_socket_request("POST", f"/containers/{new_id}/start")
+                log.info("Update: Container gestartet — %s", new_id[:12])
+            else:
+                log.error("Update: Keine Container-ID erhalten — %s", new)
         except Exception as e:
-            log.error("Recreate error: %s", e)
+            log.error("Update: Recreate-Fehler — %s", e)
 
     threading.Thread(target=pull_and_recreate, daemon=True).start()
     return True, "Update läuft im Hintergrund · Seite lädt neu sobald der Container bereit ist"
