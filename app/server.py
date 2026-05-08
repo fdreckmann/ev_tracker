@@ -8,9 +8,14 @@ from providers import get_provider, get_all_capabilities, get_config_fields, PRO
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.4.5"
+APP_VERSION   = "1.4.6"
 
 CHANGELOG = [
+    {"version": "1.4.6", "changes": [
+        "Zählerstand im Dashboard als eigene Kachel (nur wenn Daten vorhanden)",
+        "Zählerstand Alt→Neu in der Ladevorgänge-Liste (Spalte erscheint nur wenn Daten vorhanden)",
+        "Zählerstand Alt/Neu im Session-Detail-Modal",
+    ]},
     {"version": "1.4.5", "changes": [
         "Update-Mechanismus: HTTP/1.0 für Pull behoben (HTTP/1.1 Keep-Alive verhinderte Abschluss)",
         "Stop mit Force-Delete, besseres Logging für Fehlerdiagnose",
