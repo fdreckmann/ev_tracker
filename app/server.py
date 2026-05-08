@@ -8,9 +8,15 @@ from providers import get_provider, get_all_capabilities, get_config_fields, PRO
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.6.0"
+APP_VERSION   = "1.6.1"
 
 CHANGELOG = [
+    {"version": "1.6.1", "changes": [
+        "SSO Login via Google-Konto (OAuth2)",
+        "SSO Login via Microsoft-Konto / Azure AD (OAuth2)",
+        "OAuth-Konfiguration + Redirect-URI-Anzeige im Sicherheits-Tab",
+        "Login-Seite: Google- und Microsoft-Buttons werden automatisch angezeigt",
+    ]},
     {"version": "1.6.0", "changes": [
         "Multi-Auto-Support: beliebig viele Fahrzeuge gleichzeitig tracken",
         "Jedes Fahrzeug läuft in eigenem Tracker-Thread mit eigenem Provider",
@@ -196,9 +202,22 @@ DEFAULT_CONFIG = {
     "meter_evcc_lp":     0,       # EVCC loadpoint index (0-based)
     "meter_alfen_pass":  "admin", # Alfen web UI password
 
-    # Auth
-    "auth_password_hash": "",     # SHA-256 of password; empty = no login required
-    "auth_totp_secret":   "",     # pyotp secret; empty = 2FA disabled
+    # Auth — password + TOTP
+    "auth_password_hash": "",
+    "auth_totp_secret":   "",
+
+    # OAuth2 SSO — Google
+    "oauth_google_client_id":     "",
+    "oauth_google_client_secret": "",
+
+    # OAuth2 SSO — Microsoft
+    "oauth_microsoft_client_id":     "",
+    "oauth_microsoft_client_secret": "",
+    "oauth_microsoft_tenant":        "common",  # "common" = any MS account, or tenant-id
+
+    # Base URL for OAuth redirect URIs (e.g. https://ev.example.com)
+    # Leave empty to auto-detect from request
+    "oauth_base_url": "",
 
     # Multi-vehicle: additional vehicles beyond the primary (v0)
     "extra_vehicles":    [],
@@ -655,7 +674,9 @@ def start_tracker():
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
-_AUTH_EXEMPT = {"/login", "/logout", "/api/auth/setup", "/api/auth/status"}
+_AUTH_EXEMPT = {"/login", "/logout", "/api/auth/setup", "/api/auth/status",
+                "/auth/google", "/auth/google/callback",
+                "/auth/microsoft", "/auth/microsoft/callback"}
 
 @app.before_request
 def check_auth():
@@ -694,8 +715,11 @@ def login_page():
                 return redirect(request.args.get("next") or url_for("index"))
         else:
             error = "Falsches Passwort"
-    totp_enabled = bool(load_config().get("auth_totp_secret",""))
-    return render_template("login.html", error=error, totp_enabled=totp_enabled)
+    cfg = load_config()
+    return render_template("login.html", error=error,
+                           totp_enabled=bool(cfg.get("auth_totp_secret","")),
+                           google_enabled=bool(cfg.get("oauth_google_client_id","")),
+                           microsoft_enabled=bool(cfg.get("oauth_microsoft_client_id","")))
 
 @app.route("/logout")
 def logout():
@@ -737,10 +761,144 @@ def api_totp_disable():
 def api_auth_status():
     cfg = load_config()
     return jsonify({
-        "auth_enabled":  bool(cfg.get("auth_password_hash")),
-        "totp_enabled":  bool(cfg.get("auth_totp_secret")),
-        "authenticated": bool(session.get("authenticated")) or not _auth_enabled(),
+        "auth_enabled":    bool(cfg.get("auth_password_hash")),
+        "totp_enabled":    bool(cfg.get("auth_totp_secret")),
+        "google_enabled":  bool(cfg.get("oauth_google_client_id")),
+        "microsoft_enabled": bool(cfg.get("oauth_microsoft_client_id")),
+        "authenticated":   bool(session.get("authenticated")) or not _auth_enabled(),
+        "user_email":      session.get("user_email",""),
     })
+
+# ── OAuth2 helpers ────────────────────────────────────────────────────────────
+
+def _oauth_redirect_base() -> str:
+    cfg = load_config()
+    base = cfg.get("oauth_base_url","").rstrip("/")
+    if base:
+        return base
+    # Auto-detect: honour X-Forwarded-Proto for reverse proxy
+    scheme = request.headers.get("X-Forwarded-Proto", request.scheme)
+    host   = request.headers.get("X-Forwarded-Host", request.host)
+    return f"{scheme}://{host}"
+
+def _oauth_finish(email: str):
+    """Called after successful OAuth login — create session."""
+    session["authenticated"] = True
+    session["user_email"]    = email
+    session.permanent        = True
+    next_url = session.pop("oauth_next", None) or "/"
+    return redirect(next_url)
+
+# ── Google OAuth2 ─────────────────────────────────────────────────────────────
+
+@app.route("/auth/google")
+def auth_google():
+    cfg = load_config()
+    if not cfg.get("oauth_google_client_id"):
+        return "Google OAuth nicht konfiguriert", 400
+    state = secrets.token_urlsafe(16)
+    session["oauth_state"] = state
+    session["oauth_next"]  = request.args.get("next","/")
+    redirect_uri = _oauth_redirect_base() + "/auth/google/callback"
+    params = {
+        "client_id":     cfg["oauth_google_client_id"],
+        "redirect_uri":  redirect_uri,
+        "response_type": "code",
+        "scope":         "openid email profile",
+        "state":         state,
+        "access_type":   "online",
+    }
+    from urllib.parse import urlencode
+    return redirect("https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params))
+
+@app.route("/auth/google/callback")
+def auth_google_callback():
+    cfg   = load_config()
+    state = request.args.get("state","")
+    code  = request.args.get("code","")
+    if not code or state != session.pop("oauth_state",""):
+        return render_template("login.html", error="OAuth-Fehler: ungültiger State", totp_enabled=False,
+                               google_enabled=bool(cfg.get("oauth_google_client_id")),
+                               microsoft_enabled=bool(cfg.get("oauth_microsoft_client_id")))
+    redirect_uri = _oauth_redirect_base() + "/auth/google/callback"
+    try:
+        r = requests.post("https://oauth2.googleapis.com/token", data={
+            "code":          code,
+            "client_id":     cfg["oauth_google_client_id"],
+            "client_secret": cfg["oauth_google_client_secret"],
+            "redirect_uri":  redirect_uri,
+            "grant_type":    "authorization_code",
+        }, timeout=10)
+        r.raise_for_status()
+        token = r.json().get("access_token","")
+        info  = requests.get("https://www.googleapis.com/oauth2/v3/userinfo",
+                             headers={"Authorization":f"Bearer {token}"}, timeout=10).json()
+        email = info.get("email","")
+        if not email:
+            raise RuntimeError("Keine E-Mail vom Google-Konto erhalten")
+        return _oauth_finish(email)
+    except Exception as e:
+        return render_template("login.html", error=f"Google Login fehlgeschlagen: {e}",
+                               totp_enabled=False,
+                               google_enabled=True, microsoft_enabled=bool(cfg.get("oauth_microsoft_client_id")))
+
+# ── Microsoft OAuth2 ──────────────────────────────────────────────────────────
+
+@app.route("/auth/microsoft")
+def auth_microsoft():
+    cfg = load_config()
+    if not cfg.get("oauth_microsoft_client_id"):
+        return "Microsoft OAuth nicht konfiguriert", 400
+    tenant = cfg.get("oauth_microsoft_tenant","common") or "common"
+    state  = secrets.token_urlsafe(16)
+    session["oauth_state"] = state
+    session["oauth_next"]  = request.args.get("next","/")
+    redirect_uri = _oauth_redirect_base() + "/auth/microsoft/callback"
+    from urllib.parse import urlencode
+    params = {
+        "client_id":     cfg["oauth_microsoft_client_id"],
+        "redirect_uri":  redirect_uri,
+        "response_type": "code",
+        "scope":         "openid email profile User.Read",
+        "state":         state,
+        "response_mode": "query",
+    }
+    return redirect(f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize?" + urlencode(params))
+
+@app.route("/auth/microsoft/callback")
+def auth_microsoft_callback():
+    cfg    = load_config()
+    tenant = cfg.get("oauth_microsoft_tenant","common") or "common"
+    state  = request.args.get("state","")
+    code   = request.args.get("code","")
+    if not code or state != session.pop("oauth_state",""):
+        return render_template("login.html", error="OAuth-Fehler: ungültiger State", totp_enabled=False,
+                               google_enabled=bool(cfg.get("oauth_google_client_id")),
+                               microsoft_enabled=bool(cfg.get("oauth_microsoft_client_id")))
+    redirect_uri = _oauth_redirect_base() + "/auth/microsoft/callback"
+    try:
+        r = requests.post(
+            f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
+            data={
+                "code":          code,
+                "client_id":     cfg["oauth_microsoft_client_id"],
+                "client_secret": cfg["oauth_microsoft_client_secret"],
+                "redirect_uri":  redirect_uri,
+                "grant_type":    "authorization_code",
+            }, timeout=10)
+        r.raise_for_status()
+        token = r.json().get("access_token","")
+        info  = requests.get("https://graph.microsoft.com/v1.0/me",
+                             headers={"Authorization":f"Bearer {token}"}, timeout=10).json()
+        email = info.get("mail") or info.get("userPrincipalName","")
+        if not email:
+            raise RuntimeError("Keine E-Mail vom Microsoft-Konto erhalten")
+        return _oauth_finish(email)
+    except Exception as e:
+        return render_template("login.html", error=f"Microsoft Login fehlgeschlagen: {e}",
+                               totp_enabled=False,
+                               google_enabled=bool(cfg.get("oauth_google_client_id")),
+                               microsoft_enabled=True)
 
 @app.route("/")
 @require_auth
