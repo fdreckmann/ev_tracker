@@ -8,9 +8,14 @@ from providers import get_provider, get_all_capabilities, get_config_fields, PRO
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.4.3"
+APP_VERSION   = "1.4.4"
 
 CHANGELOG = [
+    {"version": "1.4.4", "changes": [
+        "Wallbox-Quellen: go-e Charger, openWB, WARP Charger, EVCC, Webasto, Alfen, Juice Charger",
+        "EVCC als Universalquelle für KEBA, ABL, Mennekes, Heidelberg, Wallbe, NRGKick u.v.m.",
+        "Erweiterte Konfiguration: EVCC-Port, Loadpoint-Index, Alfen-Passwort",
+    ]},
     {"version": "1.4.3", "changes": [
         "Zählerstand-Quelle: Home Assistant, Shelly oder Tasmota",
         "Zählerstand wird beim Start und Ende jeder Session automatisch erfasst",
@@ -130,9 +135,12 @@ DEFAULT_CONFIG = {
     "template_abteilung":     "",      # department for template header
     "template_kostenstelle":  "",      # cost center for template header
     "template_meter_start":   0.0,    # starting electricity meter reading (kWh) fallback
-    "meter_source":           "none", # none | ha | shelly | tasmota
-    "meter_sensor":           "",     # HA entity_id for meter reading
-    "meter_device_ip":        "",     # IP for Shelly / Tasmota
+    "meter_source":      "none",  # none|ha|shelly|tasmota|go_e|openwb|warp|evcc|webasto|alfen|juice
+    "meter_sensor":      "",      # HA entity_id
+    "meter_device_ip":   "",      # IP for all device-based sources
+    "meter_evcc_port":   7070,    # EVCC port (default 7070)
+    "meter_evcc_lp":     0,       # EVCC loadpoint index (0-based)
+    "meter_alfen_pass":  "admin", # Alfen web UI password
 }
 
 def load_config():
@@ -288,7 +296,9 @@ _stop = threading.Event()
 def read_meter_value():
     cfg = load_config()
     source = cfg.get("meter_source", "none")
+    ip  = cfg.get("meter_device_ip", "").strip()
     try:
+        # ── Smart plugs / energy monitors ────────────────────────────────────
         if source == "ha":
             entity = cfg.get("meter_sensor", "").strip()
             if not entity: return None
@@ -296,22 +306,90 @@ def read_meter_value():
             r = requests.get(url, headers={"Authorization": f"Bearer {cfg.get('ha_token','')}"},
                              timeout=5)
             return float(r.json()["state"])
+
         elif source == "shelly":
-            ip = cfg.get("meter_device_ip","").strip()
             if not ip: return None
-            # Shelly EM: /emeter/0 → total in Wh; Shelly PM: /meter/0 → total in Wh
             for endpoint in ("/emeter/0", "/meter/0"):
                 try:
-                    r = requests.get(f"http://{ip}{endpoint}", timeout=5)
-                    data = r.json()
+                    data = requests.get(f"http://{ip}{endpoint}", timeout=5).json()
                     if "total" in data:
                         return round(data["total"] / 1000, 3)  # Wh → kWh
                 except Exception: pass
+
         elif source == "tasmota":
-            ip = cfg.get("meter_device_ip","").strip()
             if not ip: return None
             r = requests.get(f"http://{ip}/cm?cmnd=Status%208", timeout=5)
             return float(r.json()["StatusSNS"]["ENERGY"]["Total"])
+
+        # ── Wallboxen ─────────────────────────────────────────────────────────
+        elif source == "go_e":
+            if not ip: return None
+            # Try v2 API, then v1 (auto-detect firmware)
+            for path in ("/api/status", "/status"):
+                try:
+                    data = requests.get(f"http://{ip}{path}", timeout=5).json()
+                    if "eto" in data:
+                        return round(data["eto"] / 10000, 3)  # 0.1 Wh → kWh
+                except Exception: pass
+
+        elif source == "openwb":
+            if not ip: return None
+            # openWB v1/v2 ramdisk endpoint (LP1); try per-LP paths
+            for path in ("/openWB/ramdisk/llkwh",
+                         "/openWB/ramdisk/lp/1/llkwh",
+                         "/openWB/ramdisk/evsoc"):
+                try:
+                    r = requests.get(f"http://{ip}{path}", timeout=5)
+                    if r.ok:
+                        return round(float(r.text.strip()), 3)
+                except Exception: pass
+
+        elif source == "warp":
+            if not ip: return None
+            # WARP Charger 1/2/3 (Tinkerforge) — /meter/state
+            data = requests.get(f"http://{ip}/meter/state", timeout=5).json()
+            return round(float(data["energy_abs"]), 3)  # kWh
+
+        elif source == "evcc":
+            # EVCC covers: KEBA, ABL, Mennekes, Heidelberg, Wallbe, Alfen,
+            # ABB Terra, Webasto, NRGKick, Fronius Wattpilot, Easee + ~100 more
+            if not ip: return None
+            port = int(cfg.get("meter_evcc_port") or 7070)
+            data = requests.get(f"http://{ip}:{port}/api/state", timeout=5).json()
+            result = data.get("result", data)
+            lps = result.get("loadpoints", [])
+            lp_idx = int(cfg.get("meter_evcc_lp", 0))
+            if lps and lp_idx < len(lps):
+                lp = lps[lp_idx]
+                # chargeTotalImport in kWh (EVCC ≥ 0.12x)
+                v = lp.get("chargeTotalImport") or (lp.get("chargedEnergy", 0) / 1000)
+                return round(float(v), 3)
+
+        elif source == "webasto":
+            if not ip: return None
+            # Webasto Next / Live — local REST (firmware ≥ 1.8)
+            data = requests.get(f"http://{ip}/api/1/status", timeout=5).json()
+            # totalEnergy in Wh
+            v = data.get("totalEnergy") or data.get("MeterReading", 0)
+            return round(float(v) / 1000, 3)
+
+        elif source == "alfen":
+            if not ip: return None
+            # Alfen Eve Single / Double — Modbus-JSON proxy via local web UI
+            r = requests.get(f"http://{ip}/api", timeout=5,
+                             auth=("admin", cfg.get("meter_alfen_pass","admin")))
+            data = r.json()
+            # prop ID 21 = Meter Reading kWh
+            for prop in data.get("data", []):
+                if prop.get("id") == "3EA00020" or "Total" in str(prop.get("description","")):
+                    return round(float(prop.get("value", 0)), 3)
+
+        elif source == "juice":
+            if not ip: return None
+            # Juice Charger Me³ / Pro — local HTTP API
+            data = requests.get(f"http://{ip}/api/1.0.0/details", timeout=5).json()
+            return round(float(data.get("meter_total_kwh", data.get("totalEnergy", 0))), 3)
+
     except Exception as e:
         log.warning("Meter read error (%s): %s", source, e)
     return None

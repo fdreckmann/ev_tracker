@@ -505,23 +505,49 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <label class="lbl">Quelle</label>
       <select class="inp" id="c_meter_source" onchange="updateMeterSourceUI()">
         <option value="none">— Keine / manuell —</option>
-        <option value="ha">Home Assistant Sensor</option>
-        <option value="shelly">Shelly (lokal)</option>
-        <option value="tasmota">Tasmota (lokal)</option>
+        <optgroup label="Smarte Steckdosen / Energiemesser">
+          <option value="ha">Home Assistant Sensor</option>
+          <option value="shelly">Shelly EM / 1PM (lokal)</option>
+          <option value="tasmota">Tasmota (lokal)</option>
+        </optgroup>
+        <optgroup label="Wallboxen">
+          <option value="go_e">go-e Charger (v1 + v2)</option>
+          <option value="openwb">openWB (v1 / Series 2)</option>
+          <option value="warp">WARP Charger 1 / 2 / 3</option>
+          <option value="evcc">EVCC · KEBA · ABL · Mennekes · Heidelberg · Wallbe · NRGKick u.v.m.</option>
+          <option value="webasto">Webasto Next / Live</option>
+          <option value="alfen">Alfen Eve Single / Double</option>
+          <option value="juice">Juice Charger Me³ / Pro</option>
+        </optgroup>
       </select>
     </div>
     <div id="meterHaFields" style="display:none">
       <div class="fg full">
         <label class="lbl">HA Entity ID</label>
         <input class="inp" type="text" id="c_meter_sensor" placeholder="sensor.stromzaehler_total_kwh">
-        <span class="hint">z.B. sensor.shelly_em_total_energy — muss in kWh liefern</span>
+        <span class="hint">muss in kWh liefern — z.B. sensor.shelly_em_total_energy</span>
       </div>
     </div>
     <div id="meterDeviceFields" style="display:none">
       <div class="fg full">
         <label class="lbl">Geräte-IP</label>
         <input class="inp" type="text" id="c_meter_device_ip" placeholder="192.168.1.100">
-        <span class="hint">Shelly: /emeter/0 oder /meter/0 · Tasmota: /cm?cmnd=Status%208</span>
+      </div>
+    </div>
+    <div id="meterEvccFields" style="display:none;display:grid;gap:10px;grid-template-columns:1fr 1fr">
+      <div>
+        <label class="lbl">EVCC Port</label>
+        <input class="inp" type="number" id="c_meter_evcc_port" placeholder="7070">
+      </div>
+      <div>
+        <label class="lbl">Loadpoint (0 = erster)</label>
+        <input class="inp" type="number" id="c_meter_evcc_lp" placeholder="0">
+      </div>
+    </div>
+    <div id="meterAlfenFields" style="display:none">
+      <div class="fg full">
+        <label class="lbl">Alfen Web-Passwort</label>
+        <input class="inp" type="password" id="c_meter_alfen_pass" placeholder="admin">
       </div>
     </div>
     <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
@@ -1293,8 +1319,11 @@ async function loadConfig(){
   const c = await fetch('/api/config').then(r=>r.json());
   if($('c_meter_source')) {
     $('c_meter_source').value = c.meter_source||'none';
-    if($('c_meter_sensor'))    $('c_meter_sensor').value    = c.meter_sensor||'';
-    if($('c_meter_device_ip')) $('c_meter_device_ip').value = c.meter_device_ip||'';
+    if($('c_meter_sensor'))     $('c_meter_sensor').value     = c.meter_sensor||'';
+    if($('c_meter_device_ip'))  $('c_meter_device_ip').value  = c.meter_device_ip||'';
+    if($('c_meter_evcc_port'))  $('c_meter_evcc_port').value  = c.meter_evcc_port||7070;
+    if($('c_meter_evcc_lp'))    $('c_meter_evcc_lp').value    = c.meter_evcc_lp||0;
+    if($('c_meter_alfen_pass')) $('c_meter_alfen_pass').value = c.meter_alfen_pass||'';
     updateMeterSourceUI();
   }
   const m = {c_car:'car_name',c_notify:'notify_service',
@@ -1669,16 +1698,23 @@ async function deleteTpl(){
   toast('Template entfernt'); refreshTplInfo();
 }
 
+const METER_IP_SOURCES = ['shelly','tasmota','go_e','openwb','warp','evcc','webasto','alfen','juice'];
 function updateMeterSourceUI(){
   const s=$('c_meter_source').value;
-  $('meterHaFields').style.display   = s==='ha'                  ? '' : 'none';
-  $('meterDeviceFields').style.display = (s==='shelly'||s==='tasmota') ? '' : 'none';
+  $('meterHaFields').style.display    = s==='ha' ? '' : 'none';
+  $('meterDeviceFields').style.display = METER_IP_SOURCES.includes(s) ? '' : 'none';
+  $('meterEvccFields').style.display  = s==='evcc'  ? 'grid' : 'none';
+  $('meterAlfenFields').style.display = s==='alfen' ? '' : 'none';
 }
 async function saveMeterSource(){
+  const g = id => { const el=$(id); return el ? el.value.trim() : ''; };
   const cfg={
-    meter_source:    $('c_meter_source').value,
-    meter_sensor:    ($('c_meter_sensor')||{value:''}).value.trim(),
-    meter_device_ip: ($('c_meter_device_ip')||{value:''}).value.trim(),
+    meter_source:     $('c_meter_source').value,
+    meter_sensor:     g('c_meter_sensor'),
+    meter_device_ip:  g('c_meter_device_ip'),
+    meter_evcc_port:  parseInt($('c_meter_evcc_port')?.value)||7070,
+    meter_evcc_lp:    parseInt($('c_meter_evcc_lp')?.value)||0,
+    meter_alfen_pass: g('c_meter_alfen_pass'),
   };
   const r=await fetch('/api/config',{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
