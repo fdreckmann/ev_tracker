@@ -1,9 +1,11 @@
 {
   "version": "1.5.0",
   "changelog": [
+    "Neue Provider: Hyundai/Kia (Bluelink/UVO), Renault/Dacia, Polestar, Audi (MyAudi)",
+    "Login mit Passwort + optionaler 2FA (TOTP · Google Authenticator / Authy)",
     "Zählerstand-Quelle auf Konfig-Seite verschoben",
     "Update: Container-Erkennung per Image (funktioniert jetzt auf Unraid)",
     "Update: Remote-Versionsnummer und Changelog vor Installation sichtbar",
-    "Update-Status: Log-Ausgabe wird in Echtzeit im Browser angezeigt"
+    "Update-Status: Live-Log wird im Browser angezeigt"
   ]
 }

@@ -232,6 +232,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   <button onclick="tab('export',this)">Export</button>
   <button onclick="tab('backup',this)">Backup</button>
   <button onclick="tab('update',this)" id="navUpdate">Update</button>
+  <a href="/logout" id="navLogout" style="display:none;margin-left:auto;padding:8px 14px;font-size:.78rem;color:var(--mute);text-decoration:none;border-radius:8px;border:1px solid var(--brd)" title="Abmelden">🚪</a>
 </nav>
 
 <!-- ══════════════════════════════════════════════════════
@@ -490,6 +491,54 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     <button class="btn-p" onclick="saveConfig()">💾 Speichern</button>
     <button class="btn-s" onclick="loadConfig()">↺ Zurücksetzen</button>
   </div>
+
+  <!-- Auth / Login card -->
+  <div class="card" style="margin-top:18px">
+    <div class="card-title">🔐 Login &amp; Sicherheit</div>
+    <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
+      Schützt die Oberfläche mit Passwort. Ohne Passwort ist der Zugang frei.
+    </p>
+
+    <div id="authStatus" style="margin-bottom:14px;font-size:.78rem;font-family:var(--mono);color:var(--mute)">⏳ Lade…</div>
+
+    <!-- Set / Change password -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <div>
+        <label class="lbl">Neues Passwort</label>
+        <input class="inp" type="password" id="authNewPw" placeholder="••••••••" autocomplete="new-password">
+      </div>
+      <div>
+        <label class="lbl">Wiederholen</label>
+        <input class="inp" type="password" id="authNewPw2" placeholder="••••••••" autocomplete="new-password">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
+      <button class="btn-p" style="font-size:.78rem;padding:7px 16px" onclick="setAuthPassword()">🔑 Passwort setzen</button>
+      <button class="btn-d" style="font-size:.78rem;padding:7px 16px" onclick="disableAuth()">🔓 Passwort entfernen</button>
+    </div>
+
+    <!-- 2FA TOTP -->
+    <div style="border-top:1px solid var(--brd);padding-top:14px">
+      <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Zwei-Faktor-Authentifizierung (TOTP)</div>
+      <div id="totpStatus" style="font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-bottom:10px">—</div>
+      <div id="totpQrWrap" style="display:none;margin-bottom:12px">
+        <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:8px">
+          Scanne den QR-Code mit Google Authenticator, Authy oder einer anderen TOTP-App:
+        </div>
+        <div id="totpQrImg" style="margin-bottom:8px"></div>
+        <div style="font-size:.7rem;font-family:var(--mono);color:var(--acc2)" id="totpSecret"></div>
+        <div class="warn-box" style="margin-top:10px">
+          ⚠ Speichere den Secret-Code sicher! Er wird nur einmal angezeigt.<br>
+          Teste den Code bevor du dich ausloggst.
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn-s" style="font-size:.78rem;padding:7px 16px" onclick="setupTotp()">📱 2FA einrichten</button>
+        <button class="btn-d" id="totpDisableBtn" style="font-size:.78rem;padding:7px 16px;display:none" onclick="disableTotp()">❌ 2FA deaktivieren</button>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- ══════════════════════════════════════════════════════
@@ -879,6 +928,7 @@ function tab(id, btn){
   if(id==='export'){loadExpPreview();refreshTplInfo();}
   if(id==='backup') loadBackups();
   if(id==='dashboard') loadCharts();
+  if(id==='config') loadAuthStatus();
 }
 
 // ── Auto-scale stat values to fit their tile ─────────────────────────────────
@@ -2070,7 +2120,70 @@ setTimeout(async ()=>{
       $('updateBadge').textContent='⬆ Update verfügbar' + verStr;
     }
   }catch(e){}
+  // Show logout button if auth active
+  try{
+    const a=await fetch('/api/auth/status').then(r=>r.json());
+    if(a.auth_enabled) $('navLogout').style.display='';
+  }catch(e){}
 }, 3000);
+
+// ── Auth / Login ─────────────────────────────────────────────────────────────
+async function loadAuthStatus(){
+  const r = await fetch('/api/auth/status').then(r=>r.json()).catch(()=>null);
+  if(!r) return;
+  const el = $('authStatus');
+  if(r.auth_enabled){
+    el.innerHTML = `<span style="color:var(--acc)">🔐 Login aktiv</span>${r.totp_enabled?' · <span style="color:var(--acc2)">📱 2FA aktiv</span>':''}`;
+    if(r.totp_enabled) $('totpStatus').innerHTML='<span style="color:var(--acc2)">📱 2FA ist aktiv</span>';
+    else $('totpStatus').textContent='Kein 2FA konfiguriert';
+    $('totpDisableBtn').style.display = r.totp_enabled ? '' : 'none';
+  } else {
+    el.innerHTML='<span style="color:var(--mute)">🔓 Kein Login — freier Zugang</span>';
+    $('totpStatus').textContent='Erst Passwort setzen, dann 2FA aktivieren';
+    $('totpDisableBtn').style.display='none';
+  }
+}
+
+async function setAuthPassword(){
+  const pw  = $('authNewPw').value.trim();
+  const pw2 = $('authNewPw2').value.trim();
+  if(!pw){ toast('Passwort darf nicht leer sein','err'); return; }
+  if(pw !== pw2){ toast('Passwörter stimmen nicht überein','err'); return; }
+  if(pw.length < 6){ toast('Passwort muss mindestens 6 Zeichen haben','err'); return; }
+  await fetch('/api/auth/setup',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({password:pw})});
+  $('authNewPw').value=''; $('authNewPw2').value='';
+  toast('Passwort gesetzt — beim nächsten Aufruf wird Login verlangt','ok');
+  loadAuthStatus();
+}
+
+async function disableAuth(){
+  if(!confirm('Login deaktivieren?\nDie App ist dann ohne Passwort erreichbar.')) return;
+  await fetch('/api/auth/setup',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({disable_password:true})});
+  toast('Login deaktiviert','ok');
+  loadAuthStatus();
+}
+
+async function setupTotp(){
+  const r = await fetch('/api/auth/totp/setup',{method:'POST'}).then(r=>r.json());
+  if(!r.ok){ toast(r.error||'Fehler','err'); return; }
+  $('totpSecret').textContent='Secret: '+r.secret;
+  // Render QR via Google Charts API (no server-side dep)
+  const qrUrl = `https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl=${encodeURIComponent(r.uri)}`;
+  $('totpQrImg').innerHTML=`<img src="${qrUrl}" style="border-radius:8px;border:4px solid #fff" width="200" height="200">`;
+  $('totpQrWrap').style.display='';
+  toast('2FA eingerichtet — QR-Code scannen!','ok');
+  loadAuthStatus();
+}
+
+async function disableTotp(){
+  if(!confirm('2FA deaktivieren?')) return;
+  await fetch('/api/auth/totp/disable',{method:'POST'});
+  $('totpQrWrap').style.display='none';
+  toast('2FA deaktiviert','ok');
+  loadAuthStatus();
+}
 
 // ── Backup ───────────────────────────────────────────────────────────────────
 async function loadBackups(){

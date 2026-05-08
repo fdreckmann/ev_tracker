@@ -7,15 +7,20 @@ from .ha_provider import HomeAssistantProvider
 from .vw_provider import VWProvider
 from .tesla_provider import TeslaProvider
 from .other_providers import VolvoProvider, BMWProvider, MercedesProvider
+from .new_providers import HyundaiKiaProvider, RenaultProvider, PolestarProvider, AudiProvider
 
 # Alle verfügbaren Provider
 PROVIDERS: dict[str, type[BaseProvider]] = {
-    "ha":       HomeAssistantProvider,
-    "vw":       VWProvider,
-    "tesla":    TeslaProvider,
-    "volvo":    VolvoProvider,
-    "bmw":      BMWProvider,
-    "mercedes": MercedesProvider,
+    "ha":          HomeAssistantProvider,
+    "vw":          VWProvider,
+    "tesla":       TeslaProvider,
+    "volvo":       VolvoProvider,
+    "bmw":         BMWProvider,
+    "mercedes":    MercedesProvider,
+    "hyundai_kia": HyundaiKiaProvider,
+    "renault":     RenaultProvider,
+    "polestar":    PolestarProvider,
+    "audi":        AudiProvider,
 }
 
 

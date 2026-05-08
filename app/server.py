@@ -1,8 +1,8 @@
-import os, json, time, sqlite3, logging, threading, requests
+import os, json, time, sqlite3, logging, threading, requests, hashlib, secrets, functools
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from flask import Flask, render_template, request, jsonify, send_file, make_response
+from flask import Flask, render_template, request, jsonify, send_file, make_response, session, redirect, url_for
 from providers import get_provider, get_all_capabilities, get_config_fields, PROVIDERS
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -12,10 +12,12 @@ APP_VERSION   = "1.5.0"
 
 CHANGELOG = [
     {"version": "1.5.0", "changes": [
+        "Neue Provider: Hyundai / Kia (Bluelink/UVO), Renault / Dacia, Polestar, Audi (MyAudi)",
+        "Login mit Passwort + optionaler 2FA (TOTP · Google Authenticator / Authy)",
         "Zählerstand-Quelle auf Konfig-Seite verschoben",
-        "Update: Container-Erkennung per Image (nicht mehr per Name) — funktioniert jetzt auf Unraid",
+        "Update: Container-Erkennung per Image (funktioniert jetzt auf Unraid)",
         "Update: Remote-Versionsnummer und Changelog vor Installation sichtbar",
-        "Update-Status: Log-Ausgabe wird in Echtzeit im Browser angezeigt",
+        "Update-Status: Live-Log wird im Browser angezeigt",
     ]},
     {"version": "1.4.6", "changes": [
         "Zählerstand im Dashboard als eigene Kachel (nur wenn Daten vorhanden)",
@@ -79,6 +81,36 @@ BACKUP_DIR    = DATA_DIR / "backups"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
+
+# ── Auth helpers ─────────────────────────────────────────────────────────────
+
+def _get_secret_key():
+    key_file = DATA_DIR / ".secret_key"
+    if key_file.exists():
+        return key_file.read_text().strip()
+    key = secrets.token_hex(32)
+    key_file.write_text(key)
+    return key
+
+def _hash_password(pw: str) -> str:
+    return hashlib.sha256(pw.encode()).hexdigest()
+
+def _auth_enabled() -> bool:
+    cfg = load_config()
+    return bool(cfg.get("auth_password_hash"))
+
+def require_auth(f):
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        if not _auth_enabled():
+            return f(*args, **kwargs)
+        if session.get("authenticated"):
+            return f(*args, **kwargs)
+        # API endpoints return JSON
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "Nicht eingeloggt"}), 401
+        return redirect(url_for("login_page", next=request.path))
+    return wrapper
 
 DEFAULT_CONFIG = {
     # Provider selection
@@ -156,6 +188,10 @@ DEFAULT_CONFIG = {
     "meter_evcc_port":   7070,    # EVCC port (default 7070)
     "meter_evcc_lp":     0,       # EVCC loadpoint index (0-based)
     "meter_alfen_pass":  "admin", # Alfen web UI password
+
+    # Auth
+    "auth_password_hash": "",     # SHA-256 of password; empty = no login required
+    "auth_totp_secret":   "",     # pyotp secret; empty = 2FA disabled
 }
 
 def load_config():
@@ -520,7 +556,96 @@ def start_tracker():
     threading.Thread(target=tracker_loop, daemon=True).start()
 
 # ── Routes ────────────────────────────────────────────────────────────────────
+
+_AUTH_EXEMPT = {"/login", "/logout", "/api/auth/setup", "/api/auth/status"}
+
+@app.before_request
+def check_auth():
+    if not _auth_enabled():
+        return
+    if request.path in _AUTH_EXEMPT or request.path.startswith("/static"):
+        return
+    if session.get("authenticated"):
+        return
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Nicht eingeloggt", "login_required": True}), 401
+    return redirect(url_for("login_page", next=request.path))
+
+@app.route("/login", methods=["GET","POST"])
+def login_page():
+    if not _auth_enabled():
+        return redirect(url_for("index"))
+    error = None
+    if request.method == "POST":
+        cfg = load_config()
+        pw  = request.form.get("password","")
+        if _hash_password(pw) == cfg.get("auth_password_hash",""):
+            totp_secret = cfg.get("auth_totp_secret","")
+            if totp_secret:
+                code = request.form.get("totp","").strip().replace(" ","")
+                try:
+                    import pyotp
+                    totp = pyotp.TOTP(totp_secret)
+                    if not totp.verify(code, valid_window=1):
+                        error = "Ungültiger 2FA-Code"
+                except ImportError:
+                    error = "pyotp nicht installiert"
+            if not error:
+                session["authenticated"] = True
+                session.permanent = True
+                return redirect(request.args.get("next") or url_for("index"))
+        else:
+            error = "Falsches Passwort"
+    totp_enabled = bool(load_config().get("auth_totp_secret",""))
+    return render_template("login.html", error=error, totp_enabled=totp_enabled)
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login_page"))
+
+@app.route("/api/auth/setup", methods=["POST"])
+def api_auth_setup():
+    data = request.json or {}
+    cfg  = load_config()
+    if "password" in data and data["password"]:
+        cfg["auth_password_hash"] = _hash_password(data["password"])
+    if data.get("disable_password"):
+        cfg["auth_password_hash"] = ""
+        cfg["auth_totp_secret"]   = ""
+    save_config(cfg)
+    return jsonify({"ok": True})
+
+@app.route("/api/auth/totp/setup", methods=["POST"])
+def api_totp_setup():
+    import pyotp
+    secret = pyotp.random_base32()
+    cfg = load_config()
+    cfg["auth_totp_secret"] = secret
+    save_config(cfg)
+    car_name = cfg.get("car_name","EV Tracker")
+    email    = cfg.get("ha_token","")[:6] or "user"
+    uri = pyotp.TOTP(secret).provisioning_uri(name=email, issuer_name=f"EV Tracker ({car_name})")
+    return jsonify({"ok": True, "secret": secret, "uri": uri})
+
+@app.route("/api/auth/totp/disable", methods=["POST"])
+def api_totp_disable():
+    cfg = load_config()
+    cfg["auth_totp_secret"] = ""
+    save_config(cfg)
+    return jsonify({"ok": True})
+
+@app.route("/api/auth/status")
+def api_auth_status():
+    cfg = load_config()
+    return jsonify({
+        "auth_enabled":  bool(cfg.get("auth_password_hash")),
+        "totp_enabled":  bool(cfg.get("auth_totp_secret")),
+        "authenticated": bool(session.get("authenticated")) or not _auth_enabled(),
+    })
+
 @app.route("/")
+@require_auth
 def index():
     cfg = load_config()
     caps = get_all_capabilities()
@@ -1220,5 +1345,7 @@ def api_update_log():
     return jsonify({"running": _update_running, "lines": list(_update_log)})
 
 if __name__=="__main__":
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    app.secret_key = _get_secret_key()
     init_db(); start_tracker(); schedule_backup()
     app.run(host="0.0.0.0",port=8080,debug=False)
