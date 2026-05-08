@@ -8,9 +8,16 @@ from providers import get_provider, get_all_capabilities, get_config_fields, PRO
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.5.0"
+APP_VERSION   = "1.6.0"
 
 CHANGELOG = [
+    {"version": "1.6.0", "changes": [
+        "Multi-Auto-Support: beliebig viele Fahrzeuge gleichzeitig tracken",
+        "Jedes Fahrzeug läuft in eigenem Tracker-Thread mit eigenem Provider",
+        "Fahrzeugverwaltung im Konfig-Tab (hinzufügen, bearbeiten, löschen)",
+        "Ladevorgänge-Liste: Filter nach Fahrzeug, Fahrzeug-Spalte bei mehreren Autos",
+        "Bestehende Sessions automatisch als Primärfahrzeug (v0) zugeordnet",
+    ]},
     {"version": "1.5.0", "changes": [
         "Neue Provider: Hyundai / Kia (Bluelink/UVO), Renault / Dacia, Polestar, Audi (MyAudi)",
         "Login mit Passwort + optionaler 2FA (TOTP · Google Authenticator / Authy)",
@@ -192,6 +199,26 @@ DEFAULT_CONFIG = {
     # Auth
     "auth_password_hash": "",     # SHA-256 of password; empty = no login required
     "auth_totp_secret":   "",     # pyotp secret; empty = 2FA disabled
+
+    # Multi-vehicle: additional vehicles beyond the primary (v0)
+    "extra_vehicles":    [],
+}
+
+# Fields that belong to a vehicle config (vs. app-level config)
+VEHICLE_SPECIFIC_KEYS = {
+    "provider","car_name","poll_interval","battery_capacity_kwh",
+    "home_lat","home_lon","home_radius_m","dc_threshold_kw",
+    "ha_url","ha_token","charging_sensor","soc_sensor","odo_sensor",
+    "power_sensor","charge_speed_sensor","charge_type_sensor","location_sensor","home_states",
+    "vw_username","vw_password","vw_vin","vw_update_interval",
+    "tesla_email","tesla_vin",
+    "volvo_api_key","volvo_access_token","volvo_vin",
+    "bmw_username","bmw_password","bmw_vin","bmw_region",
+    "mercedes_token","mercedes_vin",
+    "hk_brand","hk_username","hk_password","hk_pin","hk_region","hk_vin",
+    "renault_username","renault_password","renault_locale","renault_account","renault_vin",
+    "polestar_username","polestar_password","polestar_vin",
+    "audi_username","audi_password","audi_vin",
 }
 
 def load_config():
@@ -204,6 +231,30 @@ def save_config(cfg):
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_FILE, "w") as f:
         json.dump(cfg, f, indent=2)
+
+def get_all_vehicles(cfg=None) -> list[dict]:
+    """Returns primary vehicle (v0 from flat config) plus extra vehicles."""
+    if cfg is None:
+        cfg = load_config()
+    primary = {
+        "id":   "v0",
+        "name": cfg.get("car_name", "Mein EV"),
+        "provider": cfg.get("provider", "ha"),
+        "active": True,
+        **{k: cfg[k] for k in VEHICLE_SPECIFIC_KEYS if k in cfg and k not in ("provider","car_name")},
+    }
+    extras = cfg.get("extra_vehicles", [])
+    return [primary] + extras
+
+def build_vehicle_config(vehicle: dict, cfg=None) -> dict:
+    """Merge app-level config with vehicle-specific fields for provider initialization."""
+    if cfg is None:
+        cfg = load_config()
+    merged = dict(cfg)
+    merged.update(vehicle)
+    if "name" in vehicle:
+        merged["car_name"] = vehicle["name"]
+    return merged
 
 # ── Database ──────────────────────────────────────────────────────────────────
 def init_db():
@@ -222,11 +273,12 @@ def init_db():
         price_per_kwh REAL,
         entsoe_spot   REAL,
         provider      TEXT DEFAULT 'ha',
-        meter_old     REAL, meter_new REAL
+        meter_old     REAL, meter_new REAL,
+        vehicle_id    TEXT DEFAULT 'v0'
     )""")
-    # migrate existing DB: add meter columns if missing
-    for col in ("meter_old", "meter_new"):
-        try: con.execute(f"ALTER TABLE sessions ADD COLUMN {col} REAL")
+    # migrate existing DB
+    for col, typedef in [("meter_old","REAL"),("meter_new","REAL"),("vehicle_id","TEXT DEFAULT 'v0'")]:
+        try: con.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
         except Exception: pass
     con.execute("""CREATE TABLE IF NOT EXISTS session_points (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -248,12 +300,14 @@ def init_db():
         except sqlite3.OperationalError: pass
     con.commit(); con.close()
 
-def get_sessions(year=None, month=None, location=None, limit=50):
+def get_sessions(year=None, month=None, location=None, vehicle_id=None, limit=50):
     where = ["end_ts IS NOT NULL"]; params = []
     if year and month:
         where.append("start_ts LIKE ?"); params.append(f"{year:04d}-{month:02d}%")
     if location and location != "all":
         where.append("location = ?"); params.append(location)
+    if vehicle_id and vehicle_id != "all":
+        where.append("vehicle_id = ?"); params.append(vehicle_id)
     sql = f"SELECT * FROM sessions WHERE {' AND '.join(where)} ORDER BY start_ts DESC"
     if not (year and month): sql += f" LIMIT {limit}"
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
@@ -334,15 +388,23 @@ def ha_notify(cfg, title, message):
         log.warning("Notify error: %s", e)
 
 # ── Tracker ───────────────────────────────────────────────────────────────────
-_state = {
-    "running":False,"session_active":False,"session_id":None,
-    "last_poll":None,"last_error":None,"soc_current":None,
-    "odo_current":None,"charging":False,"location":"unknown",
-    "charger_type":"unknown","power_kw":None,
-    "entsoe_spot":None,"provider":"ha",
-    "provider_name":"Home Assistant",
-}
-_stop = threading.Event()
+def _make_state(vehicle_id="v0", provider_id="ha"):
+    return {
+        "vehicle_id": vehicle_id,
+        "running": False, "session_active": False, "session_id": None,
+        "last_poll": None, "last_error": None, "soc_current": None,
+        "odo_current": None, "charging": False, "location": "unknown",
+        "charger_type": "unknown", "power_kw": None, "entsoe_spot": None,
+        "provider": provider_id,
+        "provider_name": PROVIDERS.get(provider_id, PROVIDERS["ha"]).PROVIDER_NAME,
+    }
+
+_vehicle_states: dict[str, dict] = {"v0": _make_state("v0")}
+_vehicle_stops:  dict[str, threading.Event] = {"v0": threading.Event()}
+
+# Backward compat alias
+_state = _vehicle_states["v0"]
+_stop  = _vehicle_stops["v0"]
 
 def read_meter_value():
     cfg = load_config()
@@ -445,23 +507,35 @@ def read_meter_value():
         log.warning("Meter read error (%s): %s", source, e)
     return None
 
-def tracker_loop():
-    _state["running"] = True
+def tracker_loop(vehicle_id: str = "v0"):
+    st   = _vehicle_states[vehicle_id]
+    stop = _vehicle_stops[vehicle_id]
+    st["running"] = True
     session_active = False; session_id = None
     soc_start = odo_start = peak_power = None
 
-    log.info("Tracker gestartet")
-    while not _stop.is_set():
-        cfg      = load_config()
-        provider_id = cfg.get("provider","ha")
+    log.info("Tracker gestartet: %s", vehicle_id)
+    while not stop.is_set():
+        cfg = load_config()
+        # For v0 use flat config; for extra vehicles get their config merged with app config
+        if vehicle_id == "v0":
+            vcfg = cfg
+        else:
+            extras = cfg.get("extra_vehicles", [])
+            vehicle = next((v for v in extras if v["id"] == vehicle_id), None)
+            if not vehicle:
+                log.warning("Fahrzeug %s nicht gefunden — Tracker stoppt", vehicle_id)
+                break
+            vcfg = build_vehicle_config(vehicle, cfg)
+        provider_id = vcfg.get("provider", "ha")
 
         try:
-            provider = get_provider(provider_id, cfg)
+            provider = get_provider(provider_id, vcfg)
             state    = provider.get_state()
 
             if state.error:
-                _state["last_error"] = state.error
-                _stop.wait(cfg.get("poll_interval",60)); continue
+                st["last_error"] = state.error
+                stop.wait(vcfg.get("poll_interval", 60)); continue
 
             charging     = state.charging or False
             soc          = state.soc
@@ -470,13 +544,13 @@ def tracker_loop():
             location     = state.location or "unknown"
             charger_type = state.charge_type or "unknown"
 
-            _state.update(
+            st.update(
                 charging=charging, soc_current=soc, odo_current=odo,
                 location=location, charger_type=charger_type, power_kw=power_kw,
                 session_active=session_active,
                 last_poll=datetime.now().isoformat(timespec="seconds"),
                 last_error=None, provider=provider_id,
-                provider_name=PROVIDERS[provider_id].PROVIDER_NAME,
+                provider_name=PROVIDERS.get(provider_id, PROVIDERS["ha"]).PROVIDER_NAME,
             )
 
             con = sqlite3.connect(DB_PATH); cur = con.cursor()
@@ -485,24 +559,24 @@ def tracker_loop():
                 soc_start = soc; odo_start = odo; peak_power = power_kw or 0
                 meter_start_val = read_meter_value()
                 spot = fetch_entsoe_spot(cfg.get("entsoe_api_key","")) if location=="extern" else None
-                _state["entsoe_spot"] = spot
+                st["entsoe_spot"] = spot
                 price_kwh = (cfg["price_per_kwh_home"] if location=="home"
                              else calc_extern_price(cfg, charger_type, spot))
                 cur.execute("""INSERT INTO sessions
                     (start_ts,odo_start,soc_start,location,charger_type,
-                     max_power_kw,price_per_kwh,entsoe_spot,provider,meter_old)
-                    VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                     max_power_kw,price_per_kwh,entsoe_spot,provider,meter_old,vehicle_id)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                     (datetime.now().isoformat(timespec="seconds"),
-                     odo_start,soc_start,location,charger_type,power_kw,price_kwh,spot,provider_id,
-                     meter_start_val))
+                     odo_start,soc_start,location,charger_type,power_kw,price_kwh,spot,
+                     provider_id,meter_start_val,vehicle_id))
                 con.commit(); session_id=cur.lastrowid; session_active=True
-                _state["session_id"]=session_id
+                st["session_id"]=session_id
                 cur.execute("INSERT INTO session_points (session_id,ts,soc,power_kw) VALUES (?,?,?,?)",
                             (session_id,datetime.now().isoformat(timespec="seconds"),soc_start,power_kw))
                 con.commit()
-                log.info("⚡ Session #%d | %s | %s | %.2f €/kWh",
-                         session_id,location.upper(),charger_type.upper(),price_kwh)
-                ha_notify(cfg,f"⚡ {cfg['car_name']} lädt",
+                log.info("⚡ [%s] Session #%d | %s | %s | %.2f €/kWh",
+                         vehicle_id,session_id,location.upper(),charger_type.upper(),price_kwh)
+                ha_notify(vcfg,f"⚡ {vcfg['car_name']} lädt",
                     f"{'🏠 Zuhause' if location=='home' else '⚡ Extern'} · "
                     f"{'DC' if charger_type=='dc' else 'AC'} · {price_kwh:.2f} €/kWh · SOC {soc_start or '?'}%")
 
@@ -512,9 +586,9 @@ def tracker_loop():
                 con.commit()
                 if power_kw and (peak_power is None or power_kw > peak_power):
                     peak_power = power_kw
-                    new_type = "dc" if power_kw > float(cfg.get("dc_threshold_kw",22)) else "ac"
+                    new_type = "dc" if power_kw > float(vcfg.get("dc_threshold_kw",22)) else "ac"
                     if new_type != charger_type:
-                        spot = _state.get("entsoe_spot")
+                        spot = st.get("entsoe_spot")
                         price = (cfg["price_per_kwh_home"] if location=="home"
                                  else calc_extern_price(cfg,new_type,spot))
                         cur.execute("UPDATE sessions SET charger_type=?,max_power_kw=?,price_per_kwh=? WHERE id=?",
@@ -527,7 +601,7 @@ def tracker_loop():
                 db_price=row[0] if row else None; cost_manual=row[1] if row else 0
                 kwh=cost=None
                 if soc is not None and soc_start is not None:
-                    kwh  = round(max(0.0,soc-soc_start)/100.0*cfg["battery_capacity_kwh"],2)
+                    kwh  = round(max(0.0,soc-soc_start)/100.0*vcfg["battery_capacity_kwh"],2)
                     if not cost_manual:
                         cost = round(kwh*(db_price or cfg["price_per_kwh_home"]),2)
                 meter_end_val = read_meter_value()
@@ -539,21 +613,45 @@ def tracker_loop():
                     (datetime.now().isoformat(timespec="seconds"),odo,soc,kwh,cost,peak_power,
                      meter_end_val,session_id))
                 con.commit(); session_active=False
-                _state.update(session_active=False,session_id=None)
-                log.info("✅ Session #%d | %.2f kWh | %.2f €",session_id,kwh or 0,cost or 0)
-                ha_notify(cfg,f"✅ {cfg['car_name']} fertig",
+                st.update(session_active=False,session_id=None)
+                log.info("✅ [%s] Session #%d | %.2f kWh | %.2f €",vehicle_id,session_id,kwh or 0,cost or 0)
+                ha_notify(vcfg,f"✅ {vcfg['car_name']} fertig",
                     f"{'🏠' if location=='home' else '⚡'} · {kwh or 0:.2f} kWh · {cost or 0:.2f} €")
                 session_id=None; peak_power=None
             con.close()
 
         except Exception as e:
-            log.warning("Tracker error: %s", e); _state["last_error"]=str(e)
-        _stop.wait(cfg.get("poll_interval",60))
-    _state["running"]=False
+            log.warning("Tracker error [%s]: %s", vehicle_id, e); st["last_error"]=str(e)
+        stop.wait(vcfg.get("poll_interval",60))
+    st["running"]=False
+
+def _start_vehicle_tracker(vehicle_id: str):
+    if vehicle_id not in _vehicle_states:
+        cfg = load_config()
+        extras = cfg.get("extra_vehicles", [])
+        v = next((x for x in extras if x["id"] == vehicle_id), {})
+        _vehicle_states[vehicle_id] = _make_state(vehicle_id, v.get("provider","ha"))
+    if vehicle_id not in _vehicle_stops:
+        _vehicle_stops[vehicle_id] = threading.Event()
+    _vehicle_stops[vehicle_id].clear()
+    threading.Thread(target=tracker_loop, args=(vehicle_id,), daemon=True).start()
+
+def _stop_vehicle_tracker(vehicle_id: str):
+    if vehicle_id in _vehicle_stops:
+        _vehicle_stops[vehicle_id].set()
 
 def start_tracker():
-    _stop.clear()
-    threading.Thread(target=tracker_loop, daemon=True).start()
+    """Start trackers for all active vehicles."""
+    _vehicle_stops["v0"].clear()
+    threading.Thread(target=tracker_loop, args=("v0",), daemon=True).start()
+    # Start extra vehicle trackers
+    cfg = load_config()
+    for v in cfg.get("extra_vehicles", []):
+        if v.get("active", True):
+            vid = v["id"]
+            _vehicle_states[vid] = _make_state(vid, v.get("provider","ha"))
+            _vehicle_stops[vid]  = threading.Event()
+            threading.Thread(target=tracker_loop, args=(vid,), daemon=True).start()
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
@@ -656,7 +754,8 @@ def index():
                            provider_fields=provider_fields,
                            provider_names={k:v.PROVIDER_NAME for k,v in PROVIDERS.items()},
                            app_version=APP_VERSION,
-                           changelog=CHANGELOG))
+                           changelog=CHANGELOG,
+                           all_vehicles=get_all_vehicles(cfg)))
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     resp.headers["Pragma"]        = "no-cache"
     resp.headers["Expires"]       = "0"
@@ -687,7 +786,74 @@ def api_provider_fields(provider_id):
     return jsonify(get_config_fields(provider_id))
 
 @app.route("/api/status")
-def api_status(): return jsonify(_state)
+def api_status():
+    vid = request.args.get("vehicle_id","v0")
+    st  = _vehicle_states.get(vid, _vehicle_states.get("v0", {}))
+    result = dict(st)
+    result["all_vehicles"] = [
+        {"vehicle_id": k, "name": v.get("name",k), "running": v.get("running",False),
+         "charging": v.get("charging",False), "session_active": v.get("session_active",False)}
+        for k, v in _vehicle_states.items()
+    ]
+    return jsonify(result)
+
+@app.route("/api/vehicles", methods=["GET"])
+def api_get_vehicles():
+    return jsonify(get_all_vehicles())
+
+@app.route("/api/vehicles", methods=["POST"])
+def api_add_vehicle():
+    data = request.json or {}
+    cfg  = load_config()
+    extras = list(cfg.get("extra_vehicles", []))
+    vid = f"v{int(time.time())}"
+    data["id"] = vid
+    data.setdefault("active", True)
+    extras.append(data)
+    cfg["extra_vehicles"] = extras
+    save_config(cfg)
+    if data.get("active", True):
+        _start_vehicle_tracker(vid)
+    return jsonify({"ok": True, "id": vid})
+
+@app.route("/api/vehicles/<vid>", methods=["PUT"])
+def api_update_vehicle(vid):
+    if vid == "v0":
+        # Update primary vehicle = update flat config fields
+        data = request.json or {}
+        cfg  = load_config()
+        for k, val in data.items():
+            if k in VEHICLE_SPECIFIC_KEYS or k == "car_name":
+                cfg[k] = val
+        save_config(cfg)
+        return jsonify({"ok": True})
+    data   = request.json or {}
+    cfg    = load_config()
+    extras = list(cfg.get("extra_vehicles", []))
+    for i, v in enumerate(extras):
+        if v["id"] == vid:
+            was_active = v.get("active", True)
+            extras[i] = {**v, **data, "id": vid}
+            cfg["extra_vehicles"] = extras
+            save_config(cfg)
+            now_active = extras[i].get("active", True)
+            if was_active:
+                _stop_vehicle_tracker(vid)
+            if now_active:
+                _start_vehicle_tracker(vid)
+            return jsonify({"ok": True})
+    return jsonify({"error": "Fahrzeug nicht gefunden"}), 404
+
+@app.route("/api/vehicles/<vid>", methods=["DELETE"])
+def api_delete_vehicle(vid):
+    if vid == "v0":
+        return jsonify({"error": "Primärfahrzeug kann nicht gelöscht werden"}), 400
+    cfg    = load_config()
+    extras = [v for v in cfg.get("extra_vehicles", []) if v["id"] != vid]
+    cfg["extra_vehicles"] = extras
+    save_config(cfg)
+    _stop_vehicle_tracker(vid)
+    return jsonify({"ok": True})
 
 @app.route("/api/sessions")
 def api_sessions():
@@ -695,6 +861,7 @@ def api_sessions():
         request.args.get("year",type=int),
         request.args.get("month",type=int),
         request.args.get("location",default="all"),
+        request.args.get("vehicle_id",default=None),
     ))
 
 @app.route("/api/sessions/<int:sid>", methods=["DELETE"])

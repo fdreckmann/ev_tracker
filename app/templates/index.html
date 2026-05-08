@@ -298,6 +298,12 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <option value="home">🏠 Nur Zuhause</option>
         <option value="extern">⚡ Nur Extern</option>
       </select>
+      <select id="sVehicleFilter" onchange="loadSessions()">
+        <option value="all">🚗 Alle Fahrzeuge</option>
+        {% for v in all_vehicles %}
+        <option value="{{ v.id }}">{{ v.name }}</option>
+        {% endfor %}
+      </select>
       <span>✕ = Session löschen</span>
     </div>
     <div class="tbl-wrap" id="allTbl"><div class="empty">Lade…</div></div>
@@ -308,6 +314,16 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
      KONFIGURATION
 ══════════════════════════════════════════════════════ -->
 <div class="panel" id="panel-config">
+
+  <!-- Vehicle management -->
+  <div class="card">
+    <div class="card-title">Fahrzeuge</div>
+    <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
+      Mehrere Fahrzeuge können gleichzeitig getrackt werden. Jedes Fahrzeug läuft in einem eigenen Tracker.
+    </p>
+    <div id="vehicleList" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px"></div>
+    <button class="btn-p" style="font-size:.78rem;padding:8px 18px" onclick="openAddVehicleModal()">+ Fahrzeug hinzufügen</button>
+  </div>
 
   <div class="card">
     <div class="card-title">Fahrzeug & Datenquelle</div>
@@ -813,6 +829,56 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
 </div>
 
+<!-- ── Vehicle Modal ── -->
+<div class="modal-overlay" id="vehicleModal" style="display:none" onclick="if(event.target===this)closeVehicleModal()">
+  <div class="modal" style="max-width:560px;width:96vw;padding:28px 28px 20px">
+    <button class="modal-close" onclick="closeVehicleModal()">✕</button>
+    <h2 id="vehicleModalTitle" style="margin-bottom:16px">Fahrzeug hinzufügen</h2>
+
+    <div class="fg full" style="margin-bottom:12px">
+      <label class="lbl">Fahrzeugname</label>
+      <input class="inp" type="text" id="vm_name" placeholder="z.B. VW ID.4 Weiß">
+    </div>
+
+    <div class="fg full" style="margin-bottom:12px">
+      <label class="lbl">Datenquelle (Provider)</label>
+      <select class="inp" id="vm_provider" onchange="loadVehicleModalFields()">
+        {% for p in all_providers %}
+        <option value="{{ p.provider_id }}">{{ p.provider_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div id="vm_fields" style="display:grid;gap:10px;margin-bottom:16px"></div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+      <div>
+        <label class="lbl">Akkugröße (kWh)</label>
+        <input class="inp" type="number" step="0.1" id="vm_battery" placeholder="77.0">
+      </div>
+      <div>
+        <label class="lbl">Poll-Intervall (Sek.)</label>
+        <input class="inp" type="number" id="vm_poll" placeholder="60">
+      </div>
+      <div>
+        <label class="lbl">Heimat Breitengrad</label>
+        <input class="inp" type="text" id="vm_home_lat" placeholder="51.5074">
+      </div>
+      <div>
+        <label class="lbl">Heimat Längengrad</label>
+        <input class="inp" type="text" id="vm_home_lon" placeholder="7.4653">
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="btn-p" onclick="saveVehicleModal()">💾 Speichern</button>
+      <button class="btn-s" onclick="closeVehicleModal()">Abbrechen</button>
+      <button class="btn-d" id="vm_delete_btn" style="display:none;margin-left:auto" onclick="deleteVehicleModal()">🗑 Löschen</button>
+      <span id="vm_info" style="font-size:.75rem;font-family:var(--mono);color:var(--mute)"></span>
+    </div>
+  </div>
+</div>
+
 <!-- ── Template Mapping Modal ── -->
 <div class="modal-overlay" id="mappingModal" style="display:none" onclick="if(event.target===this)closeMappingModal()">
   <div class="modal" style="max-width:92vw;width:1100px;max-height:92vh;display:flex;flex-direction:column;padding:28px 28px 20px">
@@ -928,7 +994,7 @@ function tab(id, btn){
   if(id==='export'){loadExpPreview();refreshTplInfo();}
   if(id==='backup') loadBackups();
   if(id==='dashboard') loadCharts();
-  if(id==='config') loadAuthStatus();
+  if(id==='config'){ loadAuthStatus(); loadVehicleList(); }
 }
 
 // ── Auto-scale stat values to fit their tile ─────────────────────────────────
@@ -1040,11 +1106,13 @@ function typeBadge(t,kw){
 
 function renderTbl(el, rows, showDel=true){
   if(!rows.length){el.innerHTML='<div class="empty">Keine Ladevorgänge</div>';return;}
-  const hasMeter = rows.some(r=>r.meter_old!=null||r.meter_new!=null);
-  const fmtMeter = v => v!=null ? Number(v).toLocaleString('de',{minimumFractionDigits:3,maximumFractionDigits:3}) : '—';
+  const hasMeter   = rows.some(r=>r.meter_old!=null||r.meter_new!=null);
+  const hasVehicle = rows.some(r=>r.vehicle_id && r.vehicle_id!=='v0') || new Set(rows.map(r=>r.vehicle_id)).size>1;
+  const fmtMeter   = v => v!=null ? Number(v).toLocaleString('de',{minimumFractionDigits:3,maximumFractionDigits:3}) : '—';
   el.innerHTML=`<table>
     <thead><tr>
       <th>#</th><th>Datum</th><th>Start→Ende</th>
+      ${hasVehicle?'<th>Fahrzeug</th>':''}
       <th>SOC</th><th>Lader</th><th>kWh</th><th>Preis</th><th>Kosten</th>
       ${hasMeter?'<th>Zähler Alt→Neu</th>':''}
       <th>Standort</th>
@@ -1054,6 +1122,7 @@ function renderTbl(el, rows, showDel=true){
       <td class="num">${r.id}</td>
       <td>${fmtDate(r.start_ts).split(' ')[0]}</td>
       <td>${fmtTime(r.start_ts)} → ${r.end_ts?fmtTime(r.end_ts):'…'}</td>
+      ${hasVehicle?`<td style="font-size:.72rem;font-family:var(--mono);color:var(--acc2)">${r.vehicle_id||'v0'}</td>`:''}
       <td>${fmt(r.soc_start,0)}% → ${fmt(r.soc_end,0)}%</td>
       <td>${typeBadge(r.charger_type,r.max_power_kw)}</td>
       <td class="g">${fmt(r.kwh_charged)} kWh</td>
@@ -1109,7 +1178,10 @@ Oder leer lassen um Gesamtbetrag direkt einzugeben:`,
 
 async function loadSessions(){
   const loc = $('sFilter')?.value||'all';
-  const rows = await fetch(`/api/sessions?location=${loc}`).then(r=>r.json());
+  const vid = $('sVehicleFilter')?.value||'all';
+  const params = new URLSearchParams({location:loc});
+  if(vid && vid!=='all') params.set('vehicle_id',vid);
+  const rows = await fetch(`/api/sessions?${params}`).then(r=>r.json());
   renderTbl($('allTbl'), rows, true);
 }
 
@@ -2126,6 +2198,135 @@ setTimeout(async ()=>{
     if(a.auth_enabled) $('navLogout').style.display='';
   }catch(e){}
 }, 3000);
+
+// ── Vehicle Management ────────────────────────────────────────────────────────
+let _editingVehicleId = null;
+
+async function loadVehicleList() {
+  const vehicles = await fetch('/api/vehicles').then(r=>r.json()).catch(()=>[]);
+  const el = $('vehicleList');
+  if(!el) return;
+  el.innerHTML = '';
+  vehicles.forEach(v => {
+    const isV0 = v.id === 'v0';
+    const active = v.active !== false;
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:12px 14px';
+    row.innerHTML = `
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:.85rem;color:#fff">${v.name}</div>
+        <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-top:3px">${v.provider||'ha'} · ID: ${v.id}${isV0?' · Primär':''}</div>
+      </div>
+      <div style="font-size:.72rem;font-family:var(--mono);color:${active?'var(--acc)':'var(--mute)'}">
+        ${active?'● Aktiv':'○ Inaktiv'}
+      </div>
+      ${isV0 ? '' : `<button class="btn-s" style="font-size:.72rem;padding:5px 12px" onclick="openEditVehicleModal('${v.id}')">✏ Bearbeiten</button>`}
+    `;
+    el.appendChild(row);
+  });
+}
+
+async function openAddVehicleModal() {
+  _editingVehicleId = null;
+  $('vehicleModalTitle').textContent = 'Fahrzeug hinzufügen';
+  $('vm_name').value = '';
+  $('vm_battery').value = '77.0';
+  $('vm_poll').value = '60';
+  $('vm_home_lat').value = '';
+  $('vm_home_lon').value = '';
+  $('vm_provider').selectedIndex = 0;
+  $('vm_delete_btn').style.display = 'none';
+  $('vm_info').textContent = '';
+  await loadVehicleModalFields();
+  $('vehicleModal').style.display = 'flex';
+}
+
+async function openEditVehicleModal(vid) {
+  _editingVehicleId = vid;
+  const vehicles = await fetch('/api/vehicles').then(r=>r.json());
+  const v = vehicles.find(x=>x.id===vid);
+  if(!v) return;
+  $('vehicleModalTitle').textContent = 'Fahrzeug bearbeiten';
+  $('vm_name').value = v.name||'';
+  $('vm_battery').value = v.battery_capacity_kwh||'77.0';
+  $('vm_poll').value = v.poll_interval||'60';
+  $('vm_home_lat').value = v.home_lat||'';
+  $('vm_home_lon').value = v.home_lon||'';
+  // Set provider
+  const sel = $('vm_provider');
+  for(let i=0;i<sel.options.length;i++){
+    if(sel.options[i].value===v.provider){ sel.selectedIndex=i; break; }
+  }
+  $('vm_delete_btn').style.display = '';
+  $('vm_info').textContent = '';
+  await loadVehicleModalFields(v);
+  $('vehicleModal').style.display = 'flex';
+}
+
+async function loadVehicleModalFields(existingVehicle=null) {
+  const provider = $('vm_provider').value;
+  const fields = await fetch(`/api/providers/${provider}/fields`).then(r=>r.json()).catch(()=>[]);
+  const container = $('vm_fields');
+  container.innerHTML = '';
+  fields.forEach(f => {
+    const val = existingVehicle ? (existingVehicle[f.id]||'') : '';
+    const wrap = document.createElement('div');
+    if(f.type === 'select'){
+      wrap.innerHTML = `<label class="lbl">${f.label}</label>
+        <select class="inp" id="vmf_${f.id}">${(f.options||[]).map(o=>`<option value="${o}" ${val===o?'selected':''}>${o}</option>`).join('')}</select>
+        ${f.hint?`<span class="hint">${f.hint}</span>`:''}`;
+    } else {
+      wrap.innerHTML = `<label class="lbl">${f.label}${f.required?' *':''}</label>
+        <input class="inp" type="${f.type||'text'}" id="vmf_${f.id}" value="${val}" placeholder="${f.placeholder||''}">
+        ${f.hint?`<span class="hint">${f.hint}</span>`:''}`;
+    }
+    container.appendChild(wrap);
+  });
+}
+
+function closeVehicleModal() {
+  $('vehicleModal').style.display = 'none';
+}
+
+async function saveVehicleModal() {
+  const provider = $('vm_provider').value;
+  const fields = await fetch(`/api/providers/${provider}/fields`).then(r=>r.json()).catch(()=>[]);
+  const data = {
+    name:                $('vm_name').value.trim() || 'Neues Fahrzeug',
+    provider:            provider,
+    active:              true,
+    battery_capacity_kwh: parseFloat($('vm_battery').value)||77,
+    poll_interval:       parseInt($('vm_poll').value)||60,
+    home_lat:            $('vm_home_lat').value.trim(),
+    home_lon:            $('vm_home_lon').value.trim(),
+  };
+  fields.forEach(f => {
+    const el = $('vmf_'+f.id);
+    if(el) data[f.id] = el.value;
+  });
+
+  const url  = _editingVehicleId ? `/api/vehicles/${_editingVehicleId}` : '/api/vehicles';
+  const meth = _editingVehicleId ? 'PUT' : 'POST';
+  const r = await fetch(url,{method:meth,headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(x=>x.json());
+  if(r.ok){
+    closeVehicleModal();
+    toast(_editingVehicleId ? 'Fahrzeug aktualisiert' : 'Fahrzeug hinzugefügt', 'ok');
+    loadVehicleList();
+  } else {
+    $('vm_info').innerHTML = `<span style="color:var(--danger)">❌ ${r.error||'Fehler'}</span>`;
+  }
+}
+
+async function deleteVehicleModal() {
+  if(!_editingVehicleId) return;
+  if(!confirm('Fahrzeug löschen? Ladevorgänge bleiben erhalten.')) return;
+  const r = await fetch(`/api/vehicles/${_editingVehicleId}`,{method:'DELETE'}).then(x=>x.json());
+  if(r.ok){
+    closeVehicleModal();
+    toast('Fahrzeug gelöscht','ok');
+    loadVehicleList();
+  }
+}
 
 // ── Auth / Login ─────────────────────────────────────────────────────────────
 async function loadAuthStatus(){
