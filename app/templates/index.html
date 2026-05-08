@@ -518,6 +518,11 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <label class="lbl">Kostenstelle</label>
         <input class="inp" type="text" id="c_template_kostenstelle" placeholder="1234">
       </div>
+      <div>
+        <label class="lbl">Anfangszählerstand (kWh)</label>
+        <input class="inp" type="number" step="0.001" id="c_template_meter_start" placeholder="12345.678">
+        <span class="hint">Zählerstand vor der ersten Session des Monats</span>
+      </div>
     </div>
     <button class="btn-s" style="margin-top:12px" onclick="saveTplHeaderFields()">💾 Speichern</button>
     <span id="tplHeaderSaveInfo" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-left:10px"></span>
@@ -1336,6 +1341,8 @@ async function refreshTplInfo(){
     ['fahrer','kennzeichen','abteilung','kostenstelle'].forEach(k=>{
       const el=$('c_template_'+k); if(el) el.value=cfg['template_'+k]||'';
     });
+    const ms=$('c_template_meter_start');
+    if(ms) ms.value=cfg['template_meter_start']||'';
   } else {
     dot.style.background='var(--mute)'; dot.style.boxShadow='none';
     lbl.style.color='var(--mute)';
@@ -1347,12 +1354,14 @@ async function refreshTplInfo(){
 }
 
 const MAPPING_FIELDS = ['','row_num','date','start_time','end_time','odo_start','odo_end',
-                        'soc_start','soc_end','kwh_charged','cost_eur','duration','location'];
+                        'soc_start','soc_end','kwh_charged','cost_eur','duration',
+                        'meter_old','meter_new','location'];
 const MAPPING_LABELS = {'':'— nicht zugewiesen —','row_num':'Nr.','date':'Datum',
   'start_time':'Start Uhrzeit','end_time':'Ende Uhrzeit','odo_start':'KM-Stand Start',
   'odo_end':'KM-Stand Ende / Kilometerstand','soc_start':'SOC Start (%)','soc_end':'SOC Ende (%)',
   'kwh_charged':'Geladene kWh / Lademenge','cost_eur':'Kosten (€) / Ladekosten',
-  'duration':'Ladedauer','location':'Standort'};
+  'duration':'Ladedauer','meter_old':'Zählerstand Alt (kWh)','meter_new':'Zählerstand Neu (kWh)',
+  'location':'Standort'};
 
 let _tplRender = null;
 let _tplMeta   = null;
@@ -1612,6 +1621,7 @@ async function saveTplHeaderFields(){
     template_kennzeichen:   $('c_template_kennzeichen').value.trim(),
     template_abteilung:     $('c_template_abteilung').value.trim(),
     template_kostenstelle:  $('c_template_kostenstelle').value.trim(),
+    template_meter_start:   parseFloat($('c_template_meter_start').value)||0,
   };
   const r=await fetch('/api/config',{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});

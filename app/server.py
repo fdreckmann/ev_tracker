@@ -8,9 +8,13 @@ from providers import get_provider, get_all_capabilities, get_config_fields, PRO
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.4.1"
+APP_VERSION   = "1.4.2"
 
 CHANGELOG = [
+    {"version": "1.4.2", "changes": [
+        "Zählerstand Alt/Neu wird automatisch aus Anfangszählerstand + kumulierten kWh berechnet",
+        "Neues Konfigurationsfeld: Anfangszählerstand (kWh) im Export-Panel",
+    ]},
     {"version": "1.4.1", "changes": [
         "Schrift in Dashboard-Kacheln skaliert automatisch — kein Überlauf mehr",
         "Schrift passt sich auch bei Fenstergrößenänderung neu an",
@@ -116,10 +120,11 @@ DEFAULT_CONFIG = {
     "update_channel":       "latest",  # latest | nightly | dev
     "template_mapping":     {},        # {col_index_str: field_name}
     "template_start_row":   None,      # row number where data starts (1-based)
-    "template_fahrer":      "",        # driver name for template header
-    "template_kennzeichen": "",        # license plate for template header
-    "template_abteilung":   "",        # department for template header
-    "template_kostenstelle":"",        # cost center for template header
+    "template_fahrer":        "",      # driver name for template header
+    "template_kennzeichen":   "",      # license plate for template header
+    "template_abteilung":     "",      # department for template header
+    "template_kostenstelle":  "",      # cost center for template header
+    "template_meter_start":   0.0,    # starting electricity meter reading (kWh)
 }
 
 def load_config():
@@ -673,11 +678,12 @@ def api_export():
             override = {k: v for k, v in saved.items() if v}
     start_row = cfg.get("template_start_row")
     header_info = {
-        "fahrer":        cfg.get("template_fahrer", ""),
-        "kennzeichen":   cfg.get("template_kennzeichen", ""),
-        "abteilung":     cfg.get("template_abteilung", ""),
-        "kostenstelle":  cfg.get("template_kostenstelle", ""),
-        "price_per_kwh": cfg.get("price_per_kwh_home", 0.30),
+        "fahrer":            cfg.get("template_fahrer", ""),
+        "kennzeichen":       cfg.get("template_kennzeichen", ""),
+        "abteilung":         cfg.get("template_abteilung", ""),
+        "kostenstelle":      cfg.get("template_kostenstelle", ""),
+        "price_per_kwh":     cfg.get("price_per_kwh_home", 0.30),
+        "meter_start_value": cfg.get("template_meter_start", 0.0),
     }
     try:
         path = export(y, m, loc, col_override=override, start_row=start_row, header_info=header_info)

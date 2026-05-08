@@ -51,8 +51,9 @@ COLUMN_KEYWORDS = {
     "nr":               "row_num",
     "#":                "row_num",
     "lfd":              "row_num",
-    "zählerstand alt":  None,
-    "zählerstand neu":  None,
+    "zählerstand alt":  "meter_old",
+    "zählerstand neu":  "meter_new",
+    "zählerstand":      "meter_old",
 }
 
 FIELD_LABELS = {
@@ -66,6 +67,8 @@ FIELD_LABELS = {
     "kwh_charged": "Geladene kWh / Lademenge",
     "cost_eur":    "Kosten (€) / Ladekosten",
     "duration":    "Ladedauer",
+    "meter_old":   "Zählerstand Alt (kWh)",
+    "meter_new":   "Zählerstand Neu (kWh)",
     "location":    "Standort",
     "row_num":     "Nr.",
     None:          "— nicht zugewiesen —",
@@ -82,6 +85,8 @@ NUM_FMT = {
     "kwh_charged": '0.00 "kWh"',
     "cost_eur":    '€#,##0.00',
     "duration":    '[h]:MM',
+    "meter_old":   '0.000',
+    "meter_new":   '0.000',
     "row_num":     "0",
 }
 
@@ -137,6 +142,8 @@ def to_row(s, idx):
         "soc_end":     s.get("soc_end"),
         "kwh_charged": s.get("kwh_charged"),
         "cost_eur":    s.get("cost_eur"),
+        "meter_old":   s.get("meter_old"),
+        "meter_new":   s.get("meter_new"),
         "location":    LOCATION_LABELS.get(s.get("location", "unknown"), s.get("location", "—")),
     }
 
@@ -265,6 +272,18 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
                 }
             except Exception:
                 pass
+
+    # pre-calculate cumulative meter readings (Zählerstand Alt/Neu)
+    meter_start = float(header_info.get("meter_start_value") or 0)
+    cumulative = meter_start
+    enriched = []
+    for s in sessions:
+        s = dict(s)
+        s["meter_old"] = round(cumulative, 3)
+        cumulative += float(s.get("kwh_charged") or 0)
+        s["meter_new"] = round(cumulative, 3)
+        enriched.append(s)
+    sessions = enriched
 
     # clear old data rows
     for r in range(ds, max_row + 1):
