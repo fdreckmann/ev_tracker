@@ -8,9 +8,13 @@ from providers import get_provider, get_all_capabilities, get_config_fields, PRO
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.4.0"
+APP_VERSION   = "1.4.1"
 
 CHANGELOG = [
+    {"version": "1.4.1", "changes": [
+        "Schrift in Dashboard-Kacheln skaliert automatisch — kein Überlauf mehr",
+        "Schrift passt sich auch bei Fenstergrößenänderung neu an",
+    ]},
     {"version": "1.4.0", "changes": [
         "Template-Kopfzeilen automatisch befüllen (Abrechnungsmonat, Kennzeichen, Fahrer, Abteilung, Kostenstelle, Gesamtkosten)",
         "Neue Template-Felder: Ladedauer, Kilometerstand, Ladekosten, Lademenge",

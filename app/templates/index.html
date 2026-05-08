@@ -63,7 +63,7 @@ nav button.active{background:var(--brd2);color:#fff}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:18px}
 .stat{background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:16px 18px}
 .sl{font-size:.67rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.1em;margin-bottom:7px}
-.sv{font-size:1.55rem;font-weight:800;color:#fff;line-height:1}
+.sv{font-size:1.55rem;font-weight:800;color:#fff;line-height:1;white-space:nowrap;overflow:hidden}
 .sv.g{color:var(--acc)}.sv.b{color:var(--acc2)}.sv.w{color:var(--warn)}.sv.r{color:var(--danger)}
 .su{font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-top:3px}
 
@@ -791,6 +791,25 @@ function tab(id, btn){
   if(id==='dashboard') loadCharts();
 }
 
+// ── Auto-scale stat values to fit their tile ─────────────────────────────────
+function fitText(el) {
+  el.style.fontSize = '';
+  const parent = el.closest('.stat') || el.parentElement;
+  if (!parent) return;
+  const available = parent.clientWidth - 36;
+  if (el.scrollWidth <= available) return;
+  let lo = 10, hi = parseFloat(getComputedStyle(el).fontSize);
+  for (let i = 0; i < 12; i++) {
+    const mid = (lo + hi) / 2;
+    el.style.fontSize = mid + 'px';
+    if (el.scrollWidth <= available) lo = mid; else hi = mid;
+  }
+}
+function fitAllStats() {
+  document.querySelectorAll('.sv').forEach(fitText);
+}
+window.addEventListener('resize', fitAllStats);
+
 // ── Status polling ────────────────────────────────────────────────────────────
 async function refreshStatus(){
   try{
@@ -852,6 +871,7 @@ async function refreshStatus(){
     const rows = await fetch('/api/sessions').then(r=>r.json());
     renderTbl($('recentTbl'), rows.slice(0,5), false);
 
+    fitAllStats();
   } catch(e){
     $('sDot').className='dot err'; $('sTxt').textContent='Fehler';
   }
