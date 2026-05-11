@@ -1656,13 +1656,13 @@ async function refreshTplInfo(){
 
 const MAPPING_FIELDS = ['','row_num','date','start_time','end_time','odo_start','odo_end',
                         'soc_start','soc_end','kwh_charged','cost_eur','duration',
-                        'meter_old','meter_new','location'];
+                        'meter_old','meter_new','location','charger_type'];
 const MAPPING_LABELS = {'':'— nicht zugewiesen —','row_num':'Nr.','date':'Datum',
   'start_time':'Start Uhrzeit','end_time':'Ende Uhrzeit','odo_start':'KM-Stand Start',
   'odo_end':'KM-Stand Ende / Kilometerstand','soc_start':'SOC Start (%)','soc_end':'SOC Ende (%)',
   'kwh_charged':'Geladene kWh / Lademenge','cost_eur':'Kosten (€) / Ladekosten',
   'duration':'Ladedauer','meter_old':'Zählerstand Alt (kWh)','meter_new':'Zählerstand Neu (kWh)',
-  'location':'Standort'};
+  'location':'Standort','charger_type':'Ladertyp (AC/DC)'};
 
 let _tplRender = null;
 let _tplMeta   = null;
@@ -1770,30 +1770,156 @@ function selectStartRow(row){
   updateLivePreview();
 }
 
-// ── Mapping dropdowns ─────────────────────────────────────────────────────────
-function buildMappingDropdowns(){
-  if(!_tplMeta) return;
-  const saved    = _tplMeta._saved || {};
-  const numCols  = (_tplRender||{col_letters:[]}).col_letters.length || Object.keys(_tplMeta.col_suggestions||{}).length;
-  const letters  = (_tplRender||{col_letters:[]}).col_letters;
-  const body = $('mappingModalBody');
-  body.innerHTML = Array.from({length:numCols},(_,i)=>{
-    const ci     = i + 1;
-    const letter = letters[i] || ci;
-    const savedField = saved.mapping && saved.mapping[String(ci)] !== undefined
-      ? saved.mapping[String(ci)]
-      : (_tplMeta.col_suggestions[ci]?.mapped_to || '');
-    return `<tr>
-      <td style="color:var(--mute);font-weight:bold;width:32px">${letter}</td>
-      <td>
-        <select data-col="${ci}" onchange="updateLivePreview()"
-          style="background:var(--bg);border:1px solid var(--brd);border-radius:5px;
-          color:var(--txt);font-family:var(--mono);font-size:.72rem;padding:4px 6px;width:100%">
-          ${MAPPING_FIELDS.map(f=>`<option value="${f}" ${savedField===f?'selected':''}>${MAPPING_LABELS[f]}</option>`).join('')}
-        </select>
-      </td>
-    </tr>`;
+// ── Field palette (replaces dropdown table) ───────────────────────────────────
+function buildFieldPalette(){
+  const palette = $('fieldPalette');
+  if(!palette) return;
+  // Build reverse map: fieldId -> colIndex(es)
+  const fieldToCols = {};
+  Object.entries(_colMapping).forEach(([ci, field])=>{
+    if(!field) return;
+    if(!fieldToCols[field]) fieldToCols[field] = [];
+    fieldToCols[field].push(Number(ci));
+  });
+  const letters = (_tplRender||{col_letters:[]}).col_letters;
+  const colLetter = ci => letters[Number(ci)-1] || String(ci);
+
+  palette.innerHTML = MAPPING_FIELDS.filter(f=>f).map(field=>{
+    const color   = FIELD_COLORS[field] || '#64748b';
+    const label   = MAPPING_LABELS[field] || field;
+    const cols    = fieldToCols[field] || [];
+    const isActive = _activeField === field;
+    const colBadges = cols.map(ci=>
+      `<span onclick="event.stopPropagation();clearColMapping(${ci})"
+        style="background:${color}33;color:${color};border:1px solid ${color}55;
+               border-radius:4px;padding:1px 5px;font-size:.62rem;cursor:pointer;
+               display:inline-flex;align-items:center;gap:3px">
+        ${colLetter(ci)} <span style="opacity:.7">✕</span></span>`
+    ).join('');
+    return `<div onclick="selectField('${field}')"
+      style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;
+             cursor:pointer;user-select:none;transition:all .15s;
+             background:${isActive ? color+'22' : 'var(--bg)'};
+             border:1.5px solid ${isActive ? color : 'var(--brd)'};
+             ${isActive ? `box-shadow:0 0 0 3px ${color}33` : ''}">
+      <span style="width:12px;height:12px;border-radius:50%;background:${color};flex-shrink:0;
+                   display:inline-block;${isActive?`box-shadow:0 0 6px ${color}`:''}"></span>
+      <span style="flex:1;font-size:.75rem;font-family:var(--mono);color:${isActive?'#fff':'var(--txt)'}">
+        ${label}
+      </span>
+      <span style="display:flex;gap:4px;flex-wrap:wrap">${colBadges}</span>
+    </div>`;
   }).join('');
+}
+
+function selectField(fieldId){
+  _activeField = (_activeField === fieldId) ? null : fieldId;
+  buildFieldPalette();
+  const wrap = $('excelGridWrap');
+  if(wrap) wrap.style.cursor = _activeField ? 'crosshair' : '';
+}
+
+function clearColMapping(ci){
+  delete _colMapping[String(ci)];
+  applyColumnColors();
+  buildFieldPalette();
+  updateLivePreview();
+}
+
+function clearAllMappings(){
+  _colMapping = {};
+  applyColumnColors();
+  buildFieldPalette();
+  updateLivePreview();
+}
+
+// ── Grid column header click ──────────────────────────────────────────────────
+function onGridColHeaderClick(ci){
+  if(_activeField){
+    _colMapping[String(ci)] = _activeField;
+    applyColumnColors();
+    buildFieldPalette();
+    updateLivePreview();
+  }
+}
+
+// ── Grid cell click / drag ────────────────────────────────────────────────────
+function onGridCellClick(event, rowNum, colIdx){
+  if(_activeField){
+    _colMapping[String(colIdx)] = _activeField;
+    applyColumnColors();
+    buildFieldPalette();
+    updateLivePreview();
+  } else {
+    selectStartRow(rowNum);
+  }
+}
+
+function onGridMouseDown(event, rowNum, colIdx){
+  if(!_activeField) return;
+  event.preventDefault();
+  _isDragging = true;
+  _colMapping[String(colIdx)] = _activeField;
+  applyColumnColors();
+  buildFieldPalette();
+  updateLivePreview();
+}
+
+function onGridMouseMove(event, rowNum, colIdx){
+  if(!_isDragging || !_activeField) return;
+  if(_colMapping[String(colIdx)] === _activeField) return; // already set
+  _colMapping[String(colIdx)] = _activeField;
+  applyColumnColors();
+  buildFieldPalette();
+  updateLivePreview();
+}
+
+function onGridMouseUp(event, rowNum, colIdx){
+  _isDragging = false;
+}
+
+// ── Apply column colors to grid ───────────────────────────────────────────────
+function applyColumnColors(){
+  if(!_tplRender) return;
+  const letters = _tplRender.col_letters;
+
+  // Color all data cells
+  document.querySelectorAll('#excelGridBody td[data-col]').forEach(td=>{
+    const ci    = td.dataset.col;
+    const field = _colMapping[String(ci)];
+    const color = field ? FIELD_COLORS[field] : null;
+    const isStartRow = Number(td.dataset.rowNum) === _selectedStartRow;
+    if(color){
+      td.style.background  = color + '26'; // ~15% opacity
+      td.style.borderLeft  = `2px solid ${color}`;
+    } else {
+      // restore original cell background
+      const rIdx = _tplRender.rows.findIndex(r=>r.row === Number(td.dataset.rowNum));
+      const cIdx = Number(ci) - 1;
+      const orig = rIdx>=0 ? _tplRender.rows[rIdx].cells[cIdx] : null;
+      td.style.background  = orig?.bg || (isStartRow ? 'rgba(0,210,120,.18)' : '#1a1a1a');
+      td.style.borderLeft  = '';
+    }
+  });
+
+  // Update header badges
+  document.querySelectorAll('#excelGridHead th[data-col]').forEach(th=>{
+    const ci    = th.dataset.col;
+    const field = _colMapping[String(ci)];
+    const color = field ? FIELD_COLORS[field] : null;
+    const badge = th.querySelector('span[id^="thbadge_"]') || th.querySelector('span');
+    if(!badge) return;
+    if(color){
+      const label = MAPPING_LABELS[field] || field;
+      badge.innerHTML = `<span onclick="event.stopPropagation();clearColMapping(${ci})"
+        style="display:inline-flex;align-items:center;gap:3px;margin-left:4px;
+               background:${color};color:#000;border-radius:4px;padding:1px 5px;
+               font-size:.55rem;font-weight:bold;cursor:pointer;line-height:1.4">
+        ${label} <span style="opacity:.7">✕</span></span>`;
+    } else {
+      badge.innerHTML = '';
+    }
+  });
 }
 
 // ── Live preview ──────────────────────────────────────────────────────────────
@@ -1813,19 +1939,18 @@ function sampleValue(field, s){
     soc_end:     fmt(s.soc_end),
     kwh_charged: s.kwh_charged != null ? Number(s.kwh_charged).toFixed(2) : '',
     cost_eur:    s.cost_eur    != null ? Number(s.cost_eur).toFixed(2)    : '',
-    location:    s.location === 'home' ? '🏠 Zuhause' : s.location === 'extern' ? '⚡ Extern' : '—',
+    location:     s.location === 'home' ? '🏠 Zuhause' : s.location === 'extern' ? '⚡ Extern' : '—',
+    charger_type: s.charger_type === 'dc' ? 'DC' : s.charger_type === 'ac' ? 'AC' : fmt(s.charger_type),
   };
   return map[field] ?? '';
 }
 
 function updateLivePreview(){
   const s = _sampleSession;
-  const mapping = {};
-  document.querySelectorAll('#mappingModalBody select[data-col]').forEach(sel=>{
-    if(sel.value) mapping[sel.dataset.col] = sel.value;
-  });
+  // mapping is now read directly from _colMapping state
+  const mapping = _colMapping;
 
-  // update grid cells with preview data
+  // update grid cells with preview data at start row
   if(_tplRender && _selectedStartRow){
     _tplRender.col_letters.forEach((_, i)=>{
       const ci    = i + 1;
@@ -1835,7 +1960,7 @@ function updateLivePreview(){
       if(cell && field){
         cell.style.color  = 'var(--acc)';
         cell.textContent  = val || '—';
-        cell.title        = `${MAPPING_LABELS[field]}: ${val}`;
+        cell.title        = `${MAPPING_LABELS[field]||field}: ${val}`;
       } else if(cell){
         // restore original value
         const orig = _tplRender.rows.find(r=>r.row===_selectedStartRow)?.cells[i];
@@ -1845,16 +1970,21 @@ function updateLivePreview(){
   }
 
   // sidebar live preview table
-  if(!Object.keys(mapping).length){
+  const assigned = Object.entries(mapping).filter(([,f])=>f);
+  if(!assigned.length){
     $('livePreviewWrap').innerHTML='<span style="color:var(--mute)">Noch keine Spalten zugewiesen</span>';
     return;
   }
-  $('livePreviewWrap').innerHTML = Object.entries(mapping).map(([ci, field])=>{
+  const letters = (_tplRender||{col_letters:[]}).col_letters;
+  $('livePreviewWrap').innerHTML = assigned.map(([ci, field])=>{
+    const color = FIELD_COLORS[field] || '#64748b';
+    const letter = letters[Number(ci)-1] || ci;
     const val = sampleValue(field, s);
-    return `<div style="display:flex;gap:8px;border-bottom:1px solid var(--brd);padding:4px 0">
-      <span style="color:var(--mute);min-width:28px">Sp.${ci}</span>
-      <span style="color:var(--acc2);min-width:120px">${MAPPING_LABELS[field]||field}</span>
-      <span style="color:#fff">${val||'—'}</span>
+    return `<div style="display:flex;gap:8px;border-bottom:1px solid var(--brd);padding:4px 0;align-items:center">
+      <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block"></span>
+      <span style="color:var(--mute);min-width:28px;font-size:.7rem">Sp.${letter}</span>
+      <span style="color:var(--acc2);min-width:110px;font-size:.7rem">${MAPPING_LABELS[field]||field}</span>
+      <span style="color:#fff;font-size:.7rem">${val||'—'}</span>
     </div>`;
   }).join('');
 }
@@ -1880,9 +2010,23 @@ async function openMappingModal(){
   _sampleSession  = Object.keys(sample).length ? sample : null;
   _selectedStartRow = saved.start_row || meta.auto_header || null;
 
+  // Initialize _colMapping from saved mapping, falling back to auto-suggestions
+  _colMapping = {};
+  _activeField = null;
+  if(saved.mapping && Object.keys(saved.mapping).length){
+    Object.entries(saved.mapping).forEach(([ci, field])=>{
+      if(field) _colMapping[String(ci)] = field;
+    });
+  } else if(meta.col_suggestions){
+    Object.entries(meta.col_suggestions).forEach(([ci, sug])=>{
+      if(sug?.mapped_to) _colMapping[String(ci)] = sug.mapped_to;
+    });
+  }
+
   buildExcelGrid(render);
   highlightStartRow();
-  buildMappingDropdowns();
+  applyColumnColors();
+  buildFieldPalette();
   updateLivePreview();
 
   $('mappingStartInfo').textContent = _selectedStartRow
@@ -1897,10 +2041,10 @@ function closeMappingModal(){
 }
 
 async function saveMappingModal(){
-  const mapping = {};
-  document.querySelectorAll('#mappingModalBody select[data-col]').forEach(sel=>{
-    mapping[sel.dataset.col] = sel.value;
-  });
+  // Read directly from _colMapping state (no dropdown scraping needed)
+  const mapping = Object.fromEntries(
+    Object.entries(_colMapping).filter(([,v])=>v)
+  );
   const r = await fetch('/api/template/mapping',{
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({mapping, start_row: _selectedStartRow})
