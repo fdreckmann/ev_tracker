@@ -951,22 +951,23 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
 <!-- ── Template Mapping Modal ── -->
 <div class="modal-overlay" id="mappingModal" style="display:none" onclick="if(event.target===this)closeMappingModal()">
-  <div class="modal" style="max-width:92vw;width:1100px;max-height:92vh;display:flex;flex-direction:column;padding:28px 28px 20px">
+  <div class="modal" style="max-width:92vw;width:1200px;max-height:92vh;display:flex;flex-direction:column;padding:28px 28px 20px">
     <button class="modal-close" onclick="closeMappingModal()">✕ Schließen</button>
     <h2 style="margin-bottom:2px">Template konfigurieren</h2>
     <p style="font-size:.74rem;font-family:var(--mono);color:var(--mute);margin-bottom:16px">
-      Klicke auf eine Zelle um die <strong style="color:#fff">Startzeile</strong> zu setzen — ab dort werden Daten eingetragen.
-      Rechts siehst du die <strong style="color:#fff">Live-Vorschau</strong> mit echten Daten.
+      <strong style="color:#fff">Feld auswählen</strong> (rechts), dann auf eine Spalte im Grid klicken oder ziehen.
+      Klick ohne aktives Feld setzt die <strong style="color:#fff">Startzeile</strong>.
     </p>
 
-    <div style="display:grid;grid-template-columns:1fr 340px;gap:18px;flex:1;min-height:0">
+    <div style="display:grid;grid-template-columns:1fr 320px;gap:18px;flex:1;min-height:0">
 
       <!-- LEFT: Excel grid -->
       <div style="display:flex;flex-direction:column;min-height:0">
         <div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px">
-          Template-Vorschau · Startzeile anklicken
+          Template-Vorschau · Feld wählen, Spalte anklicken
         </div>
-        <div id="excelGridWrap" style="flex:1;overflow:auto;border:1px solid var(--brd);border-radius:8px;background:#1a1a1a">
+        <div id="excelGridWrap" style="flex:1;overflow:auto;border:1px solid var(--brd);border-radius:8px;background:#1a1a1a"
+             onmouseleave="_isDragging=false">
           <table id="excelGrid" style="border-collapse:collapse;font-size:.75rem;font-family:Arial,sans-serif;white-space:nowrap">
             <thead id="excelGridHead"></thead>
             <tbody id="excelGridBody"></tbody>
@@ -975,18 +976,19 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <div id="mappingStartInfo" style="font-size:.72rem;font-family:var(--mono);color:var(--acc);margin-top:6px;min-height:18px"></div>
       </div>
 
-      <!-- RIGHT: mapping + live preview -->
+      <!-- RIGHT: field palette + live preview -->
       <div style="display:flex;flex-direction:column;min-height:0;gap:14px">
+
+        <!-- Field palette -->
         <div style="flex:1;overflow-y:auto">
-          <div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px">
-            Spalten-Zuordnung
+          <div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">
+            Felder
           </div>
-          <table class="mapping-table" style="width:100%">
-            <thead><tr><th>Sp.</th><th>Feld</th></tr></thead>
-            <tbody id="mappingModalBody"></tbody>
-          </table>
+          <div id="fieldPalette" style="display:flex;flex-direction:column;gap:6px"></div>
+          <button onclick="clearAllMappings()" style="margin-top:10px;background:rgba(239,68,68,.12);color:var(--danger);border:1px solid rgba(239,68,68,.25);border-radius:7px;padding:6px 14px;font-size:.72rem;cursor:pointer;width:100%">🗑 Alle löschen</button>
         </div>
 
+        <!-- Live preview -->
         <div>
           <div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px">
             Live-Vorschau (erste Session)
@@ -1667,6 +1669,38 @@ let _tplMeta   = null;
 let _sampleSession = null;
 let _selectedStartRow = null;
 
+// ── Column mapper state ───────────────────────────────────────────────────────
+let _activeField = null;
+let _colMapping  = {};   // { colIndex(string): fieldId }
+let _isDragging  = false;
+
+const FIELD_COLORS = {
+  row_num:     '#64748b',
+  date:        '#3b82f6',
+  start_time:  '#06b6d4',
+  end_time:    '#0891b2',
+  soc_start:   '#8b5cf6',
+  soc_end:     '#a855f7',
+  kwh_charged: '#22c55e',
+  cost_eur:    '#eab308',
+  duration:    '#f97316',
+  location:    '#ef4444',
+  meter_old:   '#ec4899',
+  meter_new:   '#f43f5e',
+  odo_start:   '#84cc16',
+  odo_end:     '#65a30d',
+  charger_type:'#fb923c',
+};
+
+// Disarm active field on Escape
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape' && _activeField){
+    _activeField = null;
+    buildFieldPalette();
+    document.getElementById('excelGridWrap').style.cursor = '';
+  }
+});
+
 // ── Excel grid rendering ──────────────────────────────────────────────────────
 function buildExcelGrid(renderData){
   _tplRender = renderData;
@@ -1676,8 +1710,10 @@ function buildExcelGrid(renderData){
   head.innerHTML = `<tr>
     <th style="${thStyle};position:sticky;left:0;z-index:3;width:32px">#</th>
     ${renderData.col_letters.map((l,i)=>{
-      const w = (renderData.col_widths[i]||8);
-      return `<th style="${thStyle};min-width:${w*8}px;max-width:${w*8}px">${l}</th>`;
+      const ci = i + 1;
+      const w  = (renderData.col_widths[i]||8);
+      return `<th data-col="${ci}" style="${thStyle};min-width:${w*8}px;max-width:${w*8}px;cursor:pointer"
+               onclick="onGridColHeaderClick(${ci})">${l}<span id="thbadge_${ci}"></span></th>`;
     }).join('')}
   </tr>`;
 
@@ -1691,8 +1727,11 @@ function buildExcelGrid(renderData){
       const rs   = c.rs > 1 ? ` rowspan="${c.rs}"` : '';
       const cs   = c.cs > 1 ? ` colspan="${c.cs}"` : '';
       const id   = `gc_${c.r}_${c.c}`;
-      return `<td id="${id}"${rs}${cs}
-        onclick="selectStartRow(${row.row})"
+      return `<td id="${id}" data-col="${c.c}" data-row-num="${row.row}"${rs}${cs}
+        onmousedown="onGridMouseDown(event,${row.row},${c.c})"
+        onmousemove="onGridMouseMove(event,${row.row},${c.c})"
+        onmouseup="onGridMouseUp(event,${row.row},${c.c})"
+        onclick="onGridCellClick(event,${row.row},${c.c})"
         style="background:${bg};color:${fg};font-weight:${fw};
                border:1px solid ${isStart?'rgba(0,210,120,.6)':'#2d2d2d'};
                padding:3px 7px;cursor:pointer;white-space:nowrap;
@@ -1700,8 +1739,8 @@ function buildExcelGrid(renderData){
         title="${c.v||''}">${c.v||''}</td>`;
     }).join('');
     const numStyle = 'background:#222;color:#555;font-size:.63rem;font-family:var(--mono);padding:3px 5px;border:1px solid #2d2d2d;text-align:right;position:sticky;left:0;cursor:pointer;user-select:none';
-    return `<tr data-row="${row.row}" onclick="selectStartRow(${row.row})">
-      <td style="${numStyle}">${row.row}</td>${cells}</tr>`;
+    return `<tr data-row="${row.row}">
+      <td style="${numStyle}" onclick="selectStartRow(${row.row})">${row.row}</td>${cells}</tr>`;
   }).join('');
 }
 
@@ -1728,7 +1767,6 @@ function selectStartRow(row){
   _selectedStartRow = row;
   highlightStartRow();
   $('mappingStartInfo').textContent = `✓ Startzeile: Zeile ${row} — ab hier werden Daten eingetragen`;
-  buildMappingDropdowns();
   updateLivePreview();
 }
 
