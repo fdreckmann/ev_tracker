@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EV Tracker — Einrichtung</title>
+<style>
+  :root{--bg:#0b0f14;--card:#111820;--brd:#1e2a35;--accent:#00d278;--acc2:#00b4ff;
+    --mute:#5a7080;--danger:#ff4f5a;--mono:'JetBrains Mono','Fira Mono',monospace}
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:#e0eaf2;font-family:system-ui,sans-serif;
+    min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+  .card{background:var(--card);border:1px solid var(--brd);border-radius:16px;
+    padding:40px 44px;width:100%;max-width:440px}
+  .logo{text-align:center;margin-bottom:32px}
+  .logo .icon{font-size:3rem}
+  .logo h1{font-size:1.4rem;font-weight:700;margin-top:10px}
+  .logo p{font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-top:6px}
+  .step{font-size:.65rem;font-family:var(--mono);color:var(--acc2);text-transform:uppercase;
+    letter-spacing:.12em;margin-bottom:20px;text-align:center}
+  label{display:block;font-size:.72rem;font-family:var(--mono);color:var(--mute);
+    text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
+  input{width:100%;background:#0d1520;border:1px solid var(--brd);border-radius:8px;
+    color:#e0eaf2;font-size:.88rem;padding:10px 14px;margin-bottom:16px;outline:none;transition:border-color .15s}
+  input:focus{border-color:var(--acc2)}
+  .btn{width:100%;background:var(--accent);color:#041810;font-weight:700;font-size:.9rem;
+    border:none;border-radius:8px;padding:13px;cursor:pointer;transition:opacity .15s;margin-top:4px}
+  .btn:hover{opacity:.88}
+  .error{background:rgba(255,79,90,.1);border:1px solid rgba(255,79,90,.3);border-radius:8px;
+    color:var(--danger);font-size:.78rem;font-family:var(--mono);padding:10px 14px;margin-bottom:16px}
+  .info{background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:8px;
+    color:var(--acc2);font-size:.74rem;font-family:var(--mono);padding:12px 14px;margin-bottom:20px;line-height:1.6}
+  .hint{font-size:.68rem;font-family:var(--mono);color:var(--mute);margin-top:-12px;margin-bottom:14px}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <div class="icon">⚡</div>
+    <h1>EV Tracker</h1>
+    <p>Ersteinrichtung</p>
+  </div>
+  <div class="step">Schritt 1 von 1 — Admin-Konto erstellen</div>
+
+  {% if has_old_auth %}
+  <div class="info">
+    ℹ Ein bestehendes Passwort wird durch diesen Schritt ersetzt.<br>
+    Bitte gib eine E-Mail-Adresse für das Admin-Konto an.
+  </div>
+  {% else %}
+  <div class="info">
+    Willkommen! Lege jetzt das erste Admin-Konto an.<br>
+    Weitere Benutzer können danach im Admin-Bereich hinzugefügt werden.
+  </div>
+  {% endif %}
+
+  {% if error %}
+  <div class="error">❌ {{ error }}</div>
+  {% endif %}
+
+  <form method="POST">
+    <label>Name</label>
+    <input type="text" name="name" autofocus autocomplete="name" placeholder="Max Mustermann">
+
+    <label>E-Mail-Adresse</label>
+    <input type="email" name="email" autocomplete="email" placeholder="admin@example.com">
+
+    <label>Passwort</label>
+    <input type="password" name="password" autocomplete="new-password" placeholder="Mindestens 8 Zeichen">
+    <p class="hint">Mindestens 8 Zeichen</p>
+
+    <label>Passwort wiederholen</label>
+    <input type="password" name="password2" autocomplete="new-password" placeholder="••••••••">
+
+    <button type="submit" class="btn">Admin-Konto erstellen &amp; Login</button>
+  </form>
+</div>
+</body>
+</html>

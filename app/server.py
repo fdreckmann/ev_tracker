@@ -9,9 +9,18 @@ from providers import get_provider, get_all_capabilities, get_config_fields, PRO
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.7.0"
+APP_VERSION   = "1.8.0"
 
 CHANGELOG = [
+    {"version":"1.8.0","changes":[
+        "Vollständige Benutzerverwaltung (Admin + Benutzer-Rollen)",
+        "Login mit E-Mail + Passwort (Multi-User)",
+        "Setup-Assistent beim ersten Start",
+        "Admin kann Benutzer anlegen, bearbeiten, deaktivieren, löschen",
+        "2FA pro Benutzer (TOTP) mit Code-Bestätigung",
+        "Eigenes Passwort und 2FA im Profil-Bereich änderbar",
+        "Audit-Log mit Benutzer-Zuordnung",
+    ]},
     {"version":"1.7.0","changes":[
         "Neuer Konfig-Bereich mit Sidebar-Navigation",
         "SMTP-Konfiguration mit Verbindungstest und Testmail",
@@ -110,28 +119,77 @@ def _get_secret_key():
     if key_file.exists():
         return key_file.read_text().strip()
     key = secrets.token_hex(32)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     key_file.write_text(key)
     return key
 
 def _hash_password(pw: str) -> str:
     return hashlib.sha256(pw.encode()).hexdigest()
 
-def _auth_enabled() -> bool:
-    cfg = load_config()
-    return bool(cfg.get("auth_password_hash"))
+# ── User DB helpers ───────────────────────────────────────────────────────────
+def _get_db():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    return con
 
-def require_auth(f):
+def _has_users() -> bool:
+    try:
+        con = _get_db()
+        count = con.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        con.close()
+        return count > 0
+    except Exception:
+        return False
+
+def _get_user_by_email(email: str):
+    try:
+        con = _get_db()
+        row = con.execute("SELECT * FROM users WHERE email=?", (email.strip().lower(),)).fetchone()
+        con.close()
+        return dict(row) if row else None
+    except Exception:
+        return None
+
+def _get_user_by_id(uid):
+    try:
+        con = _get_db()
+        row = con.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+        con.close()
+        return dict(row) if row else None
+    except Exception:
+        return None
+
+def _current_user():
+    uid = session.get("user_id")
+    return _get_user_by_id(uid) if uid else None
+
+def require_login(f):
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
-        if not _auth_enabled():
-            return f(*args, **kwargs)
-        if session.get("authenticated"):
-            return f(*args, **kwargs)
-        # API endpoints return JSON
-        if request.path.startswith("/api/"):
-            return jsonify({"error": "Nicht eingeloggt"}), 401
-        return redirect(url_for("login_page", next=request.path))
+        if not session.get("user_id"):
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Nicht eingeloggt", "login_required": True}), 401
+            return redirect(url_for("login_page", next=request.path))
+        return f(*args, **kwargs)
     return wrapper
+
+def require_admin(f):
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        if not session.get("user_id"):
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Nicht eingeloggt", "login_required": True}), 401
+            return redirect(url_for("login_page", next=request.path))
+        if session.get("user_role") != "admin":
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Admin-Berechtigung erforderlich"}), 403
+            return redirect(url_for("index"))
+        return f(*args, **kwargs)
+    return wrapper
+
+def require_auth(f):
+    """Legacy alias — kept for backward compat."""
+    return require_login(f)
 
 DEFAULT_CONFIG = {
     # Provider selection
@@ -272,11 +330,17 @@ def save_config(cfg):
     with open(CONFIG_FILE, "w") as f:
         json.dump(cfg, f, indent=2)
 
-def _audit(action, details="", ip=""):
-    con = sqlite3.connect(DB_PATH)
-    con.execute("INSERT INTO audit_log (ts, action, details, ip) VALUES (?,?,?,?)",
-                (datetime.utcnow().isoformat(), action, details, ip))
-    con.commit(); con.close()
+def _audit(action: str, details: str = "", ip: str = ""):
+    uid = session.get("user_id") if session else None
+    try:
+        con = sqlite3.connect(DB_PATH)
+        con.execute(
+            "INSERT INTO audit_log (ts, action, details, ip) VALUES (?,?,?,?)",
+            (datetime.utcnow().isoformat(), action,
+             f"user={uid} {details}".strip(), ip))
+        con.commit(); con.close()
+    except Exception:
+        pass
 
 def get_all_vehicles(cfg=None) -> list[dict]:
     """Returns primary vehicle (v0 from flat config) plus extra vehicles."""
@@ -351,6 +415,27 @@ def init_db():
         try:
             con.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
         except sqlite3.OperationalError: pass
+    con.execute("""CREATE TABLE IF NOT EXISTS users (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        name          TEXT NOT NULL,
+        email         TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL DEFAULT '',
+        role          TEXT NOT NULL DEFAULT 'user',
+        status        TEXT NOT NULL DEFAULT 'active',
+        totp_secret   TEXT NOT NULL DEFAULT '',
+        totp_enabled  INTEGER NOT NULL DEFAULT 0,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL,
+        last_login_at TEXT
+    )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id    INTEGER NOT NULL,
+        token_hash TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at    TEXT,
+        created_at TEXT NOT NULL
+    )""")
     con.commit(); con.close()
 
 def get_sessions(year=None, month=None, location=None, vehicle_id=None, limit=50):
@@ -708,17 +793,26 @@ def start_tracker():
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
-_AUTH_EXEMPT = {"/login", "/logout", "/api/auth/setup", "/api/auth/status",
+_AUTH_EXEMPT = {"/login", "/logout", "/setup",
                 "/auth/google", "/auth/google/callback",
                 "/auth/microsoft", "/auth/microsoft/callback"}
 
 @app.before_request
 def check_auth():
-    if not _auth_enabled():
+    if request.path.startswith("/static"):
         return
-    if request.path in _AUTH_EXEMPT or request.path.startswith("/static"):
+    if request.path in _AUTH_EXEMPT:
+        # If users exist, /setup should redirect to index
+        if request.path == "/setup" and _has_users():
+            return redirect(url_for("index"))
         return
-    if session.get("authenticated"):
+    # If no users exist, everything redirects to setup
+    if not _has_users():
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "Setup erforderlich", "setup_required": True}), 503
+        return redirect("/setup")
+    # Check authentication
+    if session.get("user_id"):
         return
     if request.path.startswith("/api/"):
         return jsonify({"error": "Nicht eingeloggt", "login_required": True}), 401
@@ -726,32 +820,43 @@ def check_auth():
 
 @app.route("/login", methods=["GET","POST"])
 def login_page():
-    if not _auth_enabled():
+    if session.get("user_id"):
         return redirect(url_for("index"))
     error = None
     if request.method == "POST":
-        cfg = load_config()
-        pw  = request.form.get("password","")
-        if _hash_password(pw) == cfg.get("auth_password_hash",""):
-            totp_secret = cfg.get("auth_totp_secret","")
-            if totp_secret:
+        email = request.form.get("email","").strip().lower()
+        pw    = request.form.get("password","")
+        user  = _get_user_by_email(email)
+        # Generic error to prevent user enumeration
+        if not user or user.get("status") == "disabled" or \
+           _hash_password(pw) != user.get("password_hash",""):
+            error = "Anmeldung fehlgeschlagen"
+            _audit("login_failed", f"email={email}", ip=request.remote_addr)
+        else:
+            # Check TOTP if enabled
+            if user.get("totp_enabled") and user.get("totp_secret"):
                 code = request.form.get("totp","").strip().replace(" ","")
                 try:
                     import pyotp
-                    totp = pyotp.TOTP(totp_secret)
-                    if not totp.verify(code, valid_window=1):
+                    if not pyotp.TOTP(user["totp_secret"]).verify(code, valid_window=1):
                         error = "Ungültiger 2FA-Code"
-                except ImportError:
-                    error = "pyotp nicht installiert"
+                except Exception:
+                    error = "2FA-Fehler"
             if not error:
-                session["authenticated"] = True
-                session.permanent = True
+                session["user_id"]    = user["id"]
+                session["user_email"] = user["email"]
+                session["user_role"]  = user["role"]
+                session["user_name"]  = user["name"]
+                session.permanent     = True
+                now = datetime.utcnow().isoformat()
+                con = _get_db()
+                con.execute("UPDATE users SET last_login_at=? WHERE id=?", (now, user["id"]))
+                con.commit(); con.close()
+                _audit("login", f"email={email} role={user['role']}", ip=request.remote_addr)
                 return redirect(request.args.get("next") or url_for("index"))
-        else:
-            error = "Falsches Passwort"
     cfg = load_config()
     return render_template("login.html", error=error,
-                           totp_enabled=bool(cfg.get("auth_totp_secret","")),
+                           totp_enabled=False,  # TOTP check done server-side now
                            google_enabled=bool(cfg.get("oauth_google_client_id","")),
                            microsoft_enabled=bool(cfg.get("oauth_microsoft_client_id","")))
 
@@ -759,6 +864,45 @@ def login_page():
 def logout():
     session.clear()
     return redirect(url_for("login_page"))
+
+@app.route("/setup", methods=["GET","POST"])
+def setup_page():
+    if _has_users():
+        return redirect(url_for("index"))
+    error = None
+    cfg = load_config()
+    has_old_auth = bool(cfg.get("auth_password_hash",""))
+    if request.method == "POST":
+        name  = request.form.get("name","").strip()
+        email = request.form.get("email","").strip().lower()
+        pw    = request.form.get("password","")
+        pw2   = request.form.get("password2","")
+        if not name or not email or not pw:
+            error = "Alle Felder sind erforderlich"
+        elif pw != pw2:
+            error = "Passwörter stimmen nicht überein"
+        elif len(pw) < 8:
+            error = "Passwort muss mindestens 8 Zeichen haben"
+        else:
+            now = datetime.utcnow().isoformat()
+            con = _get_db()
+            try:
+                con.execute(
+                    "INSERT INTO users (name,email,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
+                    (name, email, _hash_password(pw), "admin", "active", now, now))
+                con.commit()
+            except sqlite3.IntegrityError:
+                error = "E-Mail-Adresse bereits vorhanden"
+            finally:
+                con.close()
+            if not error:
+                # Clear old single-user auth from config
+                cfg["auth_password_hash"] = ""
+                cfg["auth_totp_secret"]   = ""
+                save_config(cfg)
+                _audit("setup_complete", f"admin={email}", ip=request.remote_addr)
+                return redirect(url_for("login_page"))
+    return render_template("setup.html", error=error, has_old_auth=has_old_auth)
 
 @app.route("/api/auth/setup", methods=["POST"])
 def api_auth_setup():
@@ -797,13 +941,17 @@ def api_totp_disable():
 @app.route("/api/auth/status")
 def api_auth_status():
     cfg = load_config()
+    user = _current_user()
     return jsonify({
-        "auth_enabled":    bool(cfg.get("auth_password_hash")),
-        "totp_enabled":    bool(cfg.get("auth_totp_secret")),
-        "google_enabled":  bool(cfg.get("oauth_google_client_id")),
-        "microsoft_enabled": bool(cfg.get("oauth_microsoft_client_id")),
-        "authenticated":   bool(session.get("authenticated")) or not _auth_enabled(),
-        "user_email":      session.get("user_email",""),
+        "auth_enabled":       _has_users(),
+        "user_id":            session.get("user_id"),
+        "user_email":         session.get("user_email",""),
+        "user_name":          session.get("user_name",""),
+        "user_role":          session.get("user_role",""),
+        "totp_enabled":       bool(user.get("totp_enabled")) if user else False,
+        "google_enabled":     bool(cfg.get("oauth_google_client_id","")),
+        "microsoft_enabled":  bool(cfg.get("oauth_microsoft_client_id","")),
+        "has_users":          _has_users(),
     })
 
 # ── OAuth2 helpers ────────────────────────────────────────────────────────────
@@ -819,12 +967,29 @@ def _oauth_redirect_base() -> str:
     return f"{scheme}://{host}"
 
 def _oauth_finish(email: str):
-    """Called after successful OAuth login — create session."""
-    session["authenticated"] = True
-    session["user_email"]    = email
-    session.permanent        = True
-    next_url = session.pop("oauth_next", None) or "/"
-    return redirect(next_url)
+    """Called after successful OAuth2 — find or reject user, set session."""
+    user = _get_user_by_email(email)
+    if not user:
+        # Auto-create user if no users exist yet (shouldn't happen post-setup, but just in case)
+        if not _has_users():
+            return redirect("/setup")
+        # Deny if user not in DB
+        return render_template("login.html", error=f"Kein Konto für {email} vorhanden. Bitte Admin kontaktieren.",
+                               totp_enabled=False, google_enabled=False, microsoft_enabled=False)
+    if user.get("status") == "disabled":
+        return render_template("login.html", error="Konto deaktiviert.",
+                               totp_enabled=False, google_enabled=False, microsoft_enabled=False)
+    session["user_id"]    = user["id"]
+    session["user_email"] = user["email"]
+    session["user_role"]  = user["role"]
+    session["user_name"]  = user["name"]
+    session.permanent     = True
+    now = datetime.utcnow().isoformat()
+    con = _get_db()
+    con.execute("UPDATE users SET last_login_at=? WHERE id=?", (now, user["id"]))
+    con.commit(); con.close()
+    _audit("login_oauth", f"email={email} role={user['role']}", ip=request.remote_addr)
+    return redirect(request.args.get("next") or url_for("index"))
 
 # ── Google OAuth2 ─────────────────────────────────────────────────────────────
 
@@ -938,7 +1103,7 @@ def auth_microsoft_callback():
                                microsoft_enabled=True)
 
 @app.route("/")
-@require_auth
+@require_login
 def index():
     cfg = load_config()
     caps = get_all_capabilities()
@@ -950,16 +1115,19 @@ def index():
                            provider_names={k:v.PROVIDER_NAME for k,v in PROVIDERS.items()},
                            app_version=APP_VERSION,
                            changelog=CHANGELOG,
-                           all_vehicles=get_all_vehicles(cfg)))
+                           all_vehicles=get_all_vehicles(cfg),
+                           current_user=_current_user()))
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     resp.headers["Pragma"]        = "no-cache"
     resp.headers["Expires"]       = "0"
     return resp
 
 @app.route("/api/config", methods=["GET"])
+@require_login
 def api_get_config(): return jsonify(load_config())
 
 @app.route("/api/config", methods=["POST"])
+@require_admin
 def api_save_config():
     data=request.json; cfg=load_config()
     floats={"battery_capacity_kwh","price_per_kwh_home","price_per_kwh_ac","price_per_kwh_dc",
@@ -981,6 +1149,7 @@ def api_provider_fields(provider_id):
     return jsonify(get_config_fields(provider_id))
 
 @app.route("/api/status")
+@require_login
 def api_status():
     vid = request.args.get("vehicle_id","v0")
     st  = _vehicle_states.get(vid, _vehicle_states.get("v0", {}))
@@ -997,6 +1166,7 @@ def api_get_vehicles():
     return jsonify(get_all_vehicles())
 
 @app.route("/api/vehicles", methods=["POST"])
+@require_admin
 def api_add_vehicle():
     data = request.json or {}
     cfg  = load_config()
@@ -1012,6 +1182,7 @@ def api_add_vehicle():
     return jsonify({"ok": True, "id": vid})
 
 @app.route("/api/vehicles/<vid>", methods=["PUT"])
+@require_admin
 def api_update_vehicle(vid):
     if vid == "v0":
         # Update primary vehicle = update flat config fields
@@ -1040,6 +1211,7 @@ def api_update_vehicle(vid):
     return jsonify({"error": "Fahrzeug nicht gefunden"}), 404
 
 @app.route("/api/vehicles/<vid>", methods=["DELETE"])
+@require_admin
 def api_delete_vehicle(vid):
     if vid == "v0":
         return jsonify({"error": "Primärfahrzeug kann nicht gelöscht werden"}), 400
@@ -1051,6 +1223,7 @@ def api_delete_vehicle(vid):
     return jsonify({"ok": True})
 
 @app.route("/api/sessions")
+@require_login
 def api_sessions():
     return jsonify(get_sessions(
         request.args.get("year",type=int),
@@ -1629,25 +1802,56 @@ def docker_pull_and_restart(tag: str):
         _time.sleep(2)
         try:
             _ulog(f"Stoppe Container {container_name} ({container_id[:12]})")
-            docker_socket_request("POST", f"/containers/{container_id}/stop?t=5")
-            _time.sleep(2)
+            docker_socket_request("POST", f"/containers/{container_id}/stop?t=10")
+            _time.sleep(3)
             _ulog("Container gestoppt — lösche alten Container")
-            docker_socket_request("DELETE", f"/containers/{container_id}?force=1")
+            rm = docker_socket_request("DELETE", f"/containers/{container_id}?force=1")
+            if rm["status"] not in (200, 204, 404):
+                _ulog(f"Warnung: Remove-Status {rm['status']} — {rm.get('data','')}")
             _time.sleep(1)
+
+            # Build full create body from inspect so ports/volumes/networks are preserved
+            old_config = old_cfg.get("Config", {})
+            nets       = old_cfg.get("NetworkSettings", {}).get("Networks", {})
+            # Strip dynamic fields from network endpoints before reuse
+            clean_nets = {}
+            for net_name, net_cfg in nets.items():
+                clean_nets[net_name] = {
+                    k: v for k, v in net_cfg.items()
+                    if k in ("IPAMConfig", "Links", "Aliases", "NetworkID", "EndpointID",
+                             "Gateway", "IPAddress", "IPPrefixLen", "IPv6Gateway",
+                             "GlobalIPv6Address", "GlobalIPv6PrefixLen", "MacAddress",
+                             "DriverOpts")
+                }
+            create_body = {
+                "Image":        f"{DOCKER_HUB_REPO}:{tag}",
+                "Env":          old_config.get("Env", []),
+                "Labels":       old_config.get("Labels", {}),
+                "ExposedPorts": old_config.get("ExposedPorts", {}),
+                "Volumes":      old_config.get("Volumes", {}),
+                "WorkingDir":   old_config.get("WorkingDir", ""),
+                "HostConfig":   host_config,
+                "NetworkingConfig": {"EndpointsConfig": clean_nets},
+            }
+            # include Cmd/Entrypoint only if set
+            if old_config.get("Cmd"):
+                create_body["Cmd"] = old_config["Cmd"]
+            if old_config.get("Entrypoint"):
+                create_body["Entrypoint"] = old_config["Entrypoint"]
+
             _ulog(f"Erstelle neuen Container '{container_name}' mit Image {DOCKER_HUB_REPO}:{tag}")
-            new = docker_socket_request(
-                "POST",
-                f"/containers/create?name={container_name}",
-                {"Image": f"{DOCKER_HUB_REPO}:{tag}",
-                 "Env": env, "Labels": labels, "HostConfig": host_config}
-            )
+            new    = docker_socket_request("POST", f"/containers/create?name={container_name}", create_body)
             new_id = (new.get("data") or {}).get("Id")
             if new_id:
                 _ulog(f"Container erstellt ({new_id[:12]}) — starte...")
-                docker_socket_request("POST", f"/containers/{new_id}/start")
-                _ulog("Container gestartet — Update abgeschlossen!")
+                start = docker_socket_request("POST", f"/containers/{new_id}/start")
+                if start["status"] in (200, 204, 304):
+                    _ulog("Container gestartet — Update abgeschlossen!")
+                else:
+                    _ulog(f"FEHLER beim Starten: HTTP {start['status']} — {start.get('data','')}")
             else:
-                _ulog(f"FEHLER: Keine Container-ID erhalten — {new}")
+                err = (new.get("data") or {}).get("message") or str(new.get("data",""))
+                _ulog(f"FEHLER beim Erstellen des neuen Containers: {err}")
         except Exception as e:
             _ulog(f"FEHLER beim Recreate: {e}")
         _update_running = False
@@ -1696,6 +1900,7 @@ def api_update_check():
     return jsonify(info)
 
 @app.route("/api/update/pull", methods=["POST"])
+@require_admin
 def api_update_pull():
     cfg = load_config()
     tag = cfg.get("update_channel","latest")
@@ -1705,6 +1910,161 @@ def api_update_pull():
 @app.route("/api/update/log")
 def api_update_log():
     return jsonify({"running": _update_running, "lines": list(_update_log)})
+
+# ── User Management ───────────────────────────────────────────────────────────
+@app.route("/api/users", methods=["GET"])
+@require_admin
+def api_get_users():
+    con = _get_db()
+    rows = con.execute(
+        "SELECT id,name,email,role,status,totp_enabled,created_at,updated_at,last_login_at FROM users ORDER BY id"
+    ).fetchall()
+    con.close()
+    return jsonify([dict(r) for r in rows])
+
+@app.route("/api/users", methods=["POST"])
+@require_admin
+def api_create_user():
+    data  = request.json or {}
+    name  = (data.get("name") or "").strip()
+    email = (data.get("email") or "").strip().lower()
+    pw    = data.get("password") or ""
+    role  = data.get("role","user")
+    auto_pw = not pw
+    if auto_pw:
+        pw = secrets.token_urlsafe(12)
+    if not name or not email:
+        return jsonify({"ok": False, "error": "Name und E-Mail erforderlich"})
+    if len(pw) < 8:
+        return jsonify({"ok": False, "error": "Passwort muss mindestens 8 Zeichen haben"})
+    now = datetime.utcnow().isoformat()
+    try:
+        con = _get_db()
+        con.execute(
+            "INSERT INTO users (name,email,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
+            (name, email, _hash_password(pw), role, "active", now, now))
+        con.commit(); con.close()
+    except sqlite3.IntegrityError:
+        return jsonify({"ok": False, "error": "E-Mail bereits vorhanden"})
+    _audit("user_created", f"email={email} role={role}", ip=request.remote_addr)
+    return jsonify({"ok": True, "temp_password": pw if auto_pw else ""})
+
+@app.route("/api/users/<int:uid>", methods=["PUT"])
+@require_admin
+def api_update_user(uid):
+    data = request.json or {}
+    user = _get_user_by_id(uid)
+    if not user:
+        return jsonify({"ok": False, "error": "Nicht gefunden"}), 404
+    now = datetime.utcnow().isoformat()
+    con = _get_db()
+    for field in ("name","role","status"):
+        if field in data:
+            con.execute(f"UPDATE users SET {field}=?,updated_at=? WHERE id=?", (data[field], now, uid))
+    if data.get("password") and len(data["password"]) >= 8:
+        con.execute("UPDATE users SET password_hash=?,updated_at=? WHERE id=?",
+                    (_hash_password(data["password"]), now, uid))
+    con.commit(); con.close()
+    _audit("user_updated", f"uid={uid}", ip=request.remote_addr)
+    return jsonify({"ok": True})
+
+@app.route("/api/users/<int:uid>", methods=["DELETE"])
+@require_admin
+def api_delete_user(uid):
+    if uid == session.get("user_id"):
+        return jsonify({"ok": False, "error": "Eigenen Account nicht löschbar"})
+    con = _get_db()
+    con.execute("DELETE FROM users WHERE id=?", (uid,))
+    con.commit(); con.close()
+    _audit("user_deleted", f"uid={uid}", ip=request.remote_addr)
+    return jsonify({"ok": True})
+
+@app.route("/api/users/<int:uid>/reset-2fa", methods=["POST"])
+@require_admin
+def api_admin_reset_2fa(uid):
+    now = datetime.utcnow().isoformat()
+    con = _get_db()
+    con.execute("UPDATE users SET totp_secret='',totp_enabled=0,updated_at=? WHERE id=?", (now, uid))
+    con.commit(); con.close()
+    _audit("totp_reset", f"uid={uid}", ip=request.remote_addr)
+    return jsonify({"ok": True})
+
+# ── Profile (own account) ─────────────────────────────────────────────────────
+@app.route("/api/users/me")
+def api_get_me():
+    user = _current_user()
+    if not user:
+        return jsonify({"error": "Nicht eingeloggt"}), 401
+    return jsonify({
+        "id":           user["id"],
+        "name":         user["name"],
+        "email":        user["email"],
+        "role":         user["role"],
+        "totp_enabled": bool(user.get("totp_enabled")),
+    })
+
+@app.route("/api/users/me/password", methods=["POST"])
+def api_change_password():
+    user = _current_user()
+    if not user:
+        return jsonify({"error": "Nicht eingeloggt"}), 401
+    data    = request.json or {}
+    current = data.get("current","")
+    new_pw  = data.get("new","")
+    if _hash_password(current) != user["password_hash"]:
+        return jsonify({"ok": False, "error": "Aktuelles Passwort falsch"})
+    if len(new_pw) < 8:
+        return jsonify({"ok": False, "error": "Mindestens 8 Zeichen"})
+    now = datetime.utcnow().isoformat()
+    con = _get_db()
+    con.execute("UPDATE users SET password_hash=?,updated_at=? WHERE id=?",
+                (_hash_password(new_pw), now, user["id"]))
+    con.commit(); con.close()
+    _audit("password_changed", f"uid={user['id']}", ip=request.remote_addr)
+    return jsonify({"ok": True})
+
+@app.route("/api/users/me/totp/setup", methods=["POST"])
+def api_my_totp_setup():
+    user = _current_user()
+    if not user:
+        return jsonify({"error": "Nicht eingeloggt"}), 401
+    import pyotp
+    secret = pyotp.random_base32()
+    session["pending_totp"] = secret
+    uri = pyotp.TOTP(secret).provisioning_uri(name=user["email"], issuer_name="EV Tracker")
+    return jsonify({"ok": True, "secret": secret, "uri": uri})
+
+@app.route("/api/users/me/totp/confirm", methods=["POST"])
+def api_my_totp_confirm():
+    user   = _current_user()
+    secret = session.get("pending_totp","")
+    if not user or not secret:
+        return jsonify({"ok": False, "error": "Kein ausstehender TOTP"})
+    code = (request.json or {}).get("code","").strip().replace(" ","")
+    import pyotp
+    if not pyotp.TOTP(secret).verify(code, valid_window=1):
+        return jsonify({"ok": False, "error": "Ungültiger Code — bitte erneut versuchen"})
+    now = datetime.utcnow().isoformat()
+    con = _get_db()
+    con.execute("UPDATE users SET totp_secret=?,totp_enabled=1,updated_at=? WHERE id=?",
+                (secret, now, user["id"]))
+    con.commit(); con.close()
+    session.pop("pending_totp", None)
+    _audit("totp_enabled", f"uid={user['id']}", ip=request.remote_addr)
+    return jsonify({"ok": True})
+
+@app.route("/api/users/me/totp/disable", methods=["POST"])
+def api_my_totp_disable():
+    user = _current_user()
+    if not user:
+        return jsonify({"error": "Nicht eingeloggt"}), 401
+    now = datetime.utcnow().isoformat()
+    con = _get_db()
+    con.execute("UPDATE users SET totp_secret='',totp_enabled=0,updated_at=? WHERE id=?",
+                (now, user["id"]))
+    con.commit(); con.close()
+    _audit("totp_disabled", f"uid={user['id']}", ip=request.remote_addr)
+    return jsonify({"ok": True})
 
 # ── SMTP ─────────────────────────────────────────────────────────────────────
 @app.route("/api/smtp/test", methods=["POST"])
