@@ -1,11 +1,10 @@
 {
-  "version": "1.6.0",
+  "version": "1.9.0",
   "changelog": [
-    "Multi-Auto-Support: beliebig viele Fahrzeuge gleichzeitig tracken",
-    "Jedes Fahrzeug läuft in eigenem Tracker-Thread mit eigenem Provider",
-    "Fahrzeugverwaltung im Konfig-Tab (hinzufügen, bearbeiten, löschen)",
-    "Ladevorgänge-Filter nach Fahrzeug",
-    "Neue Provider: Hyundai/Kia, Renault/Dacia, Polestar, Audi",
-    "Login + 2FA TOTP (Google Authenticator / Authy)"
+    "Passwort-Reset per E-Mail (Token-basiert)",
+    "Benutzer-Einladungen per E-Mail",
+    "Brute-force-Schutz: Account-Sperrung nach 5 Fehlversuchen",
+    "2FA Backup-Codes (8 Einmalcodes pro Benutzer)",
+    "Verbesserte Sicherheit: CSRF-Token in AJAX-Requests"
   ]
 }

@@ -9,9 +9,16 @@ from providers import get_provider, get_all_capabilities, get_config_fields, PRO
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.8.0"
+APP_VERSION   = "1.9.0"
 
 CHANGELOG = [
+    {"version":"1.9.0","changes":[
+        "Passwort-Reset per E-Mail (Token-basiert)",
+        "Benutzer-Einladungen per E-Mail",
+        "Brute-force-Schutz: Account-Sperrung nach 5 Fehlversuchen",
+        "2FA Backup-Codes (8 Einmalcodes pro Benutzer)",
+        "Verbesserte Sicherheit: CSRF-Token in AJAX-Requests",
+    ]},
     {"version":"1.8.0","changes":[
         "Vollständige Benutzerverwaltung (Admin + Benutzer-Rollen)",
         "Login mit E-Mail + Passwort (Multi-User)",
@@ -436,6 +443,27 @@ def init_db():
         used_at    TEXT,
         created_at TEXT NOT NULL
     )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS invite_tokens (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id    INTEGER NOT NULL,
+        token_hash TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at    TEXT,
+        created_at TEXT NOT NULL
+    )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS totp_backup_codes (
+        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id  INTEGER NOT NULL,
+        code_hash TEXT NOT NULL,
+        used_at  TEXT
+    )""")
+    # live migration: add brute-force columns to users
+    for col, typedef in [
+        ("failed_attempts", "INTEGER NOT NULL DEFAULT 0"),
+        ("locked_until",    "TEXT"),
+    ]:
+        try: con.execute(f"ALTER TABLE users ADD COLUMN {col} {typedef}")
+        except Exception: pass
     con.commit(); con.close()
 
 def get_sessions(year=None, month=None, location=None, vehicle_id=None, limit=50):
@@ -795,7 +823,10 @@ def start_tracker():
 
 _AUTH_EXEMPT = {"/login", "/logout", "/setup",
                 "/auth/google", "/auth/google/callback",
-                "/auth/microsoft", "/auth/microsoft/callback"}
+                "/auth/microsoft", "/auth/microsoft/callback",
+                "/forgot-password"}
+
+_AUTH_EXEMPT_PREFIXES = ("/reset-password", "/invite")
 
 @app.before_request
 def check_auth():
@@ -806,6 +837,8 @@ def check_auth():
         if request.path == "/setup" and _has_users():
             return redirect(url_for("index"))
         return
+    if any(request.path.startswith(p) for p in _AUTH_EXEMPT_PREFIXES):
+        return
     # If no users exist, everything redirects to setup
     if not _has_users():
         if request.path.startswith("/api/"):
@@ -813,10 +846,28 @@ def check_auth():
         return redirect("/setup")
     # Check authentication
     if session.get("user_id"):
+        # Ensure CSRF token is set
+        if "csrf_token" not in session:
+            session["csrf_token"] = secrets.token_hex(32)
         return
     if request.path.startswith("/api/"):
         return jsonify({"error": "Nicht eingeloggt", "login_required": True}), 401
     return redirect(url_for("login_page", next=request.path))
+
+def _check_csrf():
+    """Verify CSRF token for state-changing requests. Returns error response or None."""
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return None
+    _csrf_exempt_paths = {"/login", "/setup", "/forgot-password"}
+    _csrf_exempt_prefixes = ("/reset-password", "/invite", "/auth/")
+    if request.path in _csrf_exempt_paths:
+        return None
+    if any(request.path.startswith(p) for p in _csrf_exempt_prefixes):
+        return None
+    token = request.headers.get("X-CSRF-Token","")
+    if not token or token != session.get("csrf_token",""):
+        return jsonify({"error": "CSRF-Token ungültig"}), 403
+    return None
 
 @app.route("/login", methods=["GET","POST"])
 def login_page():
@@ -827,33 +878,73 @@ def login_page():
         email = request.form.get("email","").strip().lower()
         pw    = request.form.get("password","")
         user  = _get_user_by_email(email)
+        now_dt = datetime.utcnow()
         # Generic error to prevent user enumeration
-        if not user or user.get("status") == "disabled" or \
-           _hash_password(pw) != user.get("password_hash",""):
+        if not user or user.get("status") == "disabled":
             error = "Anmeldung fehlgeschlagen"
             _audit("login_failed", f"email={email}", ip=request.remote_addr)
         else:
-            # Check TOTP if enabled
-            if user.get("totp_enabled") and user.get("totp_secret"):
-                code = request.form.get("totp","").strip().replace(" ","")
+            # Check account lockout
+            locked_until = user.get("locked_until")
+            if locked_until:
                 try:
-                    import pyotp
-                    if not pyotp.TOTP(user["totp_secret"]).verify(code, valid_window=1):
-                        error = "Ungültiger 2FA-Code"
+                    lu_dt = datetime.fromisoformat(locked_until)
+                    if now_dt < lu_dt:
+                        error = f"Konto gesperrt bis {lu_dt.strftime('%H:%M')} Uhr. Bitte später erneut versuchen."
                 except Exception:
-                    error = "2FA-Fehler"
-            if not error:
-                session["user_id"]    = user["id"]
-                session["user_email"] = user["email"]
-                session["user_role"]  = user["role"]
-                session["user_name"]  = user["name"]
-                session.permanent     = True
-                now = datetime.utcnow().isoformat()
+                    pass
+            if not error and _hash_password(pw) != user.get("password_hash",""):
+                # Wrong password — increment failed attempts
                 con = _get_db()
-                con.execute("UPDATE users SET last_login_at=? WHERE id=?", (now, user["id"]))
+                new_attempts = (user.get("failed_attempts") or 0) + 1
+                new_locked = None
+                if new_attempts >= 5:
+                    new_locked = (now_dt + timedelta(minutes=15)).isoformat()
+                con.execute("UPDATE users SET failed_attempts=?,locked_until=? WHERE id=?",
+                            (new_attempts, new_locked, user["id"]))
                 con.commit(); con.close()
-                _audit("login", f"email={email} role={user['role']}", ip=request.remote_addr)
-                return redirect(request.args.get("next") or url_for("index"))
+                error = "Anmeldung fehlgeschlagen"
+                _audit("login_failed", f"email={email} attempts={new_attempts}", ip=request.remote_addr)
+            elif not error:
+                # Check TOTP if enabled
+                if user.get("totp_enabled") and user.get("totp_secret"):
+                    code = request.form.get("totp","").strip().replace(" ","")
+                    totp_ok = False
+                    try:
+                        import pyotp
+                        totp_ok = pyotp.TOTP(user["totp_secret"]).verify(code, valid_window=1)
+                    except Exception:
+                        pass
+                    if not totp_ok:
+                        # Try backup code
+                        code_hash = hashlib.sha256(code.encode()).hexdigest()
+                        con = _get_db()
+                        backup = con.execute(
+                            "SELECT id FROM totp_backup_codes WHERE user_id=? AND code_hash=? AND used_at IS NULL",
+                            (user["id"], code_hash)).fetchone()
+                        if backup:
+                            con.execute("UPDATE totp_backup_codes SET used_at=? WHERE id=?",
+                                        (now_dt.isoformat(), backup["id"]))
+                            con.commit(); con.close()
+                            totp_ok = True
+                        else:
+                            con.close()
+                    if not totp_ok:
+                        error = "Ungültiger 2FA-Code"
+                if not error:
+                    # Reset failed attempts on success
+                    con = _get_db()
+                    con.execute("UPDATE users SET failed_attempts=0,locked_until=NULL,last_login_at=? WHERE id=?",
+                                (now_dt.isoformat(), user["id"]))
+                    con.commit(); con.close()
+                    session["user_id"]    = user["id"]
+                    session["user_email"] = user["email"]
+                    session["user_role"]  = user["role"]
+                    session["user_name"]  = user["name"]
+                    session["csrf_token"] = secrets.token_hex(32)
+                    session.permanent     = True
+                    _audit("login", f"email={email} role={user['role']}", ip=request.remote_addr)
+                    return redirect(request.args.get("next") or url_for("index"))
     cfg = load_config()
     return render_template("login.html", error=error,
                            totp_enabled=False,  # TOTP check done server-side now
@@ -903,6 +994,152 @@ def setup_page():
                 _audit("setup_complete", f"admin={email}", ip=request.remote_addr)
                 return redirect(url_for("login_page"))
     return render_template("setup.html", error=error, has_old_auth=has_old_auth)
+
+# ── Password Reset ────────────────────────────────────────────────────────────
+
+@app.route("/forgot-password", methods=["GET","POST"])
+def forgot_password_page():
+    if request.method == "GET":
+        sent = request.args.get("sent","")
+        return render_template("forgot_password.html", sent=bool(sent))
+    email = request.form.get("email","").strip().lower()
+    user  = _get_user_by_email(email)
+    if user and user.get("status") != "disabled":
+        token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        now_dt = datetime.utcnow()
+        expires = (now_dt + timedelta(hours=1)).isoformat()
+        con = _get_db()
+        # Invalidate old tokens for this user
+        con.execute("UPDATE password_reset_tokens SET used_at=? WHERE user_id=? AND used_at IS NULL",
+                    (now_dt.isoformat(), user["id"]))
+        con.execute("INSERT INTO password_reset_tokens (user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?)",
+                    (user["id"], token_hash, expires, now_dt.isoformat()))
+        con.commit(); con.close()
+        reset_url = request.host_url.rstrip("/") + url_for("reset_password_page", token=token)
+        body_html = f"""<p>Hallo {user['name']},</p>
+<p>Du hast einen Passwort-Reset für deinen EV Tracker Account angefordert.</p>
+<p><a href="{reset_url}">Passwort zurücksetzen</a></p>
+<p>Dieser Link ist 1 Stunde gültig.</p>
+<p>Falls du diese Anfrage nicht gestellt hast, kannst du diese E-Mail ignorieren.</p>"""
+        _send_email(user["email"], "EV Tracker — Passwort zurücksetzen", body_html)
+        _audit("password_reset_requested", f"email={email}", ip=request.remote_addr)
+    return redirect(url_for("forgot_password_page", sent=1))
+
+@app.route("/reset-password/<token>", methods=["GET","POST"])
+def reset_password_page(token):
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    now_iso = datetime.utcnow().isoformat()
+    con = _get_db()
+    row = con.execute(
+        "SELECT * FROM password_reset_tokens WHERE token_hash=? AND used_at IS NULL AND expires_at > ?",
+        (token_hash, now_iso)).fetchone()
+    if not row:
+        con.close()
+        return render_template("reset_password.html", token=token, invalid=True)
+    row = dict(row)
+    if request.method == "GET":
+        con.close()
+        return render_template("reset_password.html", token=token, invalid=False)
+    pw  = request.form.get("password","")
+    pw2 = request.form.get("password2","")
+    if len(pw) < 8:
+        con.close()
+        return render_template("reset_password.html", token=token, invalid=False,
+                               error="Passwort muss mindestens 8 Zeichen haben")
+    if pw != pw2:
+        con.close()
+        return render_template("reset_password.html", token=token, invalid=False,
+                               error="Passwörter stimmen nicht überein")
+    now_iso2 = datetime.utcnow().isoformat()
+    con.execute("UPDATE users SET password_hash=?,updated_at=?,failed_attempts=0,locked_until=NULL WHERE id=?",
+                (_hash_password(pw), now_iso2, row["user_id"]))
+    con.execute("UPDATE password_reset_tokens SET used_at=? WHERE id=?", (now_iso2, row["id"]))
+    con.commit(); con.close()
+    _audit("password_reset_done", f"uid={row['user_id']}", ip=request.remote_addr)
+    return redirect(url_for("login_page"))
+
+# ── User Invitations ──────────────────────────────────────────────────────────
+
+@app.route("/invite/<token>", methods=["GET","POST"])
+def accept_invite_page(token):
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    now_iso = datetime.utcnow().isoformat()
+    con = _get_db()
+    row = con.execute(
+        "SELECT * FROM invite_tokens WHERE token_hash=? AND used_at IS NULL AND expires_at > ?",
+        (token_hash, now_iso)).fetchone()
+    if not row:
+        con.close()
+        return render_template("accept_invite.html", token=token, invalid=True)
+    row = dict(row)
+    user = _get_user_by_id(row["user_id"])
+    if not user:
+        con.close()
+        return render_template("accept_invite.html", token=token, invalid=True)
+    if request.method == "GET":
+        con.close()
+        return render_template("accept_invite.html", token=token, invalid=False,
+                               user_name=user.get("name",""))
+    pw  = request.form.get("password","")
+    pw2 = request.form.get("password2","")
+    if len(pw) < 8:
+        con.close()
+        return render_template("accept_invite.html", token=token, invalid=False,
+                               user_name=user.get("name",""),
+                               error="Passwort muss mindestens 8 Zeichen haben")
+    if pw != pw2:
+        con.close()
+        return render_template("accept_invite.html", token=token, invalid=False,
+                               user_name=user.get("name",""),
+                               error="Passwörter stimmen nicht überein")
+    now_iso2 = datetime.utcnow().isoformat()
+    new_status = "active" if user.get("status") == "invited" else user.get("status","active")
+    con.execute("UPDATE users SET password_hash=?,status=?,updated_at=? WHERE id=?",
+                (_hash_password(pw), new_status, now_iso2, user["id"]))
+    con.execute("UPDATE invite_tokens SET used_at=? WHERE id=?", (now_iso2, row["id"]))
+    con.commit(); con.close()
+    _audit("invite_accepted", f"uid={user['id']}", ip=request.remote_addr)
+    return redirect(url_for("login_page"))
+
+# ── SMTP helper ───────────────────────────────────────────────────────────────
+
+def _send_email(to_addr: str, subject: str, body_html: str, body_text: str = None) -> tuple:
+    import smtplib, ssl as _ssl
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText as _MIMEText
+    cfg  = load_config()
+    host = cfg.get("smtp_host","")
+    port = int(cfg.get("smtp_port", 587))
+    tls  = cfg.get("smtp_tls","starttls")
+    user = cfg.get("smtp_user","")
+    pw   = cfg.get("smtp_password","")
+    frm  = cfg.get("smtp_from_email","")
+    name = cfg.get("smtp_from_name","EV Tracker")
+    if not host or not frm:
+        return False, "SMTP nicht konfiguriert"
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"]    = f"{name} <{frm}>"
+        msg["To"]      = to_addr
+        if body_text:
+            msg.attach(_MIMEText(body_text, "plain", "utf-8"))
+        msg.attach(_MIMEText(body_html, "html", "utf-8"))
+        ctx = _ssl.create_default_context()
+        if tls == "ssl":
+            srv = smtplib.SMTP_SSL(host, port, context=ctx, timeout=10)
+        else:
+            srv = smtplib.SMTP(host, port, timeout=10)
+            if tls == "starttls":
+                srv.starttls(context=ctx)
+        if user:
+            srv.login(user, pw)
+        srv.sendmail(frm, [to_addr], msg.as_string())
+        srv.quit()
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
 @app.route("/api/auth/setup", methods=["POST"])
 def api_auth_setup():
@@ -1930,24 +2167,27 @@ def api_create_user():
     email = (data.get("email") or "").strip().lower()
     pw    = data.get("password") or ""
     role  = data.get("role","user")
-    auto_pw = not pw
-    if auto_pw:
-        pw = secrets.token_urlsafe(12)
+    invite_mode = not pw  # no password → create as invited
     if not name or not email:
         return jsonify({"ok": False, "error": "Name und E-Mail erforderlich"})
-    if len(pw) < 8:
-        return jsonify({"ok": False, "error": "Passwort muss mindestens 8 Zeichen haben"})
     now = datetime.utcnow().isoformat()
     try:
         con = _get_db()
-        con.execute(
-            "INSERT INTO users (name,email,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
-            (name, email, _hash_password(pw), role, "active", now, now))
+        if invite_mode:
+            con.execute(
+                "INSERT INTO users (name,email,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
+                (name, email, "", role, "invited", now, now))
+        else:
+            if len(pw) < 8:
+                return jsonify({"ok": False, "error": "Passwort muss mindestens 8 Zeichen haben"})
+            con.execute(
+                "INSERT INTO users (name,email,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
+                (name, email, _hash_password(pw), role, "active", now, now))
         con.commit(); con.close()
     except sqlite3.IntegrityError:
         return jsonify({"ok": False, "error": "E-Mail bereits vorhanden"})
-    _audit("user_created", f"email={email} role={role}", ip=request.remote_addr)
-    return jsonify({"ok": True, "temp_password": pw if auto_pw else ""})
+    _audit("user_created", f"email={email} role={role} invited={invite_mode}", ip=request.remote_addr)
+    return jsonify({"ok": True, "invited": invite_mode})
 
 @app.route("/api/users/<int:uid>", methods=["PUT"])
 @require_admin
@@ -1988,6 +2228,34 @@ def api_admin_reset_2fa(uid):
     con.commit(); con.close()
     _audit("totp_reset", f"uid={uid}", ip=request.remote_addr)
     return jsonify({"ok": True})
+
+@app.route("/api/users/<int:uid>/invite", methods=["POST"])
+@require_admin
+def api_invite_user(uid):
+    user = _get_user_by_id(uid)
+    if not user:
+        return jsonify({"ok": False, "error": "Benutzer nicht gefunden"}), 404
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    now_dt = datetime.utcnow()
+    expires = (now_dt + timedelta(hours=48)).isoformat()
+    con = _get_db()
+    # Invalidate old invite tokens
+    con.execute("UPDATE invite_tokens SET used_at=? WHERE user_id=? AND used_at IS NULL",
+                (now_dt.isoformat(), uid))
+    con.execute("INSERT INTO invite_tokens (user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?)",
+                (uid, token_hash, expires, now_dt.isoformat()))
+    con.commit(); con.close()
+    invite_url = request.host_url.rstrip("/") + url_for("accept_invite_page", token=token)
+    body_html = f"""<p>Hallo {user['name']},</p>
+<p>Du wurdest zum EV Tracker eingeladen. Klicke auf den Link um dein Passwort zu setzen und dich anzumelden:</p>
+<p><a href="{invite_url}">Einladung annehmen</a></p>
+<p>Dieser Link ist 48 Stunden gültig.</p>"""
+    ok, err = _send_email(user["email"], "EV Tracker — Einladung", body_html)
+    _audit("user_invited", f"uid={uid} email={user['email']} smtp_ok={ok}", ip=request.remote_addr)
+    if ok:
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": err or "E-Mail konnte nicht gesendet werden"})
 
 # ── Profile (own account) ─────────────────────────────────────────────────────
 @app.route("/api/users/me")
@@ -2065,6 +2333,45 @@ def api_my_totp_disable():
     con.commit(); con.close()
     _audit("totp_disabled", f"uid={user['id']}", ip=request.remote_addr)
     return jsonify({"ok": True})
+
+@app.route("/api/users/me/totp/backup-codes", methods=["POST"])
+@require_login
+def api_generate_backup_codes():
+    user = _current_user()
+    if not user:
+        return jsonify({"error": "Nicht eingeloggt"}), 401
+    raw_codes = [secrets.token_hex(4).upper() for _ in range(8)]
+    formatted = [f"{c[:4]}-{c[4:]}" for c in raw_codes]
+    now_iso = datetime.utcnow().isoformat()
+    con = _get_db()
+    con.execute("DELETE FROM totp_backup_codes WHERE user_id=?", (user["id"],))
+    for code in raw_codes:
+        code_hash = hashlib.sha256(code.encode()).hexdigest()
+        con.execute("INSERT INTO totp_backup_codes (user_id, code_hash) VALUES (?,?)",
+                    (user["id"], code_hash))
+    con.commit(); con.close()
+    _audit("backup_codes_generated", f"uid={user['id']}", ip=request.remote_addr)
+    return jsonify({"ok": True, "codes": formatted})
+
+@app.route("/api/users/me/totp/backup-codes/count", methods=["GET"])
+@require_login
+def api_backup_codes_count():
+    user = _current_user()
+    if not user:
+        return jsonify({"error": "Nicht eingeloggt"}), 401
+    con = _get_db()
+    count = con.execute(
+        "SELECT COUNT(*) FROM totp_backup_codes WHERE user_id=? AND used_at IS NULL",
+        (user["id"],)).fetchone()[0]
+    con.close()
+    return jsonify({"count": count})
+
+@app.route("/api/csrf-token", methods=["GET"])
+@require_login
+def api_csrf_token():
+    if "csrf_token" not in session:
+        session["csrf_token"] = secrets.token_hex(32)
+    return jsonify({"token": session["csrf_token"]})
 
 # ── SMTP ─────────────────────────────────────────────────────────────────────
 @app.route("/api/smtp/test", methods=["POST"])
