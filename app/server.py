@@ -9,7 +9,7 @@ from providers import get_provider, get_all_capabilities, get_config_fields, PRO
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.7.0"
+APP_VERSION   = "1.7.1"
 
 CHANGELOG = [
     {"version":"1.7.0","changes":[
@@ -1629,25 +1629,56 @@ def docker_pull_and_restart(tag: str):
         _time.sleep(2)
         try:
             _ulog(f"Stoppe Container {container_name} ({container_id[:12]})")
-            docker_socket_request("POST", f"/containers/{container_id}/stop?t=5")
-            _time.sleep(2)
+            docker_socket_request("POST", f"/containers/{container_id}/stop?t=10")
+            _time.sleep(3)
             _ulog("Container gestoppt — lösche alten Container")
-            docker_socket_request("DELETE", f"/containers/{container_id}?force=1")
+            rm = docker_socket_request("DELETE", f"/containers/{container_id}?force=1")
+            if rm["status"] not in (200, 204, 404):
+                _ulog(f"Warnung: Remove-Status {rm['status']} — {rm.get('data','')}")
             _time.sleep(1)
+
+            # Build full create body from inspect so ports/volumes/networks are preserved
+            old_config = old_cfg.get("Config", {})
+            nets       = old_cfg.get("NetworkSettings", {}).get("Networks", {})
+            # Strip dynamic fields from network endpoints before reuse
+            clean_nets = {}
+            for net_name, net_cfg in nets.items():
+                clean_nets[net_name] = {
+                    k: v for k, v in net_cfg.items()
+                    if k in ("IPAMConfig", "Links", "Aliases", "NetworkID", "EndpointID",
+                             "Gateway", "IPAddress", "IPPrefixLen", "IPv6Gateway",
+                             "GlobalIPv6Address", "GlobalIPv6PrefixLen", "MacAddress",
+                             "DriverOpts")
+                }
+            create_body = {
+                "Image":        f"{DOCKER_HUB_REPO}:{tag}",
+                "Env":          old_config.get("Env", []),
+                "Labels":       old_config.get("Labels", {}),
+                "ExposedPorts": old_config.get("ExposedPorts", {}),
+                "Volumes":      old_config.get("Volumes", {}),
+                "WorkingDir":   old_config.get("WorkingDir", ""),
+                "HostConfig":   host_config,
+                "NetworkingConfig": {"EndpointsConfig": clean_nets},
+            }
+            # include Cmd/Entrypoint only if set
+            if old_config.get("Cmd"):
+                create_body["Cmd"] = old_config["Cmd"]
+            if old_config.get("Entrypoint"):
+                create_body["Entrypoint"] = old_config["Entrypoint"]
+
             _ulog(f"Erstelle neuen Container '{container_name}' mit Image {DOCKER_HUB_REPO}:{tag}")
-            new = docker_socket_request(
-                "POST",
-                f"/containers/create?name={container_name}",
-                {"Image": f"{DOCKER_HUB_REPO}:{tag}",
-                 "Env": env, "Labels": labels, "HostConfig": host_config}
-            )
+            new    = docker_socket_request("POST", f"/containers/create?name={container_name}", create_body)
             new_id = (new.get("data") or {}).get("Id")
             if new_id:
                 _ulog(f"Container erstellt ({new_id[:12]}) — starte...")
-                docker_socket_request("POST", f"/containers/{new_id}/start")
-                _ulog("Container gestartet — Update abgeschlossen!")
+                start = docker_socket_request("POST", f"/containers/{new_id}/start")
+                if start["status"] in (200, 204, 304):
+                    _ulog("Container gestartet — Update abgeschlossen!")
+                else:
+                    _ulog(f"FEHLER beim Starten: HTTP {start['status']} — {start.get('data','')}")
             else:
-                _ulog(f"FEHLER: Keine Container-ID erhalten — {new}")
+                err = (new.get("data") or {}).get("message") or str(new.get("data",""))
+                _ulog(f"FEHLER beim Erstellen des neuen Containers: {err}")
         except Exception as e:
             _ulog(f"FEHLER beim Recreate: {e}")
         _update_running = False
