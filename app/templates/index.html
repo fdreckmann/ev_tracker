@@ -173,6 +173,17 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 .sec-lbl{font-size:.68rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;
   letter-spacing:.1em;margin:20px 0 10px}
 
+/* Config sidebar */
+.cfg-nav-btn{background:none;border:none;cursor:pointer;font-family:var(--sans);font-size:.8rem;
+  font-weight:500;color:var(--mute);padding:9px 12px;border-radius:8px;transition:all .15s;
+  text-align:left;width:100%}
+.cfg-nav-btn:hover{color:var(--txt);background:var(--brd)}
+.cfg-nav-btn.active{background:var(--brd2);color:#fff}
+.cfg-section{}
+.cfg-sec-title{font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;
+  letter-spacing:.12em;margin-bottom:18px;display:flex;align-items:center;gap:10px}
+.cfg-sec-title::after{content:'';flex:1;height:1px;background:var(--brd)}
+
 /* ── Session detail modal ── */
 .modal-overlay{
   position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.75);
@@ -313,318 +324,358 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 <!-- ══════════════════════════════════════════════════════
      KONFIGURATION
 ══════════════════════════════════════════════════════ -->
+<!-- ══════════════════════════════════════════════════════
+     KONFIGURATION
+══════════════════════════════════════════════════════ -->
 <div class="panel" id="panel-config">
+  <div style="display:flex;gap:0;min-height:600px;background:var(--surf);border:1px solid var(--brd);border-radius:var(--r);overflow:hidden">
 
-  <!-- Vehicle management -->
-  <div class="card">
-    <div class="card-title">Fahrzeuge</div>
-    <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
-      Mehrere Fahrzeuge können gleichzeitig getrackt werden. Jedes Fahrzeug läuft in einem eigenen Tracker.
-    </p>
-    <div id="vehicleList" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px"></div>
-    <button class="btn-p" style="font-size:.78rem;padding:8px 18px" onclick="openAddVehicleModal()">+ Fahrzeug hinzufügen</button>
-  </div>
+    <!-- ── Sidebar ── -->
+    <nav id="cfgNav" style="width:220px;flex-shrink:0;background:var(--bg);border-right:1px solid var(--brd);padding:12px 8px;display:flex;flex-direction:column;gap:2px">
+      <div style="font-size:.6rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.12em;padding:8px 10px 6px">Konfiguration</div>
+      <button class="cfg-nav-btn active" onclick="cfgSection('fahrzeuge',this)">🚗 Fahrzeuge</button>
+      <button class="cfg-nav-btn" onclick="cfgSection('verbindung',this)">🔌 Verbindung</button>
+      <button class="cfg-nav-btn" onclick="cfgSection('preise',this)">💰 Preismodell</button>
+      <button class="cfg-nav-btn" onclick="cfgSection('zaehler',this)">⚡ Zählerstand</button>
+      <button class="cfg-nav-btn" onclick="cfgSection('notify',this)">🔔 Benachrichtigungen</button>
+      <div style="height:1px;background:var(--brd);margin:8px 4px"></div>
+      <button class="cfg-nav-btn" onclick="cfgSection('smtp',this)">📧 SMTP</button>
+      <button class="cfg-nav-btn" onclick="cfgSection('auth',this)">🔐 Login &amp; Sicherheit</button>
+      <div style="height:1px;background:var(--brd);margin:8px 4px"></div>
+      <button class="cfg-nav-btn" onclick="cfgSection('export-tpl',this)">📋 Export-Vorlagen</button>
+      <button class="cfg-nav-btn" onclick="cfgSection('audit',this)">📜 Audit-Log</button>
+    </nav>
 
-  <div class="card">
-    <div class="card-title">Fahrzeug & Datenquelle</div>
-    <div class="form-grid">
-      <div class="fg full"><label>Fahrzeugname</label>
-        <input id="c_car" value="{{ cfg.car_name }}"></div>
-      <div class="fg full">
-        <label>Datenquelle</label>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px;margin-top:8px" id="providerGrid">
-          {% for p in all_providers %}
-          <div onclick="selectProvider('{{ p.provider_id }}')" id="pcard_{{ p.provider_id }}"
-            style="background:var(--bg);border:2px solid {% if cfg.provider==p.provider_id %}var(--acc){% else %}var(--brd){% endif %};
-            border-radius:10px;padding:12px 14px;cursor:pointer;transition:all .15s">
-            <div style="font-weight:700;font-size:.8rem;color:{% if cfg.provider==p.provider_id %}var(--acc){% else %}#fff{% endif %}">
-              {{ p.provider_name }}</div>
-            <div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);margin-top:5px;line-height:1.7">
-              {% if p.charging_state %}✅{% else %}❌{% endif %} Laden &nbsp;
-              {% if p.soc %}✅{% else %}❌{% endif %} SOC<br>
-              {% if p.odometer %}✅{% else %}❌{% endif %} KM &nbsp;
-              {% if p.charge_power %}✅{% else %}❌{% endif %} kW &nbsp;
-              {% if p.location %}✅{% else %}❌{% endif %} Standort
-            </div>
-          </div>
-          {% endfor %}
-        </div>
-        <input type="hidden" id="c_provider" value="{{ cfg.provider }}">
-      </div>
-    </div>
-    {% for p in all_providers %}{% if p.notes %}
-    <div id="notes_{{ p.provider_id }}" style="display:{% if cfg.provider==p.provider_id %}block{% else %}none{% endif %};
-      margin-top:12px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);
-      border-radius:8px;padding:10px 14px;font-size:.72rem;font-family:var(--mono);color:var(--warn);line-height:1.8">
-      {% for note in p.notes %}⚠ {{ note }}<br>{% endfor %}</div>
-    {% endif %}{% endfor %}
-  </div>
+    <!-- ── Content ── -->
+    <div style="flex:1;padding:24px;overflow-y:auto;min-width:0">
 
-  <div class="card" id="providerConfigCard">
-    <div class="card-title">Verbindung konfigurieren</div>
-    <div class="form-grid" id="providerFields"></div>
-    <div style="margin-top:14px">
-      <button class="btn-g" onclick="testConn()">🔗 Verbindung testen</button>
-      <div class="conn-res" id="connRes"></div>
-    </div>
-  </div>
-
-
-
-  <div class="card">
-    <div class="card-title">Preismodell</div>
-    <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:16px;line-height:1.7">
-       <strong style="color:#fff">Zuhause:</strong> Fixer Tarif deines Stromanbieters<br>
-       <strong style="color:#fff">Extern AC:</strong> ENTSO-E Spot × AC-Faktor (Fallback: Fixpreis)<br>
-       <strong style="color:#fff">Extern DC:</strong> ENTSO-E Spot × DC-Faktor (Fallback: Fixpreis)<br>
-       Jede Session manuell korrigierbar
-    </div>
-    <div class="form-grid">
-      <div class="fg"><label Heimpreis (€/kWh)</label>
-        <input type="number" id="c_price_home" value="{{ cfg.price_per_kwh_home }}" step="0.001" min="0">
-        <span class="hint">Dein fixer Stromtarif zuhause</span></div>
-      <div class="fg"><label>Batteriekapazität (kWh)</label>
-        <input type="number" id="c_bat" value="{{ cfg.battery_capacity_kwh }}" step="0.1" min="1">
-        <span class="hint">Nutzbare Kapazität deines Fahrzeugs</span></div>
-      <div class="fg"><label>DC-Schwellwert (kW)</label>
-        <input type="number" id="c_dc_thresh" value="{{ cfg.dc_threshold_kw }}" step="1" min="1">
-        <span class="hint">Ladeleistung ab der DC erkannt wird (Standard: 22 kW)</span></div>
-      <div class="fg"><label>Polling-Intervall (s)</label>
-        <input type="number" id="c_poll" value="{{ cfg.poll_interval }}" min="30" max="600">
-        <span class="hint">60s empfohlen</span></div>
-      <div class="fg"><label> Extern AC Fallback (€/kWh)</label>
-        <input type="number" id="c_price_ac" value="{{ cfg.price_per_kwh_ac }}" step="0.01" min="0">
-        <span class="hint">Wenn kein ENTSO-E Key vorhanden</span></div>
-      <div class="fg"><label> Extern DC Fallback (€/kWh)</label>
-        <input type="number" id="c_price_dc" value="{{ cfg.price_per_kwh_dc }}" step="0.01" min="0">
-        <span class="hint">Wenn kein ENTSO-E Key vorhanden</span></div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">ENTSO-E Strompreis API</div>
-    <div class="warn-box" style="margin-bottom:16px">
-      <strong>Registrierung erforderlich (kostenlos):</strong><br>
-      1. Registrieren auf <strong>transparency.entsoe.eu</strong><br>
-      2. Email an <strong>transparency@entsoe.eu</strong> mit Betreff "Restful API access"<br>
-      3. Deine Registrierungs-Email in der Mail angeben<br>
-      4. API Key kommt per Email (meist innerhalb weniger Tage)<br><br>
-      <span style="color:var(--mute)">Hinweis: Day-Ahead Preise sind Großhandelspreise (~0.05–0.15 €/kWh).
-      Der Aufschlagsfaktor rechnet das auf typische Ladesäulenpreise hoch.</span>
-    </div>
-    <div class="form-grid">
-      <div class="fg full"><label>ENTSO-E API Key</label>
-        <input type="password" id="c_entsoe_key" value="{{ cfg.entsoe_api_key }}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
-        <span class="hint">Leer lassen = Fallback-Fixpreise werden verwendet</span></div>
-      <div class="fg"><label>🔌 AC Aufschlagsfaktor</label>
-        <input type="number" id="c_ac_markup" value="{{ cfg.entsoe_ac_markup }}" step="0.1" min="1">
-        <span class="hint">Spot × Faktor = AC Preis (z.B. 0.06 × 3 = 0.18 €/kWh)</span></div>
-      <div class="fg"><label>⚡ DC Aufschlagsfaktor</label>
-        <input type="number" id="c_dc_markup" value="{{ cfg.entsoe_dc_markup }}" step="0.1" min="1">
-        <span class="hint">Spot × Faktor = DC Preis (z.B. 0.06 × 6 = 0.36 €/kWh)</span></div>
-    </div>
-    <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <button class="btn-g" onclick="testEntsoe()">🔗 ENTSO-E Verbindung testen</button>
-      <div id="entsoeRes" style="font-size:.78rem;font-family:var(--mono);color:var(--mute)"></div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">Push Notifications (Home Assistant)</div>
-    <div class="form-grid">
-      <div class="fg full"><label>Notify Service</label>
-        <input id="c_notify" value="{{ cfg.notify_service }}" placeholder="notify.mobile_app_mein_iphone">
-        <span class="hint">HA → Einstellungen → Integrationen → Companion App → Service Name</span></div>
-    </div>
-    <div class="warn-box" style="margin-top:12px">
-      Benachrichtigung beim Start und Ende jedes Ladevorgangs mit kWh, Kosten und Standort.
-    </div>
-  </div>
-
-  <!-- Meter source config -->
-  <div class="card">
-    <div class="card-title">Zählerstand-Quelle</div>
-    <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
-      Wird beim Start und Ende jeder Ladesession automatisch abgelesen.
-    </p>
-    <div class="fg full" style="margin-bottom:10px">
-      <label class="lbl">Quelle</label>
-      <select class="inp" id="c_meter_source" onchange="updateMeterSourceUI()">
-        <option value="none">— Keine / manuell —</option>
-        <optgroup label="Smarte Steckdosen / Energiemesser">
-          <option value="ha">Home Assistant Sensor</option>
-          <option value="shelly">Shelly EM / 1PM (lokal)</option>
-          <option value="tasmota">Tasmota (lokal)</option>
-        </optgroup>
-        <optgroup label="Wallboxen">
-          <option value="go_e">go-e Charger (v1 + v2)</option>
-          <option value="openwb">openWB (v1 / Series 2)</option>
-          <option value="warp">WARP Charger 1 / 2 / 3</option>
-          <option value="evcc">EVCC · KEBA · ABL · Mennekes · Heidelberg · Wallbe · NRGKick u.v.m.</option>
-          <option value="webasto">Webasto Next / Live</option>
-          <option value="alfen">Alfen Eve Single / Double</option>
-          <option value="juice">Juice Charger Me³ / Pro</option>
-        </optgroup>
-      </select>
-    </div>
-    <div id="meterHaFields" style="display:none">
-      <div class="fg full">
-        <label class="lbl">HA Entity ID</label>
-        <input class="inp" type="text" id="c_meter_sensor" placeholder="sensor.stromzaehler_total_kwh">
-        <span class="hint">muss in kWh liefern — z.B. sensor.shelly_em_total_energy</span>
-      </div>
-    </div>
-    <div id="meterDeviceFields" style="display:none">
-      <div class="fg full">
-        <label class="lbl">Geräte-IP</label>
-        <input class="inp" type="text" id="c_meter_device_ip" placeholder="192.168.1.100">
-      </div>
-    </div>
-    <div id="meterEvccFields" style="display:none;display:grid;gap:10px;grid-template-columns:1fr 1fr">
-      <div>
-        <label class="lbl">EVCC Port</label>
-        <input class="inp" type="number" id="c_meter_evcc_port" placeholder="7070">
-      </div>
-      <div>
-        <label class="lbl">Loadpoint (0 = erster)</label>
-        <input class="inp" type="number" id="c_meter_evcc_lp" placeholder="0">
-      </div>
-    </div>
-    <div id="meterAlfenFields" style="display:none">
-      <div class="fg full">
-        <label class="lbl">Alfen Web-Passwort</label>
-        <input class="inp" type="password" id="c_meter_alfen_pass" placeholder="admin">
-      </div>
-    </div>
-    <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
-      <button class="btn-s" onclick="saveMeterSource()">💾 Speichern</button>
-      <button class="btn-s" onclick="testMeterSource()">🔍 Verbindung testen</button>
-      <span id="meterTestRes" style="font-size:.77rem;font-family:var(--mono)"></span>
-    </div>
-  </div>
-
-  <div class="btn-row">
-    <button class="btn-p" onclick="saveConfig()">💾 Speichern</button>
-    <button class="btn-s" onclick="loadConfig()">↺ Zurücksetzen</button>
-  </div>
-
-  <!-- Auth / Login card -->
-  <div class="card" style="margin-top:18px">
-    <div class="card-title">🔐 Login &amp; Sicherheit</div>
-    <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
-      Schützt die Oberfläche mit Passwort. Ohne Passwort ist der Zugang frei.
-    </p>
-
-    <div id="authStatus" style="margin-bottom:14px;font-size:.78rem;font-family:var(--mono);color:var(--mute)">⏳ Lade…</div>
-
-    <!-- Set / Change password -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-      <div>
-        <label class="lbl">Neues Passwort</label>
-        <input class="inp" type="password" id="authNewPw" placeholder="••••••••" autocomplete="new-password">
-      </div>
-      <div>
-        <label class="lbl">Wiederholen</label>
-        <input class="inp" type="password" id="authNewPw2" placeholder="••••••••" autocomplete="new-password">
-      </div>
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
-      <button class="btn-p" style="font-size:.78rem;padding:7px 16px" onclick="setAuthPassword()">🔑 Passwort setzen</button>
-      <button class="btn-d" style="font-size:.78rem;padding:7px 16px" onclick="disableAuth()">🔓 Passwort entfernen</button>
-    </div>
-
-    <!-- 2FA TOTP -->
-    <div style="border-top:1px solid var(--brd);padding-top:14px">
-      <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Zwei-Faktor-Authentifizierung (TOTP)</div>
-      <div id="totpStatus" style="font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-bottom:10px">—</div>
-      <div id="totpQrWrap" style="display:none;margin-bottom:12px">
-        <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:8px">
-          Scanne den QR-Code mit Google Authenticator, Authy oder einer anderen TOTP-App:
-        </div>
-        <div id="totpQrImg" style="margin-bottom:8px"></div>
-        <div style="font-size:.7rem;font-family:var(--mono);color:var(--acc2)" id="totpSecret"></div>
-        <div class="warn-box" style="margin-top:10px">
-          ⚠ Speichere den Secret-Code sicher! Er wird nur einmal angezeigt.<br>
-          Teste den Code bevor du dich ausloggst.
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn-s" style="font-size:.78rem;padding:7px 16px" onclick="setupTotp()">📱 2FA einrichten</button>
-        <button class="btn-d" id="totpDisableBtn" style="font-size:.78rem;padding:7px 16px;display:none" onclick="disableTotp()">❌ 2FA deaktivieren</button>
-      </div>
-
-      <!-- OAuth2 SSO -->
-      <div style="border-top:1px solid var(--brd);padding-top:14px;margin-top:14px">
-        <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">SSO — Google / Microsoft</div>
-        <p style="font-size:.74rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px;line-height:1.6">
-          Nutzer melden sich mit ihrem Google- oder Microsoft-Konto an. Kein Passwort nötig — oder zusätzlich zum Passwort.
+      <!-- FAHRZEUGE -->
+      <div id="cfgsec-fahrzeuge" class="cfg-section">
+        <div class="cfg-sec-title">Fahrzeuge</div>
+        <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
+          Mehrere Fahrzeuge können gleichzeitig getrackt werden.
         </p>
-
-        <!-- Base URL -->
-        <div style="margin-bottom:12px">
-          <label class="lbl">Externe URL (für Redirect URI)</label>
-          <input class="inp" type="text" id="oauth_base_url" placeholder="https://ev.meinserver.de"
-                 value="{{ cfg.oauth_base_url }}" oninput="updateRedirectUris()">
-          <span class="hint">Muss von Google/Microsoft erreichbar sein. Leer = automatisch erkannt.</span>
-        </div>
-
-        <!-- Google -->
-        <div style="background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:14px;margin-bottom:10px">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-            <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-            <span style="font-size:.8rem;font-weight:700">Google</span>
-            <span id="googleOauthStatus" style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-left:auto"></span>
-          </div>
-          <div style="display:grid;gap:8px">
-            <div>
-              <label class="lbl">Client ID</label>
-              <input class="inp" type="text" id="oauth_google_client_id" value="{{ cfg.oauth_google_client_id }}" placeholder="xxxxxx.apps.googleusercontent.com">
-            </div>
-            <div>
-              <label class="lbl">Client Secret</label>
-              <input class="inp" type="password" id="oauth_google_client_secret" value="{{ cfg.oauth_google_client_secret }}" placeholder="GOCSPX-...">
-            </div>
-          </div>
-          <div class="warn-box" style="margin-top:10px;font-size:.7rem">
-            Redirect URI eintragen unter <strong>console.cloud.google.com</strong> → APIs &amp; Dienste → Anmeldedaten:<br>
-            <code id="googleRedirectUri" style="color:var(--acc2)">[Base URL]/auth/google/callback</code>
-          </div>
-        </div>
-
-        <!-- Microsoft -->
-        <div style="background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:14px;margin-bottom:12px">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-            <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#F25022" d="M1 1h10v10H1z"/><path fill="#00A4EF" d="M13 1h10v10H13z"/><path fill="#7FBA00" d="M1 13h10v10H1z"/><path fill="#FFB900" d="M13 13h10v10H13z"/></svg>
-            <span style="font-size:.8rem;font-weight:700">Microsoft</span>
-            <span id="msOauthStatus" style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-left:auto"></span>
-          </div>
-          <div style="display:grid;gap:8px">
-            <div>
-              <label class="lbl">Client ID (Application ID)</label>
-              <input class="inp" type="text" id="oauth_microsoft_client_id" value="{{ cfg.oauth_microsoft_client_id }}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
-            </div>
-            <div>
-              <label class="lbl">Client Secret</label>
-              <input class="inp" type="password" id="oauth_microsoft_client_secret" value="{{ cfg.oauth_microsoft_client_secret }}" placeholder="Secret Value">
-            </div>
-            <div>
-              <label class="lbl">Tenant (optional)</label>
-              <input class="inp" type="text" id="oauth_microsoft_tenant" value="{{ cfg.oauth_microsoft_tenant }}" placeholder="common">
-              <span class="hint">"common" = alle MS-Konten · Tenant-ID = nur deine Organisation</span>
-            </div>
-          </div>
-          <div class="warn-box" style="margin-top:10px;font-size:.7rem">
-            Redirect URI eintragen unter <strong>portal.azure.com</strong> → App-Registrierungen → Authentifizierung:<br>
-            <code id="msRedirectUri" style="color:var(--acc2)">[Base URL]/auth/microsoft/callback</code>
-          </div>
-        </div>
-
-        <button class="btn-p" style="font-size:.78rem;padding:7px 16px" onclick="saveOAuthConfig()">💾 OAuth speichern</button>
-        <span id="oauthSaveInfo" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-left:10px"></span>
+        <div id="vehicleList" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px"></div>
+        <button class="btn-p" style="font-size:.78rem;padding:8px 18px" onclick="openAddVehicleModal()">+ Fahrzeug hinzufügen</button>
       </div>
-    </div>
-  </div>
 
+      <!-- VERBINDUNG -->
+      <div id="cfgsec-verbindung" class="cfg-section" style="display:none">
+        <div class="cfg-sec-title">Fahrzeug &amp; Datenquelle</div>
+        <div class="form-grid">
+          <div class="fg full"><label>Fahrzeugname</label>
+            <input id="c_car" value="{{ cfg.car_name }}"></div>
+          <div class="fg full">
+            <label>Datenquelle</label>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px;margin-top:8px" id="providerGrid">
+              {% for p in all_providers %}
+              <div onclick="selectProvider('{{ p.provider_id }}')" id="pcard_{{ p.provider_id }}"
+                style="background:var(--bg);border:2px solid {% if cfg.provider==p.provider_id %}var(--acc){% else %}var(--brd){% endif %};
+                border-radius:10px;padding:12px 14px;cursor:pointer;transition:all .15s">
+                <div style="font-weight:700;font-size:.8rem;color:{% if cfg.provider==p.provider_id %}var(--acc){% else %}#fff{% endif %}">
+                  {{ p.provider_name }}</div>
+                <div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);margin-top:5px;line-height:1.7">
+                  {% if p.charging_state %}✅{% else %}❌{% endif %} Laden &nbsp;
+                  {% if p.soc %}✅{% else %}❌{% endif %} SOC<br>
+                  {% if p.odometer %}✅{% else %}❌{% endif %} KM &nbsp;
+                  {% if p.charge_power %}✅{% else %}❌{% endif %} kW &nbsp;
+                  {% if p.location %}✅{% else %}❌{% endif %} Standort
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+            <input type="hidden" id="c_provider" value="{{ cfg.provider }}">
+          </div>
+        </div>
+        {% for p in all_providers %}{% if p.notes %}
+        <div id="notes_{{ p.provider_id }}" style="display:{% if cfg.provider==p.provider_id %}block{% else %}none{% endif %};
+          margin-top:12px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);
+          border-radius:8px;padding:10px 14px;font-size:.72rem;font-family:var(--mono);color:var(--warn);line-height:1.8">
+          {% for note in p.notes %}⚠ {{ note }}<br>{% endfor %}</div>
+        {% endif %}{% endfor %}
+
+        <div style="margin-top:18px">
+          <div class="cfg-sec-title">Verbindung konfigurieren</div>
+          <div class="form-grid" id="providerFields"></div>
+          <div style="margin-top:14px">
+            <button class="btn-g" onclick="testConn()">🔗 Verbindung testen</button>
+            <div class="conn-res" id="connRes"></div>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn-p" onclick="saveConfig()">💾 Speichern</button>
+          <button class="btn-s" onclick="loadConfig()">↺ Zurücksetzen</button>
+        </div>
+      </div>
+
+      <!-- PREISMODELL -->
+      <div id="cfgsec-preise" class="cfg-section" style="display:none">
+        <div class="cfg-sec-title">Preismodell</div>
+        <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:16px;line-height:1.7">
+           <strong style="color:#fff">Zuhause:</strong> Fixer Tarif<br>
+           <strong style="color:#fff">Extern AC:</strong> ENTSO-E Spot × AC-Faktor<br>
+           <strong style="color:#fff">Extern DC:</strong> ENTSO-E Spot × DC-Faktor
+        </div>
+        <div class="form-grid">
+          <div class="fg"><label>Heimpreis (€/kWh)</label>
+            <input type="number" id="c_price_home" value="{{ cfg.price_per_kwh_home }}" step="0.001" min="0"></div>
+          <div class="fg"><label>Batteriekapazität (kWh)</label>
+            <input type="number" id="c_bat" value="{{ cfg.battery_capacity_kwh }}" step="0.1" min="1"></div>
+          <div class="fg"><label>DC-Schwellwert (kW)</label>
+            <input type="number" id="c_dc_thresh" value="{{ cfg.dc_threshold_kw }}" step="1" min="1">
+            <span class="hint">Ladeleistung ab der DC erkannt wird</span></div>
+          <div class="fg"><label>Polling-Intervall (s)</label>
+            <input type="number" id="c_poll" value="{{ cfg.poll_interval }}" min="30" max="600"></div>
+          <div class="fg"><label>Extern AC Fallback (€/kWh)</label>
+            <input type="number" id="c_price_ac" value="{{ cfg.price_per_kwh_ac }}" step="0.01" min="0"></div>
+          <div class="fg"><label>Extern DC Fallback (€/kWh)</label>
+            <input type="number" id="c_price_dc" value="{{ cfg.price_per_kwh_dc }}" step="0.01" min="0"></div>
+        </div>
+
+        <div style="margin-top:20px">
+          <div class="cfg-sec-title">ENTSO-E Strompreis API</div>
+          <div class="warn-box" style="margin-bottom:16px">
+            Registrierung erforderlich (kostenlos) auf <strong>transparency.entsoe.eu</strong>
+          </div>
+          <div class="form-grid">
+            <div class="fg full"><label>ENTSO-E API Key</label>
+              <input type="password" id="c_entsoe_key" value="{{ cfg.entsoe_api_key }}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></div>
+            <div class="fg"><label>AC Aufschlagsfaktor</label>
+              <input type="number" id="c_ac_markup" value="{{ cfg.entsoe_ac_markup }}" step="0.1" min="1"></div>
+            <div class="fg"><label>DC Aufschlagsfaktor</label>
+              <input type="number" id="c_dc_markup" value="{{ cfg.entsoe_dc_markup }}" step="0.1" min="1"></div>
+          </div>
+          <div style="margin-top:10px;display:flex;gap:10px;align-items:center">
+            <button class="btn-g" onclick="testEntsoe()">🔗 ENTSO-E testen</button>
+            <div id="entsoeRes" style="font-size:.78rem;font-family:var(--mono);color:var(--mute)"></div>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn-p" onclick="saveConfig()">💾 Speichern</button>
+        </div>
+      </div>
+
+      <!-- ZÄHLERSTAND -->
+      <div id="cfgsec-zaehler" class="cfg-section" style="display:none">
+        <div class="cfg-sec-title">Zählerstand-Quelle</div>
+        <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
+          Wird beim Start und Ende jeder Ladesession automatisch abgelesen.
+        </p>
+        <div class="fg full" style="margin-bottom:10px">
+          <label>Quelle</label>
+          <select id="c_meter_source" onchange="updateMeterSourceUI()">
+            <option value="none">— Keine / manuell —</option>
+            <optgroup label="Smarte Steckdosen / Energiemesser">
+              <option value="ha">Home Assistant Sensor</option>
+              <option value="shelly">Shelly EM / 1PM (lokal)</option>
+              <option value="tasmota">Tasmota (lokal)</option>
+            </optgroup>
+            <optgroup label="Wallboxen">
+              <option value="go_e">go-e Charger (v1 + v2)</option>
+              <option value="openwb">openWB (v1 / Series 2)</option>
+              <option value="warp">WARP Charger 1 / 2 / 3</option>
+              <option value="evcc">EVCC · KEBA · ABL · Mennekes u.v.m.</option>
+              <option value="webasto">Webasto Next / Live</option>
+              <option value="alfen">Alfen Eve Single / Double</option>
+              <option value="juice">Juice Charger Me³ / Pro</option>
+            </optgroup>
+          </select>
+        </div>
+        <div id="meterHaFields" style="display:none">
+          <div class="fg full"><label>HA Entity ID</label>
+            <input type="text" id="c_meter_sensor" placeholder="sensor.stromzaehler_total_kwh"></div>
+        </div>
+        <div id="meterDeviceFields" style="display:none">
+          <div class="fg full"><label>Geräte-IP</label>
+            <input type="text" id="c_meter_device_ip" placeholder="192.168.1.100"></div>
+        </div>
+        <div id="meterEvccFields" style="display:none;display:grid;gap:10px;grid-template-columns:1fr 1fr">
+          <div><label>EVCC Port</label><input type="number" id="c_meter_evcc_port" placeholder="7070"></div>
+          <div><label>Loadpoint (0=erster)</label><input type="number" id="c_meter_evcc_lp" placeholder="0"></div>
+        </div>
+        <div id="meterAlfenFields" style="display:none">
+          <div class="fg full"><label>Alfen Web-Passwort</label>
+            <input type="password" id="c_meter_alfen_pass" placeholder="admin"></div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
+          <button class="btn-p" onclick="saveMeterSource()">💾 Speichern</button>
+          <button class="btn-s" onclick="testMeterSource()">🔍 Verbindung testen</button>
+          <span id="meterTestRes" style="font-size:.77rem;font-family:var(--mono)"></span>
+        </div>
+      </div>
+
+      <!-- BENACHRICHTIGUNGEN -->
+      <div id="cfgsec-notify" class="cfg-section" style="display:none">
+        <div class="cfg-sec-title">Push Notifications (Home Assistant)</div>
+        <div class="form-grid">
+          <div class="fg full"><label>Notify Service</label>
+            <input id="c_notify" value="{{ cfg.notify_service }}" placeholder="notify.mobile_app_mein_iphone">
+            <span class="hint">HA → Einstellungen → Integrationen → Companion App → Service Name</span></div>
+        </div>
+        <div class="warn-box" style="margin-top:12px">
+          Benachrichtigung beim Start und Ende jedes Ladevorgangs.
+        </div>
+        <div class="btn-row">
+          <button class="btn-p" onclick="saveConfig()">💾 Speichern</button>
+        </div>
+      </div>
+
+      <!-- SMTP -->
+      <div id="cfgsec-smtp" class="cfg-section" style="display:none">
+        <div class="cfg-sec-title">SMTP E-Mail Konfiguration</div>
+        <div id="smtpStatusBadge" style="margin-bottom:14px;padding:8px 14px;border-radius:8px;font-size:.75rem;font-family:var(--mono);background:rgba(74,92,114,.15);border:1px solid var(--brd);color:var(--mute);display:inline-block">
+          ⏳ Status unbekannt
+        </div>
+        <div class="form-grid">
+          <div class="fg"><label>SMTP-Server</label>
+            <input type="text" id="smtp_host" placeholder="smtp.gmail.com"></div>
+          <div class="fg"><label>Port</label>
+            <input type="number" id="smtp_port" placeholder="587" value="587"></div>
+          <div class="fg full"><label>Verschlüsselung</label>
+            <select id="smtp_tls">
+              <option value="starttls">STARTTLS (Port 587) — empfohlen</option>
+              <option value="ssl">SSL/TLS (Port 465)</option>
+              <option value="none">Keine (Port 25) — unsicher</option>
+            </select></div>
+          <div class="fg"><label>Benutzername</label>
+            <input type="text" id="smtp_user" placeholder="user@gmail.com"></div>
+          <div class="fg"><label>Passwort</label>
+            <input type="password" id="smtp_password" placeholder="App-Passwort oder Passwort"></div>
+          <div class="fg"><label>Absendername</label>
+            <input type="text" id="smtp_from_name" placeholder="EV Tracker" value="EV Tracker"></div>
+          <div class="fg"><label>Absender-E-Mail</label>
+            <input type="email" id="smtp_from_email" placeholder="ev@meinserver.de"></div>
+          <div class="fg"><label>Reply-To (optional)</label>
+            <input type="email" id="smtp_reply_to" placeholder="info@meinserver.de"></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn-p" onclick="saveSmtpConfig()">💾 Speichern</button>
+          <button class="btn-s" onclick="testSmtpConn()">🔗 Verbindung testen</button>
+          <button class="btn-g" onclick="sendSmtpTestMail()">📧 Testmail senden</button>
+        </div>
+        <div id="smtpTestRes" style="margin-top:10px;font-size:.78rem;font-family:var(--mono);color:var(--mute)"></div>
+        <div style="margin-top:16px">
+          <label style="margin-bottom:6px;display:block">Testmail an</label>
+          <div style="display:flex;gap:8px">
+            <input type="email" id="smtp_test_to" placeholder="empfaenger@example.com" style="flex:1">
+          </div>
+        </div>
+      </div>
+
+      <!-- LOGIN & SICHERHEIT -->
+      <div id="cfgsec-auth" class="cfg-section" style="display:none">
+        <div class="cfg-sec-title">Login &amp; Sicherheit</div>
+        <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
+          Schützt die Oberfläche mit Passwort. Ohne Passwort ist der Zugang frei.
+        </p>
+        <div id="authStatus" style="margin-bottom:14px;font-size:.78rem;font-family:var(--mono);color:var(--mute)">⏳ Lade…</div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+          <div><label>Neues Passwort</label>
+            <input type="password" id="authNewPw" placeholder="••••••••" autocomplete="new-password"></div>
+          <div><label>Wiederholen</label>
+            <input type="password" id="authNewPw2" placeholder="••••••••" autocomplete="new-password"></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
+          <button class="btn-p" style="font-size:.78rem;padding:7px 16px" onclick="setAuthPassword()">🔑 Passwort setzen</button>
+          <button class="btn-d" style="font-size:.78rem;padding:7px 16px" onclick="disableAuth()">🔓 Passwort entfernen</button>
+        </div>
+
+        <div style="border-top:1px solid var(--brd);padding-top:14px">
+          <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Zwei-Faktor-Authentifizierung (TOTP)</div>
+          <div id="totpStatus" style="font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-bottom:10px">—</div>
+          <div id="smtpRequiredForTotp" style="display:none;padding:10px 14px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px;font-size:.74rem;font-family:var(--mono);color:var(--warn);margin-bottom:12px">
+            ⚠ 2FA kann erst aktiviert werden, nachdem SMTP erfolgreich konfiguriert wurde.
+            <a href="#" onclick="cfgSection('smtp',null);return false" style="color:var(--acc2);margin-left:6px">→ SMTP konfigurieren</a>
+          </div>
+          <div id="totpQrWrap" style="display:none;margin-bottom:12px">
+            <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:8px">
+              Scanne den QR-Code mit Google Authenticator oder Authy:
+            </div>
+            <div id="totpQrImg" style="margin-bottom:8px"></div>
+            <div style="font-size:.7rem;font-family:var(--mono);color:var(--acc2)" id="totpSecret"></div>
+            <div class="warn-box" style="margin-top:10px">
+              ⚠ Speichere den Secret-Code sicher! Er wird nur einmal angezeigt.
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn-s" style="font-size:.78rem;padding:7px 16px" id="totpSetupBtn" onclick="setupTotp()">📱 2FA einrichten</button>
+            <button class="btn-d" id="totpDisableBtn" style="font-size:.78rem;padding:7px 16px;display:none" onclick="disableTotp()">❌ 2FA deaktivieren</button>
+          </div>
+        </div>
+
+        <div style="border-top:1px solid var(--brd);padding-top:14px;margin-top:14px">
+          <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">SSO — Google / Microsoft</div>
+          <div style="margin-bottom:12px">
+            <label>Externe URL (für Redirect URI)</label>
+            <input type="text" id="oauth_base_url" placeholder="https://ev.meinserver.de"
+                   value="{{ cfg.oauth_base_url }}" oninput="updateRedirectUris()">
+            <span class="hint">Leer = automatisch erkannt</span>
+          </div>
+          <div style="background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:14px;margin-bottom:10px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+              <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+              <span style="font-size:.8rem;font-weight:700">Google</span>
+              <span id="googleOauthStatus" style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-left:auto"></span>
+            </div>
+            <div style="display:grid;gap:8px">
+              <div><label>Client ID</label>
+                <input type="text" id="oauth_google_client_id" value="{{ cfg.oauth_google_client_id }}" placeholder="xxxxxx.apps.googleusercontent.com"></div>
+              <div><label>Client Secret</label>
+                <input type="password" id="oauth_google_client_secret" value="{{ cfg.oauth_google_client_secret }}" placeholder="GOCSPX-..."></div>
+            </div>
+            <div class="warn-box" style="margin-top:10px;font-size:.7rem">
+              Redirect URI: <code id="googleRedirectUri" style="color:var(--acc2)">[Base URL]/auth/google/callback</code>
+            </div>
+          </div>
+          <div style="background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:14px;margin-bottom:12px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+              <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#F25022" d="M1 1h10v10H1z"/><path fill="#00A4EF" d="M13 1h10v10H13z"/><path fill="#7FBA00" d="M1 13h10v10H1z"/><path fill="#FFB900" d="M13 13h10v10H13z"/></svg>
+              <span style="font-size:.8rem;font-weight:700">Microsoft</span>
+              <span id="msOauthStatus" style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-left:auto"></span>
+            </div>
+            <div style="display:grid;gap:8px">
+              <div><label>Client ID</label>
+                <input type="text" id="oauth_microsoft_client_id" value="{{ cfg.oauth_microsoft_client_id }}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></div>
+              <div><label>Client Secret</label>
+                <input type="password" id="oauth_microsoft_client_secret" value="{{ cfg.oauth_microsoft_client_secret }}" placeholder="Secret Value"></div>
+              <div><label>Tenant (optional)</label>
+                <input type="text" id="oauth_microsoft_tenant" value="{{ cfg.oauth_microsoft_tenant }}" placeholder="common">
+                <span class="hint">"common" = alle MS-Konten</span></div>
+            </div>
+            <div class="warn-box" style="margin-top:10px;font-size:.7rem">
+              Redirect URI: <code id="msRedirectUri" style="color:var(--acc2)">[Base URL]/auth/microsoft/callback</code>
+            </div>
+          </div>
+          <button class="btn-p" style="font-size:.78rem;padding:7px 16px" onclick="saveOAuthConfig()">💾 OAuth speichern</button>
+          <span id="oauthSaveInfo" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-left:10px"></span>
+        </div>
+      </div>
+
+      <!-- EXPORT VORLAGEN -->
+      <div id="cfgsec-export-tpl" class="cfg-section" style="display:none">
+        <div class="cfg-sec-title">Export-Vorlagen</div>
+        <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
+          Speichere mehrere Spalten-Zuordnungen als benannte Vorlagen und wähle beim Export die passende aus.
+        </p>
+        <div id="exportTemplateList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"></div>
+        <button class="btn-p" style="font-size:.78rem;padding:8px 18px" onclick="saveCurrentAsTemplate()">💾 Aktuelle Zuordnung als Vorlage speichern</button>
+        <span style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-left:10px">Zuerst Template hochladen &amp; Spalten zuweisen im Export-Bereich</span>
+      </div>
+
+      <!-- AUDIT LOG -->
+      <div id="cfgsec-audit" class="cfg-section" style="display:none">
+        <div class="cfg-sec-title">Audit-Log</div>
+        <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
+          Protokoll sicherheitsrelevanter Aktionen.
+        </p>
+        <div id="auditLogList"><div class="empty">Lade…</div></div>
+      </div>
+
+    </div><!-- content -->
+  </div><!-- flex container -->
 </div>
 
 <!-- ══════════════════════════════════════════════════════
@@ -1066,7 +1117,7 @@ function tab(id, btn){
   if(id==='export'){loadExpPreview();refreshTplInfo();}
   if(id==='backup') loadBackups();
   if(id==='dashboard') loadCharts();
-  if(id==='config'){ loadAuthStatus(); loadVehicleList(); }
+  if(id==='config'){ cfgSection('fahrzeuge', document.querySelector('.cfg-nav-btn.active')||document.querySelector('.cfg-nav-btn')); }
 }
 
 // ── Auto-scale stat values to fit their tile ─────────────────────────────────
@@ -2777,6 +2828,184 @@ loadProviderFields('{{ cfg.provider }}').then(()=>{
   });
 });
 setInterval(refreshStatus, 20000);
+
+// ── Config Sidebar ────────────────────────────────────────────────────────────
+function cfgSection(id, btn){
+  document.querySelectorAll('.cfg-section').forEach(s=>s.style.display='none');
+  const sec = $('cfgsec-'+id);
+  if(sec) sec.style.display='';
+  document.querySelectorAll('.cfg-nav-btn').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  else {
+    // find by matching text
+    document.querySelectorAll('.cfg-nav-btn').forEach(b=>{
+      if(b.getAttribute('onclick')&&b.getAttribute('onclick').includes("'"+id+"'"))
+        b.classList.add('active');
+    });
+  }
+  // lazy-load data for sections
+  if(id==='audit') loadAuditLog();
+  if(id==='smtp')  loadSmtpConfig();
+  if(id==='export-tpl') loadExportTemplates();
+  if(id==='auth') { loadAuthStatus(); checkSmtpForTotp(); }
+  if(id==='fahrzeuge') loadVehicleList();
+}
+
+// ── SMTP ─────────────────────────────────────────────────────────────────────
+async function loadSmtpConfig(){
+  const c = await fetch('/api/config').then(r=>r.json());
+  const fields = ['smtp_host','smtp_port','smtp_tls','smtp_user','smtp_from_name','smtp_from_email','smtp_reply_to'];
+  fields.forEach(f=>{ const el=$(f); if(el&&c[f]!=null) el.value=c[f]; });
+  // don't prefill password
+  updateSmtpStatus(c);
+}
+
+function updateSmtpStatus(c){
+  const badge = $('smtpStatusBadge');
+  if(!badge) return;
+  if(c.smtp_host){
+    badge.style.background='rgba(61,220,151,.1)';
+    badge.style.borderColor='rgba(61,220,151,.3)';
+    badge.style.color='var(--acc)';
+    badge.textContent=`✅ ${c.smtp_host}:${c.smtp_port} (${c.smtp_tls||'starttls'})`;
+  } else {
+    badge.style.background='rgba(74,92,114,.15)';
+    badge.style.borderColor='var(--brd)';
+    badge.style.color='var(--mute)';
+    badge.textContent='⚠ Nicht konfiguriert';
+  }
+}
+
+async function saveSmtpConfig(){
+  const data={
+    smtp_host:       $('smtp_host').value.trim(),
+    smtp_port:       parseInt($('smtp_port').value)||587,
+    smtp_tls:        $('smtp_tls').value,
+    smtp_user:       $('smtp_user').value.trim(),
+    smtp_from_name:  $('smtp_from_name').value.trim(),
+    smtp_from_email: $('smtp_from_email').value.trim(),
+    smtp_reply_to:   $('smtp_reply_to').value.trim(),
+  };
+  const pw = $('smtp_password').value;
+  if(pw) data.smtp_password = pw;
+  const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());
+  if(r.ok){ toast('SMTP gespeichert','ok'); updateSmtpStatus(data); }
+  else toast('Fehler beim Speichern','err');
+}
+
+async function testSmtpConn(){
+  const res=$('smtpTestRes');
+  res.textContent='⏳ Teste Verbindung…'; res.style.color='var(--mute)';
+  const data={
+    smtp_host:$('smtp_host').value.trim(),
+    smtp_port:parseInt($('smtp_port').value)||587,
+    smtp_tls:$('smtp_tls').value,
+    smtp_user:$('smtp_user').value.trim(),
+    smtp_password:$('smtp_password').value,
+  };
+  const r=await fetch('/api/smtp/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());
+  res.textContent=r.ok?('✅ '+r.message):('❌ '+r.error);
+  res.style.color=r.ok?'var(--acc)':'var(--danger)';
+}
+
+async function sendSmtpTestMail(){
+  const res=$('smtpTestRes');
+  const to=$('smtp_test_to').value.trim()||$('smtp_from_email').value.trim();
+  if(!to){ toast('Bitte Empfänger-Adresse eingeben','err'); return; }
+  res.textContent='⏳ Sende Testmail…'; res.style.color='var(--mute)';
+  await saveSmtpConfig();
+  const r=await fetch('/api/smtp/send-test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to})}).then(r=>r.json());
+  res.textContent=r.ok?('✅ '+r.message):('❌ '+r.error);
+  res.style.color=r.ok?'var(--acc)':'var(--danger)';
+}
+
+async function checkSmtpForTotp(){
+  const c=await fetch('/api/config').then(r=>r.json());
+  const smtpOk=!!(c.smtp_host&&c.smtp_from_email);
+  const warn=$('smtpRequiredForTotp'), btn=$('totpSetupBtn');
+  if(warn) warn.style.display=smtpOk?'none':'';
+  if(btn)  btn.disabled=!smtpOk;
+}
+
+// ── Export Templates ──────────────────────────────────────────────────────────
+async function loadExportTemplates(){
+  const templates=await fetch('/api/export/templates').then(r=>r.json()).catch(()=>[]);
+  const el=$('exportTemplateList');
+  if(!el) return;
+  if(!templates.length){
+    el.innerHTML='<div class="empty" style="padding:20px">Noch keine Vorlagen gespeichert</div>';
+    return;
+  }
+  el.innerHTML=templates.map(t=>`
+    <div style="display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:12px 14px">
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:.85rem;color:#fff">${t.name}</div>
+        <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-top:2px">
+          ${Object.keys(t.mapping||{}).length} Spalten zugewiesen
+          ${t.is_default?'<span style="color:var(--acc);margin-left:8px">★ Standard</span>':''}
+        </div>
+      </div>
+      <button class="btn-s" style="font-size:.72rem;padding:5px 12px" onclick="loadExportTemplate('${t.id}')">📂 Laden</button>
+      <button class="btn-g" style="font-size:.72rem;padding:5px 12px" onclick="setDefaultTemplate('${t.id}')">★</button>
+      <button class="btn-d" style="font-size:.72rem;padding:5px 12px" onclick="deleteExportTemplate('${t.id}')">✕</button>
+    </div>
+  `).join('');
+}
+
+async function saveCurrentAsTemplate(){
+  const name=prompt('Name für diese Vorlage:','Meine Vorlage');
+  if(!name) return;
+  const saved=await fetch('/api/template/mapping').then(r=>r.json()).catch(()=>({}));
+  const r=await fetch('/api/export/templates',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name,mapping:saved.mapping||{},start_row:saved.start_row})
+  }).then(r=>r.json());
+  if(r.ok){ toast('Vorlage gespeichert','ok'); loadExportTemplates(); }
+  else toast('Fehler','err');
+}
+
+async function loadExportTemplate(tid){
+  const templates=await fetch('/api/export/templates').then(r=>r.json());
+  const t=templates.find(x=>x.id===tid);
+  if(!t) return;
+  await fetch('/api/template/mapping',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({mapping:t.mapping||{},start_row:t.start_row})});
+  toast('Vorlage "'+t.name+'" geladen','ok');
+  loadMappingPreview();
+}
+
+async function setDefaultTemplate(tid){
+  await fetch(`/api/export/templates/${tid}`,{method:'PUT',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({is_default:true})});
+  toast('Als Standardvorlage gesetzt','ok');
+  loadExportTemplates();
+}
+
+async function deleteExportTemplate(tid){
+  if(!confirm('Vorlage löschen?')) return;
+  await fetch(`/api/export/templates/${tid}`,{method:'DELETE'});
+  toast('Vorlage gelöscht','ok');
+  loadExportTemplates();
+}
+
+// ── Audit Log ─────────────────────────────────────────────────────────────────
+async function loadAuditLog(){
+  const rows=await fetch('/api/audit-log?limit=50').then(r=>r.json()).catch(()=>[]);
+  const el=$('auditLogList');
+  if(!el) return;
+  if(!rows.length){
+    el.innerHTML='<div class="empty">Keine Einträge</div>'; return;
+  }
+  el.innerHTML=`<table>
+    <thead><tr><th>Zeit</th><th>Aktion</th><th>Details</th><th>IP</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr>
+      <td style="font-family:var(--mono);font-size:.72rem;white-space:nowrap">${r.ts?r.ts.replace('T',' ').substring(0,19):''}</td>
+      <td style="font-family:var(--mono);font-size:.72rem;color:var(--acc2)">${r.action||''}</td>
+      <td style="font-family:var(--mono);font-size:.72rem;color:var(--mute)">${r.details||''}</td>
+      <td style="font-family:var(--mono);font-size:.72rem;color:var(--mute)">${r.ip||''}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
 </script>
 </body>
 </html>
