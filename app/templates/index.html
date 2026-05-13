@@ -671,15 +671,21 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <!-- AUDIT LOG -->
       <div id="cfgsec-audit" class="cfg-section" style="display:none">
         <div class="cfg-sec-title">Audit-Log</div>
-        <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
-          Protokoll sicherheitsrelevanter Aktionen.
-        </p>
+        <div style="margin-bottom:12px;display:flex;align-items:center;gap:12px">
+          <select id="auditLimit" onchange="loadAuditLog()" style="font-size:.75rem;padding:4px 8px">
+            <option value="50">Letzte 50</option>
+            <option value="100" selected>Letzte 100</option>
+            <option value="200">Letzte 200</option>
+          </select>
+          <button class="btn-s" style="font-size:.75rem;padding:5px 12px" onclick="loadAuditLog()">↺ Aktualisieren</button>
+        </div>
         <div id="auditLogList"><div class="empty">Lade…</div></div>
       </div>
 
       <!-- BENUTZER -->
       <div id="cfgsec-benutzer" class="cfg-section" style="display:none">
         <div class="cfg-sec-title">Benutzerverwaltung</div>
+        <div id="adminDashboard" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:18px"></div>
         <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
           Nur Admins können Benutzer verwalten. Rollen: <code>admin</code> (Vollzugriff) · <code>user</code> (Lesezugriff)
         </p>
@@ -698,7 +704,8 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Passwort ändern</div>
           <div style="display:grid;gap:8px">
             <div><label>Aktuelles Passwort</label><input type="password" id="prof_cur_pw" placeholder="••••••••"></div>
-            <div><label>Neues Passwort</label><input type="password" id="prof_new_pw" placeholder="Mindestens 8 Zeichen"></div>
+            <div><label>Neues Passwort</label><input type="password" id="prof_new_pw" placeholder="Mindestens 8 Zeichen" oninput="checkPwStrength(this.value,'prof_pw_strength')">
+            <div id="prof_pw_strength" style="font-size:.7rem;font-family:var(--mono);margin-top:4px;color:var(--mute)"></div></div>
             <div><label>Wiederholen</label><input type="password" id="prof_new_pw2" placeholder="••••••••"></div>
           </div>
           <button class="btn-p" style="margin-top:10px;font-size:.78rem;padding:7px 16px" onclick="changeMyPassword()">🔑 Passwort ändern</button>
@@ -1032,7 +1039,8 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       </div>
       <div id="um_pw_wrap">
         <label>Passwort <span style="color:var(--mute);font-size:.65rem">(leer = automatisch generiert)</span></label>
-        <input type="password" id="um_password" placeholder="Mindestens 8 Zeichen">
+        <input type="password" id="um_password" placeholder="Mindestens 8 Zeichen" oninput="checkPwStrength(this.value,'um_pw_strength')">
+        <div id="um_pw_strength" style="font-size:.7rem;font-family:var(--mono);margin-top:4px;color:var(--mute)"></div>
       </div>
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -2941,10 +2949,29 @@ function apiFetch(url, opts={}){
   return fetch(url, opts);
 }
 
+// ── Admin Dashboard ───────────────────────────────────────────────────────────
+async function loadAdminDashboard(){
+  const d=await apiFetch('/api/admin/dashboard').then(r=>r.json()).catch(()=>null);
+  const el=$('adminDashboard');
+  if(!el||!d) return;
+  const card=(label,val,color)=>`<div style="background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:12px 14px;text-align:center">
+    <div style="font-size:1.4rem;font-weight:700;color:${color||'#fff'}">${val}</div>
+    <div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);margin-top:4px;text-transform:uppercase;letter-spacing:.06em">${label}</div>
+  </div>`;
+  el.innerHTML=
+    card('Gesamt',d.total_users,'#fff')+
+    card('Aktiv',d.active_users,'var(--acc)')+
+    card('Eingeladen',d.invited_users,'var(--warn)')+
+    card('Gesperrt',d.locked_users,d.locked_users>0?'var(--danger)':'var(--mute)')+
+    card('Fehlversuche 24h',d.recent_failures,d.recent_failures>0?'var(--warn)':'var(--mute)')+
+    card('Sperrungen 24h',d.recent_lockouts,d.recent_lockouts>0?'var(--danger)':'var(--mute)');
+}
+
 // ── User Management ───────────────────────────────────────────────────────────
 let _editingUserId = null;
 
 async function loadUserList(){
+  loadAdminDashboard();
   const users = await apiFetch('/api/users').then(r=>r.json()).catch(()=>[]);
   const el = $('userList');
   if(!el) return;
@@ -3286,18 +3313,27 @@ async function deleteExportTemplate(tid){
   loadExportTemplates();
 }
 
+// ── Password Strength ─────────────────────────────────────────────────────────
+function checkPwStrength(pw, targetId){
+  const el=$(targetId); if(!el) return;
+  if(!pw){el.textContent='';return;}
+  if(pw.length<8){el.textContent='Zu kurz (min. 8 Zeichen)';el.style.color='var(--danger)';return;}
+  if(!/\d/.test(pw)){el.textContent='Keine Zahl enthalten';el.style.color='var(--warn)';return;}
+  el.textContent='✓ OK';el.style.color='var(--acc)';
+}
+
 // ── Audit Log ─────────────────────────────────────────────────────────────────
 async function loadAuditLog(){
-  const rows=await fetch('/api/audit-log?limit=50').then(r=>r.json()).catch(()=>[]);
+  const limit=($('auditLimit')||{value:'100'}).value;
+  const rows=await fetch('/api/audit-log?limit='+limit).then(r=>r.json()).catch(()=>[]);
   const el=$('auditLogList');
   if(!el) return;
-  if(!rows.length){
-    el.innerHTML='<div class="empty">Keine Einträge</div>'; return;
-  }
+  if(!rows.length){el.innerHTML='<div class="empty">Keine Einträge</div>';return;}
   el.innerHTML=`<table>
-    <thead><tr><th>Zeit</th><th>Aktion</th><th>Details</th><th>IP</th></tr></thead>
+    <thead><tr><th>Zeit</th><th>Benutzer</th><th>Aktion</th><th>Details</th><th>IP</th></tr></thead>
     <tbody>${rows.map(r=>`<tr>
       <td style="font-family:var(--mono);font-size:.72rem;white-space:nowrap">${r.ts?r.ts.replace('T',' ').substring(0,19):''}</td>
+      <td style="font-family:var(--mono);font-size:.72rem;color:var(--acc)">${r.user_name||'—'}</td>
       <td style="font-family:var(--mono);font-size:.72rem;color:var(--acc2)">${r.action||''}</td>
       <td style="font-family:var(--mono);font-size:.72rem;color:var(--mute)">${r.details||''}</td>
       <td style="font-family:var(--mono);font-size:.72rem;color:var(--mute)">${r.ip||''}</td>

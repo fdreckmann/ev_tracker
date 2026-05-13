@@ -1,10 +1,11 @@
 {
-  "version": "1.9.0",
+  "version": "1.9.1",
   "changelog": [
-    "Passwort-Reset per E-Mail (Token-basiert)",
-    "Benutzer-Einladungen per E-Mail",
-    "Brute-force-Schutz: Account-Sperrung nach 5 Fehlversuchen",
-    "2FA Backup-Codes (8 Einmalcodes pro Benutzer)",
-    "Verbesserte Sicherheit: CSRF-Token in AJAX-Requests"
+    "HTML-E-Mails mit neuem Design für Einladungen, Passwort-Reset und SMTP-Test",
+    "Admin-Dashboard in Benutzerverwaltung (Statistiken, Fehlversuche, Sperrungen)",
+    "Audit-Log: Benutzer-Spalte mit JOIN auf users-Tabelle, Limit-Auswahl",
+    "Admin-Benachrichtigung per E-Mail bei Konto-Sperrung",
+    "Rate-Limit für /forgot-password (max. 3 Anfragen/Stunde)",
+    "Passwort-Stärke-Check (client- und serverseitig: min. 8 Zeichen + Zahl)"
   ]
 }

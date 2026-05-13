@@ -9,7 +9,7 @@ from providers import get_provider, get_all_capabilities, get_config_fields, PRO
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.9.0"
+APP_VERSION   = "1.9.1"
 
 CHANGELOG = [
     {"version":"1.9.0","changes":[
@@ -132,6 +132,14 @@ def _get_secret_key():
 
 def _hash_password(pw: str) -> str:
     return hashlib.sha256(pw.encode()).hexdigest()
+
+def _password_ok(pw: str) -> "str | None":
+    """Returns error string or None if password is acceptable."""
+    if len(pw) < 8:
+        return "Mindestens 8 Zeichen"
+    if not any(c.isdigit() for c in pw):
+        return "Mindestens eine Zahl erforderlich"
+    return None
 
 # ── User DB helpers ───────────────────────────────────────────────────────────
 def _get_db():
@@ -342,9 +350,8 @@ def _audit(action: str, details: str = "", ip: str = ""):
     try:
         con = sqlite3.connect(DB_PATH)
         con.execute(
-            "INSERT INTO audit_log (ts, action, details, ip) VALUES (?,?,?,?)",
-            (datetime.utcnow().isoformat(), action,
-             f"user={uid} {details}".strip(), ip))
+            "INSERT INTO audit_log (ts, action, details, ip, user_id) VALUES (?,?,?,?,?)",
+            (datetime.utcnow().isoformat(), action, details.strip(), ip, uid))
         con.commit(); con.close()
     except Exception:
         pass
@@ -464,6 +471,9 @@ def init_db():
     ]:
         try: con.execute(f"ALTER TABLE users ADD COLUMN {col} {typedef}")
         except Exception: pass
+    # live migration: add user_id column to audit_log
+    try: con.execute("ALTER TABLE audit_log ADD COLUMN user_id INTEGER")
+    except Exception: pass
     con.commit(); con.close()
 
 def get_sessions(year=None, month=None, location=None, vehicle_id=None, limit=50):
@@ -499,6 +509,7 @@ def get_monthly_stats():
 
 # ── ENTSO-E ───────────────────────────────────────────────────────────────────
 _entsoe_cache = {"price": None, "ts": 0}
+_forgot_pw_attempts: dict[str, list] = {}  # email -> [timestamp, ...]
 
 def fetch_entsoe_spot(api_key: str):
     if not api_key: return None
@@ -905,6 +916,21 @@ def login_page():
                 con.commit(); con.close()
                 error = "Anmeldung fehlgeschlagen"
                 _audit("login_failed", f"email={email} attempts={new_attempts}", ip=request.remote_addr)
+                if new_locked:
+                    # notify admins about account lockout
+                    try:
+                        con2 = _get_db()
+                        admins = con2.execute("SELECT email,name FROM users WHERE role='admin' AND status='active'").fetchall()
+                        con2.close()
+                        for adm in admins:
+                            body = _email_html(
+                                "⚠️ Konto gesperrt",
+                                f"Das Konto <b>{email}</b> wurde wegen zu vieler Fehlversuche für 15 Minuten gesperrt.",
+                                f"IP-Adresse: {request.remote_addr}"
+                            )
+                            _send_email(adm["email"], f"EV Tracker — Konto gesperrt: {email}", body)
+                    except Exception:
+                        pass
             elif not error:
                 # Check TOTP if enabled
                 if user.get("totp_enabled") and user.get("totp_secret"):
@@ -972,8 +998,8 @@ def setup_page():
             error = "Alle Felder sind erforderlich"
         elif pw != pw2:
             error = "Passwörter stimmen nicht überein"
-        elif len(pw) < 8:
-            error = "Passwort muss mindestens 8 Zeichen haben"
+        elif _password_ok(pw):
+            error = _password_ok(pw)
         else:
             now = datetime.utcnow().isoformat()
             con = _get_db()
@@ -1003,6 +1029,15 @@ def forgot_password_page():
         sent = request.args.get("sent","")
         return render_template("forgot_password.html", sent=bool(sent))
     email = request.form.get("email","").strip().lower()
+    # Rate limit: max 3 requests per email per hour
+    now_ts = time.time()
+    attempts = _forgot_pw_attempts.get(email, [])
+    attempts = [t for t in attempts if now_ts - t < 3600]  # last hour
+    if len(attempts) >= 3:
+        # Still redirect to avoid timing oracle, just don't send
+        return redirect(url_for("forgot_password_page", sent=1))
+    attempts.append(now_ts)
+    _forgot_pw_attempts[email] = attempts
     user  = _get_user_by_email(email)
     if user and user.get("status") != "disabled":
         token = secrets.token_urlsafe(32)
@@ -1017,11 +1052,13 @@ def forgot_password_page():
                     (user["id"], token_hash, expires, now_dt.isoformat()))
         con.commit(); con.close()
         reset_url = request.host_url.rstrip("/") + url_for("reset_password_page", token=token)
-        body_html = f"""<p>Hallo {user['name']},</p>
-<p>Du hast einen Passwort-Reset für deinen EV Tracker Account angefordert.</p>
-<p><a href="{reset_url}">Passwort zurücksetzen</a></p>
-<p>Dieser Link ist 1 Stunde gültig.</p>
-<p>Falls du diese Anfrage nicht gestellt hast, kannst du diese E-Mail ignorieren.</p>"""
+        body_html = _email_html(
+            "Passwort zurücksetzen",
+            f"Hallo {user['name']},",
+            "du hast einen Passwort-Reset für deinen EV Tracker Account angefordert.",
+            _email_btn(reset_url, "🔑 Passwort zurücksetzen"),
+            "Dieser Link ist <b>1 Stunde</b> gültig. Falls du diese Anfrage nicht gestellt hast, kannst du diese E-Mail ignorieren."
+        )
         _send_email(user["email"], "EV Tracker — Passwort zurücksetzen", body_html)
         _audit("password_reset_requested", f"email={email}", ip=request.remote_addr)
     return redirect(url_for("forgot_password_page", sent=1))
@@ -1043,10 +1080,11 @@ def reset_password_page(token):
         return render_template("reset_password.html", token=token, invalid=False)
     pw  = request.form.get("password","")
     pw2 = request.form.get("password2","")
-    if len(pw) < 8:
+    pw_err = _password_ok(pw)
+    if pw_err:
         con.close()
         return render_template("reset_password.html", token=token, invalid=False,
-                               error="Passwort muss mindestens 8 Zeichen haben")
+                               error=pw_err)
     if pw != pw2:
         con.close()
         return render_template("reset_password.html", token=token, invalid=False,
@@ -1083,11 +1121,12 @@ def accept_invite_page(token):
                                user_name=user.get("name",""))
     pw  = request.form.get("password","")
     pw2 = request.form.get("password2","")
-    if len(pw) < 8:
+    pw_err = _password_ok(pw)
+    if pw_err:
         con.close()
         return render_template("accept_invite.html", token=token, invalid=False,
                                user_name=user.get("name",""),
-                               error="Passwort muss mindestens 8 Zeichen haben")
+                               error=pw_err)
     if pw != pw2:
         con.close()
         return render_template("accept_invite.html", token=token, invalid=False,
@@ -1103,6 +1142,32 @@ def accept_invite_page(token):
     return redirect(url_for("login_page"))
 
 # ── SMTP helper ───────────────────────────────────────────────────────────────
+
+def _email_html(title: str, *paragraphs: str) -> str:
+    paras = "".join(f"<p style='margin:0 0 14px;line-height:1.6'>{p}</p>" for p in paragraphs)
+    return f"""<!DOCTYPE html>
+<html><head><meta charset='utf-8'></head>
+<body style='margin:0;padding:0;background:#0f0f0f;font-family:system-ui,sans-serif'>
+  <table width='100%' cellpadding='0' cellspacing='0'>
+    <tr><td align='center' style='padding:40px 20px'>
+      <table width='560' cellpadding='0' cellspacing='0' style='background:#1a1a1a;border-radius:12px;overflow:hidden;border:1px solid #2a2a2a'>
+        <tr><td style='background:#1e3a5f;padding:24px 32px'>
+          <div style='font-size:1.1rem;font-weight:700;color:#7eb8f7;letter-spacing:.05em'>⚡ EV Tracker</div>
+        </td></tr>
+        <tr><td style='padding:32px'>
+          <h2 style='margin:0 0 20px;color:#e0e0e0;font-size:1.1rem;font-weight:600'>{title}</h2>
+          <div style='color:#b0b0b0;font-size:.875rem'>{paras}</div>
+        </td></tr>
+        <tr><td style='padding:16px 32px;border-top:1px solid #2a2a2a'>
+          <div style='color:#555;font-size:.75rem'>Diese E-Mail wurde automatisch von EV Tracker generiert.</div>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+
+def _email_btn(url: str, label: str) -> str:
+    return f"<a href='{url}' style='display:inline-block;background:#1e6fb5;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:.875rem;font-weight:600;margin:8px 0'>{label}</a>"
 
 def _send_email(to_addr: str, subject: str, body_html: str, body_text: str = None) -> tuple:
     import smtplib, ssl as _ssl
@@ -2178,8 +2243,9 @@ def api_create_user():
                 "INSERT INTO users (name,email,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
                 (name, email, "", role, "invited", now, now))
         else:
-            if len(pw) < 8:
-                return jsonify({"ok": False, "error": "Passwort muss mindestens 8 Zeichen haben"})
+            pw_err = _password_ok(pw)
+            if pw_err:
+                return jsonify({"ok": False, "error": pw_err})
             con.execute(
                 "INSERT INTO users (name,email,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
                 (name, email, _hash_password(pw), role, "active", now, now))
@@ -2247,10 +2313,13 @@ def api_invite_user(uid):
                 (uid, token_hash, expires, now_dt.isoformat()))
     con.commit(); con.close()
     invite_url = request.host_url.rstrip("/") + url_for("accept_invite_page", token=token)
-    body_html = f"""<p>Hallo {user['name']},</p>
-<p>Du wurdest zum EV Tracker eingeladen. Klicke auf den Link um dein Passwort zu setzen und dich anzumelden:</p>
-<p><a href="{invite_url}">Einladung annehmen</a></p>
-<p>Dieser Link ist 48 Stunden gültig.</p>"""
+    body_html = _email_html(
+        "Einladung zu EV Tracker",
+        f"Hallo {user['name']},",
+        "du wurdest zu EV Tracker eingeladen. Klicke auf den Button, um dein Passwort festzulegen und dein Konto zu aktivieren.",
+        _email_btn(invite_url, "✉ Einladung annehmen"),
+        "Dieser Link ist <b>48 Stunden</b> gültig."
+    )
     ok, err = _send_email(user["email"], "EV Tracker — Einladung", body_html)
     _audit("user_invited", f"uid={uid} email={user['email']} smtp_ok={ok}", ip=request.remote_addr)
     if ok:
@@ -2281,8 +2350,9 @@ def api_change_password():
     new_pw  = data.get("new","")
     if _hash_password(current) != user["password_hash"]:
         return jsonify({"ok": False, "error": "Aktuelles Passwort falsch"})
-    if len(new_pw) < 8:
-        return jsonify({"ok": False, "error": "Mindestens 8 Zeichen"})
+    pw_err = _password_ok(new_pw)
+    if pw_err:
+        return jsonify({"ok": False, "error": pw_err})
     now = datetime.utcnow().isoformat()
     con = _get_db()
     con.execute("UPDATE users SET password_hash=?,updated_at=? WHERE id=?",
@@ -2404,40 +2474,22 @@ def smtp_test():
 
 @app.route("/api/smtp/send-test", methods=["POST"])
 def smtp_send_test():
-    import smtplib, ssl as _ssl
-    from email.mime.text import MIMEText
     data = request.json or {}
     cfg = load_config()
-    host   = cfg.get("smtp_host","")
-    port   = int(cfg.get("smtp_port", 587))
-    tls    = cfg.get("smtp_tls","starttls")
-    user   = cfg.get("smtp_user","")
-    pw     = cfg.get("smtp_password","")
-    frm    = cfg.get("smtp_from_email","")
-    name   = cfg.get("smtp_from_name","EV Tracker")
-    to     = data.get("to") or frm
-    if not host or not frm:
+    to  = data.get("to") or cfg.get("smtp_from_email","")
+    if not cfg.get("smtp_host","") or not cfg.get("smtp_from_email",""):
         return jsonify({"ok": False, "error": "SMTP nicht konfiguriert"})
-    try:
-        msg = MIMEText("Das ist eine Testmail vom EV Tracker.", "plain", "utf-8")
-        msg["Subject"] = "EV Tracker — SMTP Test"
-        msg["From"]    = f"{name} <{frm}>"
-        msg["To"]      = to
-        ctx = _ssl.create_default_context()
-        if tls == "ssl":
-            srv = smtplib.SMTP_SSL(host, port, context=ctx, timeout=10)
-        else:
-            srv = smtplib.SMTP(host, port, timeout=10)
-            if tls == "starttls":
-                srv.starttls(context=ctx)
-        if user:
-            srv.login(user, pw)
-        srv.sendmail(frm, [to], msg.as_string())
-        srv.quit()
+    body_html = _email_html(
+        "SMTP Testmail",
+        "Diese E-Mail bestätigt, dass deine SMTP-Konfiguration in EV Tracker korrekt funktioniert.",
+        f"Gesendet an: <b>{to}</b>",
+        "Falls du diese E-Mail erhalten hast, ist alles richtig eingestellt. ✅"
+    )
+    ok, err = _send_email(to, "EV Tracker — SMTP Test", body_html)
+    if ok:
         _audit("smtp_send_test", f"to={to}")
         return jsonify({"ok": True, "message": f"Testmail an {to} versendet"})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+    return jsonify({"ok": False, "error": err or "Unbekannter Fehler"})
 
 # ── Export Templates ──────────────────────────────────────────────────────────
 @app.route("/api/export/templates", methods=["GET"])
@@ -2491,13 +2543,44 @@ def delete_export_template(tid):
     _audit("export_template_delete", f"id={tid}")
     return jsonify({"ok": True})
 
+# ── Admin Dashboard ──────────────────────────────────────────────────────────
+@app.route("/api/admin/dashboard")
+@require_admin
+def api_admin_dashboard():
+    con = _get_db()
+    total   = con.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    active  = con.execute("SELECT COUNT(*) FROM users WHERE status='active'").fetchone()[0]
+    invited = con.execute("SELECT COUNT(*) FROM users WHERE status='invited'").fetchone()[0]
+    locked  = con.execute("SELECT COUNT(*) FROM users WHERE locked_until IS NOT NULL AND locked_until > ?",
+                          (datetime.utcnow().isoformat(),)).fetchone()[0]
+    since24 = (datetime.utcnow() - timedelta(hours=24)).isoformat()
+    failures = con.execute(
+        "SELECT COUNT(*) FROM audit_log WHERE action='login_failed' AND ts > ?", (since24,)).fetchone()[0]
+    lockouts = con.execute(
+        "SELECT COUNT(*) FROM audit_log WHERE action='account_locked' AND ts > ?", (since24,)).fetchone()[0]
+    con.close()
+    return jsonify({
+        "total_users":    total,
+        "active_users":   active,
+        "invited_users":  invited,
+        "locked_users":   locked,
+        "recent_failures": failures,
+        "recent_lockouts": lockouts,
+    })
+
 # ── Audit Log ────────────────────────────────────────────────────────────────
 @app.route("/api/audit-log")
+@require_admin
 def get_audit_log():
-    limit = int(request.args.get("limit", 100))
+    limit = int(request.args.get("limit", 200))
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
-    rows = con.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    rows = con.execute("""
+        SELECT a.*, u.name as user_name, u.email as user_email
+        FROM audit_log a
+        LEFT JOIN users u ON a.user_id = u.id
+        ORDER BY a.id DESC LIMIT ?
+    """, (limit,)).fetchall()
     con.close()
     return jsonify([dict(r) for r in rows])
 
