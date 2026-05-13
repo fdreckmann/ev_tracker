@@ -1,4 +1,5 @@
 import os, json, time, sqlite3, logging, threading, requests, hashlib, secrets, functools
+import smtplib, email
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -8,9 +9,16 @@ from providers import get_provider, get_all_capabilities, get_config_fields, PRO
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.6.1"
+APP_VERSION   = "1.7.0"
 
 CHANGELOG = [
+    {"version":"1.7.0","changes":[
+        "Neuer Konfig-Bereich mit Sidebar-Navigation",
+        "SMTP-Konfiguration mit Verbindungstest und Testmail",
+        "Export-Vorlagen: mehrere Vorlagen speicherbar",
+        "Audit-Log für sicherheitsrelevante Aktionen",
+        "2FA-Status und Reset verbessert",
+    ]},
     {"version": "1.6.1", "changes": [
         "SSO Login via Google-Konto (OAuth2)",
         "SSO Login via Microsoft-Konto / Azure AD (OAuth2)",
@@ -219,6 +227,19 @@ DEFAULT_CONFIG = {
     # Leave empty to auto-detect from request
     "oauth_base_url": "",
 
+    # SMTP
+    "smtp_host":      "",
+    "smtp_port":      587,
+    "smtp_tls":       "starttls",   # starttls | ssl | none
+    "smtp_user":      "",
+    "smtp_password":  "",
+    "smtp_from_name": "EV Tracker",
+    "smtp_from_email":"",
+    "smtp_reply_to":  "",
+
+    # Export templates (stored as list in config)
+    "export_templates": [],  # [{id, name, mapping, start_row, is_default}]
+
     # Multi-vehicle: additional vehicles beyond the primary (v0)
     "extra_vehicles":    [],
 }
@@ -250,6 +271,12 @@ def save_config(cfg):
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_FILE, "w") as f:
         json.dump(cfg, f, indent=2)
+
+def _audit(action, details="", ip=""):
+    con = sqlite3.connect(DB_PATH)
+    con.execute("INSERT INTO audit_log (ts, action, details, ip) VALUES (?,?,?,?)",
+                (datetime.utcnow().isoformat(), action, details, ip))
+    con.commit(); con.close()
 
 def get_all_vehicles(cfg=None) -> list[dict]:
     """Returns primary vehicle (v0 from flat config) plus extra vehicles."""
@@ -305,6 +332,13 @@ def init_db():
         ts TEXT NOT NULL,
         soc REAL, power_kw REAL
     )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts      TEXT NOT NULL,
+    action  TEXT NOT NULL,
+    details TEXT,
+    ip      TEXT
+)""")
     # live migration
     for col, typedef in [
         ("cost_manual",  "INTEGER DEFAULT 0"),
@@ -732,9 +766,11 @@ def api_auth_setup():
     cfg  = load_config()
     if "password" in data and data["password"]:
         cfg["auth_password_hash"] = _hash_password(data["password"])
+        _audit("password_set", ip=request.remote_addr)
     if data.get("disable_password"):
         cfg["auth_password_hash"] = ""
         cfg["auth_totp_secret"]   = ""
+        _audit("password_disabled", ip=request.remote_addr)
     save_config(cfg)
     return jsonify({"ok": True})
 
@@ -755,6 +791,7 @@ def api_totp_disable():
     cfg = load_config()
     cfg["auth_totp_secret"] = ""
     save_config(cfg)
+    _audit("totp_disabled", ip=request.remote_addr)
     return jsonify({"ok": True})
 
 @app.route("/api/auth/status")
@@ -1668,6 +1705,134 @@ def api_update_pull():
 @app.route("/api/update/log")
 def api_update_log():
     return jsonify({"running": _update_running, "lines": list(_update_log)})
+
+# ── SMTP ─────────────────────────────────────────────────────────────────────
+@app.route("/api/smtp/test", methods=["POST"])
+def smtp_test():
+    import smtplib, ssl as _ssl
+    data = request.json or {}
+    cfg = load_config()
+    host = data.get("smtp_host") or cfg.get("smtp_host","")
+    port = int(data.get("smtp_port") or cfg.get("smtp_port", 587))
+    tls  = data.get("smtp_tls") or cfg.get("smtp_tls","starttls")
+    user = data.get("smtp_user") or cfg.get("smtp_user","")
+    pw   = data.get("smtp_password") or cfg.get("smtp_password","")
+    if not host:
+        return jsonify({"ok": False, "error": "Kein SMTP-Server konfiguriert"})
+    try:
+        ctx = _ssl.create_default_context()
+        if tls == "ssl":
+            srv = smtplib.SMTP_SSL(host, port, context=ctx, timeout=10)
+        else:
+            srv = smtplib.SMTP(host, port, timeout=10)
+            if tls == "starttls":
+                srv.starttls(context=ctx)
+        if user:
+            srv.login(user, pw)
+        srv.quit()
+        _audit("smtp_test", f"host={host}:{port} tls={tls}")
+        return jsonify({"ok": True, "message": f"✅ Verbindung zu {host}:{port} erfolgreich"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/api/smtp/send-test", methods=["POST"])
+def smtp_send_test():
+    import smtplib, ssl as _ssl
+    from email.mime.text import MIMEText
+    data = request.json or {}
+    cfg = load_config()
+    host   = cfg.get("smtp_host","")
+    port   = int(cfg.get("smtp_port", 587))
+    tls    = cfg.get("smtp_tls","starttls")
+    user   = cfg.get("smtp_user","")
+    pw     = cfg.get("smtp_password","")
+    frm    = cfg.get("smtp_from_email","")
+    name   = cfg.get("smtp_from_name","EV Tracker")
+    to     = data.get("to") or frm
+    if not host or not frm:
+        return jsonify({"ok": False, "error": "SMTP nicht konfiguriert"})
+    try:
+        msg = MIMEText("Das ist eine Testmail vom EV Tracker.", "plain", "utf-8")
+        msg["Subject"] = "EV Tracker — SMTP Test"
+        msg["From"]    = f"{name} <{frm}>"
+        msg["To"]      = to
+        ctx = _ssl.create_default_context()
+        if tls == "ssl":
+            srv = smtplib.SMTP_SSL(host, port, context=ctx, timeout=10)
+        else:
+            srv = smtplib.SMTP(host, port, timeout=10)
+            if tls == "starttls":
+                srv.starttls(context=ctx)
+        if user:
+            srv.login(user, pw)
+        srv.sendmail(frm, [to], msg.as_string())
+        srv.quit()
+        _audit("smtp_send_test", f"to={to}")
+        return jsonify({"ok": True, "message": f"Testmail an {to} versendet"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+# ── Export Templates ──────────────────────────────────────────────────────────
+@app.route("/api/export/templates", methods=["GET"])
+def get_export_templates():
+    cfg = load_config()
+    return jsonify(cfg.get("export_templates", []))
+
+@app.route("/api/export/templates", methods=["POST"])
+def create_export_template():
+    data = request.json or {}
+    cfg  = load_config()
+    templates = cfg.get("export_templates", [])
+    tid = secrets.token_hex(6)
+    tpl = {
+        "id":         tid,
+        "name":       data.get("name", "Neue Vorlage"),
+        "mapping":    data.get("mapping", {}),
+        "start_row":  data.get("start_row"),
+        "is_default": data.get("is_default", False),
+    }
+    if tpl["is_default"]:
+        for t in templates: t["is_default"] = False
+    templates.append(tpl)
+    cfg["export_templates"] = templates
+    save_config(cfg)
+    _audit("export_template_create", f"name={tpl['name']}")
+    return jsonify({"ok": True, "template": tpl})
+
+@app.route("/api/export/templates/<tid>", methods=["PUT"])
+def update_export_template(tid):
+    data = request.json or {}
+    cfg  = load_config()
+    templates = cfg.get("export_templates", [])
+    tpl = next((t for t in templates if t["id"]==tid), None)
+    if not tpl:
+        return jsonify({"ok": False, "error": "Nicht gefunden"}), 404
+    if data.get("is_default"):
+        for t in templates: t["is_default"] = False
+    tpl.update({k:v for k,v in data.items() if k != "id"})
+    cfg["export_templates"] = templates
+    save_config(cfg)
+    _audit("export_template_update", f"id={tid} name={tpl['name']}")
+    return jsonify({"ok": True, "template": tpl})
+
+@app.route("/api/export/templates/<tid>", methods=["DELETE"])
+def delete_export_template(tid):
+    cfg  = load_config()
+    templates = cfg.get("export_templates", [])
+    cfg["export_templates"] = [t for t in templates if t["id"]!=tid]
+    save_config(cfg)
+    _audit("export_template_delete", f"id={tid}")
+    return jsonify({"ok": True})
+
+# ── Audit Log ────────────────────────────────────────────────────────────────
+@app.route("/api/audit-log")
+def get_audit_log():
+    limit = int(request.args.get("limit", 100))
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    rows = con.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    con.close()
+    return jsonify([dict(r) for r in rows])
 
 if __name__=="__main__":
     DATA_DIR.mkdir(parents=True, exist_ok=True)

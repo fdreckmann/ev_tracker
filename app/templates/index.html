@@ -173,6 +173,17 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 .sec-lbl{font-size:.68rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;
   letter-spacing:.1em;margin:20px 0 10px}
 
+/* Config sidebar */
+.cfg-nav-btn{background:none;border:none;cursor:pointer;font-family:var(--sans);font-size:.8rem;
+  font-weight:500;color:var(--mute);padding:9px 12px;border-radius:8px;transition:all .15s;
+  text-align:left;width:100%}
+.cfg-nav-btn:hover{color:var(--txt);background:var(--brd)}
+.cfg-nav-btn.active{background:var(--brd2);color:#fff}
+.cfg-section{}
+.cfg-sec-title{font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;
+  letter-spacing:.12em;margin-bottom:18px;display:flex;align-items:center;gap:10px}
+.cfg-sec-title::after{content:'';flex:1;height:1px;background:var(--brd)}
+
 /* ── Session detail modal ── */
 .modal-overlay{
   position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.75);
