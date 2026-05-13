@@ -344,6 +344,9 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <div style="height:1px;background:var(--brd);margin:8px 4px"></div>
       <button class="cfg-nav-btn" onclick="cfgSection('export-tpl',this)">📋 Export-Vorlagen</button>
       <button class="cfg-nav-btn" onclick="cfgSection('audit',this)">📜 Audit-Log</button>
+      <div style="height:1px;background:var(--brd);margin:8px 4px"></div>
+      <button class="cfg-nav-btn" onclick="cfgSection('benutzer',this)">👥 Benutzer</button>
+      <button class="cfg-nav-btn" onclick="cfgSection('profil',this)">👤 Mein Profil</button>
     </nav>
 
     <!-- ── Content ── -->
@@ -674,6 +677,53 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <div id="auditLogList"><div class="empty">Lade…</div></div>
       </div>
 
+      <!-- BENUTZER -->
+      <div id="cfgsec-benutzer" class="cfg-section" style="display:none">
+        <div class="cfg-sec-title">Benutzerverwaltung</div>
+        <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
+          Nur Admins können Benutzer verwalten. Rollen: <code>admin</code> (Vollzugriff) · <code>user</code> (Lesezugriff)
+        </p>
+        <div style="margin-bottom:14px">
+          <button class="btn-p" style="font-size:.78rem;padding:8px 16px" onclick="openAddUserModal()">+ Benutzer hinzufügen</button>
+        </div>
+        <div id="userList"><div class="empty">Lade…</div></div>
+      </div>
+
+      <!-- PROFIL -->
+      <div id="cfgsec-profil" class="cfg-section" style="display:none">
+        <div class="cfg-sec-title">Mein Profil</div>
+        <div id="profileInfo" style="font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-bottom:18px">⏳ Lade…</div>
+
+        <div style="margin-bottom:20px">
+          <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Passwort ändern</div>
+          <div style="display:grid;gap:8px">
+            <div><label>Aktuelles Passwort</label><input type="password" id="prof_cur_pw" placeholder="••••••••"></div>
+            <div><label>Neues Passwort</label><input type="password" id="prof_new_pw" placeholder="Mindestens 8 Zeichen"></div>
+            <div><label>Wiederholen</label><input type="password" id="prof_new_pw2" placeholder="••••••••"></div>
+          </div>
+          <button class="btn-p" style="margin-top:10px;font-size:.78rem;padding:7px 16px" onclick="changeMyPassword()">🔑 Passwort ändern</button>
+          <span id="profPwInfo" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-left:10px"></span>
+        </div>
+
+        <div style="border-top:1px solid var(--brd);padding-top:14px">
+          <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Zwei-Faktor-Authentifizierung</div>
+          <div id="profTotpStatus" style="font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-bottom:10px">—</div>
+          <div id="profTotpQrWrap" style="display:none;margin-bottom:12px">
+            <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:8px">QR-Code scannen:</div>
+            <div id="profTotpQrImg" style="margin-bottom:8px"></div>
+            <div style="font-size:.7rem;font-family:var(--mono);color:var(--acc2);margin-bottom:10px" id="profTotpSecret"></div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="text" id="profTotpCode" placeholder="Code eingeben zur Bestätigung" style="flex:1;margin-bottom:0">
+              <button class="btn-p" style="font-size:.78rem;padding:7px 14px;white-space:nowrap" onclick="confirmMyTotp()">✓ Bestätigen</button>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn-s" style="font-size:.78rem;padding:7px 14px" onclick="setupMyTotp()">📱 2FA einrichten</button>
+            <button class="btn-d" id="profTotpDisableBtn" style="font-size:.78rem;padding:7px 14px;display:none" onclick="disableMyTotp()">❌ 2FA deaktivieren</button>
+          </div>
+        </div>
+      </div>
+
     </div><!-- content -->
   </div><!-- flex container -->
 </div>
@@ -948,6 +998,35 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
   </div>
 
+</div>
+
+<!-- ── User Modal ── -->
+<div class="modal-overlay" id="userModal" style="display:none" onclick="if(event.target===this)closeUserModal()">
+  <div class="modal" style="max-width:480px;width:96vw;padding:28px">
+    <button class="modal-close" onclick="closeUserModal()">✕</button>
+    <h2 id="userModalTitle" style="margin-bottom:16px">Benutzer hinzufügen</h2>
+    <div style="display:grid;gap:10px;margin-bottom:16px">
+      <div><label>Name</label><input type="text" id="um_name" placeholder="Max Mustermann"></div>
+      <div><label>E-Mail</label><input type="email" id="um_email" placeholder="user@example.com"></div>
+      <div><label>Rolle</label>
+        <select id="um_role" style="background:var(--bg);border:1px solid var(--brd);border-radius:8px;color:var(--txt);font-family:var(--mono);font-size:.84rem;padding:9px 13px;width:100%">
+          <option value="user">Benutzer</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <div id="um_pw_wrap">
+        <label>Passwort <span style="color:var(--mute);font-size:.65rem">(leer = automatisch generiert)</span></label>
+        <input type="password" id="um_password" placeholder="Mindestens 8 Zeichen">
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="btn-p" onclick="saveUserModal()">💾 Speichern</button>
+      <button class="btn-s" onclick="closeUserModal()">Abbrechen</button>
+      <button class="btn-d" id="um_delete_btn" style="display:none;margin-left:auto" onclick="deleteUserModal()">🗑 Löschen</button>
+      <button class="btn-s" id="um_reset2fa_btn" style="display:none" onclick="reset2faModal()">🔄 2FA Reset</button>
+    </div>
+    <div id="um_info" style="margin-top:10px;font-size:.75rem;font-family:var(--mono);color:var(--mute)"></div>
+  </div>
 </div>
 
 <!-- ── Vehicle Modal ── -->
