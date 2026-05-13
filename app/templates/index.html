@@ -671,15 +671,21 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <!-- AUDIT LOG -->
       <div id="cfgsec-audit" class="cfg-section" style="display:none">
         <div class="cfg-sec-title">Audit-Log</div>
-        <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
-          Protokoll sicherheitsrelevanter Aktionen.
-        </p>
+        <div style="margin-bottom:12px;display:flex;align-items:center;gap:12px">
+          <select id="auditLimit" onchange="loadAuditLog()" style="font-size:.75rem;padding:4px 8px">
+            <option value="50">Letzte 50</option>
+            <option value="100" selected>Letzte 100</option>
+            <option value="200">Letzte 200</option>
+          </select>
+          <button class="btn-s" style="font-size:.75rem;padding:5px 12px" onclick="loadAuditLog()">↺ Aktualisieren</button>
+        </div>
         <div id="auditLogList"><div class="empty">Lade…</div></div>
       </div>
 
       <!-- BENUTZER -->
       <div id="cfgsec-benutzer" class="cfg-section" style="display:none">
         <div class="cfg-sec-title">Benutzerverwaltung</div>
+        <div id="adminDashboard" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:18px"></div>
         <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
           Nur Admins können Benutzer verwalten. Rollen: <code>admin</code> (Vollzugriff) · <code>user</code> (Lesezugriff)
         </p>
@@ -698,7 +704,8 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Passwort ändern</div>
           <div style="display:grid;gap:8px">
             <div><label>Aktuelles Passwort</label><input type="password" id="prof_cur_pw" placeholder="••••••••"></div>
-            <div><label>Neues Passwort</label><input type="password" id="prof_new_pw" placeholder="Mindestens 8 Zeichen"></div>
+            <div><label>Neues Passwort</label><input type="password" id="prof_new_pw" placeholder="Mindestens 8 Zeichen" oninput="checkPwStrength(this.value,'prof_pw_strength')">
+            <div id="prof_pw_strength" style="font-size:.7rem;font-family:var(--mono);margin-top:4px;color:var(--mute)"></div></div>
             <div><label>Wiederholen</label><input type="password" id="prof_new_pw2" placeholder="••••••••"></div>
           </div>
           <button class="btn-p" style="margin-top:10px;font-size:.78rem;padding:7px 16px" onclick="changeMyPassword()">🔑 Passwort ändern</button>
@@ -721,6 +728,22 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             <button class="btn-s" style="font-size:.78rem;padding:7px 14px" onclick="setupMyTotp()">📱 2FA einrichten</button>
             <button class="btn-d" id="profTotpDisableBtn" style="font-size:.78rem;padding:7px 14px;display:none" onclick="disableMyTotp()">❌ 2FA deaktivieren</button>
           </div>
+        </div>
+
+        <!-- Backup Codes -->
+        <div id="backupCodesSection" style="border-top:1px solid var(--brd);padding-top:14px;margin-top:14px;display:none">
+          <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">2FA Backup-Codes</div>
+          <div id="backupCodeCount" style="font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-bottom:10px">—</div>
+          <button class="btn-s" style="font-size:.78rem;padding:7px 14px" onclick="generateBackupCodes()">🔑 Neue Backup-Codes generieren</button>
+        </div>
+      </div>
+      <!-- Backup Codes Modal -->
+      <div id="backupCodesModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
+        <div style="background:var(--surf);border:1px solid var(--brd);border-radius:16px;padding:32px;max-width:360px;width:100%;margin:16px">
+          <div style="font-weight:700;font-size:1rem;color:#fff;margin-bottom:8px">🔑 Backup-Codes</div>
+          <div style="font-size:.75rem;font-family:var(--mono);color:var(--warn);margin-bottom:16px">⚠ Codes sicher aufbewahren! Sie werden nur einmal angezeigt.</div>
+          <div id="backupCodesList" style="background:var(--bg);border:1px solid var(--brd);border-radius:8px;padding:16px;margin-bottom:16px"></div>
+          <button class="btn-p" style="font-size:.78rem;padding:8px 18px" onclick="$('backupCodesModal').style.display='none'">Schließen</button>
         </div>
       </div>
 
@@ -1016,7 +1039,8 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       </div>
       <div id="um_pw_wrap">
         <label>Passwort <span style="color:var(--mute);font-size:.65rem">(leer = automatisch generiert)</span></label>
-        <input type="password" id="um_password" placeholder="Mindestens 8 Zeichen">
+        <input type="password" id="um_password" placeholder="Mindestens 8 Zeichen" oninput="checkPwStrength(this.value,'um_pw_strength')">
+        <div id="um_pw_strength" style="font-size:.7rem;font-family:var(--mono);margin-top:4px;color:var(--mute)"></div>
       </div>
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -2911,32 +2935,79 @@ async function saveCron(){
   } else toast('Fehler','err');
 }
 
+// ── CSRF ─────────────────────────────────────────────────────────────────────
+let csrfToken = '';
+async function initCsrf(){
+  try {
+    const r = await fetch('/api/csrf-token').then(r=>r.json());
+    csrfToken = r.token || '';
+  } catch(e){ csrfToken = ''; }
+}
+function apiFetch(url, opts={}){
+  opts.headers = opts.headers || {};
+  if(csrfToken) opts.headers['X-CSRF-Token'] = csrfToken;
+  return fetch(url, opts);
+}
+
+// ── Admin Dashboard ───────────────────────────────────────────────────────────
+async function loadAdminDashboard(){
+  const d=await apiFetch('/api/admin/dashboard').then(r=>r.json()).catch(()=>null);
+  const el=$('adminDashboard');
+  if(!el||!d) return;
+  const card=(label,val,color)=>`<div style="background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:12px 14px;text-align:center">
+    <div style="font-size:1.4rem;font-weight:700;color:${color||'#fff'}">${val}</div>
+    <div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);margin-top:4px;text-transform:uppercase;letter-spacing:.06em">${label}</div>
+  </div>`;
+  el.innerHTML=
+    card('Gesamt',d.total_users,'#fff')+
+    card('Aktiv',d.active_users,'var(--acc)')+
+    card('Eingeladen',d.invited_users,'var(--warn)')+
+    card('Gesperrt',d.locked_users,d.locked_users>0?'var(--danger)':'var(--mute)')+
+    card('Fehlversuche 24h',d.recent_failures,d.recent_failures>0?'var(--warn)':'var(--mute)')+
+    card('Sperrungen 24h',d.recent_lockouts,d.recent_lockouts>0?'var(--danger)':'var(--mute)');
+}
+
 // ── User Management ───────────────────────────────────────────────────────────
 let _editingUserId = null;
 
 async function loadUserList(){
-  const users = await fetch('/api/users').then(r=>r.json()).catch(()=>[]);
+  loadAdminDashboard();
+  const users = await apiFetch('/api/users').then(r=>r.json()).catch(()=>[]);
   const el = $('userList');
   if(!el) return;
   if(!Array.isArray(users)||!users.length){
     el.innerHTML='<div class="empty">Keine Benutzer</div>'; return;
   }
   const roleLabel = r => r==='admin'?'<span style="color:var(--warn);font-size:.65rem">★ Admin</span>':'<span style="color:var(--mute);font-size:.65rem">Benutzer</span>';
-  const statusDot = s => s==='active'?'<span style="color:var(--acc)">● aktiv</span>':s==='disabled'?'<span style="color:var(--danger)">● deaktiviert</span>':'<span style="color:var(--mute)">● —</span>';
+  const statusBadge = s => {
+    if(s==='active') return '<span style="background:rgba(61,220,151,.15);color:var(--acc);border-radius:4px;padding:1px 6px;font-size:.65rem">aktiv</span>';
+    if(s==='invited') return '<span style="background:rgba(245,158,11,.15);color:var(--warn);border-radius:4px;padding:1px 6px;font-size:.65rem">eingeladen</span>';
+    if(s==='disabled') return '<span style="background:rgba(239,68,68,.15);color:var(--danger);border-radius:4px;padding:1px 6px;font-size:.65rem">gesperrt</span>';
+    return `<span style="color:var(--mute);font-size:.65rem">${s||'—'}</span>`;
+  };
   el.innerHTML = users.map(u=>`
     <div style="display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:12px 14px">
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:.85rem;color:#fff">${u.name} ${roleLabel(u.role)}</div>
+        <div style="font-weight:700;font-size:.85rem;color:#fff">${u.name} ${roleLabel(u.role)} ${statusBadge(u.status)}</div>
         <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-top:3px">
-          ${u.email} · ${statusDot(u.status)} · 2FA: ${u.totp_enabled?'✅':'❌'}
+          ${u.email} · 2FA: ${u.totp_enabled?'✅':'❌'}
         </div>
         <div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);margin-top:2px">
           ${u.last_login_at?'Letzter Login: '+u.last_login_at.replace('T',' ').substring(0,16):'Noch kein Login'}
         </div>
       </div>
-      <button class="btn-s" style="font-size:.72rem;padding:5px 12px" onclick="openEditUserModal(${u.id})">✏ Bearbeiten</button>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        ${(u.status==='invited'||!u.totp_enabled)?`<button class="btn-s" style="font-size:.72rem;padding:5px 10px" onclick="inviteUser(${u.id})">✉ Einladen</button>`:''}
+        <button class="btn-s" style="font-size:.72rem;padding:5px 12px" onclick="openEditUserModal(${u.id})">✏ Bearbeiten</button>
+      </div>
     </div>
   `).join('');
+}
+
+async function inviteUser(uid){
+  const r = await apiFetch(`/api/users/${uid}/invite`,{method:'POST',headers:{'Content-Type':'application/json'}}).then(r=>r.json()).catch(()=>({ok:false,error:'Netzwerkfehler'}));
+  if(r.ok) toast('Einladung gesendet ✉','ok');
+  else toast('Fehler: '+(r.error||'Unbekannt'),'err');
 }
 
 function openAddUserModal(){
@@ -2953,7 +3024,7 @@ function openAddUserModal(){
 
 async function openEditUserModal(uid){
   _editingUserId = uid;
-  const users = await fetch('/api/users').then(r=>r.json()).catch(()=>[]);
+  const users = await apiFetch('/api/users').then(r=>r.json()).catch(()=>[]);
   const u = users.find(x=>x.id===uid);
   if(!u) return;
   $('userModalTitle').textContent='Benutzer bearbeiten';
@@ -2975,14 +3046,14 @@ async function saveUserModal(){
   if($('um_password').value) data.password=$('um_password').value;
   if(!_editingUserId){
     data.email=$('um_email').value.trim();
-    const r=await fetch('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());
+    const r=await apiFetch('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());
     if(r.ok){
       closeUserModal();
-      toast('Benutzer erstellt'+(r.temp_password?` — Temp-PW: ${r.temp_password}`:''),'ok');
+      toast(r.invited?'Benutzer erstellt — Einladung via "✉ Einladen" senden':'Benutzer erstellt','ok');
       cfgSection('benutzer',null); loadUserList();
     } else $('um_info').innerHTML=`<span style="color:var(--danger)">❌ ${r.error||'Fehler'}</span>`;
   } else {
-    const r=await fetch(`/api/users/${_editingUserId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());
+    const r=await apiFetch(`/api/users/${_editingUserId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());
     if(r.ok){ closeUserModal(); toast('Gespeichert','ok'); loadUserList(); }
     else $('um_info').innerHTML=`<span style="color:var(--danger)">❌ ${r.error||'Fehler'}</span>`;
   }
@@ -2990,20 +3061,20 @@ async function saveUserModal(){
 
 async function deleteUserModal(){
   if(!_editingUserId||!confirm('Benutzer löschen?')) return;
-  const r=await fetch(`/api/users/${_editingUserId}`,{method:'DELETE'}).then(r=>r.json());
+  const r=await apiFetch(`/api/users/${_editingUserId}`,{method:'DELETE'}).then(r=>r.json());
   if(r.ok){ closeUserModal(); toast('Gelöscht','ok'); loadUserList(); }
   else toast(r.error||'Fehler','err');
 }
 
 async function reset2faModal(){
   if(!_editingUserId||!confirm('2FA für diesen Benutzer zurücksetzen?')) return;
-  await fetch(`/api/users/${_editingUserId}/reset-2fa`,{method:'POST'});
+  await apiFetch(`/api/users/${_editingUserId}/reset-2fa`,{method:'POST'});
   toast('2FA zurückgesetzt','ok'); closeUserModal(); loadUserList();
 }
 
 // ── My Profile ───────────────────────────────────────────────────────────────
 async function loadMyProfile(){
-  const r=await fetch('/api/users/me').then(r=>r.json()).catch(()=>null);
+  const r=await apiFetch('/api/users/me').then(r=>r.json()).catch(()=>null);
   if(!r||r.error) return;
   const el=$('profileInfo');
   if(el) el.innerHTML=`<strong style="color:#fff">${r.name}</strong> &nbsp;·&nbsp; ${r.email} &nbsp;·&nbsp; <span style="color:${r.role==='admin'?'var(--warn)':'var(--acc2)'}">${r.role==='admin'?'★ Admin':'Benutzer'}</span>`;
@@ -3011,13 +3082,33 @@ async function loadMyProfile(){
   if(totpSt) totpSt.innerHTML=r.totp_enabled?'<span style="color:var(--acc2)">📱 2FA ist aktiv</span>':'Kein 2FA konfiguriert';
   const disBtn=$('profTotpDisableBtn');
   if(disBtn) disBtn.style.display=r.totp_enabled?'':'none';
+  const bcSection=$('backupCodesSection');
+  if(bcSection) bcSection.style.display=r.totp_enabled?'':'none';
+  if(r.totp_enabled) loadBackupCodeCount();
+}
+
+async function loadBackupCodeCount(){
+  const r=await apiFetch('/api/users/me/totp/backup-codes/count').then(r=>r.json()).catch(()=>null);
+  const el=$('backupCodeCount');
+  if(el&&r) el.textContent=r.count+' Backup-Codes verfügbar';
+}
+
+async function generateBackupCodes(){
+  if(!confirm('Neue Backup-Codes generieren? Alle alten Codes werden ungültig!')) return;
+  const r=await apiFetch('/api/users/me/totp/backup-codes',{method:'POST'}).then(r=>r.json()).catch(()=>null);
+  if(!r||!r.ok){ toast('Fehler beim Generieren','err'); return; }
+  const modal=$('backupCodesModal');
+  const list=$('backupCodesList');
+  if(list) list.innerHTML=r.codes.map(c=>`<div style="font-family:var(--mono);font-size:1rem;letter-spacing:.1em;color:#fff;padding:4px 0">${c}</div>`).join('');
+  if(modal) modal.style.display='flex';
+  loadBackupCodeCount();
 }
 
 async function changeMyPassword(){
   const cur=$('prof_cur_pw').value, nw=$('prof_new_pw').value, nw2=$('prof_new_pw2').value;
   const info=$('profPwInfo');
   if(nw!==nw2){ info.innerHTML='<span style="color:var(--danger)">Passwörter stimmen nicht überein</span>'; return; }
-  const r=await fetch('/api/users/me/password',{method:'POST',headers:{'Content-Type':'application/json'},
+  const r=await apiFetch('/api/users/me/password',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({current:cur,new:nw})}).then(r=>r.json());
   if(r.ok){ info.innerHTML='<span style="color:var(--acc)">✅ Gespeichert</span>'; $('prof_cur_pw').value=''; $('prof_new_pw').value=''; $('prof_new_pw2').value=''; }
   else info.innerHTML=`<span style="color:var(--danger)">❌ ${r.error||'Fehler'}</span>`;
@@ -3025,7 +3116,7 @@ async function changeMyPassword(){
 }
 
 async function setupMyTotp(){
-  const r=await fetch('/api/users/me/totp/setup',{method:'POST'}).then(r=>r.json());
+  const r=await apiFetch('/api/users/me/totp/setup',{method:'POST'}).then(r=>r.json());
   if(!r.ok){ toast(r.error||'Fehler','err'); return; }
   $('profTotpSecret').textContent='Secret: '+r.secret;
   const qrUrl=`https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl=${encodeURIComponent(r.uri)}`;
@@ -3035,18 +3126,19 @@ async function setupMyTotp(){
 
 async function confirmMyTotp(){
   const code=$('profTotpCode').value.trim();
-  const r=await fetch('/api/users/me/totp/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})}).then(r=>r.json());
+  const r=await apiFetch('/api/users/me/totp/confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})}).then(r=>r.json());
   if(r.ok){ toast('2FA aktiviert ✅','ok'); $('profTotpQrWrap').style.display='none'; loadMyProfile(); }
   else toast(r.error||'Fehler','err');
 }
 
 async function disableMyTotp(){
   if(!confirm('2FA deaktivieren?')) return;
-  await fetch('/api/users/me/totp/disable',{method:'POST'});
+  await apiFetch('/api/users/me/totp/disable',{method:'POST'});
   toast('2FA deaktiviert','ok'); loadMyProfile();
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+initCsrf();
 initExpSelects();
 refreshStatus();
 loadCharts();
@@ -3221,18 +3313,27 @@ async function deleteExportTemplate(tid){
   loadExportTemplates();
 }
 
+// ── Password Strength ─────────────────────────────────────────────────────────
+function checkPwStrength(pw, targetId){
+  const el=$(targetId); if(!el) return;
+  if(!pw){el.textContent='';return;}
+  if(pw.length<8){el.textContent='Zu kurz (min. 8 Zeichen)';el.style.color='var(--danger)';return;}
+  if(!/\d/.test(pw)){el.textContent='Keine Zahl enthalten';el.style.color='var(--warn)';return;}
+  el.textContent='✓ OK';el.style.color='var(--acc)';
+}
+
 // ── Audit Log ─────────────────────────────────────────────────────────────────
 async function loadAuditLog(){
-  const rows=await fetch('/api/audit-log?limit=50').then(r=>r.json()).catch(()=>[]);
+  const limit=($('auditLimit')||{value:'100'}).value;
+  const rows=await fetch('/api/audit-log?limit='+limit).then(r=>r.json()).catch(()=>[]);
   const el=$('auditLogList');
   if(!el) return;
-  if(!rows.length){
-    el.innerHTML='<div class="empty">Keine Einträge</div>'; return;
-  }
+  if(!rows.length){el.innerHTML='<div class="empty">Keine Einträge</div>';return;}
   el.innerHTML=`<table>
-    <thead><tr><th>Zeit</th><th>Aktion</th><th>Details</th><th>IP</th></tr></thead>
+    <thead><tr><th>Zeit</th><th>Benutzer</th><th>Aktion</th><th>Details</th><th>IP</th></tr></thead>
     <tbody>${rows.map(r=>`<tr>
       <td style="font-family:var(--mono);font-size:.72rem;white-space:nowrap">${r.ts?r.ts.replace('T',' ').substring(0,19):''}</td>
+      <td style="font-family:var(--mono);font-size:.72rem;color:var(--acc)">${r.user_name||'—'}</td>
       <td style="font-family:var(--mono);font-size:.72rem;color:var(--acc2)">${r.action||''}</td>
       <td style="font-family:var(--mono);font-size:.72rem;color:var(--mute)">${r.details||''}</td>
       <td style="font-family:var(--mono);font-size:.72rem;color:var(--mute)">${r.ip||''}</td>

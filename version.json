@@ -1,11 +1,11 @@
 {
-  "version": "1.6.0",
+  "version": "1.9.1",
   "changelog": [
-    "Multi-Auto-Support: beliebig viele Fahrzeuge gleichzeitig tracken",
-    "Jedes Fahrzeug läuft in eigenem Tracker-Thread mit eigenem Provider",
-    "Fahrzeugverwaltung im Konfig-Tab (hinzufügen, bearbeiten, löschen)",
-    "Ladevorgänge-Filter nach Fahrzeug",
-    "Neue Provider: Hyundai/Kia, Renault/Dacia, Polestar, Audi",
-    "Login + 2FA TOTP (Google Authenticator / Authy)"
+    "HTML-E-Mails mit neuem Design für Einladungen, Passwort-Reset und SMTP-Test",
+    "Admin-Dashboard in Benutzerverwaltung (Statistiken, Fehlversuche, Sperrungen)",
+    "Audit-Log: Benutzer-Spalte mit JOIN auf users-Tabelle, Limit-Auswahl",
+    "Admin-Benachrichtigung per E-Mail bei Konto-Sperrung",
+    "Rate-Limit für /forgot-password (max. 3 Anfragen/Stunde)",
+    "Passwort-Stärke-Check (client- und serverseitig: min. 8 Zeichen + Zahl)"
   ]
 }
