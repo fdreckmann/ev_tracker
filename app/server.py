@@ -2100,62 +2100,97 @@ def docker_pull_and_restart(tag: str):
             _update_running = False
             return
 
-        _ulog("Pull abgeschlossen — starte Stop/Remove/Recreate")
-        _time.sleep(2)
-        try:
-            _ulog(f"Stoppe Container {container_name} ({container_id[:12]})")
-            docker_socket_request("POST", f"/containers/{container_id}/stop?t=10")
-            _time.sleep(3)
-            _ulog("Container gestoppt — lösche alten Container")
-            rm = docker_socket_request("DELETE", f"/containers/{container_id}?force=1")
-            if rm["status"] not in (200, 204, 404):
-                _ulog(f"Warnung: Remove-Status {rm['status']} — {rm.get('data','')}")
-            _time.sleep(1)
+        _ulog("Pull abgeschlossen — baue Recreate-Konfiguration")
 
-            # Build full create body from inspect so ports/volumes/networks are preserved
-            old_config = old_cfg.get("Config", {})
-            nets       = old_cfg.get("NetworkSettings", {}).get("Networks", {})
-            # Strip dynamic fields from network endpoints before reuse
-            clean_nets = {}
-            for net_name, net_cfg in nets.items():
-                clean_nets[net_name] = {
-                    k: v for k, v in net_cfg.items()
-                    if k in ("IPAMConfig", "Links", "Aliases", "NetworkID", "EndpointID",
-                             "Gateway", "IPAddress", "IPPrefixLen", "IPv6Gateway",
-                             "GlobalIPv6Address", "GlobalIPv6PrefixLen", "MacAddress",
-                             "DriverOpts")
-                }
-            create_body = {
-                "Image":        f"{DOCKER_HUB_REPO}:{tag}",
-                "Env":          old_config.get("Env", []),
-                "Labels":       old_config.get("Labels", {}),
-                "ExposedPorts": old_config.get("ExposedPorts", {}),
-                "Volumes":      old_config.get("Volumes", {}),
-                "WorkingDir":   old_config.get("WorkingDir", ""),
-                "HostConfig":   host_config,
-                "NetworkingConfig": {"EndpointsConfig": clean_nets},
+        # Build full create body from inspect so ports/volumes/networks are preserved
+        old_config = old_cfg.get("Config", {})
+        nets       = old_cfg.get("NetworkSettings", {}).get("Networks", {})
+        clean_nets = {}
+        for net_name, net_cfg in nets.items():
+            clean_nets[net_name] = {
+                k: v for k, v in net_cfg.items()
+                if k in ("IPAMConfig", "Links", "Aliases", "NetworkID", "EndpointID",
+                         "Gateway", "IPAddress", "IPPrefixLen", "IPv6Gateway",
+                         "GlobalIPv6Address", "GlobalIPv6PrefixLen", "MacAddress",
+                         "DriverOpts")
             }
-            # include Cmd/Entrypoint only if set
-            if old_config.get("Cmd"):
-                create_body["Cmd"] = old_config["Cmd"]
-            if old_config.get("Entrypoint"):
-                create_body["Entrypoint"] = old_config["Entrypoint"]
+        create_body = {
+            "Image":        f"{DOCKER_HUB_REPO}:{tag}",
+            "Env":          old_config.get("Env", []),
+            "Labels":       old_config.get("Labels", {}),
+            "ExposedPorts": old_config.get("ExposedPorts", {}),
+            "Volumes":      old_config.get("Volumes", {}),
+            "WorkingDir":   old_config.get("WorkingDir", ""),
+            "HostConfig":   host_config,
+            "NetworkingConfig": {"EndpointsConfig": clean_nets},
+        }
+        if old_config.get("Cmd"):        create_body["Cmd"]        = old_config["Cmd"]
+        if old_config.get("Entrypoint"): create_body["Entrypoint"] = old_config["Entrypoint"]
 
-            _ulog(f"Erstelle neuen Container '{container_name}' mit Image {DOCKER_HUB_REPO}:{tag}")
-            new    = docker_socket_request("POST", f"/containers/create?name={container_name}", create_body)
-            new_id = (new.get("data") or {}).get("Id")
-            if new_id:
-                _ulog(f"Container erstellt ({new_id[:12]}) — starte...")
-                start = docker_socket_request("POST", f"/containers/{new_id}/start")
-                if start["status"] in (200, 204, 304):
-                    _ulog("Container gestartet — Update abgeschlossen!")
-                else:
-                    _ulog(f"FEHLER beim Starten: HTTP {start['status']} — {start.get('data','')}")
+        # --- Helper-Container-Ansatz ---
+        # Wir können Stop/Remove/Recreate NICHT aus unserem eigenen Thread heraus
+        # ausführen, da der Thread stirbt sobald Docker unseren Container stoppt.
+        # Lösung: Helper-Container aus dem neu gezogenen Image starten, der die
+        # Sequenz unabhängig von unserem Prozess durchführt.
+        import base64 as _b64
+        create_b64 = _b64.b64encode(_json.dumps(create_body).encode()).decode()
+
+        helper_py = (
+            "import socket,json,time,os,base64\n"
+            "SOCK='/var/run/docker.sock'\n"
+            "def req(m,p,b=None):\n"
+            "  s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);s.connect(SOCK)\n"
+            "  d=json.dumps(b).encode() if b else b''\n"
+            "  h=f'{m} {p} HTTP/1.0\\r\\nHost: localhost\\r\\n'\n"
+            "  if d: h+=f'Content-Type: application/json\\r\\nContent-Length: {len(d)}\\r\\n'\n"
+            "  s.send((h+'\\r\\n').encode()+d)\n"
+            "  r=b''\n"
+            "  while True:\n"
+            "    c=s.recv(8192)\n"
+            "    if not c: break\n"
+            "    r+=c\n"
+            "  s.close()\n"
+            "  st=int(r.split(b' ')[1]);body=r.split(b'\\r\\n\\r\\n',1)[-1]\n"
+            "  try: return st,json.loads(body)\n"
+            "  except: return st,{}\n"
+            "time.sleep(5)\n"
+            "cid=os.environ['OLD_CID'];cname=os.environ['NEW_NAME']\n"
+            "cb=json.loads(base64.b64decode(os.environ['CB64']).decode())\n"
+            "req('POST',f'/containers/{cid}/stop?t=10')\n"
+            "time.sleep(4)\n"
+            "req('DELETE',f'/containers/{cid}?force=1')\n"
+            "time.sleep(1)\n"
+            "st,resp=req('POST',f'/containers/create?name={cname}',cb)\n"
+            "nid=resp.get('Id') if isinstance(resp,dict) else None\n"
+            "if nid: req('POST',f'/containers/{nid}/start')\n"
+            "req('DELETE','/containers/ev-tracker-updater?force=1')\n"
+        )
+
+        # Vorhandenen alten Helper-Container bereinigen
+        docker_socket_request("DELETE", "/containers/ev-tracker-updater?force=1")
+
+        helper_resp = docker_socket_request("POST", "/containers/create?name=ev-tracker-updater", {
+            "Image":      f"{DOCKER_HUB_REPO}:{tag}",
+            "Entrypoint": [],
+            "Cmd":        ["python3", "-c", helper_py],
+            "Env":        [f"OLD_CID={container_id}",
+                           f"NEW_NAME={container_name}",
+                           f"CB64={create_b64}"],
+            "HostConfig": {"Binds": [f"{DOCKER_SOCKET}:{DOCKER_SOCKET}"],
+                           "AutoRemove": True},
+        })
+        helper_id = (helper_resp.get("data") or {}).get("Id")
+        if helper_id:
+            start = docker_socket_request("POST", f"/containers/{helper_id}/start")
+            if start["status"] in (200, 204, 304):
+                _ulog(f"Helper-Container gestartet ({helper_id[:12]}) — "
+                      f"Container '{container_name}' wird in ~10s auf {tag} neu gestartet")
             else:
-                err = (new.get("data") or {}).get("message") or str(new.get("data",""))
-                _ulog(f"FEHLER beim Erstellen des neuen Containers: {err}")
-        except Exception as e:
-            _ulog(f"FEHLER beim Recreate: {e}")
+                _ulog(f"FEHLER: Helper-Container konnte nicht gestartet werden: "
+                      f"HTTP {start['status']} — {start.get('data','')}")
+        else:
+            err = (helper_resp.get("data") or {}).get("message") or str(helper_resp.get("data",""))
+            _ulog(f"FEHLER: Helper-Container konnte nicht erstellt werden: {err}")
         _update_running = False
 
     threading.Thread(target=pull_and_recreate, daemon=True).start()
