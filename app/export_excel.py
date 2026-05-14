@@ -12,6 +12,49 @@ except ImportError:
     TABLE_FIELDS = {}
     HEADER_FIELDS = {}
 
+# ── Localization ──────────────────────────────────────────────────────────────
+MONTH_NAMES = {
+    "de": {1:"Januar",2:"Februar",3:"März",4:"April",5:"Mai",6:"Juni",
+           7:"Juli",8:"August",9:"September",10:"Oktober",11:"November",12:"Dezember"},
+    "en": {1:"January",2:"February",3:"March",4:"April",5:"May",6:"June",
+           7:"July",8:"August",9:"September",10:"October",11:"November",12:"December"},
+}
+
+DATE_FORMATS = {
+    "de": "%d.%m.%Y",
+    "en": "%Y-%m-%d",
+}
+
+EXPORT_LABELS = {
+    "de": {
+        "driver": "Fahrer", "license_plate": "Kennzeichen", "cost_center": "Kostenstelle",
+        "department": "Abteilung", "month": "Monat", "export_date": "Exportdatum",
+        "total_cost": "Gesamtkosten", "total_kwh": "Gesamt kWh",
+        "avg_charge_power": "Ø Ladeleistung (kW)", "total_charging_time": "Ladezeit gesamt",
+        "signature": "Unterschrift", "charging_log": "Ladeprotokoll",
+        "meter_old": "Zählerstand Alt", "meter_new": "Zählerstand Neu",
+        "location": "Ladeort", "charger_type": "Ladeart",
+        "start": "Start", "end": "Ende", "duration": "Dauer", "cost": "Kosten",
+        "period": "Zeitraum",
+    },
+    "en": {
+        "driver": "Driver", "license_plate": "License plate", "cost_center": "Cost center",
+        "department": "Department", "month": "Month", "export_date": "Export date",
+        "total_cost": "Total cost", "total_kwh": "Total kWh",
+        "avg_charge_power": "Average charging power (kW)", "total_charging_time": "Total charging time",
+        "signature": "Signature", "charging_log": "Charging log",
+        "meter_old": "Meter reading old", "meter_new": "Meter reading new",
+        "location": "Charging location", "charger_type": "Charger type",
+        "start": "Start", "end": "End", "duration": "Duration", "cost": "Cost",
+        "period": "Period",
+    },
+}
+
+def t_export(key: str, lang: str = "de") -> str:
+    """Translate an export label key to the given language."""
+    lang = lang if lang in EXPORT_LABELS else "de"
+    return EXPORT_LABELS[lang].get(key, EXPORT_LABELS["de"].get(key, key))
+
 DATA_DIR      = Path(os.environ.get("DATA_DIR", "/data"))
 DB_PATH       = DATA_DIR / "sessions.db"
 EXPORT_DIR    = DATA_DIR / "exports"
@@ -90,7 +133,9 @@ NUM_FMT = {
     "soc_end":     '0"%"',
     "kwh_charged": '0.00 "kWh"',
     "cost_eur":    '€#,##0.00',
-    "duration":    '[h]:MM',
+    "duration":         '[h]:MM',
+    "duration_hours":   '0.00 "h"',
+    "charge_power_kw":  '0.00 "kW"',
     "meter_old":   '0.000',
     "meter_new":   '0.000',
     "row_num":     "0",
@@ -136,22 +181,33 @@ def to_row(s, idx):
     duration = None
     if dt_e:
         duration = (dt_e - dt_s).total_seconds() / 86400  # fraction of day for [h]:MM format
-    return {
-        "row_num":     idx,
-        "date":        dt_s.date(),
-        "start_time":  dt_s.time(),
-        "end_time":    dt_e.time() if dt_e else None,
-        "duration":    duration,
-        "odo_start":   s.get("odo_start"),
-        "odo_end":     s.get("odo_end"),
-        "soc_start":   s.get("soc_start"),
-        "soc_end":     s.get("soc_end"),
-        "kwh_charged": s.get("kwh_charged"),
-        "cost_eur":    s.get("cost_eur"),
-        "meter_old":   s.get("meter_old"),
-        "meter_new":   s.get("meter_new"),
-        "location":    LOCATION_LABELS.get(s.get("location", "unknown"), s.get("location", "—")),
+    duration_hours = round(duration * 24, 4) if duration is not None else None
+    row = {
+        "row_num":      idx,
+        "date":         dt_s.date(),
+        "start_time":   dt_s.time(),
+        "end_time":     dt_e.time() if dt_e else None,
+        "duration":     duration,
+        "duration_hours": duration_hours,
+        "charge_power_kw": None,  # calculated below
+        "odo_start":    s.get("odo_start"),
+        "odo_end":      s.get("odo_end"),
+        "soc_start":    s.get("soc_start"),
+        "soc_end":      s.get("soc_end"),
+        "kwh_charged":  s.get("kwh_charged"),
+        "cost_eur":     s.get("cost_eur"),
+        "price_per_kwh": s.get("price_per_kwh"),
+        "meter_old":    s.get("meter_old"),
+        "meter_new":    s.get("meter_new"),
+        "location":     LOCATION_LABELS.get(s.get("location", "unknown"), s.get("location", "—")),
+        "charger_type": s.get("charger_type"),
     }
+    # Calculate charge_power_kw = kwh / duration_h
+    kwh = s.get("kwh_charged")
+    dur_h = row.get("duration_hours")
+    if kwh is not None and dur_h and dur_h > 0:
+        row["charge_power_kw"] = round(kwh / dur_h, 2)
+    return row
 
 # ── Built-in style helpers ────────────────────────────────────────────────────
 C_HDR  = "1F4E79"; C_FG  = "FFFFFF"
@@ -216,8 +272,9 @@ def fill_header_section(ws, data_start_row, header_data):
                     except Exception: pass
 
 # ── Header values computation ─────────────────────────────────────────────────
-def compute_header_values(sessions, year, month, header_info=None):
+def compute_header_values(sessions, year, month, header_info=None, lang="de"):
     """Compute all HEADER_FIELDS values from sessions + config."""
+    import calendar as _cal
     if header_info is None:
         header_info = {}
     home_s     = [s for s in sessions if s.get("location") == "home"]
@@ -236,13 +293,41 @@ def compute_header_values(sessions, year, month, header_info=None):
     avg_cons = None
     if total_km and total_km > 0:
         avg_cons = round(total_kwh / total_km * 100, 2)
+
+    # Total charging hours
+    total_charging_hours = 0.0
+    for s in sessions:
+        if s.get("start_ts") and s.get("end_ts"):
+            try:
+                dt_s = datetime.fromisoformat(s["start_ts"])
+                dt_e = datetime.fromisoformat(s["end_ts"])
+                total_charging_hours += (dt_e - dt_s).total_seconds() / 3600
+            except Exception:
+                pass
+    total_charging_hours = round(total_charging_hours, 2)
+    avg_charge_power_kw = None
+    if total_charging_hours > 0 and total_kwh > 0:
+        avg_charge_power_kw = round(total_kwh / total_charging_hours, 2)
+
+    # Localized month name and period
+    month_name = MONTH_NAMES.get(lang, MONTH_NAMES["de"])[month]
+    month_year = f"{month_name} {year}"
+    export_date_str = datetime.today().strftime(DATE_FORMATS.get(lang, "%d.%m.%Y"))
+    last_day = _cal.monthrange(year, month)[1]
+    if lang == "en":
+        export_period = f"{year}-{month:02d}-01 – {year}-{month:02d}-{last_day:02d}"
+    else:
+        export_period = f"01.{month:02d}.{year} – {last_day:02d}.{month:02d}.{year}"
+
     return {
         "fahrer":                   header_info.get("fahrer") or None,
         "kennzeichen":              header_info.get("kennzeichen") or None,
         "abteilung":                header_info.get("abteilung") or None,
         "kostenstelle":             header_info.get("kostenstelle") or None,
-        "month_year":               datetime(year, month, 1).strftime("%B %Y"),
+        "month_year":               month_year,
+        "month_name":               month_name,
         "export_date":              datetime.today().date(),
+        "export_period":            export_period,
         "total_sessions":           n,
         "total_kwh":                total_kwh,
         "total_cost":               home_cost + ext_cost,
@@ -255,13 +340,16 @@ def compute_header_values(sessions, year, month, header_info=None):
         "meter_start_value":        sessions[0].get("meter_old") if n else None,
         "meter_end_value":          sessions[-1].get("meter_new") if n else None,
         "price_per_kwh":            header_info.get("price_per_kwh") or None,
+        "total_charging_hours":     total_charging_hours,
+        "avg_charge_power_kw":      avg_charge_power_kw,
     }
 
 
 # ── Template-based export ─────────────────────────────────────────────────────
-def export_with_template(year, month, sessions, location, col_override=None, start_row=None, header_info=None,
+def export_with_template(year, month, sessions, location, col_override=None, start_row=None, header_row=None, header_info=None,
                           cell_mapping=None, sheet=None,
-                          include_signature=False, signature_path=None, signature_mapping=None):
+                          include_signature=False, signature_path=None, signature_mapping=None,
+                          lang="de"):
     if header_info is None:
         header_info = {}
     if cell_mapping is None:
@@ -370,7 +458,7 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
                 pass
 
     # Compute full header values
-    hv = compute_header_values(sessions, year, month, header_info)
+    hv = compute_header_values(sessions, year, month, header_info, lang=lang)
 
     # auto-fill header section (Abrechnungsmonat, Kennzeichen, Fahrer, etc.)
     # Use hv merged with legacy header_data keys for backward compat
@@ -448,7 +536,8 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
     if include_signature and signature_path and signature_mapping:
         try:
             from openpyxl.drawing.image import Image as XLImage
-            sig_cell = signature_mapping.get("cell")
+            # Support both old "cell" key and new "anchor_cell" key
+            sig_cell = signature_mapping.get("anchor_cell") or signature_mapping.get("cell")
             # Check for {{signature}} placeholder — find cell with that text
             if not sig_cell:
                 for row in ws.iter_rows():
@@ -478,7 +567,38 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
                         pass
                 img.width  = sig_w
                 img.height = sig_h
-                ws.add_image(img, sig_cell)
+                # Try to apply offset using OneCellAnchor if offset values are provided
+                offset_x = int(signature_mapping.get("offset_x", 0))
+                offset_y = int(signature_mapping.get("offset_y", 0))
+                placed = False
+                if offset_x or offset_y:
+                    try:
+                        import re as _re_sig
+                        from openpyxl.utils import column_index_from_string as _col_idx
+                        from openpyxl.drawing.anchor import OneCellAnchor, AnchorMarker
+                        try:
+                            from openpyxl.utils.units import pixels_to_EMU
+                            emu_x = pixels_to_EMU(offset_x)
+                            emu_y = pixels_to_EMU(offset_y)
+                        except (ImportError, Exception):
+                            emu_x = offset_x * 9525
+                            emu_y = offset_y * 9525
+                        m2 = _re_sig.match(r'^([A-Za-z]+)(\d+)$', sig_cell)
+                        if m2:
+                            col_str = m2.group(1).upper()
+                            row_num2 = int(m2.group(2)) - 1  # 0-based
+                            col_num2 = _col_idx(col_str) - 1  # 0-based
+                            marker = AnchorMarker(col=col_num2, colOff=emu_x, row=row_num2, rowOff=emu_y)
+                            anchor = OneCellAnchor(_from=marker, ext=None)
+                            anchor.ext.cx = img.width * 9525
+                            anchor.ext.cy = img.height * 9525
+                            img.anchor = anchor
+                            ws.add_image(img)
+                            placed = True
+                    except Exception:
+                        placed = False
+                if not placed:
+                    ws.add_image(img, sig_cell)
         except Exception as e:
             print(f"Signatur-Einfügung fehlgeschlagen: {e}")
     # ── End signature ────────────────────────────────────────────────────────
