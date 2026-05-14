@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 140" width="200" height="140">
+  <rect width="200" height="140" fill="#1a1a1a" rx="6"/>
+  <rect x="8" y="8" width="184" height="18" fill="#1a2f1a" rx="3"/>
+  <text x="16" y="20" fill="#4ade80" font-size="7" font-family="Arial" font-weight="bold">Ladevorg&#xe4;nge &#x2014; Monat/Jahr</text>
+  <rect x="8" y="30" width="184" height="10" fill="#14532d"/>
+  <text x="10" y="38" fill="#4ade80" font-size="6" font-family="Arial">Datum            kWh         Kosten      Standort</text>
+  <rect x="8" y="40" width="184" height="9" fill="#1a2f1a"/>
+  <rect x="8" y="49" width="184" height="9" fill="#1a1a1a"/>
+  <rect x="8" y="58" width="184" height="9" fill="#1a2f1a"/>
+  <rect x="8" y="67" width="184" height="9" fill="#1a1a1a"/>
+  <rect x="8" y="76" width="184" height="9" fill="#1a2f1a"/>
+  <rect x="8" y="85" width="184" height="9" fill="#1a1a1a"/>
+  <rect x="8" y="94" width="184" height="9" fill="#1a2f1a"/>
+  <rect x="8" y="105" width="184" height="9" fill="#14532d" rx="2" opacity="0.6"/>
+  <text x="100" y="112" fill="#4ade80" font-size="6" font-family="Arial">&#x3A3; 42.5 kWh  18.90 &#x20AC;</text>
+  <rect x="8" y="120" width="40" height="12" fill="#14532d" rx="3"/>
+  <text x="12" y="128" fill="#4ade80" font-size="5" font-family="Arial">Minimal</text>
+  <text x="56" y="128" fill="#555" font-size="5" font-family="Arial">4 Spalten &#xB7; Kompakt</text>
+</svg>

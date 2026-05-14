@@ -769,6 +769,11 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     </div>
     <div class="tpl-meta" id="tplMeta"></div>
 
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+      <button class="btn-s" style="font-size:.78rem;padding:8px 18px" onclick="openGalleryModal()">📚 Vorlagen-Galerie</button>
+      <div id="activeTemplateInfo" style="font-size:.72rem;font-family:var(--mono);color:var(--mute)"></div>
+    </div>
+
     <div class="drop-zone" id="dropZone"
          onclick="document.getElementById('tplFile').click()"
          ondragover="ev.preventDefault();this.classList.add('drag')"
@@ -1099,6 +1104,26 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <button class="btn-s" onclick="closeVehicleModal()">Abbrechen</button>
       <button class="btn-d" id="vm_delete_btn" style="display:none;margin-left:auto" onclick="deleteVehicleModal()">🗑 Löschen</button>
       <span id="vm_info" style="font-size:.75rem;font-family:var(--mono);color:var(--mute)"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ── Template Gallery Modal ── -->
+<div class="modal-overlay" id="galleryModal" style="display:none" onclick="if(event.target===this)closeGalleryModal()">
+  <div class="modal" style="max-width:860px;width:92vw;max-height:88vh;display:flex;flex-direction:column;padding:28px 28px 20px">
+    <button class="modal-close" onclick="closeGalleryModal()">✕ Schließen</button>
+    <h2 style="margin-bottom:4px">Vorlagen-Galerie</h2>
+    <p style="font-size:.74rem;font-family:var(--mono);color:var(--mute);margin-bottom:18px">
+      Wähle eine eingebaute Vorlage · Eigene Vorlage kannst du weiterhin hochladen
+    </p>
+    <!-- Category filter -->
+    <div id="galleryFilters" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap"></div>
+    <!-- Grid -->
+    <div id="galleryGrid" style="flex:1;overflow-y:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;padding-right:4px">
+      <div style="color:var(--mute);font-family:var(--mono);font-size:.75rem">⏳ Lade…</div>
+    </div>
+    <div style="margin-top:16px;flex-shrink:0">
+      <button class="btn-s" onclick="closeGalleryModal()">Schließen</button>
     </div>
   </div>
 </div>
@@ -1793,10 +1818,109 @@ async function testEntsoe(){
 
 
 
+// ── Template Gallery ──────────────────────────────────────────────────────────
+let _galleryData = null;
+let _galleryFilter = null;
+
+async function openGalleryModal(){
+  $('galleryModal').style.display = 'flex';
+  if(!_galleryData) await loadGallery();
+  renderGallery();
+}
+
+function closeGalleryModal(){
+  $('galleryModal').style.display = 'none';
+}
+
+async function loadGallery(){
+  try {
+    const r = await apiFetch('/api/template/gallery').then(r=>r.json());
+    if(r.ok) _galleryData = r.templates;
+  } catch(e){ _galleryData = []; }
+}
+
+function renderGallery(){
+  if(!_galleryData){ $('galleryGrid').innerHTML='<div style="color:var(--mute);font-family:var(--mono);font-size:.75rem">Fehler beim Laden</div>'; return; }
+
+  // Build category filters
+  const cats = [...new Set(_galleryData.map(t=>t.category).filter(Boolean))];
+  $('galleryFilters').innerHTML =
+    `<button onclick="_galleryFilter=null;renderGallery()" class="btn-${_galleryFilter===null?'p':'s'}" style="font-size:.72rem;padding:5px 12px">Alle</button>` +
+    cats.map(c=>`<button onclick="_galleryFilter='${c}';renderGallery()" class="btn-${_galleryFilter===c?'p':'s'}" style="font-size:.72rem;padding:5px 12px">${c}</button>`).join('');
+
+  const filtered = _galleryFilter ? _galleryData.filter(t=>t.category===_galleryFilter) : _galleryData;
+
+  $('galleryGrid').innerHTML = filtered.map(t=>`
+    <div style="background:var(--bg);border:1px solid ${t.active?'var(--acc)':'var(--brd)'};border-radius:10px;overflow:hidden;display:flex;flex-direction:column;transition:border-color .2s">
+      <!-- Preview -->
+      <div style="background:#111;height:110px;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer" onclick="previewGalleryTemplate('${t.id}')">
+        <img src="${t.preview_url}" alt="${t.name}" style="max-width:100%;max-height:100%;object-fit:contain" onerror="this.style.display='none';this.nextSibling.style.display='flex'" loading="lazy">
+        <div style="display:none;width:100%;height:100%;align-items:center;justify-content:center;color:var(--mute);font-size:2rem">📊</div>
+      </div>
+      <!-- Info -->
+      <div style="padding:10px 12px;flex:1;display:flex;flex-direction:column;gap:4px">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span style="font-size:.8rem;font-weight:600;color:#fff">${t.name}</span>
+          ${t.active ? '<span style="font-size:.6rem;background:rgba(0,210,120,.15);color:var(--acc);border:1px solid rgba(0,210,120,.3);border-radius:4px;padding:1px 6px">✓ Aktiv</span>' : ''}
+        </div>
+        <span style="font-size:.6rem;background:rgba(100,130,255,.12);color:#7eb8f7;border-radius:4px;padding:1px 6px;align-self:flex-start">${t.category}</span>
+        <p style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin:2px 0 6px;line-height:1.4;flex:1">${t.description}</p>
+        ${t.recommended_for?.length ? `<div style="font-size:.65rem;color:#555;font-family:var(--mono)">${t.recommended_for.slice(0,3).join(' · ')}</div>` : ''}
+      </div>
+      <!-- Actions -->
+      <div style="padding:8px 12px;border-top:1px solid var(--brd);display:flex;gap:6px">
+        <button class="btn-s" style="font-size:.7rem;padding:5px 10px;flex:1" onclick="previewGalleryTemplate('${t.id}')">👁 Vorschau</button>
+        <button class="${t.active?'btn-s':'btn-p'}" style="font-size:.7rem;padding:5px 10px;flex:1" onclick="useGalleryTemplate('${t.id}','${t.name}')" ${t.active?'disabled':''}>
+          ${t.active ? '✓ Aktiv' : '▶ Verwenden'}
+        </button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function previewGalleryTemplate(id){
+  window.open(`/api/template/gallery/${id}/preview`, '_blank');
+}
+
+async function useGalleryTemplate(id, name){
+  if(!confirm(`Vorlage "${name}" aktivieren? Dein aktuelles Template und Mapping werden überschrieben.`)) return;
+  try {
+    const r = await apiFetch(`/api/template/gallery/${id}/use`, {method:'POST'}).then(r=>r.json());
+    if(r.ok){
+      toast(`✓ Vorlage "${name}" aktiviert`);
+      _galleryData = null; // force reload
+      await loadGallery();
+      renderGallery();
+      closeGalleryModal();
+      // Refresh template status UI
+      await refreshTplInfo();
+      loadMappingPreview();
+      updateActiveTemplateInfo(r.active_template);
+    } else {
+      toast('❌ ' + (r.error||'Fehler'), 'err');
+    }
+  } catch(e){
+    toast('❌ ' + e.message, 'err');
+  }
+}
+
+function updateActiveTemplateInfo(info){
+  const el = $('activeTemplateInfo');
+  if(!el) return;
+  if(!info || !info.source){
+    el.textContent = '';
+  } else if(info.source === 'builtin'){
+    el.innerHTML = `<span style="color:var(--acc)">✓ ${info.name}</span>`;
+  } else {
+    el.innerHTML = `<span style="color:var(--mute)">Eigene Vorlage</span>`;
+  }
+}
+
 // ── Template upload ───────────────────────────────────────────────────────────
 async function refreshTplInfo(){
   const info=await fetch('/api/template/info').then(r=>r.json());
   const dot=$('tplDot'), lbl=$('tplLbl'), meta=$('tplMeta'), delBtn=$('tplDelBtn');
+  updateActiveTemplateInfo(info.active_template || {});
   if(info.exists){
     dot.style.background='var(--acc)'; dot.style.boxShadow='0 0 6px var(--acc)';
     lbl.style.color='var(--acc)';

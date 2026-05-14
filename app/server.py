@@ -9,7 +9,7 @@ from providers import get_provider, get_all_capabilities, get_config_fields, PRO
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.9.3"
+APP_VERSION   = "1.9.4"
 
 CHANGELOG = [
     {"version":"1.9.3","changes":[
@@ -277,6 +277,7 @@ DEFAULT_CONFIG = {
     "update_channel":       "latest",  # latest | nightly | dev
     "template_mapping":     {},        # {col_index_str: field_name}
     "template_start_row":   None,      # row number where data starts (1-based)
+    "active_template":      {"source": None, "template_id": None, "name": None},
     "template_fahrer":        "",      # driver name for template header
     "template_kennzeichen":   "",      # license plate for template header
     "template_abteilung":     "",      # department for template header
@@ -1617,19 +1618,123 @@ def api_upload_template():
     f=request.files["file"]
     if not f.filename.endswith(".xlsx"): return jsonify({"ok":False,"error":"Nur .xlsx"}),400
     DATA_DIR.mkdir(parents=True,exist_ok=True); f.save(TEMPLATE_PATH)
+    cfg = load_config()
+    cfg["active_template"] = {"source": "upload", "template_id": None, "name": f.filename}
+    save_config(cfg)
     return jsonify({"ok":True,"filename":f.filename,"size":TEMPLATE_PATH.stat().st_size})
 
 @app.route("/api/template", methods=["DELETE"])
 def api_delete_template():
     if TEMPLATE_PATH.exists(): TEMPLATE_PATH.unlink()
+    cfg = load_config()
+    cfg["active_template"] = {"source": None, "template_id": None, "name": None}
+    save_config(cfg)
     return jsonify({"ok":True})
 
 @app.route("/api/template/info")
+@require_login
 def api_template_info():
+    cfg = load_config()
     if TEMPLATE_PATH.exists():
-        return jsonify({"exists":True,"size":TEMPLATE_PATH.stat().st_size,
-                        "modified":datetime.fromtimestamp(TEMPLATE_PATH.stat().st_mtime).isoformat(timespec="seconds")})
-    return jsonify({"exists":False})
+        return jsonify({
+            "exists": True,
+            "size": TEMPLATE_PATH.stat().st_size,
+            "modified": datetime.fromtimestamp(TEMPLATE_PATH.stat().st_mtime).isoformat(timespec="seconds"),
+            "active_template": cfg.get("active_template") or {}
+        })
+    return jsonify({"exists": False, "active_template": cfg.get("active_template") or {}})
+
+@app.route("/api/template/gallery")
+@require_login
+def api_template_gallery():
+    import json as _json
+    from pathlib import Path as _Path
+    gallery_dir = _Path(__file__).parent / "builtin_templates"
+    templates = []
+    if gallery_dir.exists():
+        for tpl_dir in sorted(gallery_dir.iterdir()):
+            manifest_path = tpl_dir / "manifest.json"
+            if not manifest_path.exists():
+                continue
+            try:
+                m = _json.loads(manifest_path.read_text(encoding="utf-8"))
+                templates.append({
+                    "id":              m["id"],
+                    "name":            m["name"],
+                    "description":     m.get("description", ""),
+                    "category":        m.get("category", ""),
+                    "recommended_for": m.get("recommended_for", []),
+                    "preview_url":     f"/api/template/gallery/{m['id']}/preview",
+                })
+            except Exception:
+                pass
+    # indicate which is active
+    cfg = load_config()
+    active_id = (cfg.get("active_template") or {}).get("template_id")
+    for t in templates:
+        t["active"] = (t["id"] == active_id)
+    return jsonify({"ok": True, "templates": templates})
+
+@app.route("/api/template/gallery/<template_id>/preview")
+def api_template_gallery_preview(template_id):
+    from pathlib import Path as _Path
+    import re
+    if not re.match(r'^[a-z0-9_]+$', template_id):
+        return "Not found", 404
+    svg_path = _Path(__file__).parent / "builtin_templates" / template_id / "preview.svg"
+    if not svg_path.exists():
+        return "Not found", 404
+    return send_file(str(svg_path), mimetype="image/svg+xml")
+
+@app.route("/api/template/gallery/<template_id>/use", methods=["POST"])
+@require_admin
+def api_template_gallery_use(template_id):
+    import json as _json, re
+    from pathlib import Path as _Path
+    if not re.match(r'^[a-z0-9_]+$', template_id):
+        return jsonify({"ok": False, "error": "Ungültige Template-ID"}), 400
+    gallery_dir = _Path(__file__).parent / "builtin_templates"
+    manifest_path = gallery_dir / template_id / "manifest.json"
+    if not manifest_path.exists():
+        return jsonify({"ok": False, "error": "Template nicht gefunden"}), 404
+    try:
+        m = _json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Manifest-Fehler: {e}"}), 500
+
+    # Generate the .xlsx
+    try:
+        from builtin_template_gen import generate_builtin_template
+        ok = generate_builtin_template(template_id, TEMPLATE_PATH)
+        if not ok:
+            return jsonify({"ok": False, "error": "Template konnte nicht generiert werden"}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    # Save mapping config
+    dm = m.get("default_mapping", {})
+    cfg = load_config()
+    cfg["template_column_mapping"] = dm.get("column_mapping", {})
+    cfg["template_cell_mapping"]   = dm.get("cell_mapping", {})
+    cfg["template_start_row"]      = dm.get("start_row")
+    cfg["template_sheet"]          = dm.get("sheet", "")
+    cfg["active_template"] = {
+        "source":      "builtin",
+        "template_id": template_id,
+        "name":        m["name"],
+    }
+    save_config(cfg)
+    _audit("template_gallery_use", f"id={template_id}", ip=request.remote_addr)
+    return jsonify({
+        "ok": True,
+        "active_template": cfg["active_template"],
+        "mapping": {
+            "column_mapping": cfg["template_column_mapping"],
+            "cell_mapping":   cfg["template_cell_mapping"],
+            "start_row":      cfg["template_start_row"],
+            "sheet":          cfg["template_sheet"],
+        }
+    })
 
 @app.route("/api/template/preview")
 def api_template_preview():

@@ -1,6 +1,7 @@
 {
-  "version": "1.9.3",
+  "version": "1.9.4",
   "changelog": [
+    "Vorlagen-Galerie mit 4 eingebauten Templates (Standard, Arbeitgeber, Minimal, Steuer)",
     "Automatische Template-Analyse mit Konfidenz-Score",
     "Zellmapping für Einzelzellen (Header/Footer-Bereich)",
     "Platzhalter-Erkennung ({{field_name}}) im Template",
