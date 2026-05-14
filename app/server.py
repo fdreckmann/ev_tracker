@@ -11,7 +11,7 @@ from meter_providers import read_meter as _read_meter_impl, MeterResult
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.9.6"
+APP_VERSION   = "1.9.7"
 
 CHANGELOG = [
     {"version":"1.9.3","changes":[
@@ -363,6 +363,26 @@ VEHICLE_SPECIFIC_KEYS = {
     "renault_username","renault_password","renault_locale","renault_account","renault_vin",
     "polestar_username","polestar_password","polestar_vin",
     "audi_username","audi_password","audi_vin",
+    # Stellantis
+    "stellantis_brand","stellantis_username","stellantis_password","stellantis_vin",
+    # Ford
+    "ford_username","ford_password","ford_vin",
+    # MG / SAIC
+    "mg_username","mg_password","mg_vin","mg_region",
+    # Toyota / Lexus
+    "toyota_username","toyota_password","toyota_vin","toyota_locale","toyota_region",
+    # Nissan
+    "nissan_username","nissan_password","nissan_vin","nissan_region",
+    # Porsche
+    "porsche_username","porsche_password","porsche_vin",
+    # JLR
+    "jlr_username","jlr_password","jlr_vin",
+    # XPeng (stub)
+    # BYD (stub)
+    # Aggregators
+    "tronity_client_id","tronity_client_secret","tronity_vehicle_id",
+    "enode_client_id","enode_client_secret","enode_user_id","enode_vehicle_id",
+    "smartcar_access_token","smartcar_vehicle_id",
 }
 
 def load_config():

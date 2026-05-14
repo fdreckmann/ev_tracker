@@ -22,6 +22,11 @@ class ProviderCapabilities:
     location:       bool = False   # Optional: Standort home/extern
     charge_type:    bool = False   # Optional: AC/DC direkt
     notes:          list = field(default_factory=list)  # Hinweise zur Einschränkung
+    official_api:    bool = False   # Offizielle Hersteller-API
+    requires_oauth:  bool = False   # Braucht OAuth2 (kein direktes Passwort-Login)
+    requires_password: bool = True  # Braucht Benutzername/Passwort
+    stability_level: str  = "medium"  # stable | medium | fragile
+    region_support:  str  = "unknown" # EU | US | global | unknown
 
 
 @dataclass
@@ -77,4 +82,9 @@ class BaseProvider:
             "location":       cap.location,
             "charge_type":    cap.charge_type,
             "notes":          cap.notes,
+            "official_api":    cap.official_api,
+            "requires_oauth":  cap.requires_oauth,
+            "requires_password": cap.requires_password,
+            "stability_level": cap.stability_level,
+            "region_support":  cap.region_support,
         }

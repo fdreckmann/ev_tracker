@@ -21,3 +21,15 @@ renault-api>=0.2.0
 
 # 2FA / TOTP Login
 pyotp>=2.9.0
+
+# Toyota / Lexus (optional — pip install mytoyota)
+# mytoyota>=0.10.0
+
+# Nissan Leaf/Ariya (optional — pip install nissan-connect-ev)
+# nissan-connect-ev>=0.1.0
+
+# Porsche Connect (optional — pip install pyporsche)
+# pyporsche>=0.0.7
+
+# JLR InControl (optional — pip install jlrpy)
+# jlrpy>=2.0.0
