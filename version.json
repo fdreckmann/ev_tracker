@@ -1,11 +1,9 @@
 {
-  "version": "1.9.1",
+  "version": "1.9.3",
   "changelog": [
-    "HTML-E-Mails mit neuem Design für Einladungen, Passwort-Reset und SMTP-Test",
-    "Admin-Dashboard in Benutzerverwaltung (Statistiken, Fehlversuche, Sperrungen)",
-    "Audit-Log: Benutzer-Spalte mit JOIN auf users-Tabelle, Limit-Auswahl",
-    "Admin-Benachrichtigung per E-Mail bei Konto-Sperrung",
-    "Rate-Limit für /forgot-password (max. 3 Anfragen/Stunde)",
-    "Passwort-Stärke-Check (client- und serverseitig: min. 8 Zeichen + Zahl)"
+    "Automatische Template-Analyse mit Konfidenz-Score",
+    "Zellmapping für Einzelzellen (Header/Footer-Bereich)",
+    "Platzhalter-Erkennung ({{field_name}}) im Template",
+    "Neuer Analyse-Button mit Vorschau und Übernahme-Funktion"
   ]
 }

@@ -9,9 +9,15 @@ from providers import get_provider, get_all_capabilities, get_config_fields, PRO
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.9.1"
+APP_VERSION   = "1.9.3"
 
 CHANGELOG = [
+    {"version":"1.9.3","changes":[
+        "Automatische Template-Analyse mit Konfidenz-Score",
+        "Zellmapping für Einzelzellen (Header/Footer-Bereich)",
+        "Platzhalter-Erkennung ({{field_name}}) im Template",
+        "Neuer Analyse-Button mit Vorschau und Übernahme-Funktion",
+    ]},
     {"version":"1.9.0","changes":[
         "Passwort-Reset per E-Mail (Token-basiert)",
         "Benutzer-Einladungen per E-Mail",
@@ -1763,17 +1769,37 @@ def api_sessions_sample():
     except Exception:
         return jsonify({})
 
+@app.route("/api/template/analyze")
+@require_login
+def api_template_analyze():
+    if not TEMPLATE_PATH.exists():
+        return jsonify({"ok": False, "error": "Kein Template hochgeladen"})
+    try:
+        from template_analyzer import analyze_template
+        result = analyze_template(TEMPLATE_PATH)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
 @app.route("/api/template/mapping", methods=["GET","POST"])
+@require_login
 def api_template_mapping():
     cfg = load_config()
     if request.method == "POST":
         body = request.get_json(force=True)
-        cfg["template_mapping"]   = body.get("mapping", {})
-        cfg["template_start_row"] = body.get("start_row")
+        # backward compat: "mapping" → column_mapping
+        cfg["template_column_mapping"] = body.get("column_mapping") or body.get("mapping") or {}
+        cfg["template_cell_mapping"]   = body.get("cell_mapping", {})
+        cfg["template_start_row"]      = body.get("start_row")
+        cfg["template_sheet"]          = body.get("sheet") or ""
         save_config(cfg)
         return jsonify({"ok": True})
-    return jsonify({"mapping": cfg.get("template_mapping", {}),
-                    "start_row": cfg.get("template_start_row")})
+    return jsonify({
+        "column_mapping": cfg.get("template_column_mapping") or cfg.get("template_mapping") or {},
+        "cell_mapping":   cfg.get("template_cell_mapping", {}),
+        "start_row":      cfg.get("template_start_row"),
+        "sheet":          cfg.get("template_sheet", ""),
+    })
 
 @app.route("/api/export")
 def api_export():
@@ -1784,10 +1810,12 @@ def api_export():
     override=json.loads(request.args.get("col_override","null") or "null")
     cfg = load_config()
     if override is None:
-        saved = cfg.get("template_mapping") or {}
+        saved = cfg.get("template_column_mapping") or cfg.get("template_mapping") or {}
         if saved:
             override = {k: v for k, v in saved.items() if v}
     start_row = cfg.get("template_start_row")
+    cell_mapping = cfg.get("template_cell_mapping") or {}
+    sheet        = cfg.get("template_sheet") or None
     header_info = {
         "fahrer":            cfg.get("template_fahrer", ""),
         "kennzeichen":       cfg.get("template_kennzeichen", ""),
@@ -1797,7 +1825,8 @@ def api_export():
         "meter_start_value": cfg.get("template_meter_start", 0.0),
     }
     try:
-        path = export(y, m, loc, col_override=override, start_row=start_row, header_info=header_info)
+        path = export(y, m, loc, col_override=override, start_row=start_row, header_info=header_info,
+                      cell_mapping=cell_mapping, sheet=sheet)
         return send_file(path, as_attachment=True)
     except Exception as e:
         log.exception("Export fehlgeschlagen")

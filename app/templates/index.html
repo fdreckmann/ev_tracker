@@ -1113,6 +1113,19 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       Klick ohne aktives Feld setzt die <strong style="color:#fff">Startzeile</strong>.
     </p>
 
+    <div id="analysisPanel" style="display:none;background:#1a2a1a;border:1px solid #2d4a2d;border-radius:8px;padding:14px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <span style="font-size:.78rem;font-weight:600;color:var(--acc)">🔍 Analyse-Ergebnis</span>
+        <div id="analysisConfidence" style="font-size:.72rem;font-family:var(--mono)"></div>
+      </div>
+      <div id="analysisWarnings" style="margin-bottom:8px"></div>
+      <div id="analysisSuggestions" style="font-size:.72rem;font-family:var(--mono);color:var(--mute)"></div>
+      <div style="margin-top:12px;display:flex;gap:8px">
+        <button class="btn-p" style="font-size:.75rem;padding:7px 16px" onclick="applyAnalysis()">✓ Vorschlag übernehmen</button>
+        <button class="btn-s" style="font-size:.75rem;padding:7px 16px" onclick="$('analysisPanel').style.display='none'">✕ Schließen</button>
+      </div>
+    </div>
+
     <div style="display:grid;grid-template-columns:1fr 320px;gap:18px;flex:1;min-height:0">
 
       <!-- LEFT: Excel grid -->
@@ -1157,6 +1170,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
     <div style="display:flex;gap:10px;align-items:center;margin-top:14px;flex-shrink:0;flex-wrap:wrap">
       <button class="btn-p" onclick="saveMappingModal()">💾 Speichern & schließen</button>
+      <button class="btn-s" onclick="runTemplateAnalysis()" id="analyzeBtn">🔍 Automatisch analysieren</button>
       <button class="btn-s" onclick="closeMappingModal()">Abbrechen</button>
       <div id="mappingModalInfo" style="font-size:.75rem;font-family:var(--mono);color:var(--mute)"></div>
     </div>
@@ -1824,9 +1838,11 @@ let _sampleSession = null;
 let _selectedStartRow = null;
 
 // ── Column mapper state ───────────────────────────────────────────────────────
-let _activeField = null;
-let _colMapping  = {};   // { colIndex(string): fieldId }
-let _isDragging  = false;
+let _activeField  = null;
+let _colMapping   = {};   // { colIndex(string): fieldId }
+let _isDragging   = false;
+let _lastAnalysis = null;
+let _cellMapping  = {};   // { "B4": "kennzeichen" }
 
 const FIELD_COLORS = {
   row_num:     '#64748b',
@@ -2165,15 +2181,23 @@ async function openMappingModal(){
   _selectedStartRow = saved.start_row || meta.auto_header || null;
 
   // Initialize _colMapping from saved mapping, falling back to auto-suggestions
-  _colMapping = {};
+  _colMapping  = {};
+  _cellMapping = {};
   _activeField = null;
-  if(saved.mapping && Object.keys(saved.mapping).length){
-    Object.entries(saved.mapping).forEach(([ci, field])=>{
+  const savedColMap = saved.column_mapping || saved.mapping || {};
+  if(savedColMap && Object.keys(savedColMap).length){
+    Object.entries(savedColMap).forEach(([ci, field])=>{
       if(field) _colMapping[String(ci)] = field;
     });
   } else if(meta.col_suggestions){
     Object.entries(meta.col_suggestions).forEach(([ci, sug])=>{
       if(sug?.mapped_to) _colMapping[String(ci)] = sug.mapped_to;
+    });
+  }
+  // Load cell mapping
+  if(saved.cell_mapping && Object.keys(saved.cell_mapping).length){
+    Object.entries(saved.cell_mapping).forEach(([addr, field])=>{
+      if(field) _cellMapping[addr] = typeof field === 'string' ? field : (field.field || field);
     });
   }
 
@@ -2196,12 +2220,18 @@ function closeMappingModal(){
 
 async function saveMappingModal(){
   // Read directly from _colMapping state (no dropdown scraping needed)
-  const mapping = Object.fromEntries(
+  const column_mapping = Object.fromEntries(
     Object.entries(_colMapping).filter(([,v])=>v)
   );
-  const r = await fetch('/api/template/mapping',{
+  const body = {
+    column_mapping,
+    cell_mapping: _cellMapping,
+    start_row: _selectedStartRow,
+    sheet: _lastAnalysis?.sheet || '',
+  };
+  const r = await apiFetch('/api/template/mapping',{
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({mapping, start_row: _selectedStartRow})
+    body: JSON.stringify(body)
   }).then(r=>r.json());
   if(r.ok){ toast('Template-Konfiguration gespeichert'); closeMappingModal(); }
   else {
@@ -2217,10 +2247,127 @@ async function loadMappingPreview(){
   ]);
   if(!meta.ok){ $('mappingSection').style.display='none'; return; }
   $('mappingSection').style.display='';
-  const mapped = Object.values(saved.mapping||{}).filter(v=>v).length;
-  $('mappingSaveInfo').textContent = mapped
-    ? `✓ ${mapped} Spalten zugewiesen · Startzeile: ${saved.start_row||'auto'}`
+  const colMap = saved.column_mapping || saved.mapping || {};
+  const mapped = Object.values(colMap).filter(v=>v).length;
+  const cellMapped = Object.keys(saved.cell_mapping||{}).length;
+  $('mappingSaveInfo').textContent = (mapped || cellMapped)
+    ? `✓ ${mapped} Spalten · ${cellMapped} Einzelzellen gemappt · Startzeile: ${saved.start_row||'auto'}`
     : '';
+}
+
+// ── Template Analysis ─────────────────────────────────────────────────────────
+async function runTemplateAnalysis(){
+  const btn = $('analyzeBtn');
+  btn.disabled = true; btn.textContent = '⏳ Analysiere…';
+  try {
+    const res = await apiFetch('/api/template/analyze').then(r=>r.json());
+    btn.disabled = false; btn.textContent = '🔍 Automatisch analysieren';
+    if(!res.ok){ toast('❌ ' + (res.error||'Analysefehler'), 'err'); return; }
+    _lastAnalysis = res;
+    showAnalysisPanel(res);
+  } catch(e){
+    btn.disabled = false; btn.textContent = '🔍 Automatisch analysieren';
+    toast('❌ Analysefehler: ' + e.message, 'err');
+  }
+}
+
+function showAnalysisPanel(a){
+  const panel = $('analysisPanel');
+  panel.style.display = 'block';
+
+  // Confidence bar
+  const pct = Math.round((a.confidence||0)*100);
+  const col = pct>=80?'var(--acc)':pct>=60?'#eab308':'var(--danger)';
+  $('analysisConfidence').innerHTML =
+    `<span style="color:${col};font-weight:600">${pct}% Konfidenz</span>` +
+    (a.sheet ? `<span style="color:var(--mute);margin-left:10px">Sheet: ${a.sheet}</span>` : '') +
+    (a.start_row ? `<span style="color:var(--mute);margin-left:10px">Startzeile: ${a.start_row}</span>` : '');
+
+  // Warnings
+  const warnings = a.warnings||[];
+  $('analysisWarnings').innerHTML = warnings.length
+    ? `<div style="color:#f59e0b;font-size:.72rem;font-family:var(--mono)">${warnings.map(w=>`⚠ ${w}`).join('<br>')}</div>`
+    : '';
+
+  // Suggestions summary
+  const colCount  = Object.keys(a.column_mapping||{}).length;
+  const cellCount = Object.keys(a.cell_mapping||{}).length;
+  const phCount   = (a.placeholders||[]).length;
+  $('analysisSuggestions').innerHTML =
+    `✓ ${colCount} Spalten erkannt &nbsp;·&nbsp; ${cellCount} Einzelzellen erkannt &nbsp;·&nbsp; ${phCount} Platzhalter`;
+
+  // Highlight cells in grid
+  highlightAnalysisCells(a);
+}
+
+function highlightAnalysisCells(a){
+  // Highlight column headers
+  Object.entries(a.column_mapping||{}).forEach(([col, info])=>{
+    const th = document.querySelector(`#excelGridHead th[data-col="${col}"]`);
+    if(th){
+      const field = info.field||info;
+      const color = FIELD_COLORS[field]||'#22c55e';
+      th.style.background = color + '33';
+      th.style.color = color;
+    }
+  });
+  // Highlight cell mapping cells
+  Object.entries(a.cell_mapping||{}).forEach(([addr, info])=>{
+    const col = addr.replace(/[0-9]/g,'');
+    const row = parseInt(addr.replace(/[A-Z]/gi,''));
+    const colIdx = col.split('').reduce((acc,c)=>acc*26+c.charCodeAt(0)-64,0);
+    const td = document.getElementById(`gc_${row}_${colIdx}`);
+    if(td){
+      td.style.outline = '2px solid #f59e0b';
+      td.title = `→ ${info.field||info} (${Math.round((info.confidence||0)*100)}%)`;
+    }
+  });
+  // Highlight placeholders
+  (a.placeholders||[]).forEach(ph=>{
+    const col = ph.cell.replace(/[0-9]/g,'');
+    const row = parseInt(ph.cell.replace(/[A-Z]/gi,''));
+    const colIdx = col.split('').reduce((acc,c)=>acc*26+c.charCodeAt(0)-64,0);
+    const td = document.getElementById(`gc_${row}_${colIdx}`);
+    if(td){
+      td.style.outline = '2px solid #a855f7';
+      td.title = `Platzhalter → ${ph.field}`;
+    }
+  });
+}
+
+function applyAnalysis(){
+  if(!_lastAnalysis) return;
+  const a = _lastAnalysis;
+  // Apply column mapping
+  if(a.column_mapping){
+    _colMapping = {};
+    Object.entries(a.column_mapping).forEach(([col, info])=>{
+      _colMapping[col] = info.field || info;
+    });
+    buildFieldPalette();
+    applyColumnColors();
+    updateLivePreview();
+  }
+  // Apply start_row
+  if(a.start_row){
+    _selectedStartRow = a.start_row;
+    highlightStartRow();
+    $('mappingStartInfo').textContent = `✓ Startzeile: Zeile ${a.start_row}`;
+  }
+  // Apply cell mapping
+  _cellMapping = {};
+  if(a.cell_mapping){
+    Object.entries(a.cell_mapping).forEach(([addr, info])=>{
+      _cellMapping[addr] = info.field || info;
+    });
+  }
+  // Apply placeholders into cell_mapping
+  (a.placeholders||[]).forEach(ph=>{
+    _cellMapping[ph.cell] = ph.field;
+  });
+  toast('✓ Analyse-Vorschlag übernommen');
+  $('analysisPanel').style.display = 'none';
+  updateLivePreview();
 }
 
 function getColOverride(){ return null; }
