@@ -484,6 +484,9 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
               <option value="alfen">Alfen Eve Single / Double</option>
               <option value="juice">Juice Charger Me³ / Pro</option>
             </optgroup>
+            <optgroup label="Generisch">
+              <option value="generic">Generischer HTTP-Endpunkt</option>
+            </optgroup>
           </select>
         </div>
         <div id="meterHaFields" style="display:none">
@@ -502,10 +505,70 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           <div class="fg full"><label>Alfen Web-Passwort</label>
             <input type="password" id="c_meter_alfen_pass" placeholder="admin"></div>
         </div>
+        <div id="meterShellyFields" style="display:none">
+          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr 1fr">
+            <div><label>Kanal</label><input type="number" id="c_meter_channel" placeholder="0" min="0" max="3"></div>
+            <div><label>Phase</label>
+              <select id="c_meter_phase_mode">
+                <option value="total">Gesamt</option>
+                <option value="a">Phase A / L1</option>
+                <option value="b">Phase B / L2</option>
+                <option value="c">Phase C / L3</option>
+              </select>
+            </div>
+            <div><label>Passwort (optional)</label><input type="password" id="c_meter_password_shelly" placeholder=""></div>
+          </div>
+        </div>
+        <div id="meterTasmotaFields" style="display:none">
+          <div class="fg full"><label>JSON-Pfad (optional)</label>
+            <input type="text" id="c_meter_json_path_tasmota" placeholder="StatusSNS.ENERGY.Total">
+            <span class="hint">Leer lassen für automatische Erkennung</span></div>
+        </div>
+        <div id="meterGenericFields" style="display:none">
+          <div class="fg full"><label>URL</label>
+            <input type="text" id="c_meter_generic_url" placeholder="http://192.168.1.100/api/energy"></div>
+          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr 1fr">
+            <div><label>JSON-Pfad</label><input type="text" id="c_meter_json_path_generic" placeholder="data.energy.total"></div>
+            <div><label>Einheit</label>
+              <select id="c_meter_value_unit">
+                <option value="kwh">kWh</option>
+                <option value="wh">Wh</option>
+                <option value="mwh">MWh</option>
+              </select>
+            </div>
+            <div><label>Faktor</label><input type="number" id="c_meter_value_factor" placeholder="1.0" step="0.001"></div>
+          </div>
+          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr">
+            <div><label>Benutzername (optional)</label><input type="text" id="c_meter_generic_user" placeholder=""></div>
+            <div><label>Passwort (optional)</label><input type="password" id="c_meter_generic_pass" placeholder=""></div>
+          </div>
+        </div>
+        <div id="meterAdvancedFields" style="display:none;margin-top:8px;padding:10px;background:rgba(0,0,0,.15);border-radius:8px">
+          <div style="font-size:.72rem;color:var(--mute);margin-bottom:8px">Erweiterte Optionen</div>
+          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr 1fr">
+            <div><label>Timeout (s)</label><input type="number" id="c_meter_timeout_seconds" placeholder="8" min="1" max="30"></div>
+            <div><label>Schema</label>
+              <select id="c_meter_device_scheme">
+                <option value="http">HTTP</option>
+                <option value="https">HTTPS</option>
+              </select>
+            </div>
+            <div><label>Port (optional)</label><input type="number" id="c_meter_device_port" placeholder=""></div>
+          </div>
+          <div style="margin-top:8px">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="c_meter_prefer_delta"> Zähler-Delta für kWh verwenden (statt SoC-Schätzung)
+            </label>
+          </div>
+        </div>
+        <div style="margin-top:6px">
+          <button class="btn-s" style="font-size:.72rem;padding:4px 10px" onclick="toggleMeterAdvanced()">⚙ Erweitert</button>
+        </div>
         <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
           <button class="btn-p" onclick="saveMeterSource()">💾 Speichern</button>
           <button class="btn-s" onclick="testMeterSource()">🔍 Verbindung testen</button>
           <span id="meterTestRes" style="font-size:.77rem;font-family:var(--mono)"></span>
+          <pre id="meterTestDebug" style="display:none;margin-top:8px;font-size:.68rem;font-family:var(--mono);color:var(--mute);background:rgba(0,0,0,.2);padding:8px;border-radius:6px;white-space:pre-wrap;max-height:200px;overflow-y:auto"></pre>
         </div>
       </div>
 
@@ -1781,6 +1844,18 @@ async function loadConfig(){
     if($('c_meter_evcc_lp'))    $('c_meter_evcc_lp').value    = c.meter_evcc_lp||0;
     if($('c_meter_alfen_pass')) $('c_meter_alfen_pass').value = c.meter_alfen_pass||'';
     updateMeterSourceUI();
+    if($('c_meter_channel'))        $('c_meter_channel').value       = c.meter_channel||0;
+    if($('c_meter_phase_mode'))     $('c_meter_phase_mode').value    = c.meter_phase_mode||'total';
+    if($('c_meter_json_path_tasmota')) $('c_meter_json_path_tasmota').value = c.meter_json_path||'';
+    if($('c_meter_json_path_generic'))  $('c_meter_json_path_generic').value = c.meter_json_path||'';
+    if($('c_meter_generic_url'))    $('c_meter_generic_url').value   = c.meter_generic_url||'';
+    if($('c_meter_value_unit'))     $('c_meter_value_unit').value    = c.meter_value_unit||'kwh';
+    if($('c_meter_value_factor'))   $('c_meter_value_factor').value  = c.meter_value_factor||1.0;
+    if($('c_meter_generic_user'))   $('c_meter_generic_user').value  = c.meter_username||'';
+    if($('c_meter_timeout_seconds')) $('c_meter_timeout_seconds').value = c.meter_timeout_seconds||8;
+    if($('c_meter_device_scheme'))  $('c_meter_device_scheme').value = c.meter_device_scheme||'http';
+    if($('c_meter_device_port'))    $('c_meter_device_port').value   = c.meter_device_port||'';
+    if($('c_meter_prefer_delta'))   $('c_meter_prefer_delta').checked = !!c.meter_prefer_meter_delta;
   }
   const m = {c_car:'car_name',c_notify:'notify_service',
              c_bat:'battery_capacity_kwh',
@@ -2581,36 +2656,61 @@ async function deleteTpl(){
   toast('Template entfernt'); refreshTplInfo();
 }
 
-const METER_IP_SOURCES = ['shelly','tasmota','go_e','openwb','warp','evcc','webasto','alfen','juice'];
+const METER_IP_SOURCES = ['shelly','tasmota','go_e','openwb','warp','evcc','webasto','alfen','juice','generic'];
 function updateMeterSourceUI(){
   const s=$('c_meter_source').value;
   $('meterHaFields').style.display    = s==='ha' ? '' : 'none';
   $('meterDeviceFields').style.display = METER_IP_SOURCES.includes(s) ? '' : 'none';
   $('meterEvccFields').style.display  = s==='evcc'  ? 'grid' : 'none';
   $('meterAlfenFields').style.display = s==='alfen' ? '' : 'none';
+  $('meterShellyFields').style.display  = s==='shelly'  ? '' : 'none';
+  $('meterTasmotaFields').style.display = s==='tasmota' ? '' : 'none';
+  $('meterGenericFields').style.display = s==='generic' ? '' : 'none';
+}
+function toggleMeterAdvanced(){
+  const el=$('meterAdvancedFields');
+  el.style.display = el.style.display==='none' ? '' : 'none';
 }
 async function saveMeterSource(){
   const g = id => { const el=$(id); return el ? el.value.trim() : ''; };
+  const gb = id => { const el=$(id); return el ? el.checked : false; };
   const cfg={
-    meter_source:     $('c_meter_source').value,
-    meter_sensor:     g('c_meter_sensor'),
-    meter_device_ip:  g('c_meter_device_ip'),
-    meter_evcc_port:  parseInt($('c_meter_evcc_port')?.value)||7070,
-    meter_evcc_lp:    parseInt($('c_meter_evcc_lp')?.value)||0,
-    meter_alfen_pass: g('c_meter_alfen_pass'),
+    meter_source:         $('c_meter_source').value,
+    meter_sensor:         g('c_meter_sensor'),
+    meter_device_ip:      g('c_meter_device_ip'),
+    meter_evcc_port:      parseInt($('c_meter_evcc_port')?.value)||7070,
+    meter_evcc_lp:        parseInt($('c_meter_evcc_lp')?.value)||0,
+    meter_alfen_pass:     g('c_meter_alfen_pass'),
+    meter_channel:        parseInt($('c_meter_channel')?.value)||0,
+    meter_phase_mode:     $('c_meter_phase_mode')?.value||'total',
+    meter_json_path:      g('c_meter_json_path_tasmota')||g('c_meter_json_path_generic'),
+    meter_generic_url:    g('c_meter_generic_url'),
+    meter_value_unit:     $('c_meter_value_unit')?.value||'kwh',
+    meter_value_factor:   parseFloat($('c_meter_value_factor')?.value)||1.0,
+    meter_username:       g('c_meter_generic_user'),
+    meter_password:       g('c_meter_password_shelly')||g('c_meter_generic_pass'),
+    meter_timeout_seconds: parseInt($('c_meter_timeout_seconds')?.value)||8,
+    meter_device_scheme:  $('c_meter_device_scheme')?.value||'http',
+    meter_device_port:    g('c_meter_device_port'),
+    meter_prefer_meter_delta: gb('c_meter_prefer_delta'),
   };
-  const r=await fetch('/api/config',{method:'POST',
+  const r=await apiFetch('/api/config',{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
   if(r.ok) toast('Zählerstand-Quelle gespeichert');
   else toast('Fehler beim Speichern','err');
 }
 async function testMeterSource(){
   const res=$('meterTestRes'); res.textContent='⏳ Teste…'; res.style.color='var(--mute)';
-  // save first
+  const dbg=$('meterTestDebug');
+  if(dbg) { dbg.textContent=''; dbg.style.display='none'; }
   await saveMeterSource();
-  const r=await fetch('/api/meter/test',{method:'POST'}).then(r=>r.json());
+  const r=await apiFetch('/api/meter/test',{method:'POST'}).then(r=>r.json());
   res.textContent=r.message;
   res.style.color=r.ok?'var(--acc)':'var(--danger)';
+  if(dbg && r.debug && r.debug.length){
+    dbg.textContent=r.debug.join('\n');
+    dbg.style.display='';
+  }
 }
 
 async function saveTplHeaderFields(){

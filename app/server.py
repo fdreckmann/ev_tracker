@@ -1,15 +1,17 @@
 import os, json, time, sqlite3, logging, threading, requests, hashlib, secrets, functools
+from typing import Optional
 import smtplib, email
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_file, make_response, session, redirect, url_for
 from providers import get_provider, get_all_capabilities, get_config_fields, PROVIDERS
+from meter_providers import read_meter as _read_meter_impl, MeterResult
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.9.5"
+APP_VERSION   = "1.9.6"
 
 CHANGELOG = [
     {"version":"1.9.3","changes":[
@@ -290,7 +292,22 @@ DEFAULT_CONFIG = {
     "meter_device_ip":   "",      # IP for all device-based sources
     "meter_evcc_port":   7070,    # EVCC port (default 7070)
     "meter_evcc_lp":     0,       # EVCC loadpoint index (0-based)
-    "meter_alfen_pass":  "admin", # Alfen web UI password
+    "meter_alfen_pass":  "admin", # Alfen web UI password (deprecated, use meter_password)
+    "meter_device_scheme": "http",  # http|https
+    "meter_device_port": "",        # optional port override
+    "meter_username":    "",        # username for auth (Shelly, Tasmota, Alfen, Generic)
+    "meter_password":    "",        # password for auth
+    "meter_channel":     0,         # Shelly channel/emeter index
+    "meter_phase_mode":  "total",   # Shelly: total|a|b|c
+    "meter_json_path":   "",        # Tasmota/Generic: dot-separated JSON path
+    "meter_value_unit":  "kwh",     # Generic: kwh|wh|mwh
+    "meter_value_factor": 1.0,      # Generic: multiply factor
+    "meter_generic_url": "",        # Generic HTTP: full URL
+    "meter_openwb_lp":   1,         # openWB loadpoint (1-based)
+    "meter_warp_meter_index": 0,    # WARP meter index
+    "meter_timeout_seconds": 8,     # request timeout
+    "meter_verify_ssl":  True,      # verify SSL certificate
+    "meter_prefer_meter_delta": False,  # use meter delta instead of SoC for kwh_charged
 
     # Auth — password + TOTP
     "auth_password_hash": "",
@@ -439,6 +456,9 @@ def init_db():
         ("price_per_kwh","REAL"),
         ("entsoe_spot",  "REAL"),
         ("provider",     "TEXT DEFAULT 'ha'"),
+        ("kwh_source",      "TEXT DEFAULT 'soc'"),
+        ("meter_delta_kwh", "REAL"),
+        ("meter_error",     "TEXT"),
     ]:
         try:
             con.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
@@ -597,105 +617,14 @@ _vehicle_stops:  dict[str, threading.Event] = {"v0": threading.Event()}
 _state = _vehicle_states["v0"]
 _stop  = _vehicle_stops["v0"]
 
-def read_meter_value():
+def read_meter_value() -> Optional[float]:
+    """Read current meter value. Returns kWh or None."""
     cfg = load_config()
-    source = cfg.get("meter_source", "none")
-    ip  = cfg.get("meter_device_ip", "").strip()
-    try:
-        # ── Smart plugs / energy monitors ────────────────────────────────────
-        if source == "ha":
-            entity = cfg.get("meter_sensor", "").strip()
-            if not entity: return None
-            url = cfg.get("ha_url","").rstrip("/") + f"/api/states/{entity}"
-            r = requests.get(url, headers={"Authorization": f"Bearer {cfg.get('ha_token','')}"},
-                             timeout=5)
-            return float(r.json()["state"])
-
-        elif source == "shelly":
-            if not ip: return None
-            for endpoint in ("/emeter/0", "/meter/0"):
-                try:
-                    data = requests.get(f"http://{ip}{endpoint}", timeout=5).json()
-                    if "total" in data:
-                        return round(data["total"] / 1000, 3)  # Wh → kWh
-                except Exception: pass
-
-        elif source == "tasmota":
-            if not ip: return None
-            r = requests.get(f"http://{ip}/cm?cmnd=Status%208", timeout=5)
-            return float(r.json()["StatusSNS"]["ENERGY"]["Total"])
-
-        # ── Wallboxen ─────────────────────────────────────────────────────────
-        elif source == "go_e":
-            if not ip: return None
-            # Try v2 API, then v1 (auto-detect firmware)
-            for path in ("/api/status", "/status"):
-                try:
-                    data = requests.get(f"http://{ip}{path}", timeout=5).json()
-                    if "eto" in data:
-                        return round(data["eto"] / 10000, 3)  # 0.1 Wh → kWh
-                except Exception: pass
-
-        elif source == "openwb":
-            if not ip: return None
-            # openWB v1/v2 ramdisk endpoint (LP1); try per-LP paths
-            for path in ("/openWB/ramdisk/llkwh",
-                         "/openWB/ramdisk/lp/1/llkwh",
-                         "/openWB/ramdisk/evsoc"):
-                try:
-                    r = requests.get(f"http://{ip}{path}", timeout=5)
-                    if r.ok:
-                        return round(float(r.text.strip()), 3)
-                except Exception: pass
-
-        elif source == "warp":
-            if not ip: return None
-            # WARP Charger 1/2/3 (Tinkerforge) — /meter/state
-            data = requests.get(f"http://{ip}/meter/state", timeout=5).json()
-            return round(float(data["energy_abs"]), 3)  # kWh
-
-        elif source == "evcc":
-            # EVCC covers: KEBA, ABL, Mennekes, Heidelberg, Wallbe, Alfen,
-            # ABB Terra, Webasto, NRGKick, Fronius Wattpilot, Easee + ~100 more
-            if not ip: return None
-            port = int(cfg.get("meter_evcc_port") or 7070)
-            data = requests.get(f"http://{ip}:{port}/api/state", timeout=5).json()
-            result = data.get("result", data)
-            lps = result.get("loadpoints", [])
-            lp_idx = int(cfg.get("meter_evcc_lp", 0))
-            if lps and lp_idx < len(lps):
-                lp = lps[lp_idx]
-                # chargeTotalImport in kWh (EVCC ≥ 0.12x)
-                v = lp.get("chargeTotalImport") or (lp.get("chargedEnergy", 0) / 1000)
-                return round(float(v), 3)
-
-        elif source == "webasto":
-            if not ip: return None
-            # Webasto Next / Live — local REST (firmware ≥ 1.8)
-            data = requests.get(f"http://{ip}/api/1/status", timeout=5).json()
-            # totalEnergy in Wh
-            v = data.get("totalEnergy") or data.get("MeterReading", 0)
-            return round(float(v) / 1000, 3)
-
-        elif source == "alfen":
-            if not ip: return None
-            # Alfen Eve Single / Double — Modbus-JSON proxy via local web UI
-            r = requests.get(f"http://{ip}/api", timeout=5,
-                             auth=("admin", cfg.get("meter_alfen_pass","admin")))
-            data = r.json()
-            # prop ID 21 = Meter Reading kWh
-            for prop in data.get("data", []):
-                if prop.get("id") == "3EA00020" or "Total" in str(prop.get("description","")):
-                    return round(float(prop.get("value", 0)), 3)
-
-        elif source == "juice":
-            if not ip: return None
-            # Juice Charger Me³ / Pro — local HTTP API
-            data = requests.get(f"http://{ip}/api/1.0.0/details", timeout=5).json()
-            return round(float(data.get("meter_total_kwh", data.get("totalEnergy", 0))), 3)
-
-    except Exception as e:
-        log.warning("Meter read error (%s): %s", source, e)
+    result = _read_meter_impl(cfg)
+    if result.ok:
+        return result.value
+    if result.error:
+        log.warning("Meter read error (%s): %s", result.source, result.error)
     return None
 
 def tracker_loop(vehicle_id: str = "v0"):
@@ -748,7 +677,8 @@ def tracker_loop(vehicle_id: str = "v0"):
 
             if charging and not session_active:
                 soc_start = soc; odo_start = odo; peak_power = power_kw or 0
-                meter_start_val = read_meter_value()
+                _meter_start_res = _read_meter_impl(cfg)
+                meter_start_val = _meter_start_res.value
                 spot = fetch_entsoe_spot(cfg.get("entsoe_api_key","")) if location=="extern" else None
                 st["entsoe_spot"] = spot
                 price_kwh = (cfg["price_per_kwh_home"] if location=="home"
@@ -795,14 +725,29 @@ def tracker_loop(vehicle_id: str = "v0"):
                     kwh  = round(max(0.0,soc-soc_start)/100.0*vcfg["battery_capacity_kwh"],2)
                     if not cost_manual:
                         cost = round(kwh*(db_price or cfg["price_per_kwh_home"]),2)
-                meter_end_val = read_meter_value()
+                _meter_end_res = _read_meter_impl(cfg)
+                meter_end_val = _meter_end_res.value
+                prefer_delta = cfg.get("meter_prefer_meter_delta", False)
+                kwh_source = "soc"
+                if (prefer_delta and meter_start_val is not None and meter_end_val is not None
+                        and meter_end_val >= meter_start_val):
+                    meter_delta = round(meter_end_val - meter_start_val, 3)
+                    # plausibility: max 250 kWh per session
+                    if 0 < meter_delta <= 250:
+                        kwh = meter_delta
+                        if not cost_manual:
+                            cost = round(kwh * (db_price or cfg["price_per_kwh_home"]), 2)
+                        kwh_source = "meter"
                 cur.execute("""UPDATE sessions
                     SET end_ts=?,odo_end=?,soc_end=?,kwh_charged=?,
                     cost_eur=CASE WHEN cost_manual=1 THEN cost_eur ELSE ? END,
-                    max_power_kw=?,meter_new=?
+                    max_power_kw=?,meter_new=?,kwh_source=?,
+                    meter_delta_kwh=CASE WHEN ? IS NOT NULL AND ? IS NOT NULL THEN ?-? ELSE NULL END
                     WHERE id=?""",
                     (datetime.now().isoformat(timespec="seconds"),odo,soc,kwh,cost,peak_power,
-                     meter_end_val,session_id))
+                     meter_end_val,kwh_source,
+                     meter_start_val, meter_end_val, meter_end_val, meter_start_val,
+                     session_id))
                 con.commit(); session_active=False
                 st.update(session_active=False,session_id=None)
                 log.info("✅ [%s] Session #%d | %.2f kWh | %.2f €",vehicle_id,session_id,kwh or 0,cost or 0)
@@ -1605,10 +1550,23 @@ def api_test():
 
 @app.route("/api/meter/test", methods=["POST"])
 def api_meter_test():
-    val = read_meter_value()
-    if val is not None:
-        return jsonify({"ok": True, "value": val, "message": f"✅ Zählerstand: {val:.3f} kWh"})
-    return jsonify({"ok": False, "message": "❌ Kein Wert erhalten — Quelle prüfen"})
+    # Accept override params from request body (without persisting)
+    body = request.get_json(silent=True) or {}
+    cfg = load_config()
+    # Override config with test params (never log passwords)
+    for k, v in body.items():
+        if k.startswith("meter_") or k in ("ha_url", "ha_token"):
+            cfg[k] = v
+    result = _read_meter_impl(cfg)
+    msg = (f"✅ Zählerstand: {result.value:.3f} kWh" if result.ok
+           else f"❌ {result.error or 'Kein Wert erhalten'}")
+    return jsonify({
+        "ok": result.ok,
+        "value": result.value,
+        "message": msg,
+        "source": result.source,
+        "debug": result.debug,
+    })
 
 @app.route("/api/entsoe/test", methods=["POST"])
 def api_entsoe_test():
