@@ -8,6 +8,12 @@ from .vw_provider import VWProvider
 from .tesla_provider import TeslaProvider
 from .other_providers import VolvoProvider, BMWProvider, MercedesProvider
 from .new_providers import HyundaiKiaProvider, RenaultProvider, PolestarProvider, AudiProvider
+from .extended_providers import (
+    StellantisProvider, FordProvider, MGSAICProvider,
+    ToyotaLexusProvider, NissanProvider, PorscheProvider,
+    JLRProvider, XPengProvider, BYDProvider,
+    TronityProvider, EnodeProvider, SmartcarProvider,
+)
 
 # Alle verfügbaren Provider
 PROVIDERS: dict[str, type[BaseProvider]] = {
@@ -21,6 +27,18 @@ PROVIDERS: dict[str, type[BaseProvider]] = {
     "renault":     RenaultProvider,
     "polestar":    PolestarProvider,
     "audi":        AudiProvider,
+    "stellantis": StellantisProvider,
+    "ford":       FordProvider,
+    "mg_saic":    MGSAICProvider,
+    "toyota":     ToyotaLexusProvider,
+    "nissan":     NissanProvider,
+    "porsche":    PorscheProvider,
+    "jlr":        JLRProvider,
+    "xpeng":      XPengProvider,
+    "byd":        BYDProvider,
+    "tronity":    TronityProvider,
+    "enode":      EnodeProvider,
+    "smartcar":   SmartcarProvider,
 }
 
 

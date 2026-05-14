@@ -1,6 +1,18 @@
 {
-  "version": "1.9.6",
+  "version": "1.9.7",
   "changelog": [
+    {
+      "version": "1.9.7",
+      "date": "2026-05-14",
+      "changes": [
+        "12 neue Fahrzeug-Provider: Stellantis (Peugeot/Opel/Citroën/DS/Fiat/Jeep), Ford (FordPass Connect), MG/SAIC (iSMART), Toyota/Lexus (MyT), Nissan (Ariya/Leaf), Porsche (Connect), JLR (Jaguar/Land Rover InControl)",
+        "Stub-Provider für XPeng und BYD (keine stabile direkte API verfügbar)",
+        "3 Aggregator-Provider: TRONITY (90+ Marken), Enode (50+ Marken), Smartcar (30+ Marken)",
+        "ProviderCapabilities: neue Felder official_api, requires_oauth, requires_password, stability_level, region_support",
+        "VEHICLE_SPECIFIC_KEYS: alle neuen Provider-Konfigurationsschlüssel hinzugefügt",
+        "requirements.txt: optionale Abhängigkeiten für Toyota, Nissan, Porsche, JLR als Kommentare"
+      ]
+    },
     {
       "version": "1.9.6",
       "date": "2026-05-14",
