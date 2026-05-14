@@ -1,11 +1,22 @@
 {
-  "version": "1.9.5",
+  "version": "1.9.6",
   "changelog": [
-    "Unterschriftenfunktion: Hochladen, Zeichnen, Excel-Export",
-    "Vorlagen-Galerie mit 4 eingebauten Templates (Standard, Arbeitgeber, Minimal, Steuer)",
-    "Automatische Template-Analyse mit Konfidenz-Score",
-    "Zellmapping für Einzelzellen (Header/Footer-Bereich)",
-    "Platzhalter-Erkennung ({{field_name}}) im Template",
-    "Neuer Analyse-Button mit Vorschau und Übernahme-Funktion"
+    {
+      "version": "1.9.6",
+      "date": "2026-05-14",
+      "changes": [
+        "Modular meter provider system (app/meter_providers.py)",
+        "Shelly Gen2/Plus/Pro RPC API support (switch:0.aenergy.total, em:0.total_act_energy)",
+        "Shelly: configurable channel and phase mode (A/B/C/total)",
+        "Tasmota: configurable JSON path, multiple endpoint fallback",
+        "New: Generic HTTP meter provider with JSON path, unit, and factor",
+        "openWB: configurable loadpoint index",
+        "WARP: configurable meter index for WARP 3",
+        "All providers: auth (username/password), timeout, SSL verify options",
+        "/api/meter/test: rich debug output, accepts body params for live testing",
+        "Session: optional meter-delta-based kWh calculation (meter_prefer_meter_delta)",
+        "DB: new columns kwh_source, meter_delta_kwh, meter_error"
+      ]
+    }
   ]
 }
