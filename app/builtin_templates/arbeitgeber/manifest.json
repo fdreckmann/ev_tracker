@@ -8,6 +8,7 @@
     "sheet": "Ladeprotokoll",
     "start_row": 8,
     "column_mapping": {"1":"row_num","2":"date","3":"start_time","4":"end_time","5":"kwh_charged","6":"meter_old","7":"meter_new","8":"cost_eur","9":"charger_type"},
-    "cell_mapping": {"B2":"fahrer","D2":"kennzeichen","B3":"kostenstelle","D3":"month_year","B4":"abteilung"}
+    "cell_mapping": {"B2":"fahrer","D2":"kennzeichen","B3":"kostenstelle","D3":"month_year","B4":"abteilung"},
+    "signature_mapping": {"cell": "D35", "width": 220, "height": 60, "offset_x": 0, "offset_y": 0}
   }
 }

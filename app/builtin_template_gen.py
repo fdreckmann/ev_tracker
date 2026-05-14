@@ -85,6 +85,16 @@ def generate_arbeitgeber(path: Path):
             cell = ws.cell(row=r, column=c)
             cell.fill   = PatternFill("solid", start_color=bg)
             cell.border = _BRD
+    # Signature area (row after data rows)
+    _lbl(ws, 32, 1, "Ort, Datum:", bold=True)
+    _lbl(ws, 32, 4, "Unterschrift Fahrer:", bold=True)
+    # Empty bordered area for signature
+    for r in range(33, 36):
+        for c in [1, 2, 3, 4, 5, 6]:
+            cell = ws.cell(row=r, column=c)
+            cell.border = _BRD
+    ws.cell(row=35, column=4).value = "{{signature}}"
+    ws.cell(row=35, column=4).font = Font(name="Arial", size=8, color="AAAAAA", italic=True)
     wb.save(path)
 
 def generate_minimal(path: Path):
@@ -133,6 +143,15 @@ def generate_steuer(path: Path):
             cell = ws.cell(row=r, column=c)
             cell.fill   = PatternFill("solid", start_color=bg)
             cell.border = _BRD
+    # Signature area
+    _lbl(ws, 32, 1, "Ort, Datum:", bold=True)
+    _lbl(ws, 32, 5, "Unterschrift:", bold=True)
+    for r in range(33, 36):
+        for c in [1, 2, 3, 4, 5, 6, 7, 8]:
+            cell = ws.cell(row=r, column=c)
+            cell.border = _BRD
+    ws.cell(row=35, column=5).value = "{{signature}}"
+    ws.cell(row=35, column=5).font = Font(name="Arial", size=8, color="AAAAAA", italic=True)
     wb.save(path)
 
 _GENERATORS = {

@@ -1,6 +1,7 @@
 {
-  "version": "1.9.4",
+  "version": "1.9.5",
   "changelog": [
+    "Unterschriftenfunktion: Hochladen, Zeichnen, Excel-Export",
     "Vorlagen-Galerie mit 4 eingebauten Templates (Standard, Arbeitgeber, Minimal, Steuer)",
     "Automatische Template-Analyse mit Konfidenz-Score",
     "Zellmapping für Einzelzellen (Header/Footer-Bereich)",

@@ -260,7 +260,8 @@ def compute_header_values(sessions, year, month, header_info=None):
 
 # ── Template-based export ─────────────────────────────────────────────────────
 def export_with_template(year, month, sessions, location, col_override=None, start_row=None, header_info=None,
-                          cell_mapping=None, sheet=None):
+                          cell_mapping=None, sheet=None,
+                          include_signature=False, signature_path=None, signature_mapping=None):
     if header_info is None:
         header_info = {}
     if cell_mapping is None:
@@ -386,6 +387,16 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
                     continue
                 val = cell.value
                 if isinstance(val, str) and '{{' in val:
+                    # Handle {{signature}} placeholder specially
+                    if '{{signature}}' in val:
+                        if not include_signature:
+                            # Clear placeholder when signature not included
+                            try:
+                                cell.value = val.replace('{{signature}}', '')
+                            except Exception:
+                                pass
+                        # If include_signature=True, leave for signature insertion code below
+                        continue
                     def _replace_ph(m, _hv=hv):
                         field = m.group(1)
                         v = _hv.get(field)
@@ -432,6 +443,45 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
                 safe_set(cell, value)
             except Exception:
                 pass
+
+    # ── Signature insertion ──────────────────────────────────────────────────
+    if include_signature and signature_path and signature_mapping:
+        try:
+            from openpyxl.drawing.image import Image as XLImage
+            sig_cell = signature_mapping.get("cell")
+            # Check for {{signature}} placeholder — find cell with that text
+            if not sig_cell:
+                for row in ws.iter_rows():
+                    for cell in row:
+                        if cell.value and "{{signature}}" in str(cell.value):
+                            from openpyxl.utils import get_column_letter as _gcl
+                            sig_cell = f"{_gcl(cell.column)}{cell.row}"
+                            cell.value = None  # clear placeholder
+                            break
+                    if sig_cell:
+                        break
+            if sig_cell:
+                img = XLImage(signature_path)
+                sig_w = int(signature_mapping.get("width", 220))
+                sig_h = int(signature_mapping.get("height", 80))
+                # keep aspect ratio if requested
+                if signature_mapping.get("keep_aspect_ratio", True):
+                    try:
+                        from PIL import Image as _PILImage
+                        with _PILImage.open(signature_path) as _pimg:
+                            iw, ih = _pimg.size
+                        if iw > 0 and ih > 0:
+                            ratio = min(sig_w / iw, sig_h / ih)
+                            sig_w = int(iw * ratio)
+                            sig_h = int(ih * ratio)
+                    except Exception:
+                        pass
+                img.width  = sig_w
+                img.height = sig_h
+                ws.add_image(img, sig_cell)
+        except Exception as e:
+            print(f"Signatur-Einfügung fehlgeschlagen: {e}")
+    # ── End signature ────────────────────────────────────────────────────────
 
     wb.save(out)
     print(f"✅ Template-Export: {out} ({len(sessions)} Sessions)")
@@ -548,11 +598,15 @@ def export_builtin(year, month, sessions, location):
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 def export(year, month, location="all", col_override=None, start_row=None, header_info=None,
-           cell_mapping=None, sheet=None):
+           cell_mapping=None, sheet=None,
+           include_signature=False, signature_path=None, signature_mapping=None):
     sessions = fetch_sessions(year, month, location)
     if TEMPLATE_PATH.exists():
         return export_with_template(year, month, sessions, location, col_override, start_row, header_info,
-                                    cell_mapping, sheet)
+                                    cell_mapping, sheet,
+                                    include_signature=include_signature,
+                                    signature_path=signature_path,
+                                    signature_mapping=signature_mapping)
     return export_builtin(year, month, sessions, location)
 
 if __name__ == "__main__":
