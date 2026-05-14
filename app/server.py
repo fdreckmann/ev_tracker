@@ -9,7 +9,7 @@ from providers import get_provider, get_all_capabilities, get_config_fields, PRO
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.9.4"
+APP_VERSION   = "1.9.5"
 
 CHANGELOG = [
     {"version":"1.9.3","changes":[
@@ -121,6 +121,8 @@ DB_PATH       = DATA_DIR / "sessions.db"
 EXPORT_DIR    = DATA_DIR / "exports"
 TEMPLATE_PATH = DATA_DIR / "template.xlsx"
 BACKUP_DIR    = DATA_DIR / "backups"
+SIGNATURE_DIR  = DATA_DIR / "signatures"
+SIGNATURE_PATH = SIGNATURE_DIR / "default_signature.png"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
@@ -319,6 +321,11 @@ DEFAULT_CONFIG = {
 
     # Export templates (stored as list in config)
     "export_templates": [],  # [{id, name, mapping, start_row, is_default}]
+
+    # Signature
+    "signature":        {"source": None, "created_at": None},
+    "signature_mapping": {},          # {"cell":"B42","width":220,"height":80,"offset_x":0,"offset_y":0}
+    "export_include_signature": False,
 
     # Multi-vehicle: additional vehicles beyond the primary (v0)
     "extra_vehicles":    [],
@@ -1640,9 +1647,10 @@ def api_template_info():
             "exists": True,
             "size": TEMPLATE_PATH.stat().st_size,
             "modified": datetime.fromtimestamp(TEMPLATE_PATH.stat().st_mtime).isoformat(timespec="seconds"),
-            "active_template": cfg.get("active_template") or {}
+            "active_template": cfg.get("active_template") or {},
+            "has_signature": SIGNATURE_PATH.exists(),
         })
-    return jsonify({"exists": False, "active_template": cfg.get("active_template") or {}})
+    return jsonify({"exists": False, "active_template": cfg.get("active_template") or {}, "has_signature": SIGNATURE_PATH.exists()})
 
 @app.route("/api/template/gallery")
 @require_login
@@ -1718,6 +1726,7 @@ def api_template_gallery_use(template_id):
     cfg["template_cell_mapping"]   = dm.get("cell_mapping", {})
     cfg["template_start_row"]      = dm.get("start_row")
     cfg["template_sheet"]          = dm.get("sheet", "")
+    cfg["signature_mapping"]       = dm.get("signature_mapping", {})
     cfg["active_template"] = {
         "source":      "builtin",
         "template_id": template_id,
@@ -1897,14 +1906,105 @@ def api_template_mapping():
         cfg["template_cell_mapping"]   = body.get("cell_mapping", {})
         cfg["template_start_row"]      = body.get("start_row")
         cfg["template_sheet"]          = body.get("sheet") or ""
+        cfg["signature_mapping"]       = body.get("signature_mapping") or {}
         save_config(cfg)
         return jsonify({"ok": True})
     return jsonify({
-        "column_mapping": cfg.get("template_column_mapping") or cfg.get("template_mapping") or {},
-        "cell_mapping":   cfg.get("template_cell_mapping", {}),
-        "start_row":      cfg.get("template_start_row"),
-        "sheet":          cfg.get("template_sheet", ""),
+        "column_mapping":  cfg.get("template_column_mapping") or cfg.get("template_mapping") or {},
+        "cell_mapping":    cfg.get("template_cell_mapping", {}),
+        "start_row":       cfg.get("template_start_row"),
+        "sheet":           cfg.get("template_sheet", ""),
+        "signature_mapping": cfg.get("signature_mapping") or {},
     })
+
+
+# ── Signature routes ──────────────────────────────────────────────────────────
+
+@app.route("/api/signature")
+@require_login
+def api_signature_info():
+    cfg = load_config()
+    sig = cfg.get("signature") or {}
+    exists = SIGNATURE_PATH.exists()
+    return jsonify({
+        "ok": True,
+        "has_signature": exists,
+        "signature_url": "/api/signature/image" if exists else None,
+        "source": sig.get("source"),
+        "created_at": sig.get("created_at"),
+    })
+
+
+@app.route("/api/signature/image")
+@require_login
+def api_signature_image():
+    if not SIGNATURE_PATH.exists():
+        return jsonify({"error": "Keine Unterschrift"}), 404
+    return send_file(str(SIGNATURE_PATH), mimetype="image/png")
+
+
+@app.route("/api/signature/upload", methods=["POST"])
+@require_login
+def api_signature_upload():
+    if "file" not in request.files:
+        return jsonify({"ok": False, "error": "Keine Datei"}), 400
+    f = request.files["file"]
+    ext = (f.filename or "").rsplit(".", 1)[-1].lower()
+    if ext not in ("png", "jpg", "jpeg", "webp"):
+        return jsonify({"ok": False, "error": "Nur PNG, JPG oder WebP erlaubt"}), 400
+    data = f.read()
+    if len(data) > 2 * 1024 * 1024:
+        return jsonify({"ok": False, "error": "Datei zu groß (max 2 MB)"}), 400
+    try:
+        from PIL import Image as _PILImage
+        import io as _io
+        img = _PILImage.open(_io.BytesIO(data))
+        img = img.convert("RGBA")
+        SIGNATURE_DIR.mkdir(parents=True, exist_ok=True)
+        img.save(str(SIGNATURE_PATH), "PNG")
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Bildverarbeitung fehlgeschlagen: {e}"}), 500
+    cfg = load_config()
+    cfg["signature"] = {"source": "upload", "created_at": datetime.utcnow().isoformat()}
+    save_config(cfg)
+    _audit("signature_upload", ip=request.remote_addr)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/signature/draw", methods=["POST"])
+@require_login
+def api_signature_draw():
+    import base64 as _b64, io as _io
+    body = request.get_json(force=True) or {}
+    image_data = body.get("image_data", "")
+    if not image_data or "base64," not in image_data:
+        return jsonify({"ok": False, "error": "Ungültige Bilddaten"}), 400
+    try:
+        raw = _b64.b64decode(image_data.split("base64,", 1)[1])
+        from PIL import Image as _PILImage
+        img = _PILImage.open(_io.BytesIO(raw))
+        img = img.convert("RGBA")
+        SIGNATURE_DIR.mkdir(parents=True, exist_ok=True)
+        img.save(str(SIGNATURE_PATH), "PNG")
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Fehler beim Speichern: {e}"}), 500
+    cfg = load_config()
+    cfg["signature"] = {"source": "draw", "created_at": datetime.utcnow().isoformat()}
+    save_config(cfg)
+    _audit("signature_draw", ip=request.remote_addr)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/signature", methods=["DELETE"])
+@require_login
+def api_signature_delete():
+    if SIGNATURE_PATH.exists():
+        SIGNATURE_PATH.unlink()
+    cfg = load_config()
+    cfg["signature"] = {"source": None, "created_at": None}
+    save_config(cfg)
+    _audit("signature_delete", ip=request.remote_addr)
+    return jsonify({"ok": True})
 
 @app.route("/api/export")
 def api_export():
@@ -1929,9 +2029,18 @@ def api_export():
         "price_per_kwh":     cfg.get("price_per_kwh_home", 0.30),
         "meter_start_value": cfg.get("template_meter_start", 0.0),
     }
+    include_sig_param = request.args.get("include_signature")
+    if include_sig_param is not None:
+        include_signature = include_sig_param.lower() == "true"
+    else:
+        include_signature = bool(cfg.get("export_include_signature", False))
+    sig_mapping = cfg.get("signature_mapping") or {}
     try:
         path = export(y, m, loc, col_override=override, start_row=start_row, header_info=header_info,
-                      cell_mapping=cell_mapping, sheet=sheet)
+                      cell_mapping=cell_mapping, sheet=sheet,
+                      include_signature=include_signature,
+                      signature_path=str(SIGNATURE_PATH) if SIGNATURE_PATH.exists() else None,
+                      signature_mapping=sig_mapping)
         return send_file(path, as_attachment=True)
     except Exception as e:
         log.exception("Export fehlgeschlagen")

@@ -18,6 +18,13 @@ from template_fields import TABLE_FIELDS, HEADER_FIELDS
 MAX_ROWS = 80
 MAX_COLS = 40
 
+_SIGNATURE_KEYWORDS = [
+    "unterschrift", "signatur", "signature",
+    "unterschrift fahrer", "unterschrift mitarbeiter",
+    "ort datum unterschrift", "bestätigung", "genehmigt",
+    "freigabe", "gezeichnet", "unterzeichner",
+]
+
 
 def _cell_addr(row, col):
     """Convert (row, col) to Excel address like 'B4'."""
@@ -340,7 +347,73 @@ def analyze_template(path: Path) -> dict:
                             "reason": f"Label '{str(val).strip()}' in {label_addr}",
                         }
 
-        # ── Step 5: Overall confidence ───────────────────────────────────────
+        # ── Step 5: Signature field detection ────────────────────────────────
+        # Build merged_skip set for signature detection
+        merged_skip = set()
+        for mr in ws.merged_cells.ranges:
+            for r2 in range(mr.min_row, mr.max_row + 1):
+                for c2 in range(mr.min_col, mr.max_col + 1):
+                    if r2 != mr.min_row or c2 != mr.min_col:
+                        merged_skip.add((r2, c2))
+
+        max_row = ws.max_row or MAX_ROWS
+        max_col = ws.max_column or MAX_COLS
+
+        signature_suggestion = None
+        sig_confidence = 0.0
+        for ri in range(1, min(max_row + 1, 81)):
+            for ci in range(1, min(max_col + 1, 41)):
+                if (ri, ci) in merged_skip:
+                    continue
+                try:
+                    cell = ws.cell(row=ri, column=ci)
+                except Exception:
+                    continue
+                if not cell.value:
+                    continue
+                txt = str(cell.value).lower().strip()
+                # Check for {{signature}} placeholder
+                if "{{signature}}" in txt:
+                    addr = _cell_addr(ri, ci)
+                    signature_suggestion = {
+                        "cell": addr,
+                        "width": 220, "height": 80,
+                        "offset_x": 0, "offset_y": 0,
+                        "confidence": 1.0,
+                        "reason": f"Platzhalter {{{{signature}}}} in {addr}",
+                    }
+                    sig_confidence = 1.0
+                    break
+                # Check against keywords
+                matched = any(kw in txt for kw in _SIGNATURE_KEYWORDS)
+                if matched:
+                    conf = 0.95 if any(kw == txt.rstrip(':').strip() for kw in _SIGNATURE_KEYWORDS) else 0.8
+                    # Find target cell: prefer right neighbor, then below
+                    target_addr = None
+                    # Check right (ci+1)
+                    if ci + 1 <= max_col:
+                        r_cell = ws.cell(row=ri, column=ci + 1)
+                        if (ri, ci + 1) not in merged_skip and (not r_cell.value or r_cell.value == ""):
+                            target_addr = _cell_addr(ri, ci + 1)
+                    # Check below (ri+1) if no right target
+                    if not target_addr and ri + 1 <= max_row:
+                        b_cell = ws.cell(row=ri + 1, column=ci)
+                        if (ri + 1, ci) not in merged_skip and (not b_cell.value or b_cell.value == ""):
+                            target_addr = _cell_addr(ri + 1, ci)
+                    if target_addr and conf > sig_confidence:
+                        sig_confidence = conf
+                        reason = f"Label '{cell.value}' in {_cell_addr(ri, ci)}"
+                        signature_suggestion = {
+                            "cell": target_addr,
+                            "width": 220, "height": 80,
+                            "offset_x": 0, "offset_y": 0,
+                            "confidence": conf,
+                            "reason": reason,
+                        }
+            if sig_confidence >= 1.0:
+                break
+
+        # ── Step 6: Overall confidence ───────────────────────────────────────
         base = (matched_columns / max(total_header_cols, 1)) * 0.6 + header_confidence * 0.4
         confidence = base - 0.1 * len(warnings)
         confidence = max(0.1, min(1.0, confidence))
@@ -356,6 +429,7 @@ def analyze_template(path: Path) -> dict:
             "placeholders": placeholders,
             "warnings": warnings,
             "confidence": round(confidence, 2),
+            "signature_suggestion": signature_suggestion,
         }
 
     except Exception as e:
