@@ -6,6 +6,12 @@ from openpyxl.cell.cell import MergedCell
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
+try:
+    from template_fields import TABLE_FIELDS, HEADER_FIELDS
+except ImportError:
+    TABLE_FIELDS = {}
+    HEADER_FIELDS = {}
+
 DATA_DIR      = Path(os.environ.get("DATA_DIR", "/data"))
 DB_PATH       = DATA_DIR / "sessions.db"
 EXPORT_DIR    = DATA_DIR / "exports"
@@ -209,17 +215,67 @@ def fill_header_section(ws, data_start_row, header_data):
                     try: target.number_format = 'DD.MM.YYYY'
                     except Exception: pass
 
-# ── Template-based export ─────────────────────────────────────────────────────
-def export_with_template(year, month, sessions, location, col_override=None, start_row=None, header_info=None):
+# ── Header values computation ─────────────────────────────────────────────────
+def compute_header_values(sessions, year, month, header_info=None):
+    """Compute all HEADER_FIELDS values from sessions + config."""
     if header_info is None:
         header_info = {}
+    home_s     = [s for s in sessions if s.get("location") == "home"]
+    ext_s      = [s for s in sessions if s.get("location") == "extern"]
+    home_kwh   = sum(s.get("kwh_charged") or 0 for s in home_s)
+    ext_kwh    = sum(s.get("kwh_charged") or 0 for s in ext_s)
+    home_cost  = sum(s.get("cost_eur")    or 0 for s in home_s)
+    ext_cost   = sum(s.get("cost_eur")    or 0 for s in ext_s)
+    total_kwh  = home_kwh + ext_kwh
+    n = len(sessions)
+    total_km = 0
+    if n:
+        odo_end   = sessions[-1].get("odo_end")   or 0
+        odo_start = sessions[0].get("odo_start")  or 0
+        total_km  = odo_end - odo_start
+    avg_cons = None
+    if total_km and total_km > 0:
+        avg_cons = round(total_kwh / total_km * 100, 2)
+    return {
+        "fahrer":                   header_info.get("fahrer") or None,
+        "kennzeichen":              header_info.get("kennzeichen") or None,
+        "abteilung":                header_info.get("abteilung") or None,
+        "kostenstelle":             header_info.get("kostenstelle") or None,
+        "month_year":               datetime(year, month, 1).strftime("%B %Y"),
+        "export_date":              datetime.today().date(),
+        "total_sessions":           n,
+        "total_kwh":                total_kwh,
+        "total_cost":               home_cost + ext_cost,
+        "total_home_kwh":           home_kwh,
+        "total_external_kwh":       ext_kwh,
+        "total_home_cost":          home_cost,
+        "total_external_cost":      ext_cost,
+        "total_km":                 total_km,
+        "avg_consumption_kwh_100km": avg_cons,
+        "meter_start_value":        sessions[0].get("meter_old") if n else None,
+        "meter_end_value":          sessions[-1].get("meter_new") if n else None,
+        "price_per_kwh":            header_info.get("price_per_kwh") or None,
+    }
+
+
+# ── Template-based export ─────────────────────────────────────────────────────
+def export_with_template(year, month, sessions, location, col_override=None, start_row=None, header_info=None,
+                          cell_mapping=None, sheet=None):
+    if header_info is None:
+        header_info = {}
+    if cell_mapping is None:
+        cell_mapping = {}
     ml     = datetime(year, month, 1).strftime("%B %Y")
     suffix = f"_{location}" if location != "all" else ""
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
     out = EXPORT_DIR / f"EV_Ladeprotokoll_{year:04d}-{month:02d}{suffix}.xlsx"
     shutil.copy(TEMPLATE_PATH, out)
     wb = openpyxl.load_workbook(out, keep_vba=False)
-    ws = wb.active
+    # Select sheet
+    if sheet and sheet in wb.sheetnames:
+        ws = wb[sheet]
+    else:
+        ws = wb.active
 
     # build column map from explicit mapping
     col_map = {}
@@ -312,18 +368,70 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
             except Exception:
                 pass
 
+    # Compute full header values
+    hv = compute_header_values(sessions, year, month, header_info)
+
     # auto-fill header section (Abrechnungsmonat, Kennzeichen, Fahrer, etc.)
-    total_cost = sum(s.get("cost_eur") or 0 for s in sessions)
-    header_data = {
-        "month_year":   ml,
-        "total_cost":   total_cost if total_cost else None,
-        "kennzeichen":  header_info.get("kennzeichen") or None,
-        "fahrer":       header_info.get("fahrer") or None,
-        "abteilung":    header_info.get("abteilung") or None,
-        "kostenstelle": header_info.get("kostenstelle") or None,
-        "price_per_kwh": header_info.get("price_per_kwh") or None,
-    }
+    # Use hv merged with legacy header_data keys for backward compat
+    header_data = dict(hv)
     fill_header_section(ws, ds, header_data)
+
+    # Replace {{placeholder}} in any cell text
+    import re as _re
+    ph_pattern = _re.compile(r'\{\{(\w+)\}\}')
+    for ws_sheet in wb.worksheets:
+        for row in ws_sheet.iter_rows():
+            for cell in row:
+                if isinstance(cell, MergedCell):
+                    continue
+                val = cell.value
+                if isinstance(val, str) and '{{' in val:
+                    def _replace_ph(m, _hv=hv):
+                        field = m.group(1)
+                        v = _hv.get(field)
+                        if v is None:
+                            return m.group(0)
+                        return str(v)
+                    new_val = ph_pattern.sub(_replace_ph, val)
+                    if new_val != val:
+                        try:
+                            cell.value = new_val
+                        except Exception:
+                            pass
+
+    # Write cell_mapping: { "B4": "kennzeichen" or {"field": "kennzeichen", ...} }
+    if cell_mapping:
+        col_letter_re = _re.compile(r'^([A-Za-z]+)(\d+)$')
+        for addr, field_info in cell_mapping.items():
+            field = field_info if isinstance(field_info, str) else field_info.get("field")
+            if not field or field not in hv:
+                continue
+            value = hv.get(field)
+            if value is None:
+                continue
+            m = col_letter_re.match(str(addr))
+            if not m:
+                continue
+            try:
+                col_letters = m.group(1).upper()
+                row_num = int(m.group(2))
+                # Convert column letters to index
+                col_idx = 0
+                for ch in col_letters:
+                    col_idx = col_idx * 26 + (ord(ch) - 64)
+                cell = ws.cell(row=row_num, column=col_idx)
+                if isinstance(cell, MergedCell):
+                    # Find merge top-left
+                    for mr in ws.merged_cells.ranges:
+                        if mr.min_row <= row_num <= mr.max_row and mr.min_col <= col_idx <= mr.max_col:
+                            cell = ws.cell(row=mr.min_row, column=mr.min_col)
+                            break
+                # Skip formula cells
+                if isinstance(cell.value, str) and cell.value.startswith("="):
+                    continue
+                safe_set(cell, value)
+            except Exception:
+                pass
 
     wb.save(out)
     print(f"✅ Template-Export: {out} ({len(sessions)} Sessions)")
@@ -439,10 +547,12 @@ def export_builtin(year, month, sessions, location):
     return str(out)
 
 # ── Entry point ───────────────────────────────────────────────────────────────
-def export(year, month, location="all", col_override=None, start_row=None, header_info=None):
+def export(year, month, location="all", col_override=None, start_row=None, header_info=None,
+           cell_mapping=None, sheet=None):
     sessions = fetch_sessions(year, month, location)
     if TEMPLATE_PATH.exists():
-        return export_with_template(year, month, sessions, location, col_override, start_row, header_info)
+        return export_with_template(year, month, sessions, location, col_override, start_row, header_info,
+                                    cell_mapping, sheet)
     return export_builtin(year, month, sessions, location)
 
 if __name__ == "__main__":

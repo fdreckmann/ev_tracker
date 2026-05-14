@@ -1,0 +1,40 @@
+# TABLE_FIELDS: columns in the data table
+TABLE_FIELDS = {
+    "row_num":       {"label": "Nr.",              "type": "int",      "synonyms": ["nr", "lfd", "#", "position", "pos", "lfd. nr"]},
+    "date":          {"label": "Datum",             "type": "date",     "synonyms": ["datum", "date", "ladedatum", "ladedat.", "dat."]},
+    "start_time":    {"label": "Startzeit",         "type": "time",     "synonyms": ["start", "beginn", "von", "startzeit", "ladestart", "ab"]},
+    "end_time":      {"label": "Endzeit",           "type": "time",     "synonyms": ["ende", "end", "bis", "endzeit", "ladeende"]},
+    "duration":      {"label": "Ladedauer",         "type": "duration", "synonyms": ["dauer", "ladedauer", "ladezeit", "duration", "zeitdauer"]},
+    "odo_start":     {"label": "KM-Stand Start",    "type": "number",   "synonyms": ["km start", "km-start", "start km", "kilometerstand start", "km anfang", "odometer start", "tachostand start"]},
+    "odo_end":       {"label": "KM-Stand Ende",     "type": "number",   "synonyms": ["km ende", "km-ende", "end km", "kilometerstand", "kilometerstand ende", "km end", "tachostand"]},
+    "soc_start":     {"label": "SOC Start (%)",     "type": "percent",  "synonyms": ["soc start", "soc anfang", "akku start", "ladezustand start", "batterie start", "soc von", "ladestand start"]},
+    "soc_end":       {"label": "SOC Ende (%)",      "type": "percent",  "synonyms": ["soc ende", "soc end", "akku ende", "ladezustand ende", "batterie ende", "soc bis", "ladestand ende"]},
+    "kwh_charged":   {"label": "Geladene kWh",      "type": "number",   "synonyms": ["kwh", "geladen", "energie", "energy", "lademenge", "geladene energie", "lademenge kwh", "kwh geladen", "stromverbrauch"]},
+    "cost_eur":      {"label": "Kosten (€)",        "type": "currency", "synonyms": ["kosten", "cost", "betrag", "ladekosten", "eur", "€", "preis", "gesamtbetrag", "summe", "betrag eur"]},
+    "price_per_kwh": {"label": "Preis/kWh",         "type": "currency", "synonyms": ["preis pro kwh", "kosten pro kwh", "kwh preis", "strompreis", "tarif"]},
+    "meter_old":     {"label": "Zählerstand Alt",   "type": "number",   "synonyms": ["zähler alt", "zählerstand alt", "zähler anfang", "counter start", "meter start", "zählerstand vorher", "zähler von"]},
+    "meter_new":     {"label": "Zählerstand Neu",   "type": "number",   "synonyms": ["zähler neu", "zählerstand neu", "zähler ende", "counter end", "meter end", "zählerstand nachher", "zähler bis"]},
+    "location":      {"label": "Standort",          "type": "text",     "synonyms": ["standort", "ort", "location", "ladeort", "ladepunkt", "ladestation", "adresse"]},
+    "charger_type":  {"label": "Ladeart",           "type": "text",     "synonyms": ["ladeart", "ladetyp", "ac/dc", "charger type", "lademodus", "typ"]},
+}
+
+# HEADER_FIELDS: single-cell values (header/footer area)
+HEADER_FIELDS = {
+    "fahrer":                   {"label": "Fahrer",                 "synonyms": ["fahrer", "name", "mitarbeiter", "driver", "nutzer", "benutzer", "person"]},
+    "kennzeichen":              {"label": "Kennzeichen",            "synonyms": ["kennzeichen", "kfz", "kfz-kennzeichen", "fahrzeug", "nummernschild", "vehicle", "auto", "pkw"]},
+    "abteilung":                {"label": "Abteilung",              "synonyms": ["abteilung", "department", "bereich", "team", "gruppe"]},
+    "kostenstelle":             {"label": "Kostenstelle",           "synonyms": ["kostenstelle", "cost center", "kst", "kostcenter"]},
+    "month_year":               {"label": "Monat/Jahr",             "synonyms": ["monat", "abrechnungsmonat", "periode", "zeitraum", "month", "abrechnungszeitraum", "monat/jahr"]},
+    "export_date":              {"label": "Exportdatum",            "synonyms": ["exportdatum", "erstellt am", "datum der erstellung", "erstellungsdatum", "ausgabedatum", "druckdatum"]},
+    "total_sessions":           {"label": "Anzahl Ladevoergänge",    "synonyms": ["anzahl", "ladevoergänge gesamt", "summe ladevoergänge", "anzahl ladevoergänge", "ladeanzahl"]},
+    "total_kwh":                {"label": "Gesamt kWh",             "synonyms": ["gesamt kwh", "gesamtenergie", "gesamt energie", "kwh gesamt", "total kwh", "gesamtverbrauch"]},
+    "total_cost":               {"label": "Gesamtkosten",           "synonyms": ["gesamtkosten", "total kosten", "kosten gesamt", "gesamtbetrag", "total cost", "summe kosten"]},
+    "total_home_kwh":           {"label": "Home kWh",               "synonyms": ["home kwh", "zuhause kwh", "kwh zuhause", "heimladen kwh", "ac kwh"]},
+    "total_external_kwh":       {"label": "Extern kWh",             "synonyms": ["extern kwh", "öffentlich kwh", "kwh extern", "dc kwh", "fremdladen kwh"]},
+    "total_home_cost":          {"label": "Home Kosten",            "synonyms": ["home kosten", "zuhause kosten", "heimladen kosten", "kosten zuhause"]},
+    "total_external_cost":      {"label": "Extern Kosten",          "synonyms": ["extern kosten", "öffentlich kosten", "fremdladen kosten"]},
+    "total_km":                 {"label": "Gesamte KM",             "synonyms": ["gesamt km", "km gesamt", "gefahrene km", "kilometer gesamt", "strecke gesamt"]},
+    "avg_consumption_kwh_100km": {"label": "Verbrauch kWh/100km",  "synonyms": ["verbrauch", "kwh/100km", "durchschnittsverbrauch", "stromverbrauch pro 100km", "kwh je 100km"]},
+    "meter_start_value":        {"label": "Zählerstand Anfang",     "synonyms": ["zählerstand anfang", "zähler anfangswert", "meter anfang", "anfangszählerstand", "zähler start"]},
+    "meter_end_value":          {"label": "Zählerstand Ende",       "synonyms": ["zählerstand ende", "zähler endwert", "meter ende", "endzählerstand", "zähler ende"]},
+}
