@@ -1,0 +1,13 @@
+{
+  "id": "arbeitgeber",
+  "name": "Arbeitgeber-Abrechnung",
+  "description": "Vorlage für die monatliche Abrechnung mit dem Arbeitgeber. Enthält Kostenaufstellung nach AC/DC, Gesamtkosten und Zählerstandsnachweise.",
+  "category": "Arbeitgeber",
+  "recommended_for": ["Firmenwagen", "Arbeitnehmer", "Dienstwagen"],
+  "default_mapping": {
+    "sheet": "Ladeprotokoll",
+    "start_row": 8,
+    "column_mapping": {"1":"row_num","2":"date","3":"start_time","4":"end_time","5":"kwh_charged","6":"meter_old","7":"meter_new","8":"cost_eur","9":"charger_type"},
+    "cell_mapping": {"B2":"fahrer","D2":"kennzeichen","B3":"kostenstelle","D3":"month_year","B4":"abteilung"}
+  }
+}

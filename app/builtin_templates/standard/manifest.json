@@ -1,0 +1,13 @@
+{
+  "id": "standard",
+  "name": "Standard Ladeprotokoll",
+  "description": "Klassische Vorlage mit allen Feldern: Datum, Start/Ende, kWh, Kosten, Standort, SOC. Mit Kopfbereich für Fahrer und Fahrzeugdaten.",
+  "category": "Allgemein",
+  "recommended_for": ["Privatnutzer", "Firmenwagen", "Elektroauto-Fahrer"],
+  "default_mapping": {
+    "sheet": "Ladeprotokoll",
+    "start_row": 6,
+    "column_mapping": {"1":"row_num","2":"date","3":"start_time","4":"end_time","5":"duration","6":"kwh_charged","7":"cost_eur","8":"location"},
+    "cell_mapping": {"B2":"fahrer","D2":"kennzeichen","B3":"month_year","D3":"abteilung"}
+  }
+}

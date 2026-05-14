@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 140" width="200" height="140">
+  <rect width="200" height="140" fill="#1a1a1a" rx="6"/>
+  <rect x="8" y="8" width="184" height="36" fill="#2d1f5f" rx="3"/>
+  <text x="16" y="20" fill="#a78bfa" font-size="7" font-family="Arial" font-weight="bold">Arbeitgeber-Abrechnung</text>
+  <text x="16" y="30" fill="#6d5a9c" font-size="5" font-family="Arial">Fahrer: ___________  Kennzeichen: _______</text>
+  <text x="16" y="39" fill="#6d5a9c" font-size="5" font-family="Arial">Kostenstelle: _______  Monat: __________</text>
+  <rect x="8" y="48" width="184" height="10" fill="#2d1f5f"/>
+  <text x="10" y="56" fill="#a78bfa" font-size="5" font-family="Arial">Nr  Datum    Start  Ende  kWh  Z&#xe4;hler Alt  Z&#xe4;hler Neu  Kosten</text>
+  <rect x="8" y="58" width="184" height="8" fill="#1f1a2e"/>
+  <rect x="8" y="66" width="184" height="8" fill="#1a1a1a"/>
+  <rect x="8" y="74" width="184" height="8" fill="#1f1a2e"/>
+  <rect x="8" y="82" width="184" height="8" fill="#1a1a1a"/>
+  <rect x="8" y="90" width="184" height="8" fill="#1f1a2e"/>
+  <rect x="8" y="100" width="184" height="9" fill="#2d1f5f" rx="2" opacity="0.5"/>
+  <text x="130" y="107" fill="#a78bfa" font-size="5" font-family="Arial">Gesamt: 42.5 kWh  18.90 &#x20AC;</text>
+  <rect x="8" y="118" width="48" height="12" fill="#2d1f5f" rx="3"/>
+  <text x="12" y="126" fill="#a78bfa" font-size="5" font-family="Arial">Arbeitgeber</text>
+  <text x="64" y="126" fill="#555" font-size="5" font-family="Arial">9 Spalten &#xB7; Z&#xe4;hlerstand</text>
+</svg>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 140" width="200" height="140">
+  <rect width="200" height="140" fill="#1a1a1a" rx="6"/>
+  <rect x="8" y="8" width="184" height="40" fill="#2f1a0a" rx="3"/>
+  <text x="16" y="20" fill="#fb923c" font-size="7" font-family="Arial" font-weight="bold">Steuernachweis Ladekosten</text>
+  <text x="16" y="30" fill="#8a5a30" font-size="5" font-family="Arial">Fahrer: ___________  Kennzeichen: _______</text>
+  <text x="16" y="38" fill="#8a5a30" font-size="5" font-family="Arial">Z&#xe4;hler Anfang: _____  Z&#xe4;hler Ende: _______</text>
+  <rect x="8" y="52" width="184" height="10" fill="#2f1a0a"/>
+  <text x="10" y="60" fill="#fb923c" font-size="5" font-family="Arial">Nr  Datum    KM Start  KM Ende  kWh  Z.Alt  Z.Neu  Kosten</text>
+  <rect x="8" y="62" width="184" height="8" fill="#251508"/>
+  <rect x="8" y="70" width="184" height="8" fill="#1a1a1a"/>
+  <rect x="8" y="78" width="184" height="8" fill="#251508"/>
+  <rect x="8" y="86" width="184" height="8" fill="#1a1a1a"/>
+  <rect x="8" y="94" width="184" height="8" fill="#251508"/>
+  <rect x="8" y="104" width="184" height="9" fill="#2f1a0a" rx="2" opacity="0.6"/>
+  <text x="100" y="111" fill="#fb923c" font-size="5" font-family="Arial">&#x3A3; 42.5 kWh &#xB7; 18.90 &#x20AC; &#xB7; 1.250 km</text>
+  <rect x="8" y="120" width="30" height="12" fill="#2f1a0a" rx="3"/>
+  <text x="12" y="128" fill="#fb923c" font-size="5" font-family="Arial">Steuer</text>
+  <text x="46" y="128" fill="#555" font-size="5" font-family="Arial">8 Spalten &#xB7; Z&#xe4;hlerstand + KM</text>
+</svg>

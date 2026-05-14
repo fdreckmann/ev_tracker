@@ -1,0 +1,13 @@
+{
+  "id": "minimal",
+  "name": "Minimal",
+  "description": "Einfache kompakte Vorlage nur mit den wichtigsten Feldern: Datum, kWh und Kosten.",
+  "category": "Allgemein",
+  "recommended_for": ["Einfache Abrechnung", "Schneller Überblick"],
+  "default_mapping": {
+    "sheet": "Ladevorgänge",
+    "start_row": 3,
+    "column_mapping": {"1":"date","2":"kwh_charged","3":"cost_eur","4":"location"},
+    "cell_mapping": {"B1":"month_year"}
+  }
+}
