@@ -3,49 +3,186 @@
   "changelog": [
     {
       "version": "1.9.8",
-      "date": "2026-05-14",
+      "date": "2026-05-15",
       "changes": [
-        "Export-Lokalisierung: MONTH_NAMES, DATE_FORMATS, EXPORT_LABELS für Deutsch und Englisch",
-        "Sprachauswahl im Export-UI (Deutsch/Englisch) mit automatischer Persistierung",
-        "Neues Feld charge_power_kw in TABLE_FIELDS: automatisch berechnet aus kWh/Ladedauer",
-        "Neue HEADER_FIELDS: month_name, export_period, total_charging_hours, avg_charge_power_kw",
-        "compute_header_values() mit lang-Parameter und lokalisierten Monatsnamen/Zeiträumen",
-        "export() mit header_row, lang, return_warnings Parametern",
-        "preview_export(): neue Funktion für Datenvorschau ohne vollständigen xlsx-Export",
-        "POST /api/export/preview: neuer Endpoint für Export-Vorschau mit Sessionzusammenfassung",
-        "UI: Vorschau-Button mit tabellarischer Anzeige der Vorschau-Daten",
-        "template_header_row: neue Konfiguration für Tabellenstruktur",
-        "Mapping-Modal: header_row Eingabefeld hinzugefügt",
-        "Erweiterte Unterschrift-Platzierung: anchor_cell, offset_x/y, keep_aspect_ratio"
+        "Export-Lokalisierung: Monatsnamen auf Deutsch und Englisch ohne locale-Abhängigkeit",
+        "Sprachauswahl im Export-Dialog (Deutsch / Englisch)",
+        "Neues Tabellenfeld charge_power_kw: Ladeleistung automatisch aus kWh/Ladedauer berechnet",
+        "Neue Kopffelder: month_name, export_period, total_charging_hours, avg_charge_power_kw",
+        "Neuer API-Endpunkt POST /api/export/preview für tabellarische Datenvorschau vor Download",
+        "template_header_row: Tabellenkopfzeile separat von Datenstartzeile konfigurierbar",
+        "Unterschrift: anchor_cell, offset_x/offset_y, keep_aspect_ratio in signature_mapping",
+        "Bugfix: Export-Fehler 'str has no attribute items' bei ungültigen Config-Werten"
       ]
     },
     {
       "version": "1.9.7",
-      "date": "2026-05-14",
+      "date": "2026-05-15",
       "changes": [
-        "12 neue Fahrzeug-Provider: Stellantis (Peugeot/Opel/Citroën/DS/Fiat/Jeep), Ford (FordPass Connect), MG/SAIC (iSMART), Toyota/Lexus (MyT), Nissan (Ariya/Leaf), Porsche (Connect), JLR (Jaguar/Land Rover InControl)",
-        "Stub-Provider für XPeng und BYD (keine stabile direkte API verfügbar)",
+        "12 neue Fahrzeug-Provider: Stellantis (Peugeot/Opel/Citroën/DS/Fiat/Jeep), Ford (FordPass), MG/SAIC (iSMART), Toyota/Lexus (MyT), Nissan (Ariya/Leaf), Porsche Connect, JLR (Jaguar/Land Rover)",
+        "Stub-Provider mit Hinweis für XPeng und BYD (keine stabile direkte API verfügbar)",
         "3 Aggregator-Provider: TRONITY (90+ Marken), Enode (50+ Marken), Smartcar (30+ Marken)",
-        "ProviderCapabilities: neue Felder official_api, requires_oauth, requires_password, stability_level, region_support",
-        "VEHICLE_SPECIFIC_KEYS: alle neuen Provider-Konfigurationsschlüssel hinzugefügt",
-        "requirements.txt: optionale Abhängigkeiten für Toyota, Nissan, Porsche, JLR als Kommentare"
+        "ProviderCapabilities: neue Felder official_api, requires_oauth, stability_level, region_support"
       ]
     },
     {
       "version": "1.9.6",
       "date": "2026-05-14",
       "changes": [
-        "Modular meter provider system (app/meter_providers.py)",
-        "Shelly Gen2/Plus/Pro RPC API support (switch:0.aenergy.total, em:0.total_act_energy)",
-        "Shelly: configurable channel and phase mode (A/B/C/total)",
-        "Tasmota: configurable JSON path, multiple endpoint fallback",
-        "New: Generic HTTP meter provider with JSON path, unit, and factor",
-        "openWB: configurable loadpoint index",
-        "WARP: configurable meter index for WARP 3",
-        "All providers: auth (username/password), timeout, SSL verify options",
-        "/api/meter/test: rich debug output, accepts body params for live testing",
-        "Session: optional meter-delta-based kWh calculation (meter_prefer_meter_delta)",
-        "DB: new columns kwh_source, meter_delta_kwh, meter_error"
+        "Modulares Zähler-Provider-System (app/meter_providers.py) mit 12 Provider-Klassen",
+        "Shelly Gen2/Plus/Pro RPC API: switch:0.aenergy.total, em:0.total_act_energy",
+        "Shelly: konfigurierbarer Kanal und Phasenmodus (Gesamt/A/B/C)",
+        "Tasmota: konfigurierbarer JSON-Pfad, automatischer Endpunkt-Fallback",
+        "Neuer Generic HTTP Meter Provider: URL, JSON-Pfad, Einheit (kWh/Wh/MWh), Faktor",
+        "openWB: konfigurierbarer Ladepunkt-Index; WARP: konfigurierbarer Meter-Index",
+        "Test-API /api/meter/test: Debug-Ausgabe Schritt für Schritt, Body-Parameter für Livetest",
+        "Session-Abschluss: optionale kWh-Berechnung aus Zähler-Delta (meter_prefer_meter_delta)",
+        "Neue DB-Spalten: kwh_source, meter_delta_kwh, meter_error"
+      ]
+    },
+    {
+      "version": "1.9.5",
+      "date": "2026-05-13",
+      "changes": [
+        "Unterschriften-Funktion: Bild hochladen oder direkt im Browser zeichnen (Canvas)",
+        "Unterschrift optional beim Excel-Export einfügen (include_signature)",
+        "{{signature}} Platzhalter in Templates: Unterschrift wird automatisch positioniert",
+        "Template-Analyse erkennt Unterschriften-Felder (Keywords: Unterschrift, Signatur, Bestätigung)",
+        "Galerie-Templates arbeitgeber und steuer enthalten vorbereiteten Unterschriften-Bereich",
+        "Unterschrift-Mapping: Ankerzelle, Breite, Höhe, Seitenverhältnis beibehalten"
+      ]
+    },
+    {
+      "version": "1.9.4",
+      "date": "2026-05-12",
+      "changes": [
+        "Eingebaute Template-Galerie mit 4 vorgefertigten Vorlagen",
+        "Templates: Standard, Arbeitgeber (mit Unterschrift), Minimal, Steuer",
+        "SVG-Vorschaubilder für alle Galerie-Templates",
+        "Galerie-Templates werden on-demand als xlsx generiert",
+        "Template-Mapping wird beim Aktivieren eines Galerie-Templates automatisch gesetzt",
+        "manifest.json pro Template mit Metadaten und Standard-Mapping"
+      ]
+    },
+    {
+      "version": "1.9.3",
+      "date": "2026-05-11",
+      "changes": [
+        "Automatische Template-Analyse: Spaltenerkennung, Zell-Mapping, Platzhalter-Erkennung",
+        "Konfidenz-Score für erkannte Tabellen-Strukturen",
+        "Synonymliste für alle Tabellen- und Kopffelder (Deutsch und Englisch)",
+        "Template-Felder zentral in app/template_fields.py (TABLE_FIELDS, HEADER_FIELDS)",
+        "{{platzhalter}}-Unterstützung in beliebigen Template-Zellen (z.B. {{fahrer}}, {{monat}})",
+        "Zell-Mapping: Label links, Wert rechts/darunter wird automatisch erkannt"
+      ]
+    },
+    {
+      "version": "1.9.2",
+      "date": "2026-05-10",
+      "changes": [
+        "Bugfix Docker-Update: Container stoppt jetzt sauber und startet neu",
+        "Helper-Container-Ansatz: neuer Container übernimmt Stop/Remove/Recreate des alten",
+        "Update überlebt das Stoppen des eigenen Containers zuverlässig"
+      ]
+    },
+    {
+      "version": "1.9.1",
+      "date": "2026-05-09",
+      "changes": [
+        "HTML-E-Mails für Passwort-Reset und Einladungen",
+        "Admin-Dashboard: Übersicht aller Benutzer, Rollen, Status",
+        "Audit-Log mit Benutzerspalte (wer hat was gemacht)",
+        "E-Mail-Benachrichtigung bei Konto-Sperrung",
+        "Passwort-Stärke-Anzeige bei Eingabe"
+      ]
+    },
+    {
+      "version": "1.9.0",
+      "date": "2026-05-08",
+      "changes": [
+        "Rate-Limiting und Konto-Sperrung nach zu vielen Fehlversuchen",
+        "Passwort-Reset per E-Mail (sicherer Token, zeitlich begrenzt)",
+        "Benutzereinladungen per E-Mail-Link",
+        "2FA Backup-Codes (10 Einmalcodes für Notfälle)",
+        "CSRF-Schutz für alle zustandsändernden API-Aufrufe"
+      ]
+    },
+    {
+      "version": "1.8.0",
+      "date": "2026-05-07",
+      "changes": [
+        "Multi-Benutzer-Authentifizierung mit Rollen (Admin/Benutzer)",
+        "Einrichtungsassistent beim ersten Start",
+        "E-Mail + Passwort Login, optional mit TOTP (2FA)",
+        "Google- und Microsoft-OAuth2-Login (SSO)",
+        "Routen-Schutz: alle Seiten erfordern Login",
+        "SMTP-Konfiguration für E-Mail-Versand"
+      ]
+    },
+    {
+      "version": "1.7.0",
+      "date": "2026-04-20",
+      "changes": [
+        "Docker-Update über die Web-UI (Pull & Restart)",
+        "Update-Kanal wählbar: Latest / Nightly / Dev",
+        "Versions-Check gegen Docker Hub",
+        "Live-Log während des Update-Prozesses"
+      ]
+    },
+    {
+      "version": "1.6.0",
+      "date": "2026-04-10",
+      "changes": [
+        "Excel-Template-System: eigenes xlsx-Template hochladen",
+        "Spalten-Mapping: Template-Spalten den EV-Datenfeldern zuweisen",
+        "Zell-Mapping: einzelne Zellen mit Kopfdaten befüllen (Fahrer, Kennzeichen, Monat…)",
+        "Automatisches Backup-System mit Cron-Zeitplan",
+        "Backup-Wiederherstellung über die Web-UI"
+      ]
+    },
+    {
+      "version": "1.5.0",
+      "date": "2026-03-25",
+      "changes": [
+        "Mehrfahrzeug-Unterstützung: beliebig viele Fahrzeuge parallel tracken",
+        "Fahrzeug-Auswahl in der UI",
+        "Polestar-Provider (GraphQL API)",
+        "Audi-Provider (MyAudi Connect)",
+        "Hyundai/Kia-Provider (Bluelink / UVO Connect)",
+        "Renault/Dacia-Provider (My Renault API)"
+      ]
+    },
+    {
+      "version": "1.4.0",
+      "date": "2026-03-10",
+      "changes": [
+        "Zählerstand-Integration: Shelly, Tasmota, go-e, openWB, WARP, EVCC, Webasto, Alfen, Juice",
+        "Zählerstand automatisch beim Start und Ende jeder Session ablesen",
+        "Zählerstand Alt/Neu in Excel-Export und Sessionliste",
+        "ENTSO-E Spotpreis-Integration für dynamische Strompreise"
+      ]
+    },
+    {
+      "version": "1.3.0",
+      "date": "2026-02-20",
+      "changes": [
+        "BMW/Mini-Provider (bimmer-connected)",
+        "Mercedes-Provider (offizielle API)",
+        "Volvo-Provider (offizielle Volvo Cars API)",
+        "Tesla-Provider (TeslaPy)",
+        "VW/Skoda/Seat/Cupra-Provider (WeConnect)"
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "date": "2026-01-15",
+      "changes": [
+        "Erstes Release des EV Trackers",
+        "Home Assistant Provider für Fahrzeugdaten",
+        "Automatische Ladeprotokoll-Erfassung (Start, Ende, kWh, Kosten)",
+        "Excel-Export (Monatsberichte)",
+        "Echtzeit-Dashboard mit Ladestatus, SOC, Ladeort",
+        "Konfiguration über Web-UI"
       ]
     }
   ]
