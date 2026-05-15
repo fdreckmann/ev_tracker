@@ -368,7 +368,7 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
 
     # build column map from explicit mapping
     col_map = {}
-    if col_override:
+    if col_override and isinstance(col_override, dict):
         for col_str, field in col_override.items():
             try: col_idx = int(col_str)
             except (ValueError, TypeError): continue
@@ -499,7 +499,7 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
                             pass
 
     # Write cell_mapping: { "B4": "kennzeichen" or {"field": "kennzeichen", ...} }
-    if cell_mapping:
+    if cell_mapping and isinstance(cell_mapping, dict):
         col_letter_re = _re.compile(r'^([A-Za-z]+)(\d+)$')
         for addr, field_info in cell_mapping.items():
             field = field_info if isinstance(field_info, str) else field_info.get("field")
@@ -717,17 +717,109 @@ def export_builtin(year, month, sessions, location):
     return str(out)
 
 # ── Entry point ───────────────────────────────────────────────────────────────
-def export(year, month, location="all", col_override=None, start_row=None, header_info=None,
+def export(year, month, location="all", col_override=None, start_row=None, header_row=None, header_info=None,
            cell_mapping=None, sheet=None,
-           include_signature=False, signature_path=None, signature_mapping=None):
+           include_signature=False, signature_path=None, signature_mapping=None,
+           lang="de", return_warnings=False):
     sessions = fetch_sessions(year, month, location)
+    warnings = []
     if TEMPLATE_PATH.exists():
-        return export_with_template(year, month, sessions, location, col_override, start_row, header_info,
-                                    cell_mapping, sheet,
+        path = export_with_template(year, month, sessions, location, col_override, start_row,
+                                    header_row=header_row,
+                                    header_info=header_info,
+                                    cell_mapping=cell_mapping, sheet=sheet,
                                     include_signature=include_signature,
                                     signature_path=signature_path,
-                                    signature_mapping=signature_mapping)
-    return export_builtin(year, month, sessions, location)
+                                    signature_mapping=signature_mapping,
+                                    lang=lang)
+    else:
+        path = export_builtin(year, month, sessions, location)
+    if return_warnings:
+        return path, warnings
+    return path
+
+
+def preview_export(year, month, location="all", col_override=None, start_row=None, header_row=None,
+                   header_info=None, cell_mapping=None, sheet=None,
+                   include_signature=False, signature_path=None, signature_mapping=None,
+                   lang="de") -> dict:
+    """Generate a preview dict from the export data without writing a full xlsx.
+    Returns dict with 'sheets', 'warnings', 'header_values', 'sessions_count'."""
+    sessions = fetch_sessions(year, month, location)
+    warnings = []
+    hv = compute_header_values(sessions, year, month, header_info or {}, lang=lang)
+
+    rows = []
+    for i, s in enumerate(sessions):
+        rows.append(to_row(s, i + 1))
+
+    # For template preview: load template and read cells
+    preview_sheet = None
+    if TEMPLATE_PATH.exists():
+        try:
+            import openpyxl as _opxl
+            wb = _opxl.load_workbook(TEMPLATE_PATH, read_only=True, data_only=True)
+            if sheet and sheet in wb.sheetnames:
+                ws = wb[sheet]
+            else:
+                ws = wb.active
+
+            ds = int(start_row) if start_row else None
+            if not ds:
+                for row in ws.iter_rows(min_row=1, max_row=40):
+                    filled = [c for c in row if c.value is not None]
+                    if len(filled) >= 2:
+                        ds = row[0].row + 1
+                        break
+                if not ds:
+                    ds = 2
+
+            # Read header area (rows before ds)
+            import re as _re
+            ph_pattern = _re.compile(r'\{\{(\w+)\}\}')
+
+            preview_rows = []
+            for ri, row in enumerate(ws.iter_rows(min_row=1, max_row=min(ds + len(sessions) + 2, 60), values_only=True)):
+                row_num = ri + 1
+                cells = []
+                for ci, val in enumerate(row or []):
+                    cell_val = str(val) if val is not None else ""
+                    # Replace placeholders with actual values for preview
+                    if '{{' in cell_val:
+                        def _repl(m, _hv=hv):
+                            return str(_hv.get(m.group(1), m.group(0)))
+                        cell_val = ph_pattern.sub(_repl, cell_val)
+                    cells.append(cell_val)
+                preview_rows.append({"row": row_num, "cells": cells, "is_data": row_num >= ds})
+
+            preview_sheet = {"name": ws.title, "rows": preview_rows, "data_start_row": ds}
+        except Exception as e:
+            warnings.append(f"Template-Vorschau fehlgeschlagen: {e}")
+
+    if not preview_sheet:
+        # Fallback: table-only preview
+        col_map = col_override or {1: "row_num", 2: "date", 3: "start_time", 4: "end_time", 5: "kwh_charged", 6: "cost_eur"}
+        header_row_cells = list(col_map.values()) if isinstance(col_map, dict) else []
+        preview_rows = [{"row": 1, "cells": header_row_cells, "is_data": False}]
+        for i, row_data in enumerate(rows):
+            preview_rows.append({
+                "row": i + 2,
+                "cells": [str(row_data.get(f, "")) for f in header_row_cells],
+                "is_data": True
+            })
+        preview_sheet = {"name": "Ladevorgänge", "rows": preview_rows, "data_start_row": 2}
+
+    if not sessions:
+        warnings.append(f"Keine abgeschlossenen Ladevorgänge für {MONTH_NAMES.get(lang, MONTH_NAMES['de'])[month]} {year} gefunden")
+
+    return {
+        "ok": True,
+        "sessions_count": len(sessions),
+        "header_values": {k: str(v) if v is not None else None for k, v in hv.items()},
+        "sheets": [preview_sheet] if preview_sheet else [],
+        "warnings": warnings,
+        "lang": lang,
+    }
 
 if __name__ == "__main__":
     y, m = (map(int, sys.argv[1].split("-")) if len(sys.argv) > 1
