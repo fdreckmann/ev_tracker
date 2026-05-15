@@ -1118,9 +1118,10 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <div class="card-title">Versionshistorie</div>
       {% for entry in changelog %}
       <div style="margin-bottom:16px">
-        <div style="font-size:.78rem;font-family:var(--mono);font-weight:bold;color:#fff;margin-bottom:6px">
-          v{{ entry.version }}
-          {% if loop.first %}<span style="background:rgba(0,210,120,.15);border:1px solid rgba(0,210,120,.3);border-radius:4px;font-size:.65rem;padding:1px 7px;margin-left:6px;color:var(--acc)">aktuell</span>{% endif %}
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span style="font-size:.78rem;font-family:var(--mono);font-weight:bold;color:#fff">v{{ entry.version }}</span>
+          {% if entry.date %}<span style="font-size:.65rem;font-family:var(--mono);color:var(--mute)">{{ entry.date }}</span>{% endif %}
+          {% if loop.first %}<span style="background:rgba(0,210,120,.15);border:1px solid rgba(0,210,120,.3);border-radius:4px;font-size:.65rem;padding:1px 7px;color:var(--acc)">aktuell</span>{% endif %}
         </div>
         <ul style="margin:0;padding-left:16px;list-style:none">
           {% for c in entry.changes %}
@@ -3132,11 +3133,28 @@ async function checkUpdate(){
     $('remoteVersionLabel').textContent = 'v' + r.remote_version;
     const ul = $('remoteChangelogList');
     ul.innerHTML = '';
-    (r.remote_changelog||[]).forEach(c=>{
-      const li=document.createElement('li');
-      li.style.cssText='font-size:.73rem;font-family:var(--mono);color:var(--mute);padding:2px 0;line-height:1.5';
-      li.innerHTML=`<span style="color:var(--acc2);margin-right:6px">›</span>${c}`;
-      ul.appendChild(li);
+    // remote_changelog is [{version, date, changes:[]}]
+    // Only show entries newer than installed version
+    const installed = '{{ app_version }}';
+    const newer = (r.remote_changelog||[]).filter(entry=>{
+      if(!entry.version) return false;
+      // simple string compare works for semver x.y.z
+      return entry.version > installed;
+    });
+    const toShow = newer.length ? newer : (r.remote_changelog||[]).slice(0,3);
+    toShow.forEach(entry=>{
+      // Version heading
+      const heading = document.createElement('li');
+      heading.style.cssText='font-size:.74rem;font-family:var(--mono);font-weight:bold;color:#fff;padding:6px 0 2px;';
+      heading.textContent = `v${entry.version}${entry.date ? '  ·  '+entry.date : ''}`;
+      ul.appendChild(heading);
+      // Change items
+      (entry.changes||[]).forEach(c=>{
+        const li=document.createElement('li');
+        li.style.cssText='font-size:.72rem;font-family:var(--mono);color:var(--mute);padding:1px 0 1px 8px;line-height:1.5';
+        li.innerHTML=`<span style="color:var(--acc2);margin-right:5px">›</span>${c}`;
+        ul.appendChild(li);
+      });
     });
     $('remoteVersionWrap').style.display='';
   }
