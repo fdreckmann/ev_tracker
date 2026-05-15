@@ -957,11 +957,33 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <option value="home">Nur Zuhause</option>
         <option value="extern">Nur Extern</option>
       </select>
+      <select id="expLang" style="font-size:.75rem;padding:6px 8px;background:var(--inp);color:var(--text);border:1px solid var(--brd);border-radius:6px" onchange="saveExportLang()">
+        <option value="de">🇩🇪 Deutsch</option>
+        <option value="en">🇬🇧 Englisch</option>
+      </select>
+      <button class="btn-s" onclick="doExportPreview()" style="white-space:nowrap">👁 Vorschau</button>
       <button class="btn-p" onclick="doExport()">⬇ Excel herunterladen</button>
       <label style="display:flex;align-items:center;gap:6px;font-size:.75rem;font-family:var(--mono);cursor:pointer;white-space:nowrap">
         <input type="checkbox" id="expIncludeSig" disabled>
         <span id="expSigLabel" style="color:var(--mute)">Unterschrift einfügen</span>
       </label>
+    </div>
+  </div>
+
+  <!-- Export preview area -->
+  <div id="expPreviewArea" style="display:none;margin-top:12px">
+    <div class="card" style="padding:0;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:rgba(0,0,0,.2)">
+        <span style="font-size:.8rem;font-weight:600">Vorschau</span>
+        <div style="display:flex;gap:8px">
+          <span id="expPreviewWarnings" style="font-size:.72rem;color:#f59e0b;font-family:var(--mono)"></span>
+          <button class="btn-p" onclick="doExport()" style="padding:4px 14px;font-size:.75rem">⬇ Herunterladen</button>
+          <button class="btn-g" onclick="$('expPreviewArea').style.display='none'" style="padding:4px 10px;font-size:.75rem">✕</button>
+        </div>
+      </div>
+      <div id="expPreviewContent" style="padding:12px;overflow-x:auto;max-height:400px;overflow-y:auto">
+        <div class="empty">Lade Vorschau…</div>
+      </div>
     </div>
   </div>
 
@@ -1274,6 +1296,13 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           </table>
         </div>
         <div id="mappingStartInfo" style="font-size:.72rem;font-family:var(--mono);color:var(--acc);margin-top:6px;min-height:18px"></div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:6px;font-size:.72rem;font-family:var(--mono)">
+          <label style="color:var(--mute);white-space:nowrap">Kopfzeile (header_row):</label>
+          <input type="number" id="headerRowInput" min="1" placeholder="auto"
+                 style="width:80px;background:var(--inp);color:var(--text);border:1px solid var(--brd);border-radius:5px;padding:3px 7px;font-size:.72rem"
+                 oninput="_selectedHeaderRow=this.value?parseInt(this.value):null">
+          <span style="color:var(--mute);font-size:.68rem">Zeile der Spaltenüberschriften (optional)</span>
+        </div>
       </div>
 
       <!-- RIGHT: field palette + live preview -->
@@ -1857,6 +1886,7 @@ async function loadConfig(){
     if($('c_meter_device_port'))    $('c_meter_device_port').value   = c.meter_device_port||'';
     if($('c_meter_prefer_delta'))   $('c_meter_prefer_delta').checked = !!c.meter_prefer_meter_delta;
   }
+  if($('expLang')) $('expLang').value = c.export_language || 'de';
   const m = {c_car:'car_name',c_notify:'notify_service',
              c_bat:'battery_capacity_kwh',
              c_price_home:'price_per_kwh_home',c_price_ac:'price_per_kwh_ac',c_price_dc:'price_per_kwh_dc',
@@ -2082,6 +2112,7 @@ let _sigMapping = {};  // {cell, width, height, offset_x, offset_y}
 let _tplMeta   = null;
 let _sampleSession = null;
 let _selectedStartRow = null;
+let _selectedHeaderRow = null;
 
 // ── Column mapper state ───────────────────────────────────────────────────────
 let _activeField  = null;
@@ -2424,7 +2455,8 @@ async function openMappingModal(){
   _tplMeta        = meta;
   _tplMeta._saved = saved;
   _sampleSession  = Object.keys(sample).length ? sample : null;
-  _selectedStartRow = saved.start_row || meta.auto_header || null;
+  _selectedStartRow  = saved.start_row  || meta.auto_header || null;
+  _selectedHeaderRow = saved.header_row || null;
 
   // Initialize _colMapping from saved mapping, falling back to auto-suggestions
   _colMapping  = {};
@@ -2457,6 +2489,7 @@ async function openMappingModal(){
   $('mappingStartInfo').textContent = _selectedStartRow
     ? `✓ Startzeile: Zeile ${_selectedStartRow}`
     : 'Bitte eine Zeile anklicken';
+  if($('headerRowInput')) $('headerRowInput').value = _selectedHeaderRow || '';
   $('mappingModalInfo').textContent = '';
 }
 
@@ -2474,6 +2507,7 @@ async function saveMappingModal(){
     column_mapping,
     cell_mapping: _cellMapping,
     start_row: _selectedStartRow,
+    header_row: _selectedHeaderRow || null,
     sheet: _lastAnalysis?.sheet || '',
     signature_mapping: _sigMapping,
   };
@@ -2762,8 +2796,9 @@ $('expM')?.addEventListener('change',loadExpPreview);
 
 async function doExport(){
   const y=$('expY').value, m=$('expM').value, loc=$('expLoc').value;
+  const lang = $('expLang')?.value || 'de';
   const override=getColOverride();
-  let url=`/api/export?year=${y}&month=${m}&location=${loc}`;
+  let url=`/api/export?year=${y}&month=${m}&location=${loc}&lang=${lang}`;
   if(override) url+=`&col_override=${encodeURIComponent(JSON.stringify(override))}`;
   const inclSig = $('expIncludeSig') && !$('expIncludeSig').disabled && $('expIncludeSig').checked;
   if(inclSig) url += '&include_signature=true';
@@ -2781,6 +2816,70 @@ async function doExport(){
   a.href=URL.createObjectURL(blob);
   a.download=`EV_Ladeprotokoll_${y}-${String(m).padStart(2,'0')}.xlsx`;
   a.click();
+}
+
+async function saveExportLang(){
+  const lang = $('expLang')?.value || 'de';
+  await apiFetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({export_language: lang})});
+}
+
+async function doExportPreview(){
+  const y=$('expY').value, m=$('expM').value, loc=$('expLoc').value;
+  const lang = $('expLang')?.value || 'de';
+  const inclSig = $('expIncludeSig') && !$('expIncludeSig').disabled && $('expIncludeSig').checked;
+  $('expPreviewArea').style.display='';
+  $('expPreviewContent').innerHTML='<div class="empty">⏳ Lade Vorschau…</div>';
+  $('expPreviewWarnings').textContent='';
+  try {
+    const r = await apiFetch('/api/export/preview', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({year:parseInt(y), month:parseInt(m), location:loc, lang, include_signature:inclSig})
+    }).then(r=>r.json());
+
+    if(!r.ok){ $('expPreviewContent').innerHTML=`<div class="empty" style="color:var(--danger)">${r.error||'Vorschau fehlgeschlagen'}</div>`; return; }
+
+    if(r.warnings && r.warnings.length){
+      $('expPreviewWarnings').textContent = '⚠ ' + r.warnings.join(' · ');
+    }
+
+    // Show header values summary
+    let html = '';
+    if(r.header_values){
+      const hv = r.header_values;
+      const fields = [
+        ['Monat', hv.month_year], ['Fahrer', hv.fahrer], ['Kennzeichen', hv.kennzeichen],
+        ['Sessions', hv.total_sessions], ['Gesamt kWh', hv.total_kwh ? parseFloat(hv.total_kwh).toFixed(2)+' kWh' : null],
+        ['Gesamtkosten', hv.total_cost ? '€'+parseFloat(hv.total_cost).toFixed(2) : null],
+        ['Ladezeit', hv.total_charging_hours ? parseFloat(hv.total_charging_hours).toFixed(1)+' h' : null],
+        ['Ø Ladeleistung', hv.avg_charge_power_kw ? parseFloat(hv.avg_charge_power_kw).toFixed(2)+' kW' : null],
+      ].filter(([k,v]) => v !== null && v !== 'None' && v !== undefined);
+      html += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">`;
+      for(const [k,v] of fields){
+        html += `<div style="background:rgba(255,255,255,.06);padding:4px 10px;border-radius:4px;font-size:.72rem;font-family:var(--mono)"><span style="color:var(--mute)">${k}:</span> ${v}</div>`;
+      }
+      html += '</div>';
+    }
+
+    // Show sheet preview
+    for(const sheet of (r.sheets||[])){
+      html += `<div style="font-size:.72rem;color:var(--mute);margin-bottom:4px">Tabellenblatt: ${sheet.name} · Datenstartzeile: ${sheet.data_start_row}</div>`;
+      html += '<table style="border-collapse:collapse;font-size:.71rem;font-family:var(--mono);min-width:100%">';
+      for(const row of (sheet.rows||[])){
+        const style = row.is_data ? 'background:rgba(255,255,255,.03)' : 'background:rgba(99,179,237,.08);font-weight:600';
+        html += `<tr style="${style}"><td style="color:var(--mute);padding:2px 6px;border-right:1px solid var(--brd)">${row.row}</td>`;
+        for(const cell of (row.cells||[])){
+          html += `<td style="padding:2px 8px;border:1px solid rgba(255,255,255,.05);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${cell.replace(/"/g,'&quot;')}">${cell||''}</td>`;
+        }
+        html += '</tr>';
+      }
+      html += '</table>';
+    }
+
+    $('expPreviewContent').innerHTML = html || '<div class="empty">Keine Vorschau verfügbar</div>';
+  } catch(e) {
+    $('expPreviewContent').innerHTML = `<div class="empty" style="color:var(--danger)">Fehler: ${e.message}</div>`;
+  }
 }
 
 // ── Signature ────────────────────────────────────────────────────────────────

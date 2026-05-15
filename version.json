@@ -1,6 +1,24 @@
 {
-  "version": "1.9.7",
+  "version": "1.9.8",
   "changelog": [
+    {
+      "version": "1.9.8",
+      "date": "2026-05-14",
+      "changes": [
+        "Export-Lokalisierung: MONTH_NAMES, DATE_FORMATS, EXPORT_LABELS für Deutsch und Englisch",
+        "Sprachauswahl im Export-UI (Deutsch/Englisch) mit automatischer Persistierung",
+        "Neues Feld charge_power_kw in TABLE_FIELDS: automatisch berechnet aus kWh/Ladedauer",
+        "Neue HEADER_FIELDS: month_name, export_period, total_charging_hours, avg_charge_power_kw",
+        "compute_header_values() mit lang-Parameter und lokalisierten Monatsnamen/Zeiträumen",
+        "export() mit header_row, lang, return_warnings Parametern",
+        "preview_export(): neue Funktion für Datenvorschau ohne vollständigen xlsx-Export",
+        "POST /api/export/preview: neuer Endpoint für Export-Vorschau mit Sessionzusammenfassung",
+        "UI: Vorschau-Button mit tabellarischer Anzeige der Vorschau-Daten",
+        "template_header_row: neue Konfiguration für Tabellenstruktur",
+        "Mapping-Modal: header_row Eingabefeld hinzugefügt",
+        "Erweiterte Unterschrift-Platzierung: anchor_cell, offset_x/y, keep_aspect_ratio"
+      ]
+    },
     {
       "version": "1.9.7",
       "date": "2026-05-14",

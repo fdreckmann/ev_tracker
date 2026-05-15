@@ -11,7 +11,7 @@ from meter_providers import read_meter as _read_meter_impl, MeterResult
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.9.7"
+APP_VERSION   = "1.9.8"
 
 CHANGELOG = [
     {"version":"1.9.3","changes":[
@@ -281,6 +281,8 @@ DEFAULT_CONFIG = {
     "update_channel":       "latest",  # latest | nightly | dev
     "template_mapping":     {},        # {col_index_str: field_name}
     "template_start_row":   None,      # row number where data starts (1-based)
+    "template_header_row":  None,      # row number of column headers (1-based)
+    "export_language":      "de",      # export language: de|en
     "active_template":      {"source": None, "template_id": None, "name": None},
     "template_fahrer":        "",      # driver name for template header
     "template_kennzeichen":   "",      # license plate for template header
@@ -1883,6 +1885,7 @@ def api_template_mapping():
         cfg["template_column_mapping"] = body.get("column_mapping") or body.get("mapping") or {}
         cfg["template_cell_mapping"]   = body.get("cell_mapping", {})
         cfg["template_start_row"]      = body.get("start_row")
+        cfg["template_header_row"]     = body.get("header_row")
         cfg["template_sheet"]          = body.get("sheet") or ""
         cfg["signature_mapping"]       = body.get("signature_mapping") or {}
         save_config(cfg)
@@ -1891,6 +1894,7 @@ def api_template_mapping():
         "column_mapping":  cfg.get("template_column_mapping") or cfg.get("template_mapping") or {},
         "cell_mapping":    cfg.get("template_cell_mapping", {}),
         "start_row":       cfg.get("template_start_row"),
+        "header_row":      cfg.get("template_header_row"),
         "sheet":           cfg.get("template_sheet", ""),
         "signature_mapping": cfg.get("signature_mapping") or {},
     })
@@ -1994,10 +1998,15 @@ def api_export():
     cfg = load_config()
     if override is None:
         saved = cfg.get("template_column_mapping") or cfg.get("template_mapping") or {}
-        if saved:
+        if isinstance(saved, dict) and saved:
             override = {k: v for k, v in saved.items() if v}
-    start_row = cfg.get("template_start_row")
-    cell_mapping = cfg.get("template_cell_mapping") or {}
+        else:
+            override = None
+    start_row    = cfg.get("template_start_row")
+    header_row   = cfg.get("template_header_row")
+    lang         = request.args.get("lang") or cfg.get("export_language", "de")
+    _raw_cm      = cfg.get("template_cell_mapping") or {}
+    cell_mapping = _raw_cm if isinstance(_raw_cm, dict) else {}
     sheet        = cfg.get("template_sheet") or None
     header_info = {
         "fahrer":            cfg.get("template_fahrer", ""),
@@ -2014,14 +2023,73 @@ def api_export():
         include_signature = bool(cfg.get("export_include_signature", False))
     sig_mapping = cfg.get("signature_mapping") or {}
     try:
-        path = export(y, m, loc, col_override=override, start_row=start_row, header_info=header_info,
+        path = export(y, m, loc, col_override=override, start_row=start_row, header_row=header_row,
+                      header_info=header_info,
                       cell_mapping=cell_mapping, sheet=sheet,
                       include_signature=include_signature,
                       signature_path=str(SIGNATURE_PATH) if SIGNATURE_PATH.exists() else None,
-                      signature_mapping=sig_mapping)
+                      signature_mapping=sig_mapping, lang=lang)
         return send_file(path, as_attachment=True)
     except Exception as e:
         log.exception("Export fehlgeschlagen")
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+import uuid as _uuid_mod
+_export_preview_cache: dict = {}  # token -> (path, expires_ts)
+
+def _cleanup_preview_cache():
+    """Remove expired preview temp files."""
+    import time
+    now = time.time()
+    expired = [k for k, (p, exp) in _export_preview_cache.items() if exp < now]
+    for k in expired:
+        path, _ = _export_preview_cache.pop(k)
+        try:
+            Path(path).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+@app.route("/api/export/preview", methods=["POST"])
+@require_login
+def api_export_preview():
+    from export_excel import preview_export
+    body = request.get_json(silent=True) or {}
+    y    = int(body.get("year",  datetime.now().year))
+    m    = int(body.get("month", datetime.now().month))
+    loc  = body.get("location", "all")
+    cfg  = load_config()
+    lang = body.get("lang") or cfg.get("export_language", "de")
+
+    _raw_override = body.get("col_override") or cfg.get("template_column_mapping") or {}
+    override     = _raw_override if isinstance(_raw_override, dict) else {}
+    start_row    = body.get("start_row") or cfg.get("template_start_row")
+    header_row   = body.get("header_row") or cfg.get("template_header_row")
+    _raw_cm      = body.get("cell_mapping") or cfg.get("template_cell_mapping") or {}
+    cell_mapping = _raw_cm if isinstance(_raw_cm, dict) else {}
+    sheet        = body.get("sheet") or cfg.get("template_sheet")
+    header_info  = {
+        "fahrer":            cfg.get("template_fahrer", ""),
+        "kennzeichen":       cfg.get("template_kennzeichen", ""),
+        "abteilung":         cfg.get("template_abteilung", ""),
+        "kostenstelle":      cfg.get("template_kostenstelle", ""),
+        "price_per_kwh":     cfg.get("price_per_kwh_home", 0.30),
+        "meter_start_value": cfg.get("template_meter_start", 0.0),
+    }
+    include_signature = bool(body.get("include_signature", False))
+    sig_mapping       = cfg.get("signature_mapping") or {}
+
+    try:
+        result = preview_export(
+            y, m, loc,
+            col_override=override, start_row=start_row, header_row=header_row,
+            header_info=header_info, cell_mapping=cell_mapping, sheet=sheet,
+            include_signature=include_signature,
+            signature_path=str(SIGNATURE_PATH) if SIGNATURE_PATH.exists() else None,
+            signature_mapping=sig_mapping, lang=lang,
+        )
+        return jsonify(result)
+    except Exception as e:
+        log.exception("Export-Vorschau fehlgeschlagen")
         return jsonify({"ok": False, "error": str(e)}), 500
 
 # ── Backup ────────────────────────────────────────────────────────────────────
