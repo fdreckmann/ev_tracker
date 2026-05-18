@@ -1864,9 +1864,16 @@ def api_test():
     except Exception as e:
         return jsonify({"ok":False,"message":str(e)})
 
+import re as _re_sanitize_url
+
+def _sanitize_url(url):
+    if not url:
+        return url
+    # Remove user:pass@ from URL
+    return _re_sanitize_url.sub(r'://([^@]+)@', '://', url)
+
 @app.route("/api/meter/test", methods=["POST"])
 def api_meter_test():
-    import re as _re_meter
     # Load saved config as base
     cfg = load_config()
     # Body-first: merge body values with priority over stored config (without saving)
@@ -1877,36 +1884,21 @@ def api_meter_test():
 
     result = _read_meter_impl(cfg)
 
-    # Build safe endpoint URL (strip passwords)
-    raw_ep = ""
-    try:
-        from meter_providers import build_base_url
-        raw_ep = build_base_url(cfg)
-    except Exception:
-        raw_ep = cfg.get("meter_device_ip", "")
-    # Remove password from URL if present (basic auth pattern)
-    safe_ep = _re_meter.sub(r'://[^:@]+:[^@]+@', '://', raw_ep) if raw_ep else ""
-
     msg = (f"Zählerstand: {result.value:.3f} kWh" if result.ok
            else result.error or "Kein Wert erhalten")
-
-    # Extract extra debug fields from result if available
-    raw_value   = getattr(result, "raw_value", result.value)
-    unit        = getattr(result, "unit", None)
-    norm_from   = getattr(result, "normalized_from", None)
 
     return jsonify({
         "ok":             result.ok,
         "value_kwh":      result.value,
         "value":          result.value,   # backward compat
         "message":        msg,
-        "provider":       result.source,
-        "endpoint":       safe_ep,
-        "raw_value":      raw_value,
-        "unit":           unit,
-        "normalized_from": norm_from,
+        "provider":       cfg.get("meter_source", ""),
+        "endpoint":       _sanitize_url(result.endpoint),
+        "raw_value":      result.raw_value,
+        "unit":           result.unit,
+        "normalized_from": result.normalized_from,
         "debug":          result.debug,
-        "suggestions":    [],
+        "suggestions":    result.suggestions or [],
     })
 
 @app.route("/api/entsoe/test", methods=["POST"])
@@ -2460,23 +2452,37 @@ def api_export_preview():
         log.warning(f"Konnte Token-Datei nicht speichern: {e}")
         token = None
 
+    # Determine data_start_row from config
+    _template_config = cfg.get("template_config") or {}
+    _data_start_row = int(start_row) if start_row else int(_template_config.get("start_row", 1))
+
     # Build grid from xlsx_bytes
     sheets_out = []
     try:
+        import datetime as _dt_prev
         wb_prev = _opxl_prev.load_workbook(_io_prev.BytesIO(xlsx_bytes), data_only=True)
         for ws_p in wb_prev.worksheets:
             rows_out = []
-            for row_p in ws_p.iter_rows(max_row=200, max_col=30, values_only=True):
+            for row_idx_0, row_p in enumerate(ws_p.iter_rows(max_row=200, max_col=30, values_only=True)):
+                row_idx = row_idx_0 + 1  # 1-based
                 cells = []
                 for val in row_p:
                     if val is None:
                         cells.append("")
-                    elif isinstance(val, (int, float)):
-                        cells.append(val)
+                    elif isinstance(val, (_dt_prev.datetime, _dt_prev.date)):
+                        cells.append(val.strftime("%d.%m.%Y %H:%M") if isinstance(val, _dt_prev.datetime) else val.strftime("%d.%m.%Y"))
                     else:
                         cells.append(str(val))
-                rows_out.append(cells)
-            sheets_out.append({"name": ws_p.title, "rows": rows_out})
+                rows_out.append({
+                    "row": row_idx,
+                    "is_data": row_idx >= _data_start_row,
+                    "cells": cells,
+                })
+            sheets_out.append({
+                "name": ws_p.title,
+                "data_start_row": _data_start_row,
+                "rows": rows_out,
+            })
     except Exception as e:
         warnings.append(f"Grid-Erzeugung fehlgeschlagen: {e}")
 

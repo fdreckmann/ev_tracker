@@ -175,35 +175,46 @@ class HaMeterProvider(BaseMeterProvider):
     SOURCE_KEY = "ha"
 
     def read(self) -> MeterResult:
-        debug = []
+        dbg = []
         entity = self.cfg.get("meter_sensor", "").strip()
         if not entity:
-            return self._result(error="Keine HA Entity ID konfiguriert", debug=debug)
+            return self._result(error="Keine HA Entity ID konfiguriert", debug=dbg)
         ha_url = self.cfg.get("ha_url", "").rstrip("/")
         token = self.cfg.get("ha_token", "")
         url = f"{ha_url}/api/states/{entity}"
-        debug.append(f"GET {url}")
+        dbg.append(f"GET {url}")
         import requests
         try:
             r = requests.get(url, headers={"Authorization": f"Bearer {token}"},
                              timeout=self.timeout)
-            debug.append(f"  → HTTP {r.status_code}")
+            dbg.append(f"  → HTTP {r.status_code}")
             r.raise_for_status()
             data = r.json()
-            state = data.get("state")
-            debug.append(f"  → state={state}")
-            val = normalize_energy_value(state)
+            state = data.get("state", "")
+            dbg.append(f"  → state={state}")
+            if state in ("unavailable", "unknown", None, ""):
+                return self._result(error=f"HA sensor unavailable: {state}", debug=dbg)
+            try:
+                state_val = float(state)
+            except (ValueError, TypeError):
+                return self._result(error=f"HA sensor state not numeric: {state!r}", debug=dbg)
+            attributes = data.get("attributes", {})
+            unit = attributes.get("unit_of_measurement", "auto")
+            val = normalize_energy_value(state_val, unit=unit)
             if val is None:
-                return self._result(error=f"Ungültiger Wert: {state}", debug=debug)
-            unit = data.get("attributes", {}).get("unit_of_measurement", "kWh")
-            debug.append(f"  → unit={unit}, value={val}")
-            # normalize if sensor reports Wh
-            if unit.lower() == "wh":
-                val = round(val / 1000, 3)
-            return self._result(value=val, debug=debug)
+                return self._result(error=f"Ungültiger Wert: {state}", debug=dbg)
+            dbg.append(f"HA state={state_val} unit={unit} → {val} kWh")
+            return self._result(
+                value=val,
+                endpoint=url,
+                raw_value=state_val,
+                unit=unit,
+                normalized_from="state",
+                debug=dbg,
+            )
         except Exception as e:
-            debug.append(f"  → EXCEPTION: {e}")
-            return self._result(error=str(e), debug=debug)
+            dbg.append(f"  → EXCEPTION: {e}")
+            return self._result(error=str(e), debug=dbg)
 
 
 class ShellyMeterProvider(BaseMeterProvider):
