@@ -27,25 +27,91 @@ DATE_FORMATS = {
 
 EXPORT_LABELS = {
     "de": {
-        "driver": "Fahrer", "license_plate": "Kennzeichen", "cost_center": "Kostenstelle",
-        "department": "Abteilung", "month": "Monat", "export_date": "Exportdatum",
-        "total_cost": "Gesamtkosten", "total_kwh": "Gesamt kWh",
-        "avg_charge_power": "Ø Ladeleistung (kW)", "total_charging_time": "Ladezeit gesamt",
-        "signature": "Unterschrift", "charging_log": "Ladeprotokoll",
-        "meter_old": "Zählerstand Alt", "meter_new": "Zählerstand Neu",
-        "location": "Ladeort", "charger_type": "Ladeart",
-        "start": "Start", "end": "Ende", "duration": "Dauer", "cost": "Kosten",
+        "charging_log": "Ladeprotokoll",
+        "summary": "Zusammenfassung",
+        "date": "Datum",
+        "start": "Start",
+        "end": "Ende",
+        "duration": "Dauer",
+        "duration_hours": "Ladedauer (h)",
+        "charge_power_kw": "Ladeleistung (kW)",
+        "kwh": "kWh",
+        "cost": "Kosten",
+        "location": "Standort",
+        "charger_type": "Ladeart",
+        "driver": "Fahrer",
+        "license_plate": "Kennzeichen",
+        "cost_center": "Kostenstelle",
+        "total_cost": "Gesamtkosten",
+        "total_kwh": "Gesamt kWh",
+        "avg_charge_power_kw": "Durchschnittliche Ladeleistung (kW)",
+        "total_charging_hours": "Gesamte Ladezeit (h)",
+        "home": "Zuhause",
+        "external": "Extern",
+        "all_locations": "Alle Standorte",
+        "month_name": "Monat",
+        "month_year": "Monat/Jahr",
+        "export_period": "Zeitraum",
+        "price_per_kwh": "Preis/kWh",
+        "row_num": "Nr.",
+        "soc_start": "SOC Start (%)",
+        "soc_end": "SOC Ende (%)",
+        "odo_start": "KM-Stand Start",
+        "odo_end": "KM-Stand Ende",
+        "meter_old": "Zählerstand Alt",
+        "meter_new": "Zählerstand Neu",
+        "total_sessions": "Anzahl Ladevorgänge",
+        "total_km": "Gesamte KM",
+        # legacy keys kept for compatibility
+        "department": "Abteilung",
+        "export_date": "Exportdatum",
+        "avg_charge_power": "Ø Ladeleistung (kW)",
+        "total_charging_time": "Ladezeit gesamt",
+        "signature": "Unterschrift",
         "period": "Zeitraum",
     },
     "en": {
-        "driver": "Driver", "license_plate": "License plate", "cost_center": "Cost center",
-        "department": "Department", "month": "Month", "export_date": "Export date",
-        "total_cost": "Total cost", "total_kwh": "Total kWh",
-        "avg_charge_power": "Average charging power (kW)", "total_charging_time": "Total charging time",
-        "signature": "Signature", "charging_log": "Charging log",
-        "meter_old": "Meter reading old", "meter_new": "Meter reading new",
-        "location": "Charging location", "charger_type": "Charger type",
-        "start": "Start", "end": "End", "duration": "Duration", "cost": "Cost",
+        "charging_log": "Charging log",
+        "summary": "Summary",
+        "date": "Date",
+        "start": "Start",
+        "end": "End",
+        "duration": "Duration",
+        "duration_hours": "Charging duration (h)",
+        "charge_power_kw": "Charging power (kW)",
+        "kwh": "kWh",
+        "cost": "Cost",
+        "location": "Location",
+        "charger_type": "Charger type",
+        "driver": "Driver",
+        "license_plate": "License plate",
+        "cost_center": "Cost center",
+        "total_cost": "Total cost",
+        "total_kwh": "Total kWh",
+        "avg_charge_power_kw": "Average charging power (kW)",
+        "total_charging_hours": "Total charging time (h)",
+        "home": "Home",
+        "external": "External",
+        "all_locations": "All locations",
+        "month_name": "Month",
+        "month_year": "Month/Year",
+        "export_period": "Period",
+        "price_per_kwh": "Price/kWh",
+        "row_num": "No.",
+        "soc_start": "SOC Start (%)",
+        "soc_end": "SOC End (%)",
+        "odo_start": "Odometer start",
+        "odo_end": "Odometer end",
+        "meter_old": "Meter reading old",
+        "meter_new": "Meter reading new",
+        "total_sessions": "Number of sessions",
+        "total_km": "Total km",
+        # legacy keys kept for compatibility
+        "department": "Department",
+        "export_date": "Export date",
+        "avg_charge_power": "Average charging power (kW)",
+        "total_charging_time": "Total charging time",
+        "signature": "Signature",
         "period": "Period",
     },
 }
@@ -175,13 +241,44 @@ def fetch_sessions(year, month, location="all"):
     ).fetchall()
     con.close(); return [dict(r) for r in rows]
 
-def to_row(s, idx):
+def to_row(s, idx, lang="de"):
     dt_s = datetime.fromisoformat(s["start_ts"])
     dt_e = datetime.fromisoformat(s["end_ts"]) if s.get("end_ts") else None
-    duration = None
+
+    # Calculate duration in seconds from timestamps or stored fields
+    total_seconds = None
     if dt_e:
-        duration = (dt_e - dt_s).total_seconds() / 86400  # fraction of day for [h]:MM format
-    duration_hours = round(duration * 24, 4) if duration is not None else None
+        total_seconds = (dt_e - dt_s).total_seconds()
+    elif s.get("duration_seconds"):
+        try:
+            total_seconds = float(s["duration_seconds"])
+        except (ValueError, TypeError):
+            pass
+    elif s.get("duration"):
+        # Try parsing "HH:MM" string format
+        dur_raw = s["duration"]
+        if isinstance(dur_raw, str) and ":" in dur_raw:
+            try:
+                parts = dur_raw.split(":")
+                total_seconds = int(parts[0]) * 3600 + int(parts[1]) * 60
+            except (ValueError, IndexError):
+                pass
+        elif isinstance(dur_raw, (int, float)):
+            # Already in fractional days (legacy)
+            total_seconds = float(dur_raw) * 86400
+
+    duration = total_seconds / 86400 if total_seconds is not None else None  # fraction of day for [h]:MM format
+    duration_hours = round(total_seconds / 3600, 2) if total_seconds is not None else None
+
+    # Determine charger_type: use stored value or derive from location
+    charger_type = s.get("charger_type")
+    if not charger_type or charger_type == "unknown":
+        loc = s.get("location", "unknown")
+        if loc == "home":
+            charger_type = "AC"
+        elif loc in ("extern", "external"):
+            charger_type = "DC"
+
     row = {
         "row_num":      idx,
         "date":         dt_s.date(),
@@ -200,7 +297,7 @@ def to_row(s, idx):
         "meter_old":    s.get("meter_old"),
         "meter_new":    s.get("meter_new"),
         "location":     LOCATION_LABELS.get(s.get("location", "unknown"), s.get("location", "—")),
-        "charger_type": s.get("charger_type"),
+        "charger_type": charger_type,
     }
     # Calculate charge_power_kw = kwh / duration_h
     kwh = s.get("kwh_charged")
@@ -285,11 +382,20 @@ def compute_header_values(sessions, year, month, header_info=None, lang="de"):
     ext_cost   = sum(s.get("cost_eur")    or 0 for s in ext_s)
     total_kwh  = home_kwh + ext_kwh
     n = len(sessions)
+    # Sum per-session km differences where both odo values are present
     total_km = 0
-    if n:
-        odo_end   = sessions[-1].get("odo_end")   or 0
-        odo_start = sessions[0].get("odo_start")  or 0
-        total_km  = odo_end - odo_start
+    for s in sessions:
+        odo_s = s.get("odo_start")
+        odo_e = s.get("odo_end")
+        if odo_s is not None and odo_e is not None:
+            diff = odo_e - odo_s
+            if diff > 0:
+                total_km += diff
+    if total_km == 0 and n:
+        # Fallback: use first/last odo readings
+        odo_end_val   = sessions[-1].get("odo_end")   or 0
+        odo_start_val = sessions[0].get("odo_start")  or 0
+        total_km = max(0, odo_end_val - odo_start_val)
     avg_cons = None
     if total_km and total_km > 0:
         avg_cons = round(total_kwh / total_km * 100, 2)
@@ -312,7 +418,8 @@ def compute_header_values(sessions, year, month, header_info=None, lang="de"):
     # Localized month name and period
     month_name = MONTH_NAMES.get(lang, MONTH_NAMES["de"])[month]
     month_year = f"{month_name} {year}"
-    export_date_str = datetime.today().strftime(DATE_FORMATS.get(lang, "%d.%m.%Y"))
+    _now_utc = datetime.utcnow()
+    export_date_str = _now_utc.strftime(DATE_FORMATS.get(lang, "%d.%m.%Y"))
     last_day = _cal.monthrange(year, month)[1]
     if lang == "en":
         export_period = f"{year}-{month:02d}-01 – {year}-{month:02d}-{last_day:02d}"
@@ -326,10 +433,10 @@ def compute_header_values(sessions, year, month, header_info=None, lang="de"):
         "kostenstelle":             header_info.get("kostenstelle") or None,
         "month_year":               month_year,
         "month_name":               month_name,
-        "export_date":              datetime.today().date(),
+        "export_date":              export_date_str,
         "export_period":            export_period,
         "total_sessions":           n,
-        "total_kwh":                total_kwh,
+        "total_kwh":                round(total_kwh, 2),
         "total_cost":               home_cost + ext_cost,
         "total_home_kwh":           home_kwh,
         "total_external_kwh":       ext_kwh,
@@ -467,36 +574,7 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
 
     # Replace {{placeholder}} in any cell text
     import re as _re
-    ph_pattern = _re.compile(r'\{\{(\w+)\}\}')
-    for ws_sheet in wb.worksheets:
-        for row in ws_sheet.iter_rows():
-            for cell in row:
-                if isinstance(cell, MergedCell):
-                    continue
-                val = cell.value
-                if isinstance(val, str) and '{{' in val:
-                    # Handle {{signature}} placeholder specially
-                    if '{{signature}}' in val:
-                        if not include_signature:
-                            # Clear placeholder when signature not included
-                            try:
-                                cell.value = val.replace('{{signature}}', '')
-                            except Exception:
-                                pass
-                        # If include_signature=True, leave for signature insertion code below
-                        continue
-                    def _replace_ph(m, _hv=hv):
-                        field = m.group(1)
-                        v = _hv.get(field)
-                        if v is None:
-                            return m.group(0)
-                        return str(v)
-                    new_val = ph_pattern.sub(_replace_ph, val)
-                    if new_val != val:
-                        try:
-                            cell.value = new_val
-                        except Exception:
-                            pass
+    _fill_placeholders(wb, hv, include_signature=include_signature, sig_img=None)
 
     # Write cell_mapping: { "B4": "kennzeichen" or {"field": "kennzeichen", ...} }
     if cell_mapping and isinstance(cell_mapping, dict):
