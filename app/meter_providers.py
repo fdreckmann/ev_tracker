@@ -11,7 +11,12 @@ class MeterResult:
     value: Optional[float] = None   # kWh total reading
     ok: bool = False
     source: str = ""                # provider key
-    debug: list[str] = field(default_factory=list)
+    endpoint: Optional[str] = None
+    raw_value: Any = None
+    unit: Optional[str] = None
+    normalized_from: Optional[str] = None
+    debug: list = field(default_factory=list)
+    suggestions: list = field(default_factory=list)
     error: Optional[str] = None
 
 def build_base_url(cfg: dict, default_scheme: str = "http") -> str:
@@ -144,10 +149,20 @@ class BaseMeterProvider:
     def read(self) -> MeterResult:
         raise NotImplementedError
 
-    def _result(self, value=None, debug=None, error=None):
-        ok = value is not None
-        return MeterResult(value=value, ok=ok, source=self.SOURCE_KEY,
-                           debug=debug or [], error=error)
+    def _result(self, value=None, debug=None, error=None, endpoint=None,
+                raw_value=None, unit=None, normalized_from=None, suggestions=None):
+        return MeterResult(
+            value=value,
+            ok=value is not None,
+            source=self.__class__.__name__,
+            endpoint=endpoint,
+            raw_value=raw_value,
+            unit=unit,
+            normalized_from=normalized_from,
+            debug=debug or [],
+            suggestions=suggestions or [],
+            error=error,
+        )
 
 
 class NoneMeterProvider(BaseMeterProvider):
@@ -160,35 +175,46 @@ class HaMeterProvider(BaseMeterProvider):
     SOURCE_KEY = "ha"
 
     def read(self) -> MeterResult:
-        debug = []
+        dbg = []
         entity = self.cfg.get("meter_sensor", "").strip()
         if not entity:
-            return self._result(error="Keine HA Entity ID konfiguriert", debug=debug)
+            return self._result(error="Keine HA Entity ID konfiguriert", debug=dbg)
         ha_url = self.cfg.get("ha_url", "").rstrip("/")
         token = self.cfg.get("ha_token", "")
         url = f"{ha_url}/api/states/{entity}"
-        debug.append(f"GET {url}")
+        dbg.append(f"GET {url}")
         import requests
         try:
             r = requests.get(url, headers={"Authorization": f"Bearer {token}"},
                              timeout=self.timeout)
-            debug.append(f"  → HTTP {r.status_code}")
+            dbg.append(f"  → HTTP {r.status_code}")
             r.raise_for_status()
             data = r.json()
-            state = data.get("state")
-            debug.append(f"  → state={state}")
-            val = normalize_energy_value(state)
+            state = data.get("state", "")
+            dbg.append(f"  → state={state}")
+            if state in ("unavailable", "unknown", None, ""):
+                return self._result(error=f"HA sensor unavailable: {state}", debug=dbg)
+            try:
+                state_val = float(state)
+            except (ValueError, TypeError):
+                return self._result(error=f"HA sensor state not numeric: {state!r}", debug=dbg)
+            attributes = data.get("attributes", {})
+            unit = attributes.get("unit_of_measurement", "auto")
+            val = normalize_energy_value(state_val, unit=unit)
             if val is None:
-                return self._result(error=f"Ungültiger Wert: {state}", debug=debug)
-            unit = data.get("attributes", {}).get("unit_of_measurement", "kWh")
-            debug.append(f"  → unit={unit}, value={val}")
-            # normalize if sensor reports Wh
-            if unit.lower() == "wh":
-                val = round(val / 1000, 3)
-            return self._result(value=val, debug=debug)
+                return self._result(error=f"Ungültiger Wert: {state}", debug=dbg)
+            dbg.append(f"HA state={state_val} unit={unit} → {val} kWh")
+            return self._result(
+                value=val,
+                endpoint=url,
+                raw_value=state_val,
+                unit=unit,
+                normalized_from="state",
+                debug=dbg,
+            )
         except Exception as e:
-            debug.append(f"  → EXCEPTION: {e}")
-            return self._result(error=str(e), debug=debug)
+            dbg.append(f"  → EXCEPTION: {e}")
+            return self._result(error=str(e), debug=dbg)
 
 
 class ShellyMeterProvider(BaseMeterProvider):
@@ -227,38 +253,116 @@ class ShellyMeterProvider(BaseMeterProvider):
         debug.append("=== Versuche Gen2/Plus/Pro RPC API ===")
 
         # 1. GET /rpc/Shelly.GetStatus — try multiple field patterns
-        data = _get_json(f"{self.base_url}/rpc/Shelly.GetStatus", timeout=self.timeout, auth=auth, debug=debug)
+        dbg = debug
+        _getstatus_url = f"{self.base_url}/rpc/Shelly.GetStatus"
+        data = _get_json(_getstatus_url, timeout=self.timeout, auth=auth, debug=dbg)
         if data is not None:
-            result = self._parse_gen2_status(data, channel, phase_mode, unit, debug)
+            result = self._parse_gen2_status(data, channel, phase_mode, unit, dbg)
             if result is not None:
-                return self._result(value=result, debug=debug)
+                return self._result(value=result, endpoint=_getstatus_url, debug=dbg)
 
-        # 2. GET /rpc/Switch.GetStatus?id=0
-        data = _get_json(f"{self.base_url}/rpc/Switch.GetStatus?id=0", timeout=self.timeout, auth=auth, debug=debug)
-        if data is not None:
-            raw = _json_path(data, "aenergy.total")
-            if raw is not None:
-                val = normalize_energy_value(raw, unit="Wh")
-                debug.append(f"  → Switch.GetStatus?id=0 aenergy.total={raw} Wh → {val} kWh")
-                return self._result(value=val, debug=debug)
+        # 2. /rpc/Switch.GetStatus?id=0 and id=1
+        import requests as _requests_shelly
+        timeout = self.timeout
+        base_url = self.base_url
+        cfg = self.cfg
+        for switch_id in [channel, 1 - channel]:
+            url = f"{base_url}/rpc/Switch.GetStatus?id={switch_id}"
+            try:
+                r = _requests_shelly.get(url, timeout=timeout, auth=auth)
+                if r.ok:
+                    data = r.json()
+                    aenergy = data.get("aenergy", {})
+                    total = aenergy.get("total") if isinstance(aenergy, dict) else None
+                    if total is not None:
+                        return self._result(
+                            value=normalize_energy_value(total, "Wh"),
+                            endpoint=url,
+                            raw_value=total,
+                            unit="Wh",
+                            normalized_from="aenergy.total",
+                            debug=dbg + [f"Switch.GetStatus?id={switch_id}: aenergy.total={total}"]
+                        )
+            except Exception as e:
+                dbg.append(f"Switch.GetStatus?id={switch_id}: {e}")
 
-        # 3. GET /rpc/Switch.GetStatus?id=1
-        data = _get_json(f"{self.base_url}/rpc/Switch.GetStatus?id=1", timeout=self.timeout, auth=auth, debug=debug)
-        if data is not None:
-            raw = _json_path(data, "aenergy.total")
-            if raw is not None:
-                val = normalize_energy_value(raw, unit="Wh")
-                debug.append(f"  → Switch.GetStatus?id=1 aenergy.total={raw} Wh → {val} kWh")
-                return self._result(value=val, debug=debug)
+        # 3. /rpc/PM1.GetStatus?id=0
+        url = f"{base_url}/rpc/PM1.GetStatus?id=0"
+        try:
+            r = _requests_shelly.get(url, timeout=timeout, auth=auth)
+            if r.ok:
+                data = r.json()
+                aenergy = data.get("aenergy", {})
+                total = aenergy.get("total") if isinstance(aenergy, dict) else None
+                if total is not None:
+                    return self._result(
+                        value=normalize_energy_value(total, "Wh"),
+                        endpoint=url,
+                        raw_value=total,
+                        unit="Wh",
+                        normalized_from="aenergy.total",
+                        debug=dbg + [f"PM1.GetStatus: aenergy.total={total}"]
+                    )
+        except Exception as e:
+            dbg.append(f"PM1.GetStatus: {e}")
 
-        # 4. GET /rpc/PM1.GetStatus?id=0
-        data = _get_json(f"{self.base_url}/rpc/PM1.GetStatus?id=0", timeout=self.timeout, auth=auth, debug=debug)
-        if data is not None:
-            raw = _json_path(data, "aenergy.total")
-            if raw is not None:
-                val = normalize_energy_value(raw, unit="Wh")
-                debug.append(f"  → PM1.GetStatus?id=0 aenergy.total={raw} Wh → {val} kWh")
-                return self._result(value=val, debug=debug)
+        # 4. /rpc/EMData.GetStatus?id=0 and id=1
+        phase_mode = cfg.get("meter_phase_mode", "total")
+        for em_id in [0, 1]:
+            url = f"{base_url}/rpc/EMData.GetStatus?id={em_id}"
+            try:
+                r = _requests_shelly.get(url, timeout=timeout, auth=auth)
+                if r.ok:
+                    data = r.json()
+                    if phase_mode == "sum_phases":
+                        a = data.get("a_total_act_energy", 0) or 0
+                        b = data.get("b_total_act_energy", 0) or 0
+                        c = data.get("c_total_act_energy", 0) or 0
+                        total = a + b + c
+                        normalized_from = "a+b+c_total_act_energy"
+                    elif phase_mode == "phase_a":
+                        total = data.get("a_total_act_energy")
+                        normalized_from = "a_total_act_energy"
+                    elif phase_mode == "phase_b":
+                        total = data.get("b_total_act_energy")
+                        normalized_from = "b_total_act_energy"
+                    elif phase_mode == "phase_c":
+                        total = data.get("c_total_act_energy")
+                        normalized_from = "c_total_act_energy"
+                    else:
+                        total = data.get("total_act")
+                        normalized_from = "total_act"
+                    if total is not None and total > 0:
+                        return self._result(
+                            value=normalize_energy_value(total, "Wh"),
+                            endpoint=url,
+                            raw_value=total,
+                            unit="Wh",
+                            normalized_from=normalized_from,
+                            debug=dbg + [f"EMData.GetStatus?id={em_id}: {normalized_from}={total}"]
+                        )
+            except Exception as e:
+                dbg.append(f"EMData.GetStatus?id={em_id}: {e}")
+
+        # 5. /rpc/EM1Data.GetStatus?id=0
+        url = f"{base_url}/rpc/EM1Data.GetStatus?id=0"
+        try:
+            r = _requests_shelly.get(url, timeout=timeout, auth=auth)
+            if r.ok:
+                data = r.json()
+                total = data.get("total_act") or _json_path(data, "aenergy.total")
+                if total is not None:
+                    normalized_from = "total_act" if data.get("total_act") is not None else "aenergy.total"
+                    return self._result(
+                        value=normalize_energy_value(total, "Wh"),
+                        endpoint=url,
+                        raw_value=total,
+                        unit="Wh",
+                        normalized_from=normalized_from,
+                        debug=dbg + [f"EM1Data.GetStatus: {normalized_from}={total}"]
+                    )
+        except Exception as e:
+            dbg.append(f"EM1Data.GetStatus: {e}")
 
         # --- Try Gen1 API ---
         debug.append("=== Versuche Gen1 API ===")

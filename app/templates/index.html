@@ -540,6 +540,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             <div><label>JSON-Pfad</label><input type="text" id="c_meter_json_path_generic" placeholder="data.energy.total"></div>
             <div><label>Einheit</label>
               <select id="c_meter_value_unit">
+                <option value="auto">Auto-Erkennung</option>
                 <option value="kwh">kWh</option>
                 <option value="wh">Wh</option>
                 <option value="mwh">MWh</option>
@@ -973,7 +974,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <option value="9">September</option><option value="10">Oktober</option>
         <option value="11">November</option><option value="12">Dezember</option>
       </select>
-      <select id="expLoc" onchange="loadExpPreview()">
+      <select id="expLoc" onchange="_lastExportPreviewToken=null;loadExpPreview()">
         <option value="all">🔁 Alle Standorte</option>
         <option value="home">Nur Zuhause</option>
         <option value="extern">Nur Extern</option>
@@ -998,7 +999,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <span style="font-size:.8rem;font-weight:600">Vorschau</span>
         <div style="display:flex;gap:8px">
           <span id="expPreviewWarnings" style="font-size:.72rem;color:#f59e0b;font-family:var(--mono)"></span>
-          <button class="btn-p" onclick="doExport()" style="padding:4px 14px;font-size:.75rem">⬇ Herunterladen</button>
+          <button class="btn-p" onclick="doExportDownloadFromPreview()" style="padding:4px 14px;font-size:.75rem">⬇ Herunterladen</button>
           <button class="btn-g" onclick="$('expPreviewArea').style.display='none'" style="padding:4px 10px;font-size:.75rem">✕</button>
         </div>
       </div>
@@ -1979,8 +1980,8 @@ async function loadConfig(){
     if($('c_meter_json_path_tasmota')) $('c_meter_json_path_tasmota').value = c.meter_json_path||'';
     if($('c_meter_json_path_generic'))  $('c_meter_json_path_generic').value = c.meter_json_path||'';
     if($('c_meter_generic_url'))    $('c_meter_generic_url').value   = c.meter_generic_url||'';
-    if($('c_meter_value_unit'))     $('c_meter_value_unit').value    = c.meter_value_unit||'kwh';
-    if($('c_meter_value_factor'))   $('c_meter_value_factor').value  = c.meter_value_factor||1.0;
+    if($('c_meter_value_unit'))     $('c_meter_value_unit').value    = c.meter_value_unit||'auto';
+    if($('c_meter_value_factor'))   $('c_meter_value_factor').value  = c.meter_value_factor != null ? c.meter_value_factor : '';
     if($('c_meter_generic_user'))   $('c_meter_generic_user').value  = c.meter_username||'';
     if($('c_meter_timeout_seconds')) $('c_meter_timeout_seconds').value = c.meter_timeout_seconds||8;
     if($('c_meter_device_scheme'))  $('c_meter_device_scheme').value = c.meter_device_scheme||'http';
@@ -3230,45 +3231,78 @@ function toggleMeterAdvanced(){
   const el=$('meterAdvancedFields');
   el.style.display = el.style.display==='none' ? '' : 'none';
 }
+function collectMeterFormConfig() {
+  const g = id => { const el=$(id); return el ? el.value : ''; };
+  const factorRaw = g('c_meter_value_factor');
+  return {
+    meter_source:         g('c_meter_source'),
+    meter_sensor:         g('c_meter_sensor'),
+    meter_device_ip:      g('c_meter_device_ip'),
+    meter_device_scheme:  g('c_meter_device_scheme') || 'http',
+    meter_device_port:    g('c_meter_device_port') || '',
+    meter_username:       g('c_meter_generic_user') || g('c_meter_username') || '',
+    meter_password:       g('c_meter_password_shelly') || g('c_meter_generic_pass') || g('c_meter_password') || '',
+    meter_channel:        parseInt(g('c_meter_channel') || '0') || 0,
+    meter_phase_mode:     g('c_meter_phase_mode') || 'total',
+    meter_json_path:      g('c_meter_json_path_tasmota') || g('c_meter_json_path_generic') || '',
+    meter_generic_url:    g('c_meter_generic_url') || '',
+    meter_value_unit:     g('c_meter_value_unit') || 'auto',
+    meter_value_factor:   factorRaw === '' ? null : (parseFloat(factorRaw) || null),
+    meter_timeout_seconds: parseInt(g('c_meter_timeout_seconds') || '10') || 10,
+    meter_custom_path:    g('c_meter_custom_path') || '',
+  };
+}
 async function saveMeterSource(){
   const g = id => { const el=$(id); return el ? el.value.trim() : ''; };
   const gb = id => { const el=$(id); return el ? el.checked : false; };
-  const cfg={
-    meter_source:         $('c_meter_source').value,
-    meter_sensor:         g('c_meter_sensor'),
-    meter_device_ip:      g('c_meter_device_ip'),
+  const base = collectMeterFormConfig();
+  const cfg = Object.assign({}, base, {
     meter_evcc_port:      parseInt($('c_meter_evcc_port')?.value)||7070,
     meter_evcc_lp:        parseInt($('c_meter_evcc_lp')?.value)||0,
     meter_alfen_pass:     g('c_meter_alfen_pass'),
-    meter_channel:        parseInt($('c_meter_channel')?.value)||0,
-    meter_phase_mode:     $('c_meter_phase_mode')?.value||'total',
-    meter_json_path:      g('c_meter_json_path_tasmota')||g('c_meter_json_path_generic'),
-    meter_generic_url:    g('c_meter_generic_url'),
-    meter_value_unit:     $('c_meter_value_unit')?.value||'kwh',
-    meter_value_factor:   parseFloat($('c_meter_value_factor')?.value)||1.0,
-    meter_username:       g('c_meter_generic_user'),
-    meter_password:       g('c_meter_password_shelly')||g('c_meter_generic_pass'),
-    meter_timeout_seconds: parseInt($('c_meter_timeout_seconds')?.value)||8,
-    meter_device_scheme:  $('c_meter_device_scheme')?.value||'http',
-    meter_device_port:    g('c_meter_device_port'),
     meter_prefer_meter_delta: gb('c_meter_prefer_delta'),
-  };
+  });
   const r=await apiFetch('/api/config',{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
   if(r.ok) toast('Zählerstand-Quelle gespeichert');
   else toast('Fehler beim Speichern','err');
 }
 async function testMeterSource(){
-  const res=$('meterTestRes'); res.textContent='⏳ Teste…'; res.style.color='var(--mute)';
+  const btn = document.getElementById('testMeterBtn');
+  const res=$('meterTestRes');
+  if(res){ res.textContent='⏳ Teste…'; res.style.color='var(--mute)'; }
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Teste...'; }
   const dbg=$('meterTestDebug');
   if(dbg) { dbg.textContent=''; dbg.style.display='none'; }
-  await saveMeterSource();
-  const r=await apiFetch('/api/meter/test',{method:'POST'}).then(r=>r.json());
-  res.textContent=r.message;
-  res.style.color=r.ok?'var(--acc)':'var(--danger)';
-  if(dbg && r.debug && r.debug.length){
-    dbg.textContent=r.debug.join('\n');
-    dbg.style.display='';
+  try {
+    const cfg = collectMeterFormConfig();
+    const resp = await apiFetch('/api/meter/test', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(cfg)
+    });
+    const r = typeof resp.json === 'function' ? await resp.json() : resp;
+    let msg = '';
+    if(r.ok){
+      msg = '✅ ' + (r.message || ('Zählerstand: ' + r.value_kwh + ' kWh'));
+      if(r.endpoint) msg += '\nEndpunkt: ' + r.endpoint;
+      if(r.normalized_from) msg += '\nFeld: ' + r.normalized_from;
+      if(r.unit) msg += '\nEinheit: ' + r.unit;
+      if(r.raw_value != null) msg += '\nRohwert: ' + r.raw_value;
+    } else {
+      msg = '❌ ' + (r.message || r.error || 'Fehler');
+    }
+    if(res){ res.textContent=msg; res.style.color=r.ok?'var(--acc)':'var(--danger)'; }
+    if(dbg && r.debug && r.debug.length > 0){
+      dbg.style.display='';
+      dbg.textContent=r.debug.join('\n');
+    } else if(dbg){
+      dbg.style.display='none';
+    }
+  } catch(e) {
+    if(res){ res.textContent='❌ Fehler: ' + e.message; res.style.color='var(--danger)'; }
+  } finally {
+    if(btn){ btn.disabled=false; btn.textContent='🔌 Zähler testen'; }
   }
 }
 
@@ -3316,8 +3350,8 @@ async function loadExpPreview(){
   $('es_eff').textContent  = eff;
 }
 
-$('expY')?.addEventListener('change',loadExpPreview);
-$('expM')?.addEventListener('change',loadExpPreview);
+$('expY')?.addEventListener('change',()=>{ _lastExportPreviewToken=null; loadExpPreview(); });
+$('expM')?.addEventListener('change',()=>{ _lastExportPreviewToken=null; loadExpPreview(); });
 
 async function doExport(){
   const y=$('expY').value, m=$('expM').value, loc=$('expLoc').value;
@@ -3348,10 +3382,35 @@ async function saveExportLang(){
   await apiFetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({export_language: lang})});
 }
 
+let _lastExportPreviewToken = null;
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function normalizeRows(rows) {
+  if (!rows || rows.length === 0) return [];
+  // Neues Format: array of {row, is_data, cells}
+  if (rows[0] && typeof rows[0] === 'object' && Array.isArray(rows[0].cells)) {
+    return rows;
+  }
+  // Altes Format: array of arrays
+  return rows.map((cells, i) => ({row: i+1, is_data: true, cells: cells}));
+}
+
+function doExportDownloadFromPreview() {
+  if (_lastExportPreviewToken) {
+    window.location.href = `/api/export/download/${_lastExportPreviewToken}`;
+  } else {
+    doExport();
+  }
+}
+
 async function doExportPreview(){
   const y=$('expY').value, m=$('expM').value, loc=$('expLoc').value;
   const lang = $('expLang')?.value || 'de';
   const inclSig = $('expIncludeSig') && !$('expIncludeSig').disabled && $('expIncludeSig').checked;
+  _lastExportPreviewToken = null;
   $('expPreviewArea').style.display='';
   $('expPreviewContent').innerHTML='<div class="empty">⏳ Lade Vorschau…</div>';
   $('expPreviewWarnings').textContent='';
@@ -3362,14 +3421,20 @@ async function doExportPreview(){
       body: JSON.stringify({year:parseInt(y), month:parseInt(m), location:loc, lang, include_signature:inclSig})
     }).then(r=>r.json());
 
-    if(!r.ok){ $('expPreviewContent').innerHTML=`<div class="empty" style="color:var(--danger)">${r.error||'Vorschau fehlgeschlagen'}</div>`; return; }
+    if(!r.ok){ $('expPreviewContent').innerHTML=`<div class="empty" style="color:var(--danger)">${escapeHtml(r.error||'Vorschau fehlgeschlagen')}</div>`; return; }
 
-    if(r.warnings && r.warnings.length){
+    if(r.download_token) {
+      _lastExportPreviewToken = r.download_token;
+    }
+
+    // Show warnings
+    let html = '';
+    if(r.warnings && r.warnings.length > 0){
       $('expPreviewWarnings').textContent = '⚠ ' + r.warnings.join(' · ');
+      html += `<div style="background:#332;padding:8px;border-radius:4px;margin-bottom:8px"><b>⚠️ Hinweise:</b><ul style="margin:4px 0 0 16px">${r.warnings.map(w=>`<li>${escapeHtml(w)}</li>`).join('')}</ul></div>`;
     }
 
     // Show header values summary
-    let html = '';
     if(r.header_values){
       const hv = r.header_values;
       const fields = [
@@ -3381,29 +3446,36 @@ async function doExportPreview(){
       ].filter(([k,v]) => v !== null && v !== 'None' && v !== undefined);
       html += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">`;
       for(const [k,v] of fields){
-        html += `<div style="background:rgba(255,255,255,.06);padding:4px 10px;border-radius:4px;font-size:.72rem;font-family:var(--mono)"><span style="color:var(--mute)">${k}:</span> ${v}</div>`;
+        html += `<div style="background:rgba(255,255,255,.06);padding:4px 10px;border-radius:4px;font-size:.72rem;font-family:var(--mono)"><span style="color:var(--mute)">${escapeHtml(String(k))}:</span> ${escapeHtml(String(v))}</div>`;
       }
       html += '</div>';
     }
 
     // Show sheet preview
-    for(const sheet of (r.sheets||[])){
-      html += `<div style="font-size:.72rem;color:var(--mute);margin-bottom:4px">Tabellenblatt: ${sheet.name} · Datenstartzeile: ${sheet.data_start_row}</div>`;
-      html += '<table style="border-collapse:collapse;font-size:.71rem;font-family:var(--mono);min-width:100%">';
-      for(const row of (sheet.rows||[])){
-        const style = row.is_data ? 'background:rgba(255,255,255,.03)' : 'background:rgba(99,179,237,.08);font-weight:600';
-        html += `<tr style="${style}"><td style="color:var(--mute);padding:2px 6px;border-right:1px solid var(--brd)">${row.row}</td>`;
-        for(const cell of (row.cells||[])){
-          html += `<td style="padding:2px 8px;border:1px solid rgba(255,255,255,.05);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${cell.replace(/"/g,'&quot;')}">${cell||''}</td>`;
+    const sheets = r.sheets || [];
+    if(sheets.length === 0){
+      html += '<p>Keine Vorschau verfügbar.</p>';
+    } else {
+      for(const sheet of sheets){
+        html += `<div style="font-size:.72rem;color:var(--mute);margin-bottom:4px">Tabellenblatt: ${escapeHtml(sheet.name)} · Datenstartzeile: ${sheet.data_start_row}</div>`;
+        html += '<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:.71rem;font-family:var(--mono);min-width:100%">';
+        const rows = normalizeRows(sheet.rows || []);
+        for(const row of rows){
+          const style = row.is_data ? 'background:rgba(255,255,255,.03)' : 'background:rgba(99,179,237,.08);font-weight:600';
+          html += `<tr style="${style}"><td style="color:var(--mute);padding:2px 6px;border-right:1px solid var(--brd)">${row.row}</td>`;
+          for(const cell of (row.cells||[])){
+            const cellStr = cell == null ? '' : String(cell);
+            html += `<td style="padding:2px 8px;border:1px solid rgba(255,255,255,.05);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${cellStr.replace(/"/g,'&quot;')}">${escapeHtml(cellStr)}</td>`;
+          }
+          html += '</tr>';
         }
-        html += '</tr>';
+        html += '</table></div>';
       }
-      html += '</table>';
     }
 
     $('expPreviewContent').innerHTML = html || '<div class="empty">Keine Vorschau verfügbar</div>';
   } catch(e) {
-    $('expPreviewContent').innerHTML = `<div class="empty" style="color:var(--danger)">Fehler: ${e.message}</div>`;
+    $('expPreviewContent').innerHTML = `<div class="empty" style="color:var(--danger)">Fehler: ${escapeHtml(e.message)}</div>`;
   }
 }
 
