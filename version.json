@@ -1,6 +1,25 @@
 {
-  "version": "1.9.9",
+  "version": "2.0.0",
   "changelog": [
+    {
+      "version": "2.0.0",
+      "date": "2026-05-18",
+      "changes": [
+        "Export-Lokalisierung vollständig: alle Spaltenüberschriften und Labels auf Deutsch/Englisch",
+        "EXPORT_LABELS erweitert: total_sessions, total_km, avg_charge_power_kw, soc_start/end, odo_start/end, meter_old/new u.v.m.",
+        "Platzhalter-Ersetzung vollständig implementiert: alle {{key}} in Templates werden ersetzt mit 2-Dezimalstellen-Formatierung für Zahlenwerte",
+        "{{signature}}: Platzhalter wird korrekt geleert oder durch Bild ersetzt",
+        "Export-Vorschau: echte XLSX-Datei wird erzeugt und als Grid (max. 200 Zeilen / 30 Spalten) zurückgegeben",
+        "Download-Token: Vorschau-XLSX per GET /api/export/download/<token> abrufbar (30 Minuten gültig)",
+        "Zählertest (/api/meter/test): Body-Parameter werden body-first ohne Speichern verwendet",
+        "Zählertest: Erweiterte Antwort mit value_kwh, provider, endpoint (ohne Passwort), raw_value, unit, normalized_from",
+        "meter_value_unit Default auf 'auto' geändert",
+        "to_row(): duration_hours wird aus Sekunden berechnet, charger_type aus Standort abgeleitet wenn nicht gesetzt",
+        "compute_header_values(): export_date nutzt datetime.utcnow(), total_km als Summe der Einzel-Sessions",
+        "export() gibt bytes zurück statt Dateipfad (rückwärtskompatibel über return_warnings=True)",
+        "Rückwärtskompatibilität: header_row aus start_row-1, signature.cell → anchor_cell"
+      ]
+    },
     {
       "version": "1.9.9",
       "date": "2026-05-18",

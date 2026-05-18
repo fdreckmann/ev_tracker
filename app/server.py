@@ -11,9 +11,19 @@ from meter_providers import read_meter as _read_meter_impl, MeterResult
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.9.9"
+APP_VERSION   = "2.0.0"
 
 CHANGELOG = [
+    {"version":"2.0.0","changes":[
+        "Export-Lokalisierung vollständig: alle Spaltenüberschriften und Labels auf Deutsch/Englisch",
+        "Platzhalter-Ersetzung erweitert: {{total_sessions}}, {{total_km}}, {{avg_charge_power_kw}} u.v.m.",
+        "Export-Vorschau: echte XLSX-Datei wird erzeugt und als Grid zurückgegeben",
+        "Download-Token: Vorschau-XLSX per /api/export/download/<token> abrufbar (30 Min. gültig)",
+        "Zählertest: Body-Parameter werden ohne Speichern für den Test verwendet",
+        "Zählertest: Erweiterte Antwort mit provider, endpoint, raw_value, unit, normalized_from",
+        "meter_value_unit Default auf 'auto' geändert",
+        "to_row(): duration_hours aus Sekunden berechnet, charger_type aus Standort abgeleitet",
+    ]},
     {"version":"1.9.9","changes":[
         "Passkey (WebAuthn/FIDO2) Authentifizierung: Anmelden per Fingerabdruck, Face ID oder Hardware-Key",
         "Passkey-Registrierung und -Verwaltung in den Sicherheitseinstellungen",
@@ -308,7 +318,7 @@ DEFAULT_CONFIG = {
     "meter_channel":     0,         # Shelly channel/emeter index
     "meter_phase_mode":  "total",   # Shelly: total|a|b|c
     "meter_json_path":   "",        # Tasmota/Generic: dot-separated JSON path
-    "meter_value_unit":  "kwh",     # Generic: kwh|wh|mwh
+    "meter_value_unit":  "auto",    # Generic: auto|kwh|wh|mwh
     "meter_value_factor": 1.0,      # Generic: multiply factor
     "meter_generic_url": "",        # Generic HTTP: full URL
     "meter_openwb_lp":   1,         # openWB loadpoint (1-based)
@@ -1468,13 +1478,8 @@ def api_passkey_login_complete():
 
         # credential id is the base64url "id" field from the browser response
         cred_id_b64 = body.get("id", "")
-        log.debug("Passkey login: browser cred_id=%s", cred_id_b64[:20] if cred_id_b64 else "(empty)")
 
         con = _get_db()
-        # Also log stored IDs to diagnose mismatch
-        stored = con.execute("SELECT credential_id FROM webauthn_credentials").fetchall()
-        log.debug("Passkey login: stored IDs=%s", [r["credential_id"][:20] for r in stored])
-
         row = con.execute(
             """SELECT wc.id as cred_id, wc.credential_id, wc.public_key, wc.sign_count, wc.name as cred_name,
                       u.id as user_id, u.email, u.name, u.role, u.status
@@ -1486,8 +1491,7 @@ def api_passkey_login_complete():
 
         if not row:
             con.close()
-            # Return the browser id to help diagnose
-            return jsonify({"ok": False, "error": f"Passkey nicht gefunden (id={cred_id_b64[:30] if cred_id_b64 else 'leer'})"}), 400
+            return jsonify({"ok": False, "error": "Passkey nicht registriert. Bitte mit Passwort einloggen und den Passkey unter Einstellungen → Sicherheit neu hinzufügen."}), 400
 
         row = dict(row)
         if row.get("status") == "disabled":
@@ -1862,22 +1866,47 @@ def api_test():
 
 @app.route("/api/meter/test", methods=["POST"])
 def api_meter_test():
-    # Accept override params from request body (without persisting)
-    body = request.get_json(silent=True) or {}
+    import re as _re_meter
+    # Load saved config as base
     cfg = load_config()
-    # Override config with test params (never log passwords)
+    # Body-first: merge body values with priority over stored config (without saving)
+    body = request.get_json(silent=True) or {}
     for k, v in body.items():
         if k.startswith("meter_") or k in ("ha_url", "ha_token"):
             cfg[k] = v
+
     result = _read_meter_impl(cfg)
-    msg = (f"✅ Zählerstand: {result.value:.3f} kWh" if result.ok
-           else f"❌ {result.error or 'Kein Wert erhalten'}")
+
+    # Build safe endpoint URL (strip passwords)
+    raw_ep = ""
+    try:
+        from meter_providers import build_base_url
+        raw_ep = build_base_url(cfg)
+    except Exception:
+        raw_ep = cfg.get("meter_device_ip", "")
+    # Remove password from URL if present (basic auth pattern)
+    safe_ep = _re_meter.sub(r'://[^:@]+:[^@]+@', '://', raw_ep) if raw_ep else ""
+
+    msg = (f"Zählerstand: {result.value:.3f} kWh" if result.ok
+           else result.error or "Kein Wert erhalten")
+
+    # Extract extra debug fields from result if available
+    raw_value   = getattr(result, "raw_value", result.value)
+    unit        = getattr(result, "unit", None)
+    norm_from   = getattr(result, "normalized_from", None)
+
     return jsonify({
-        "ok": result.ok,
-        "value": result.value,
-        "message": msg,
-        "source": result.source,
-        "debug": result.debug,
+        "ok":             result.ok,
+        "value_kwh":      result.value,
+        "value":          result.value,   # backward compat
+        "message":        msg,
+        "provider":       result.source,
+        "endpoint":       safe_ep,
+        "raw_value":      raw_value,
+        "unit":           unit,
+        "normalized_from": norm_from,
+        "debug":          result.debug,
+        "suggestions":    [],
     })
 
 @app.route("/api/entsoe/test", methods=["POST"])
@@ -2279,7 +2308,9 @@ def api_signature_delete():
     return jsonify({"ok": True})
 
 @app.route("/api/export")
+@require_login
 def api_export():
+    import io as _io_exp
     from export_excel import export
     y=request.args.get("year",datetime.now().year,type=int)
     m=request.args.get("month",datetime.now().month,type=int)
@@ -2294,6 +2325,12 @@ def api_export():
             override = None
     start_row    = cfg.get("template_start_row")
     header_row   = cfg.get("template_header_row")
+    # Backward compat: template_start_row without header_row
+    if start_row and not header_row:
+        try:
+            header_row = int(start_row) - 1
+        except (ValueError, TypeError):
+            pass
     lang         = request.args.get("lang") or cfg.get("export_language", "de")
     _raw_cm      = cfg.get("template_cell_mapping") or {}
     cell_mapping = _raw_cm if isinstance(_raw_cm, dict) else {}
@@ -2312,37 +2349,56 @@ def api_export():
     else:
         include_signature = bool(cfg.get("export_include_signature", False))
     sig_mapping = cfg.get("signature_mapping") or {}
+    # Backward compat: "cell" → "anchor_cell" in signature_mapping
+    if sig_mapping and "cell" in sig_mapping and "anchor_cell" not in sig_mapping:
+        sig_mapping = dict(sig_mapping)
+        sig_mapping["anchor_cell"] = sig_mapping["cell"]
     try:
-        path = export(y, m, loc, col_override=override, start_row=start_row, header_row=header_row,
+        xlsx_bytes = export(y, m, loc, col_override=override, start_row=start_row, header_row=header_row,
                       header_info=header_info,
                       cell_mapping=cell_mapping, sheet=sheet,
                       include_signature=include_signature,
                       signature_path=str(SIGNATURE_PATH) if SIGNATURE_PATH.exists() else None,
                       signature_mapping=sig_mapping, lang=lang)
-        return send_file(path, as_attachment=True)
+        filename = f"EV_Ladeprotokoll_{y:04d}-{m:02d}.xlsx"
+        return send_file(_io_exp.BytesIO(xlsx_bytes), as_attachment=True,
+                         download_name=filename,
+                         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     except Exception as e:
         log.exception("Export fehlgeschlagen")
         return jsonify({"ok": False, "error": str(e)}), 500
 
-import uuid as _uuid_mod
-_export_preview_cache: dict = {}  # token -> (path, expires_ts)
+# ── Export token store ────────────────────────────────────────────────────────
+_export_tokens: dict = {}  # token -> {"path": str, "expires": float}
 
-def _cleanup_preview_cache():
-    """Remove expired preview temp files."""
-    import time
+def _cleanup_export_tokens():
+    """Delete expired token entries and their temp files."""
     now = time.time()
-    expired = [k for k, (p, exp) in _export_preview_cache.items() if exp < now]
+    expired = [k for k, v in list(_export_tokens.items()) if v["expires"] < now]
     for k in expired:
-        path, _ = _export_preview_cache.pop(k)
-        try:
-            Path(path).unlink(missing_ok=True)
-        except Exception:
-            pass
+        info = _export_tokens.pop(k, None)
+        if info:
+            try:
+                Path(info["path"]).unlink(missing_ok=True)
+            except Exception:
+                pass
+    # Also clean up orphaned /tmp/ev_export_*.xlsx
+    import glob as _glob
+    for fp in _glob.glob("/tmp/ev_export_*.xlsx"):
+        # only delete if not referenced by any token
+        if not any(v["path"] == fp for v in _export_tokens.values()):
+            try:
+                if Path(fp).stat().st_mtime < now - 3600:
+                    Path(fp).unlink(missing_ok=True)
+            except Exception:
+                pass
 
 @app.route("/api/export/preview", methods=["POST"])
 @require_login
 def api_export_preview():
-    from export_excel import preview_export
+    import io as _io_prev
+    import openpyxl as _opxl_prev
+    from export_excel import export as _export_func
     body = request.get_json(silent=True) or {}
     y    = int(body.get("year",  datetime.now().year))
     m    = int(body.get("month", datetime.now().month))
@@ -2354,6 +2410,11 @@ def api_export_preview():
     override     = _raw_override if isinstance(_raw_override, dict) else {}
     start_row    = body.get("start_row") or cfg.get("template_start_row")
     header_row   = body.get("header_row") or cfg.get("template_header_row")
+    if start_row and not header_row:
+        try:
+            header_row = int(start_row) - 1
+        except (ValueError, TypeError):
+            pass
     _raw_cm      = body.get("cell_mapping") or cfg.get("template_cell_mapping") or {}
     cell_mapping = _raw_cm if isinstance(_raw_cm, dict) else {}
     sheet        = body.get("sheet") or cfg.get("template_sheet")
@@ -2367,20 +2428,94 @@ def api_export_preview():
     }
     include_signature = bool(body.get("include_signature", False))
     sig_mapping       = cfg.get("signature_mapping") or {}
+    if sig_mapping and "cell" in sig_mapping and "anchor_cell" not in sig_mapping:
+        sig_mapping = dict(sig_mapping)
+        sig_mapping["anchor_cell"] = sig_mapping["cell"]
+
+    # Cleanup old tokens first
+    _cleanup_export_tokens()
 
     try:
-        result = preview_export(
+        xlsx_bytes, warnings = _export_func(
             y, m, loc,
             col_override=override, start_row=start_row, header_row=header_row,
             header_info=header_info, cell_mapping=cell_mapping, sheet=sheet,
             include_signature=include_signature,
             signature_path=str(SIGNATURE_PATH) if SIGNATURE_PATH.exists() else None,
             signature_mapping=sig_mapping, lang=lang,
+            return_warnings=True,
         )
-        return jsonify(result)
     except Exception as e:
         log.exception("Export-Vorschau fehlgeschlagen")
         return jsonify({"ok": False, "error": str(e)}), 500
+
+    # Save to temp file and issue download token
+    token = secrets.token_urlsafe(16)
+    tmp_path = f"/tmp/ev_export_{token}.xlsx"
+    try:
+        with open(tmp_path, "wb") as _tf:
+            _tf.write(xlsx_bytes)
+        _export_tokens[token] = {"path": tmp_path, "expires": time.time() + 1800}
+    except Exception as e:
+        log.warning(f"Konnte Token-Datei nicht speichern: {e}")
+        token = None
+
+    # Build grid from xlsx_bytes
+    sheets_out = []
+    try:
+        wb_prev = _opxl_prev.load_workbook(_io_prev.BytesIO(xlsx_bytes), data_only=True)
+        for ws_p in wb_prev.worksheets:
+            rows_out = []
+            for row_p in ws_p.iter_rows(max_row=200, max_col=30, values_only=True):
+                cells = []
+                for val in row_p:
+                    if val is None:
+                        cells.append("")
+                    elif isinstance(val, (int, float)):
+                        cells.append(val)
+                    else:
+                        cells.append(str(val))
+                rows_out.append(cells)
+            sheets_out.append({"name": ws_p.title, "rows": rows_out})
+    except Exception as e:
+        warnings.append(f"Grid-Erzeugung fehlgeschlagen: {e}")
+
+    result = {
+        "ok":             True,
+        "sheets":         sheets_out,
+        "warnings":       warnings,
+        "download_token": token,
+    }
+    return jsonify(result)
+
+
+@app.route("/api/export/download/<token>")
+@require_login
+def api_export_download_token(token):
+    """Download a previously generated export XLSX by token."""
+    import re as _re_tok
+    # Validate token format (URL-safe base64)
+    if not _re_tok.match(r'^[A-Za-z0-9_-]{10,64}$', token):
+        return jsonify({"error": "Ungültiger Token"}), 404
+    info = _export_tokens.get(token)
+    if not info:
+        return jsonify({"error": "Token nicht gefunden oder abgelaufen"}), 404
+    if info["expires"] < time.time():
+        _export_tokens.pop(token, None)
+        try:
+            Path(info["path"]).unlink(missing_ok=True)
+        except Exception:
+            pass
+        return jsonify({"error": "Token abgelaufen"}), 404
+    file_path = Path(info["path"])
+    if not file_path.exists():
+        return jsonify({"error": "Datei nicht mehr vorhanden"}), 404
+    return send_file(
+        str(file_path),
+        as_attachment=True,
+        download_name=file_path.name.replace(f"ev_export_{token}", "EV_Export"),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 # ── Backup ────────────────────────────────────────────────────────────────────
 import zipfile, subprocess

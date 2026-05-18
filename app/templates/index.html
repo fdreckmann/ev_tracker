@@ -184,6 +184,15 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   letter-spacing:.12em;margin-bottom:18px;display:flex;align-items:center;gap:10px}
 .cfg-sec-title::after{content:'';flex:1;height:1px;background:var(--brd)}
 
+/* ── Mapping mode tabs ── */
+.tab-btn{
+  background:var(--brd);color:var(--mute);border:1px solid var(--brd2);
+  border-radius:7px;padding:7px 14px;font-size:.78rem;cursor:pointer;
+  transition:all .15s;white-space:nowrap;
+}
+.tab-btn:hover{color:var(--txt)}
+.tab-btn.tab-active{background:var(--acc2);color:#041810;border-color:var(--acc2)}
+
 /* ── Session detail modal ── */
 .modal-overlay{
   position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.75);
@@ -1273,14 +1282,36 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
 <!-- ── Template Mapping Modal ── -->
 <div class="modal-overlay" id="mappingModal" style="display:none" onclick="if(event.target===this)closeMappingModal()">
-  <div class="modal" style="max-width:92vw;width:1200px;max-height:92vh;display:flex;flex-direction:column;padding:28px 28px 20px">
+  <div class="modal" style="max-width:92vw;width:1280px;max-height:92vh;display:flex;flex-direction:column;padding:28px 28px 20px">
     <button class="modal-close" onclick="closeMappingModal()">✕ Schließen</button>
-    <h2 style="margin-bottom:2px">Template konfigurieren</h2>
-    <p style="font-size:.74rem;font-family:var(--mono);color:var(--mute);margin-bottom:16px">
-      <strong style="color:#fff">Feld auswählen</strong> (rechts), dann auf eine Spalte im Grid klicken oder ziehen.
-      Klick ohne aktives Feld setzt die <strong style="color:#fff">Startzeile</strong>.
-    </p>
+    <h2 style="margin-bottom:10px">Template konfigurieren</h2>
 
+    <!-- Mode tabs -->
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button id="modeTabColumns" onclick="setMappingMode('columns')" class="tab-btn tab-active">📊 Tabellenspalten</button>
+      <button id="modeTabCells" onclick="setMappingMode('cells')" class="tab-btn">🔢 Einzelzellen</button>
+      <button id="modeTabSignature" onclick="setMappingMode('signature')" class="tab-btn">✍️ Unterschrift</button>
+    </div>
+
+    <!-- Row config panel (always visible) -->
+    <div id="rowConfigPanel" style="display:flex;gap:16px;align-items:center;margin-bottom:12px;padding:8px 12px;background:#1a1a2e;border-radius:6px;flex-wrap:wrap">
+      <label style="font-size:.72rem;font-family:var(--mono);color:var(--mute);display:flex;align-items:center;gap:6px">
+        Kopfzeile:
+        <input type="number" id="headerRowInput" min="1" max="200" placeholder="auto"
+               style="width:60px;background:var(--bg);border:1px solid var(--brd);border-radius:5px;padding:3px 7px;font-size:.72rem;color:var(--txt)"
+               onchange="onHeaderRowChanged()">
+      </label>
+      <button onclick="setHeaderRowFromClick()" style="font-size:.7rem;padding:4px 10px;background:var(--brd2);border:1px solid var(--brd2);color:var(--mute);border-radius:6px;cursor:pointer">← Klick setzt Kopfzeile</button>
+      <label style="font-size:.72rem;font-family:var(--mono);color:var(--mute);display:flex;align-items:center;gap:6px;margin-left:8px">
+        Erste Datenzeile:
+        <input type="number" id="startRowInput" min="1" max="200" placeholder="auto"
+               style="width:60px;background:var(--bg);border:1px solid var(--brd);border-radius:5px;padding:3px 7px;font-size:.72rem;color:var(--txt)"
+               onchange="onStartRowChanged()">
+      </label>
+      <button onclick="setStartRowFromClick()" style="font-size:.7rem;padding:4px 10px;background:var(--brd2);border:1px solid var(--brd2);color:var(--mute);border-radius:6px;cursor:pointer">← Klick setzt Datenzeile</button>
+    </div>
+
+    <!-- Analysis panel -->
     <div id="analysisPanel" style="display:none;background:#1a2a1a;border:1px solid #2d4a2d;border-radius:8px;padding:14px;margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <span style="font-size:.78rem;font-weight:600;color:var(--acc)">🔍 Analyse-Ergebnis</span>
@@ -1299,7 +1330,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <!-- LEFT: Excel grid -->
       <div style="display:flex;flex-direction:column;min-height:0">
         <div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px">
-          Template-Vorschau · Feld wählen, Spalte anklicken
+          Template-Vorschau
         </div>
         <div id="excelGridWrap" style="flex:1;overflow:auto;border:1px solid var(--brd);border-radius:8px;background:#1a1a1a"
              onmouseleave="_isDragging=false">
@@ -1309,36 +1340,93 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           </table>
         </div>
         <div id="mappingStartInfo" style="font-size:.72rem;font-family:var(--mono);color:var(--acc);margin-top:6px;min-height:18px"></div>
-        <div style="display:flex;align-items:center;gap:10px;margin-top:6px;font-size:.72rem;font-family:var(--mono)">
-          <label style="color:var(--mute);white-space:nowrap">Kopfzeile (header_row):</label>
-          <input type="number" id="headerRowInput" min="1" placeholder="auto"
-                 style="width:80px;background:var(--inp);color:var(--text);border:1px solid var(--brd);border-radius:5px;padding:3px 7px;font-size:.72rem"
-                 oninput="_selectedHeaderRow=this.value?parseInt(this.value):null">
-          <span style="color:var(--mute);font-size:.68rem">Zeile der Spaltenüberschriften (optional)</span>
-        </div>
       </div>
 
-      <!-- RIGHT: field palette + live preview -->
-      <div style="display:flex;flex-direction:column;min-height:0;gap:14px">
+      <!-- RIGHT: mode panels -->
+      <div style="display:flex;flex-direction:column;min-height:0;gap:12px;overflow-y:auto">
 
-        <!-- Field palette -->
-        <div style="flex:1;overflow-y:auto">
-          <div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">
-            Felder
+        <!-- Panel: Tabellenspalten -->
+        <div id="panelColumns" style="display:block">
+          <p style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-bottom:8px">
+            Feld wählen, dann auf Spalte/Kopf klicken oder ziehen.
+          </p>
+          <div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Felder</div>
+          <div id="tableFieldPalette" style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px"></div>
+          <div id="columnMappingList" style="margin-bottom:6px"></div>
+          <button onclick="clearAllColumnMappings()" style="margin-top:4px;background:rgba(239,68,68,.12);color:var(--danger);border:1px solid rgba(239,68,68,.25);border-radius:7px;padding:5px 12px;font-size:.7rem;cursor:pointer;width:100%">🗑 Alle Spalten-Mappings löschen</button>
+          <!-- Live preview -->
+          <div style="margin-top:10px">
+            <div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px">Live-Vorschau</div>
+            <div id="livePreviewWrap" style="background:var(--bg);border:1px solid var(--brd);border-radius:8px;padding:10px;font-size:.72rem;font-family:var(--mono);overflow-x:auto">
+              <span style="color:var(--mute)">—</span>
+            </div>
           </div>
-          <div id="fieldPalette" style="display:flex;flex-direction:column;gap:6px"></div>
-          <button onclick="clearAllMappings()" style="margin-top:10px;background:rgba(239,68,68,.12);color:var(--danger);border:1px solid rgba(239,68,68,.25);border-radius:7px;padding:6px 14px;font-size:.72rem;cursor:pointer;width:100%">🗑 Alle löschen</button>
         </div>
 
-        <!-- Live preview -->
-        <div>
-          <div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px">
-            Live-Vorschau (erste Session)
-          </div>
-          <div id="livePreviewWrap" style="background:var(--bg);border:1px solid var(--brd);border-radius:8px;padding:10px;font-size:.72rem;font-family:var(--mono);overflow-x:auto">
-            <span style="color:var(--mute)">—</span>
-          </div>
+        <!-- Panel: Einzelzellen -->
+        <div id="panelCells" style="display:none">
+          <p style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-bottom:8px">
+            Feld wählen, dann auf eine einzelne Zelle klicken (kein Spalten-Mapping).
+          </p>
+          <div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Kopffelder</div>
+          <div id="headerFieldPalette" style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px"></div>
+          <div id="cellMappingList" style="margin-bottom:6px"></div>
+          <button onclick="clearAllCellMappings()" style="margin-top:4px;background:rgba(239,68,68,.12);color:var(--danger);border:1px solid rgba(239,68,68,.25);border-radius:7px;padding:5px 12px;font-size:.7rem;cursor:pointer;width:100%">🗑 Alle Zell-Mappings löschen</button>
         </div>
+
+        <!-- Panel: Unterschrift -->
+        <div id="panelSignature" style="display:none">
+          <p style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-bottom:8px">
+            Zelle anklicken → setzt Ankerzelle für Unterschrift.
+          </p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+            <label style="font-size:.7rem;font-family:var(--mono);color:var(--mute)">
+              Ankerzelle:<br>
+              <input type="text" id="sigAnchorCell" placeholder="z.B. D35"
+                     style="width:80px;background:var(--bg);border:1px solid var(--brd);border-radius:5px;padding:4px 8px;font-size:.75rem;color:var(--txt);margin-top:3px"
+                     oninput="onSigAnchorChanged()">
+            </label>
+            <label style="font-size:.7rem;font-family:var(--mono);color:var(--mute)">
+              Breite (px):<br>
+              <input type="number" id="sigWidth" value="220" min="10" max="800"
+                     style="width:70px;background:var(--bg);border:1px solid var(--brd);border-radius:5px;padding:4px 8px;font-size:.75rem;color:var(--txt);margin-top:3px"
+                     oninput="onSigChanged()">
+            </label>
+            <label style="font-size:.7rem;font-family:var(--mono);color:var(--mute)">
+              Höhe (px):<br>
+              <input type="number" id="sigHeight" value="80" min="10" max="400"
+                     style="width:70px;background:var(--bg);border:1px solid var(--brd);border-radius:5px;padding:4px 8px;font-size:.75rem;color:var(--txt);margin-top:3px"
+                     oninput="onSigChanged()">
+            </label>
+            <label style="font-size:.7rem;font-family:var(--mono);color:var(--mute)">
+              X-Versatz:<br>
+              <input type="number" id="sigOffsetX" value="0"
+                     style="width:70px;background:var(--bg);border:1px solid var(--brd);border-radius:5px;padding:4px 8px;font-size:.75rem;color:var(--txt);margin-top:3px"
+                     oninput="onSigChanged()">
+            </label>
+            <label style="font-size:.7rem;font-family:var(--mono);color:var(--mute)">
+              Y-Versatz:<br>
+              <input type="number" id="sigOffsetY" value="0"
+                     style="width:70px;background:var(--bg);border:1px solid var(--brd);border-radius:5px;padding:4px 8px;font-size:.75rem;color:var(--txt);margin-top:3px"
+                     oninput="onSigChanged()">
+            </label>
+            <label style="font-size:.7rem;font-family:var(--mono);color:var(--mute);display:flex;align-items:center;gap:5px;margin-top:8px">
+              <input type="checkbox" id="sigKeepAspect" checked onchange="onSigChanged()">
+              Seitenverhältnis
+            </label>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button onclick="clearSigMapping()" style="background:rgba(239,68,68,.12);color:var(--danger);border:1px solid rgba(239,68,68,.25);border-radius:7px;padding:6px 12px;font-size:.72rem;cursor:pointer">Signaturpos. löschen</button>
+            <button id="sigAnalysisSuggestBtn" onclick="applySigSuggestion()" style="display:none;background:rgba(0,180,255,.12);color:var(--acc2);border:1px solid rgba(0,180,255,.25);border-radius:7px;padding:6px 12px;font-size:.72rem;cursor:pointer">Analyse-Vorschlag übernehmen</button>
+          </div>
+          <p style="font-size:.68rem;font-family:var(--mono);color:var(--mute);margin-top:10px;line-height:1.5">
+            💡 Unterschrift wird nur eingefügt, wenn beim Export "Unterschrift einschließen" aktiviert ist.
+          </p>
+        </div>
+
+        <!-- fieldPalette kept for backwards compat (hidden) -->
+        <div id="fieldPalette" style="display:none"></div>
+
       </div>
 
     </div>
@@ -2119,20 +2207,60 @@ const MAPPING_LABELS = {'':'— nicht zugewiesen —','row_num':'Nr.','date':'Da
   'duration':'Ladedauer','meter_old':'Zählerstand Alt (kWh)','meter_new':'Zählerstand Neu (kWh)',
   'location':'Standort','charger_type':'Ladertyp (AC/DC)'};
 
-let _tplRender = null;
-let _sigMapping = {};  // {cell, width, height, offset_x, offset_y}
+// ── TABLE_FIELDS palette (for column mapping mode) ────────────────────────────
+const TABLE_FIELDS = [
+  'row_num','date','start_time','end_time','duration','duration_hours',
+  'charge_power_kw','odo_start','odo_end','soc_start','soc_end','kwh_charged',
+  'cost_eur','price_per_kwh','meter_old','meter_new','location','charger_type'
+];
+const TABLE_FIELD_LABELS = {
+  row_num:'Nr.', date:'Datum', start_time:'Start', end_time:'Ende',
+  duration:'Dauer', duration_hours:'Ladedauer (h)', charge_power_kw:'Ladeleistung (kW)',
+  kwh_charged:'kWh geladen', cost_eur:'Kosten (€)', price_per_kwh:'Preis/kWh',
+  soc_start:'SOC Start', soc_end:'SOC Ende', odo_start:'KM Start', odo_end:'KM Ende',
+  meter_old:'Zähler Alt', meter_new:'Zähler Neu', location:'Standort', charger_type:'Ladeart'
+};
 
+// ── HEADER_FIELDS palette (for cell mapping mode) ─────────────────────────────
+const HEADER_FIELDS = [
+  'fahrer','kennzeichen','abteilung','kostenstelle','month_name','month_year',
+  'export_date','export_period','total_sessions','total_kwh','total_cost',
+  'total_home_kwh','total_external_kwh','total_home_cost','total_external_cost',
+  'total_km','total_charging_hours','avg_charge_power_kw','avg_consumption_kwh_100km',
+  'meter_start_value','meter_end_value','price_per_kwh'
+];
+const HEADER_FIELD_LABELS = {
+  fahrer:'Fahrer', kennzeichen:'Kennzeichen', abteilung:'Abteilung',
+  kostenstelle:'Kostenstelle', month_name:'Monat', month_year:'Monat/Jahr',
+  export_date:'Exportdatum', export_period:'Zeitraum', total_sessions:'Anz. Ladevorgänge',
+  total_kwh:'Gesamt kWh', total_cost:'Gesamtkosten', total_home_kwh:'Home kWh',
+  total_external_kwh:'Extern kWh', total_home_cost:'Home Kosten',
+  total_external_cost:'Extern Kosten', total_km:'Gesamt KM',
+  total_charging_hours:'Ladezeit (h)', avg_charge_power_kw:'Ø Ladeleistung (kW)',
+  avg_consumption_kwh_100km:'Verbrauch kWh/100km', meter_start_value:'Zähler Anfang',
+  meter_end_value:'Zähler Ende', price_per_kwh:'Preis/kWh'
+};
+
+let _tplRender = null;
+let _sigMapping = {};  // { anchor_cell, width, height, offset_x, offset_y, keep_aspect_ratio }
 let _tplMeta   = null;
 let _sampleSession = null;
 let _selectedStartRow = null;
 let _selectedHeaderRow = null;
+let _analysisResult = null;  // last analysis result, not yet applied
 
 // ── Column mapper state ───────────────────────────────────────────────────────
+let _mappingMode  = 'columns'; // 'columns' | 'cells' | 'signature'
 let _activeField  = null;
-let _colMapping   = {};   // { colIndex(string): fieldId }
+let _columnMapping = {};  // { colIndex(string): fieldId }
+let _colMapping   = {};   // alias for _columnMapping (backwards compat)
 let _isDragging   = false;
 let _lastAnalysis = null;
 let _cellMapping  = {};   // { "B4": "kennzeichen" }
+
+// Click-sets-row flags
+let _clickSetsHeaderRow = false;
+let _clickSetsStartRow  = false;
 
 const FIELD_COLORS = {
   row_num:     '#64748b',
@@ -2168,7 +2296,7 @@ function buildExcelGrid(renderData){
   const body = $('excelGridBody');
   const thStyle = 'background:#2a2a2a;color:#888;font-size:.65rem;font-family:var(--mono);padding:3px 6px;border:1px solid #333;position:sticky;top:0;z-index:2;text-align:center;user-select:none';
   head.innerHTML = `<tr>
-    <th style="${thStyle};position:sticky;left:0;z-index:3;width:32px">#</th>
+    <th style="${thStyle};position:sticky;left:0;z-index:3;width:36px">#</th>
     ${renderData.col_letters.map((l,i)=>{
       const ci = i + 1;
       const w  = (renderData.col_widths[i]||8);
@@ -2178,30 +2306,42 @@ function buildExcelGrid(renderData){
   </tr>`;
 
   body.innerHTML = renderData.rows.map(row=>{
-    const isStart = row.row === _selectedStartRow;
+    const isStart  = row.row === _selectedStartRow;
+    const isHeader = row.row === _selectedHeaderRow;
     const cells = row.cells.map(c=>{
       if(c === null) return '';
-      const bg   = c.bg || (isStart ? 'rgba(0,210,120,.18)' : '#1a1a1a');
-      const fg   = c.fg || '#ddd';
+      let bg = c.bg || '#1a1a1a';
+      if(isHeader) bg = '#fffde7';
+      else if(isStart) bg = 'rgba(0,210,120,.18)';
+      const fg   = (isHeader) ? '#333' : (c.fg || '#ddd');
       const fw   = c.bold ? 'bold' : 'normal';
       const rs   = c.rs > 1 ? ` rowspan="${c.rs}"` : '';
       const cs   = c.cs > 1 ? ` colspan="${c.cs}"` : '';
       const id   = `gc_${c.r}_${c.c}`;
+      const borderCol = isHeader ? 'rgba(255,213,0,.7)' : (isStart ? 'rgba(0,210,120,.6)' : '#2d2d2d');
       return `<td id="${id}" data-col="${c.c}" data-row-num="${row.row}"${rs}${cs}
         onmousedown="onGridMouseDown(event,${row.row},${c.c})"
         onmousemove="onGridMouseMove(event,${row.row},${c.c})"
         onmouseup="onGridMouseUp(event,${row.row},${c.c})"
         onclick="onGridCellClick(event,${row.row},${c.c})"
         style="background:${bg};color:${fg};font-weight:${fw};
-               border:1px solid ${isStart?'rgba(0,210,120,.6)':'#2d2d2d'};
+               border:1px solid ${borderCol};
                padding:3px 7px;cursor:pointer;white-space:nowrap;
                max-width:160px;overflow:hidden;text-overflow:ellipsis"
         title="${c.v||''}">${c.v||''}</td>`;
     }).join('');
-    const numStyle = 'background:#222;color:#555;font-size:.63rem;font-family:var(--mono);padding:3px 5px;border:1px solid #2d2d2d;text-align:right;position:sticky;left:0;cursor:pointer;user-select:none';
+    // Row number cell with badges
+    let numColor = '#555';
+    let badge = String(row.row);
+    if(row.row === _selectedHeaderRow){ numColor='#ffd700'; badge=`${row.row}<span style="font-size:.55rem;background:#ffd700;color:#333;border-radius:3px;padding:1px 3px;margin-left:2px">H</span>`; }
+    else if(row.row === _selectedStartRow){ numColor='var(--acc)'; badge=`${row.row}<span style="font-size:.55rem;background:var(--acc);color:#041810;border-radius:3px;padding:1px 3px;margin-left:2px">D</span>`; }
+    const numStyle = `background:#222;color:${numColor};font-size:.63rem;font-family:var(--mono);padding:3px 5px;border:1px solid #2d2d2d;text-align:right;position:sticky;left:0;cursor:pointer;user-select:none;white-space:nowrap`;
     return `<tr data-row="${row.row}">
-      <td style="${numStyle}" onclick="selectStartRow(${row.row})">${row.row}</td>${cells}</tr>`;
+      <td style="${numStyle}" onclick="onRowNumClick(${row.row})">${badge}</td>${cells}</tr>`;
   }).join('');
+  // Apply cell mapping overlays after render
+  refreshCellMappingOverlay();
+  refreshSigInGrid();
 }
 
 function highlightStartRow(){
@@ -2209,15 +2349,32 @@ function highlightStartRow(){
   _tplRender.rows.forEach(row=>{
     const tr = document.querySelector(`#excelGridBody tr[data-row="${row.row}"]`);
     if(!tr) return;
-    const isStart = row.row === _selectedStartRow;
-    tr.querySelectorAll('td').forEach((td,i)=>{
-      if(i===0){
-        td.style.color = isStart ? 'var(--acc)' : '#555';
+    const isStart  = row.row === _selectedStartRow;
+    const isHeader = row.row === _selectedHeaderRow;
+    // Update row num cell
+    const numTd = tr.querySelector('td:first-child');
+    if(numTd){
+      let nc = '#555', badge = String(row.row);
+      if(isHeader){ nc='#ffd700'; badge=`${row.row}<span style="font-size:.55rem;background:#ffd700;color:#333;border-radius:3px;padding:1px 3px;margin-left:2px">H</span>`; }
+      else if(isStart){ nc='var(--acc)'; badge=`${row.row}<span style="font-size:.55rem;background:var(--acc);color:#041810;border-radius:3px;padding:1px 3px;margin-left:2px">D</span>`; }
+      numTd.style.color = nc;
+      numTd.innerHTML = badge;
+    }
+    tr.querySelectorAll('td[data-col]').forEach((td,i)=>{
+      const c = row.cells[i];
+      if(!c) return;
+      if(isHeader){
+        td.style.background = '#fffde7';
+        td.style.color = '#333';
+        td.style.border = '1px solid rgba(255,213,0,.7)';
+      } else if(isStart){
+        td.style.background = c.bg || 'rgba(0,210,120,.18)';
+        td.style.color = c.fg || '#ddd';
+        td.style.border = '1px solid rgba(0,210,120,.5)';
       } else {
-        const c = row.cells[i-1];
-        if(!c) return;
-        td.style.background = c.bg || (isStart ? 'rgba(0,210,120,.18)' : '#1a1a1a');
-        td.style.border     = `1px solid ${isStart?'rgba(0,210,120,.5)':'#2d2d2d'}`;
+        td.style.background = c.bg || '#1a1a1a';
+        td.style.color = c.fg || '#ddd';
+        td.style.border = '1px solid #2d2d2d';
       }
     });
   });
@@ -2225,18 +2382,90 @@ function highlightStartRow(){
 
 function selectStartRow(row){
   _selectedStartRow = row;
+  if($('startRowInput')) $('startRowInput').value = row;
   highlightStartRow();
   $('mappingStartInfo').textContent = `✓ Startzeile: Zeile ${row} — ab hier werden Daten eingetragen`;
   updateLivePreview();
 }
 
-// ── Field palette (replaces dropdown table) ───────────────────────────────────
-function buildFieldPalette(){
-  const palette = $('fieldPalette');
+function selectHeaderRow(row){
+  _selectedHeaderRow = row;
+  if($('headerRowInput')) $('headerRowInput').value = row;
+  highlightStartRow();
+}
+
+// ── Mapping mode switching ─────────────────────────────────────────────────────
+function setMappingMode(mode){
+  _mappingMode = mode;
+  _activeField = null;
+  // Show/hide panels
+  $('panelColumns').style.display    = (mode==='columns')   ? 'block' : 'none';
+  $('panelCells').style.display      = (mode==='cells')     ? 'block' : 'none';
+  $('panelSignature').style.display  = (mode==='signature') ? 'block' : 'none';
+  // Tab active states
+  ['columns','cells','signature'].forEach(m=>{
+    const btn = $('modeTab'+m.charAt(0).toUpperCase()+m.slice(1));
+    if(btn){ btn.className = 'tab-btn' + (m===mode?' tab-active':''); }
+  });
+  const wrap = $('excelGridWrap');
+  if(wrap) wrap.style.cursor = '';
+  refreshMappingGrid();
+}
+
+function refreshMappingGrid(){
+  applyColumnColors();
+  refreshCellMappingOverlay();
+  refreshSigInGrid();
+  if(_mappingMode==='columns') buildTableFieldPalette();
+  if(_mappingMode==='cells')   buildHeaderFieldPalette();
+}
+
+// ── Row config handlers ───────────────────────────────────────────────────────
+function onHeaderRowChanged(){
+  const v = $('headerRowInput').value;
+  _selectedHeaderRow = v ? parseInt(v) : null;
+  highlightStartRow();
+}
+
+function onStartRowChanged(){
+  const v = $('startRowInput').value;
+  _selectedStartRow = v ? parseInt(v) : null;
+  highlightStartRow();
+  updateLivePreview();
+  $('mappingStartInfo').textContent = _selectedStartRow
+    ? `✓ Startzeile: Zeile ${_selectedStartRow} — ab hier werden Daten eingetragen`
+    : 'Bitte eine Zeile anklicken';
+}
+
+function setHeaderRowFromClick(){ _clickSetsHeaderRow = true; _clickSetsStartRow = false; toast('Nächsten Zeilennummer-Klick → setzt Kopfzeile','ok'); }
+function setStartRowFromClick(){ _clickSetsStartRow = true; _clickSetsHeaderRow = false; toast('Nächsten Zeilennummer-Klick → setzt Datenzeile','ok'); }
+
+function onRowNumClick(row){
+  if(_clickSetsHeaderRow){
+    _selectedHeaderRow = row;
+    if($('headerRowInput')) $('headerRowInput').value = row;
+    _clickSetsHeaderRow = false;
+    highlightStartRow();
+    toast(`Kopfzeile: ${row}`,'ok');
+  } else if(_clickSetsStartRow){
+    _selectedStartRow = row;
+    if($('startRowInput')) $('startRowInput').value = row;
+    _clickSetsStartRow = false;
+    highlightStartRow();
+    updateLivePreview();
+    $('mappingStartInfo').textContent = `✓ Startzeile: Zeile ${row}`;
+    toast(`Datenzeile: ${row}`,'ok');
+  } else {
+    selectStartRow(row);
+  }
+}
+
+// ── Table field palette (columns mode) ────────────────────────────────────────
+function buildTableFieldPalette(){
+  const palette = $('tableFieldPalette');
   if(!palette) return;
-  // Build reverse map: fieldId -> colIndex(es)
   const fieldToCols = {};
-  Object.entries(_colMapping).forEach(([ci, field])=>{
+  Object.entries(_columnMapping).forEach(([ci, field])=>{
     if(!field) return;
     if(!fieldToCols[field]) fieldToCols[field] = [];
     fieldToCols[field].push(Number(ci));
@@ -2244,93 +2473,329 @@ function buildFieldPalette(){
   const letters = (_tplRender||{col_letters:[]}).col_letters;
   const colLetter = ci => letters[Number(ci)-1] || String(ci);
 
-  palette.innerHTML = MAPPING_FIELDS.filter(f=>f).map(field=>{
+  palette.innerHTML = TABLE_FIELDS.map(field=>{
     const color   = FIELD_COLORS[field] || '#64748b';
-    const label   = MAPPING_LABELS[field] || field;
+    const label   = TABLE_FIELD_LABELS[field] || MAPPING_LABELS[field] || field;
     const cols    = fieldToCols[field] || [];
     const isActive = _activeField === field;
     const colBadges = cols.map(ci=>
-      `<span onclick="event.stopPropagation();clearColMapping(${ci})"
+      `<span onclick="event.stopPropagation();clearColumnMapping(${ci})"
         style="background:${color}33;color:${color};border:1px solid ${color}55;
                border-radius:4px;padding:1px 5px;font-size:.62rem;cursor:pointer;
                display:inline-flex;align-items:center;gap:3px">
         ${colLetter(ci)} <span style="opacity:.7">✕</span></span>`
     ).join('');
-    return `<div onclick="selectField('${field}')"
-      style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;
+    return `<div onclick="selectTableField('${field}')"
+      style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:7px;
              cursor:pointer;user-select:none;transition:all .15s;
              background:${isActive ? color+'22' : 'var(--bg)'};
              border:1.5px solid ${isActive ? color : 'var(--brd)'};
              ${isActive ? `box-shadow:0 0 0 3px ${color}33` : ''}">
-      <span style="width:12px;height:12px;border-radius:50%;background:${color};flex-shrink:0;
-                   display:inline-block;${isActive?`box-shadow:0 0 6px ${color}`:''}"></span>
-      <span style="flex:1;font-size:.75rem;font-family:var(--mono);color:${isActive?'#fff':'var(--txt)'}">
+      <span style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0;
+                   display:inline-block;${isActive?`box-shadow:0 0 5px ${color}`:''}"></span>
+      <span style="flex:1;font-size:.73rem;font-family:var(--mono);color:${isActive?'#fff':'var(--txt)'}">
         ${label}
       </span>
-      <span style="display:flex;gap:4px;flex-wrap:wrap">${colBadges}</span>
+      <span style="display:flex;gap:3px;flex-wrap:wrap">${colBadges}</span>
     </div>`;
   }).join('');
+  refreshColumnMappingList();
 }
 
-function selectField(fieldId){
+function selectTableField(fieldId){
   _activeField = (_activeField === fieldId) ? null : fieldId;
-  buildFieldPalette();
+  buildTableFieldPalette();
   const wrap = $('excelGridWrap');
   if(wrap) wrap.style.cursor = _activeField ? 'crosshair' : '';
 }
 
-function clearColMapping(ci){
-  delete _colMapping[String(ci)];
+function refreshColumnMappingList(){
+  const el = $('columnMappingList');
+  if(!el) return;
+  const letters = (_tplRender||{col_letters:[]}).col_letters;
+  const colLetter = ci => letters[Number(ci)-1] || String(ci);
+  const entries = Object.entries(_columnMapping).filter(([,v])=>v);
+  if(!entries.length){ el.innerHTML='<div style="font-size:.7rem;font-family:var(--mono);color:var(--mute)">Noch keine Spalten gemappt</div>'; return; }
+  el.innerHTML = entries.map(([ci, field])=>{
+    const color = FIELD_COLORS[field]||'#64748b';
+    const label = TABLE_FIELD_LABELS[field]||MAPPING_LABELS[field]||field;
+    return `<div style="display:flex;align-items:center;gap:6px;font-size:.7rem;font-family:var(--mono);padding:3px 0">
+      <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block"></span>
+      <span style="color:var(--mute);min-width:22px">Sp.${colLetter(ci)}</span>
+      <span style="color:#fff;flex:1">${label}</span>
+      <button onclick="clearColumnMapping(${ci})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:.75rem;padding:0 4px">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function clearColumnMapping(ci){
+  delete _columnMapping[String(ci)];
+  _colMapping = _columnMapping; // keep alias in sync
   applyColumnColors();
-  buildFieldPalette();
+  buildTableFieldPalette();
   updateLivePreview();
 }
 
-function clearAllMappings(){
+function clearAllColumnMappings(){
+  _columnMapping = {};
   _colMapping = {};
   applyColumnColors();
-  buildFieldPalette();
+  buildTableFieldPalette();
   updateLivePreview();
+}
+
+// ── Header field palette (cells mode) ────────────────────────────────────────
+function buildHeaderFieldPalette(){
+  const palette = $('headerFieldPalette');
+  if(!palette) return;
+  palette.innerHTML = HEADER_FIELDS.map(field=>{
+    const label   = HEADER_FIELD_LABELS[field] || field;
+    const isMapped = Object.values(_cellMapping).includes(field);
+    const isActive = _activeField === field;
+    const bg = isActive ? 'rgba(245,158,11,.2)' : (isMapped ? 'rgba(245,158,11,.07)' : 'var(--bg)');
+    const border = isActive ? '#f59e0b' : (isMapped ? 'rgba(245,158,11,.4)' : 'var(--brd)');
+    return `<div onclick="selectHeaderField('${field}')"
+      style="display:flex;align-items:center;gap:8px;padding:5px 10px;border-radius:7px;
+             cursor:pointer;user-select:none;background:${bg};border:1.5px solid ${border};
+             ${isActive?'box-shadow:0 0 0 3px rgba(245,158,11,.2)':''}">
+      <span style="width:10px;height:10px;border-radius:50%;background:#f59e0b;flex-shrink:0;display:inline-block;${isActive?'box-shadow:0 0 5px #f59e0b':''}"></span>
+      <span style="flex:1;font-size:.73rem;font-family:var(--mono);color:${isActive?'#fff':'var(--txt)'}">${label}</span>
+      ${isMapped?'<span style="color:#f59e0b;font-size:.65rem">✓</span>':''}
+    </div>`;
+  }).join('');
+  refreshCellMappingList();
+}
+
+function selectHeaderField(fieldId){
+  _activeField = (_activeField === fieldId) ? null : fieldId;
+  buildHeaderFieldPalette();
+  const wrap = $('excelGridWrap');
+  if(wrap) wrap.style.cursor = _activeField ? 'crosshair' : '';
+}
+
+function refreshCellMappingList(){
+  const el = $('cellMappingList');
+  if(!el) return;
+  const entries = Object.entries(_cellMapping);
+  if(!entries.length){ el.innerHTML='<div style="font-size:.7rem;font-family:var(--mono);color:var(--mute)">Noch keine Zellen gemappt</div>'; return; }
+  el.innerHTML = entries.map(([addr, field])=>{
+    const label = HEADER_FIELD_LABELS[field] || field;
+    return `<div style="display:flex;align-items:center;gap:6px;font-size:.7rem;font-family:var(--mono);padding:3px 0">
+      <span style="color:var(--mute);min-width:28px">${addr}</span>
+      <span style="color:#fff;flex:1">${label}</span>
+      <button onclick="removeCellMapping('${addr}')" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:.75rem;padding:0 4px">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function removeCellMapping(addr){
+  delete _cellMapping[addr];
+  refreshCellMappingList();
+  refreshCellMappingOverlay();
+  if(_mappingMode==='cells') buildHeaderFieldPalette();
+}
+
+function clearAllCellMappings(){
+  _cellMapping = {};
+  refreshCellMappingList();
+  refreshCellMappingOverlay();
+  buildHeaderFieldPalette();
+}
+
+// ── Overlay: cell mapping highlights ─────────────────────────────────────────
+function refreshCellMappingOverlay(){
+  if(!_tplRender) return;
+  const letters = _tplRender.col_letters;
+  // Remove existing cell labels
+  document.querySelectorAll('.cm-overlay').forEach(e=>e.remove());
+  Object.entries(_cellMapping).forEach(([addr, field])=>{
+    const col = addr.replace(/[0-9]/g,'');
+    const row = parseInt(addr.replace(/[A-Z]/gi,''));
+    const colIdx = col.split('').reduce((acc,c)=>acc*26+c.charCodeAt(0)-64,0);
+    const td = document.getElementById(`gc_${row}_${colIdx}`);
+    if(td){
+      td.style.outline = '2px solid #f59e0b';
+      const label = HEADER_FIELD_LABELS[field] || field;
+      // Add small label overlay
+      const span = document.createElement('span');
+      span.className = 'cm-overlay';
+      span.style.cssText = 'position:absolute;top:0;left:0;background:#f59e0b;color:#000;font-size:.55rem;padding:0 3px;border-radius:0 0 3px 0;pointer-events:none;white-space:nowrap;max-width:70px;overflow:hidden;text-overflow:ellipsis;z-index:1';
+      span.textContent = label;
+      if(getComputedStyle(td).position==='static') td.style.position='relative';
+      td.appendChild(span);
+    }
+  });
+}
+
+// ── Overlay: signature highlight ──────────────────────────────────────────────
+function refreshSigInGrid(){
+  if(!_tplRender) return;
+  // Remove previous sig outline
+  document.querySelectorAll('#excelGridBody td[data-sig]').forEach(td=>{
+    td.style.outline='';
+    td.removeAttribute('data-sig');
+  });
+  const anchor = _sigMapping?.anchor_cell || _sigMapping?.cell;
+  if(!anchor) return;
+  const col = anchor.replace(/[0-9]/g,'');
+  const row = parseInt(anchor.replace(/[A-Z]/gi,''));
+  const colIdx = col.split('').reduce((acc,c)=>acc*26+c.charCodeAt(0)-64,0);
+  const td = document.getElementById(`gc_${row}_${colIdx}`);
+  if(td){
+    td.style.outline = '2px solid #a855f7';
+    td.setAttribute('data-sig','1');
+  }
+}
+
+// ── Signature panel handlers ──────────────────────────────────────────────────
+function onSigAnchorChanged(){
+  const v = $('sigAnchorCell')?.value?.trim().toUpperCase();
+  if(!_sigMapping) _sigMapping = {};
+  _sigMapping.anchor_cell = v;
+  _sigMapping.cell = v; // compat
+  refreshSigInGrid();
+}
+
+function onSigChanged(){
+  if(!_sigMapping) _sigMapping = {};
+  _sigMapping.anchor_cell = $('sigAnchorCell')?.value?.trim().toUpperCase() || _sigMapping.anchor_cell;
+  _sigMapping.cell = _sigMapping.anchor_cell;
+  _sigMapping.width  = parseInt($('sigWidth')?.value)||220;
+  _sigMapping.height = parseInt($('sigHeight')?.value)||80;
+  _sigMapping.offset_x = parseInt($('sigOffsetX')?.value)||0;
+  _sigMapping.offset_y = parseInt($('sigOffsetY')?.value)||0;
+  _sigMapping.keep_aspect_ratio = $('sigKeepAspect')?.checked !== false;
+  refreshSigInGrid();
+}
+
+function clearSigMapping(){
+  _sigMapping = {};
+  if($('sigAnchorCell')) $('sigAnchorCell').value='';
+  if($('sigWidth'))   $('sigWidth').value='220';
+  if($('sigHeight'))  $('sigHeight').value='80';
+  if($('sigOffsetX')) $('sigOffsetX').value='0';
+  if($('sigOffsetY')) $('sigOffsetY').value='0';
+  if($('sigKeepAspect')) $('sigKeepAspect').checked=true;
+  refreshSigInGrid();
+}
+
+function updateSigInputs(){
+  if(!_sigMapping) return;
+  const anchor = _sigMapping.anchor_cell || _sigMapping.cell || '';
+  if($('sigAnchorCell')) $('sigAnchorCell').value = anchor;
+  if($('sigWidth'))   $('sigWidth').value   = _sigMapping.width  || 220;
+  if($('sigHeight'))  $('sigHeight').value  = _sigMapping.height || 80;
+  if($('sigOffsetX')) $('sigOffsetX').value = _sigMapping.offset_x || 0;
+  if($('sigOffsetY')) $('sigOffsetY').value = _sigMapping.offset_y || 0;
+  if($('sigKeepAspect')) $('sigKeepAspect').checked = _sigMapping.keep_aspect_ratio !== false;
+}
+
+function applySigSuggestion(){
+  if(!_analysisResult?.signature_suggestion) return;
+  const s = _analysisResult.signature_suggestion;
+  _sigMapping = {
+    anchor_cell: s.cell || s.anchor_cell || '',
+    cell: s.cell || s.anchor_cell || '',
+    width: s.width || 220, height: s.height || 80,
+    offset_x: s.offset_x || 0, offset_y: s.offset_y || 0,
+    keep_aspect_ratio: s.keep_aspect_ratio !== false,
+  };
+  updateSigInputs();
+  refreshSigInGrid();
+  if($('sigAnalysisSuggestBtn')) $('sigAnalysisSuggestBtn').style.display='none';
+  toast(`✓ Signatur-Vorschlag übernommen: ${_sigMapping.anchor_cell}`,'ok');
+}
+
+// ── Field palette (backwards compat alias) ────────────────────────────────────
+function buildFieldPalette(){
+  if(_mappingMode==='columns') buildTableFieldPalette();
+  else if(_mappingMode==='cells') buildHeaderFieldPalette();
+}
+
+function selectField(fieldId){
+  if(_mappingMode==='columns') selectTableField(fieldId);
+  else if(_mappingMode==='cells') selectHeaderField(fieldId);
+}
+
+function clearColMapping(ci){
+  clearColumnMapping(ci);
+}
+
+function clearAllMappings(){
+  clearAllColumnMappings();
 }
 
 // ── Grid column header click ──────────────────────────────────────────────────
 function onGridColHeaderClick(ci){
-  if(_activeField){
-    _colMapping[String(ci)] = _activeField;
-    applyColumnColors();
-    buildFieldPalette();
-    updateLivePreview();
-  }
+  if(_mappingMode !== 'columns' || !_activeField) return;
+  _columnMapping[String(ci)] = _activeField;
+  _colMapping = _columnMapping;
+  applyColumnColors();
+  buildTableFieldPalette();
+  updateLivePreview();
+}
+
+// ── Cell address helper ───────────────────────────────────────────────────────
+function colIdxToLetter(ci){
+  const letters = (_tplRender||{col_letters:[]}).col_letters;
+  return letters[Number(ci)-1] || String.fromCharCode(64 + Number(ci));
+}
+
+function cellAddress(rowNum, colIdx){
+  return colIdxToLetter(colIdx) + rowNum;
 }
 
 // ── Grid cell click / drag ────────────────────────────────────────────────────
 function onGridCellClick(event, rowNum, colIdx){
-  if(_activeField){
-    _colMapping[String(colIdx)] = _activeField;
-    applyColumnColors();
-    buildFieldPalette();
-    updateLivePreview();
-  } else {
-    selectStartRow(rowNum);
+  if(_mappingMode === 'columns'){
+    if(_activeField){
+      _columnMapping[String(colIdx)] = _activeField;
+      _colMapping = _columnMapping;
+      applyColumnColors();
+      buildTableFieldPalette();
+      updateLivePreview();
+    } else {
+      selectStartRow(rowNum);
+    }
+  } else if(_mappingMode === 'cells'){
+    if(_activeField){
+      const addr = cellAddress(rowNum, colIdx);
+      _cellMapping[addr] = _activeField;
+      refreshCellMappingOverlay();
+      buildHeaderFieldPalette();
+    }
+    // no column mapping in cells mode
+  } else if(_mappingMode === 'signature'){
+    const addr = cellAddress(rowNum, colIdx);
+    if(!_sigMapping) _sigMapping = {};
+    _sigMapping.anchor_cell = addr;
+    _sigMapping.cell = addr;
+    if(!_sigMapping.width)  _sigMapping.width  = 220;
+    if(!_sigMapping.height) _sigMapping.height = 80;
+    if($('sigAnchorCell')) $('sigAnchorCell').value = addr;
+    refreshSigInGrid();
+    toast(`✓ Ankerzelle: ${addr}`,'ok');
   }
 }
 
 function onGridMouseDown(event, rowNum, colIdx){
-  if(!_activeField) return;
+  if(_mappingMode !== 'columns' || !_activeField) return;
   event.preventDefault();
   _isDragging = true;
-  _colMapping[String(colIdx)] = _activeField;
+  _columnMapping[String(colIdx)] = _activeField;
+  _colMapping = _columnMapping;
   applyColumnColors();
-  buildFieldPalette();
+  buildTableFieldPalette();
   updateLivePreview();
 }
 
 function onGridMouseMove(event, rowNum, colIdx){
-  if(!_isDragging || !_activeField) return;
-  if(_colMapping[String(colIdx)] === _activeField) return; // already set
-  _colMapping[String(colIdx)] = _activeField;
+  if(!_isDragging || !_activeField || _mappingMode !== 'columns') return;
+  if(_columnMapping[String(colIdx)] === _activeField) return;
+  _columnMapping[String(colIdx)] = _activeField;
+  _colMapping = _columnMapping;
   applyColumnColors();
-  buildFieldPalette();
+  buildTableFieldPalette();
   updateLivePreview();
 }
 
@@ -2341,37 +2806,41 @@ function onGridMouseUp(event, rowNum, colIdx){
 // ── Apply column colors to grid ───────────────────────────────────────────────
 function applyColumnColors(){
   if(!_tplRender) return;
-  const letters = _tplRender.col_letters;
 
   // Color all data cells
   document.querySelectorAll('#excelGridBody td[data-col]').forEach(td=>{
     const ci    = td.dataset.col;
-    const field = _colMapping[String(ci)];
+    const field = _columnMapping[String(ci)];
     const color = field ? FIELD_COLORS[field] : null;
-    const isStartRow = Number(td.dataset.rowNum) === _selectedStartRow;
+    const rowNum = Number(td.dataset.rowNum);
+    const isStartRow  = rowNum === _selectedStartRow;
+    const isHeaderRow = rowNum === _selectedHeaderRow;
     if(color){
-      td.style.background  = color + '26'; // ~15% opacity
+      td.style.background  = color + '26';
       td.style.borderLeft  = `2px solid ${color}`;
     } else {
-      // restore original cell background
-      const rIdx = _tplRender.rows.findIndex(r=>r.row === Number(td.dataset.rowNum));
+      const rIdx = _tplRender.rows.findIndex(r=>r.row === rowNum);
       const cIdx = Number(ci) - 1;
       const orig = rIdx>=0 ? _tplRender.rows[rIdx].cells[cIdx] : null;
-      td.style.background  = orig?.bg || (isStartRow ? 'rgba(0,210,120,.18)' : '#1a1a1a');
-      td.style.borderLeft  = '';
+      if(isHeaderRow){
+        td.style.background = '#fffde7';
+      } else {
+        td.style.background = orig?.bg || (isStartRow ? 'rgba(0,210,120,.18)' : '#1a1a1a');
+      }
+      td.style.borderLeft = '';
     }
   });
 
   // Update header badges
   document.querySelectorAll('#excelGridHead th[data-col]').forEach(th=>{
     const ci    = th.dataset.col;
-    const field = _colMapping[String(ci)];
+    const field = _columnMapping[String(ci)];
     const color = field ? FIELD_COLORS[field] : null;
     const badge = th.querySelector('span[id^="thbadge_"]') || th.querySelector('span');
     if(!badge) return;
     if(color){
-      const label = MAPPING_LABELS[field] || field;
-      badge.innerHTML = `<span onclick="event.stopPropagation();clearColMapping(${ci})"
+      const label = TABLE_FIELD_LABELS[field] || MAPPING_LABELS[field] || field;
+      badge.innerHTML = `<span onclick="event.stopPropagation();clearColumnMapping(${ci})"
         style="display:inline-flex;align-items:center;gap:3px;margin-left:4px;
                background:${color};color:#000;border-radius:4px;padding:1px 5px;
                font-size:.55rem;font-weight:bold;cursor:pointer;line-height:1.4">
@@ -2407,8 +2876,7 @@ function sampleValue(field, s){
 
 function updateLivePreview(){
   const s = _sampleSession;
-  // mapping is now read directly from _colMapping state
-  const mapping = _colMapping;
+  const mapping = _columnMapping;
 
   // update grid cells with preview data at start row
   if(_tplRender && _selectedStartRow){
@@ -2420,30 +2888,32 @@ function updateLivePreview(){
       if(cell && field){
         cell.style.color  = 'var(--acc)';
         cell.textContent  = val || '—';
-        cell.title        = `${MAPPING_LABELS[field]||field}: ${val}`;
+        cell.title        = `${TABLE_FIELD_LABELS[field]||MAPPING_LABELS[field]||field}: ${val}`;
       } else if(cell){
-        // restore original value
         const orig = _tplRender.rows.find(r=>r.row===_selectedStartRow)?.cells[i];
         if(orig){ cell.style.color = orig.fg||'#ddd'; cell.textContent = orig.v||''; }
       }
     });
   }
 
+  const wrap = $('livePreviewWrap');
+  if(!wrap) return;
   // sidebar live preview table
   const assigned = Object.entries(mapping).filter(([,f])=>f);
   if(!assigned.length){
-    $('livePreviewWrap').innerHTML='<span style="color:var(--mute)">Noch keine Spalten zugewiesen</span>';
+    wrap.innerHTML='<span style="color:var(--mute)">Noch keine Spalten zugewiesen</span>';
     return;
   }
   const letters = (_tplRender||{col_letters:[]}).col_letters;
-  $('livePreviewWrap').innerHTML = assigned.map(([ci, field])=>{
+  wrap.innerHTML = assigned.map(([ci, field])=>{
     const color = FIELD_COLORS[field] || '#64748b';
     const letter = letters[Number(ci)-1] || ci;
     const val = sampleValue(field, s);
+    const label = TABLE_FIELD_LABELS[field] || MAPPING_LABELS[field] || field;
     return `<div style="display:flex;gap:8px;border-bottom:1px solid var(--brd);padding:4px 0;align-items:center">
       <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block"></span>
       <span style="color:var(--mute);min-width:28px;font-size:.7rem">Sp.${letter}</span>
-      <span style="color:var(--acc2);min-width:110px;font-size:.7rem">${MAPPING_LABELS[field]||field}</span>
+      <span style="color:var(--acc2);min-width:110px;font-size:.7rem">${label}</span>
       <span style="color:#fff;font-size:.7rem">${val||'—'}</span>
     </div>`;
   }).join('');
@@ -2468,41 +2938,57 @@ async function openMappingModal(){
   _tplMeta        = meta;
   _tplMeta._saved = saved;
   _sampleSession  = Object.keys(sample).length ? sample : null;
-  _selectedStartRow  = saved.start_row  || meta.auto_header || null;
-  _selectedHeaderRow = saved.header_row || null;
 
-  // Initialize _colMapping from saved mapping, falling back to auto-suggestions
-  _colMapping  = {};
-  _cellMapping = {};
-  _sigMapping  = saved.signature_mapping || {};
-  _activeField = null;
-  const savedColMap = saved.column_mapping || saved.mapping || {};
+  // Load saved config (TEIL 9)
+  const cfg = saved;
+  _columnMapping = {};
+  _cellMapping   = {};
+  _sigMapping    = cfg.template_config?.signature_mapping || cfg.signature_mapping || saved.signature_mapping || {};
+  _activeField   = null;
+  _analysisResult = null;
+  _selectedHeaderRow = cfg.template_config?.header_row || cfg.header_row || saved.header_row || null;
+  _selectedStartRow  = cfg.template_config?.start_row  || cfg.start_row  || saved.start_row  || meta.auto_header || null;
+
+  // Load column mapping
+  const savedColMap = cfg.template_config?.column_mapping || cfg.column_mapping || saved.column_mapping || saved.mapping || {};
   if(savedColMap && Object.keys(savedColMap).length){
     Object.entries(savedColMap).forEach(([ci, field])=>{
-      if(field) _colMapping[String(ci)] = field;
+      if(field) _columnMapping[String(ci)] = field;
     });
   } else if(meta.col_suggestions){
     Object.entries(meta.col_suggestions).forEach(([ci, sug])=>{
-      if(sug?.mapped_to) _colMapping[String(ci)] = sug.mapped_to;
+      if(sug?.mapped_to) _columnMapping[String(ci)] = sug.mapped_to;
     });
   }
+  _colMapping = _columnMapping; // keep alias in sync
+
   // Load cell mapping
-  if(saved.cell_mapping && Object.keys(saved.cell_mapping).length){
-    Object.entries(saved.cell_mapping).forEach(([addr, field])=>{
+  const savedCellMap = cfg.template_config?.cell_mapping || cfg.cell_mapping || saved.cell_mapping || {};
+  if(savedCellMap && Object.keys(savedCellMap).length){
+    Object.entries(savedCellMap).forEach(([addr, field])=>{
       if(field) _cellMapping[addr] = typeof field === 'string' ? field : (field.field || field);
     });
   }
 
+  // Populate row inputs
+  if($('headerRowInput')) $('headerRowInput').value = _selectedHeaderRow || '';
+  if($('startRowInput'))  $('startRowInput').value  = _selectedStartRow  || '';
+
+  // Signature inputs
+  updateSigInputs();
+
+  // Set initial mode to 'columns' and build UI
+  setMappingMode('columns');
+
   buildExcelGrid(render);
   highlightStartRow();
   applyColumnColors();
-  buildFieldPalette();
+  buildTableFieldPalette();
   updateLivePreview();
 
   $('mappingStartInfo').textContent = _selectedStartRow
     ? `✓ Startzeile: Zeile ${_selectedStartRow}`
     : 'Bitte eine Zeile anklicken';
-  if($('headerRowInput')) $('headerRowInput').value = _selectedHeaderRow || '';
   $('mappingModalInfo').textContent = '';
 }
 
@@ -2512,17 +2998,23 @@ function closeMappingModal(){
 }
 
 async function saveMappingModal(){
-  // Read directly from _colMapping state (no dropdown scraping needed)
   const column_mapping = Object.fromEntries(
-    Object.entries(_colMapping).filter(([,v])=>v)
+    Object.entries(_columnMapping).filter(([,v])=>v)
   );
-  const body = {
+  // Build template_config object (TEIL 8)
+  const templateConfig = {
+    sheet: _lastAnalysis?.sheet || _analysisResult?.sheet || '',
+    header_row: _selectedHeaderRow || null,
+    start_row:  _selectedStartRow  || null,
     column_mapping,
     cell_mapping: _cellMapping,
-    start_row: _selectedStartRow,
-    header_row: _selectedHeaderRow || null,
-    sheet: _lastAnalysis?.sheet || '',
-    signature_mapping: _sigMapping,
+    signature_mapping: Object.keys(_sigMapping||{}).length ? _sigMapping : {},
+  };
+  // Also send flat keys for backwards compat
+  const body = {
+    ...templateConfig,
+    template_config: templateConfig,
+    mapping: column_mapping, // compat
   };
   const r = await apiFetch('/api/template/mapping',{
     method:'POST', headers:{'Content-Type':'application/json'},
@@ -2558,8 +3050,14 @@ async function runTemplateAnalysis(){
     const res = await apiFetch('/api/template/analyze').then(r=>r.json());
     btn.disabled = false; btn.textContent = '🔍 Automatisch analysieren';
     if(!res.ok){ toast('❌ ' + (res.error||'Analysefehler'), 'err'); return; }
+    // Store result but do NOT apply immediately (TEIL 7)
     _lastAnalysis = res;
+    _analysisResult = res;
     showAnalysisPanel(res);
+    // Show sig suggestion button if available
+    if(res.signature_suggestion && $('sigAnalysisSuggestBtn')){
+      $('sigAnalysisSuggestBtn').style.display = '';
+    }
   } catch(e){
     btn.disabled = false; btn.textContent = '🔍 Automatisch analysieren';
     toast('❌ Analysefehler: ' + e.message, 'err');
@@ -2631,27 +3129,34 @@ function highlightAnalysisCells(a){
 }
 
 function applyAnalysis(){
-  if(!_lastAnalysis) return;
-  const a = _lastAnalysis;
-  // Apply column mapping
+  const a = _analysisResult || _lastAnalysis;
+  if(!a) return;
+  // Apply column mapping (TEIL 7)
   if(a.column_mapping){
-    _colMapping = {};
+    _columnMapping = {};
     Object.entries(a.column_mapping).forEach(([col, info])=>{
-      _colMapping[col] = info.field || info;
+      _columnMapping[col] = info.field || info;
     });
-    buildFieldPalette();
+    _colMapping = _columnMapping;
+    buildTableFieldPalette();
     applyColumnColors();
     updateLivePreview();
   }
   // Apply start_row
   if(a.start_row){
     _selectedStartRow = a.start_row;
+    if($('startRowInput')) $('startRowInput').value = a.start_row;
     highlightStartRow();
     $('mappingStartInfo').textContent = `✓ Startzeile: Zeile ${a.start_row}`;
   }
+  if(a.header_row){
+    _selectedHeaderRow = a.header_row;
+    if($('headerRowInput')) $('headerRowInput').value = a.header_row;
+    highlightStartRow();
+  }
   // Apply cell mapping
-  _cellMapping = {};
   if(a.cell_mapping){
+    _cellMapping = {};
     Object.entries(a.cell_mapping).forEach(([addr, info])=>{
       _cellMapping[addr] = info.field || info;
     });
@@ -2663,14 +3168,21 @@ function applyAnalysis(){
   // Apply signature suggestion
   if(a.signature_suggestion){
     _sigMapping = {
-      cell: a.signature_suggestion.cell,
+      anchor_cell: a.signature_suggestion.cell || a.signature_suggestion.anchor_cell || '',
+      cell: a.signature_suggestion.cell || a.signature_suggestion.anchor_cell || '',
       width: a.signature_suggestion.width || 220,
       height: a.signature_suggestion.height || 80,
       offset_x: a.signature_suggestion.offset_x || 0,
       offset_y: a.signature_suggestion.offset_y || 0,
+      keep_aspect_ratio: a.signature_suggestion.keep_aspect_ratio !== false,
     };
-    toast(`✓ Signaturposition: ${a.signature_suggestion.cell}`,'ok');
+    updateSigInputs();
+    if($('sigAnalysisSuggestBtn')) $('sigAnalysisSuggestBtn').style.display='none';
+    toast(`✓ Signaturposition: ${_sigMapping.anchor_cell}`,'ok');
   }
+  refreshCellMappingList();
+  refreshCellMappingOverlay();
+  refreshSigInGrid();
   toast('✓ Analyse-Vorschlag übernommen');
   $('analysisPanel').style.display = 'none';
   updateLivePreview();
