@@ -70,6 +70,94 @@
 
     <button type="submit" class="btn">Anmelden</button>
   </form>
+
+  <!-- Passkey login -->
+  <div class="divider" id="passkeyDivider">oder</div>
+  <button type="button" class="btn-oauth" id="passkeyBtn" onclick="loginWithPasskey()" style="margin-bottom:0">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M12 10c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2s2-.9 2-2v-4c0-1.1-.9-2-2-2z"/>
+      <path d="M12 6C8.69 6 6 8.69 6 12c0 2.1.9 4 2.3 5.3"/>
+      <path d="M17.7 17.3C19.1 16 20 14.1 20 12c0-4.42-3.58-8-8-8S4 7.58 4 12"/>
+      <path d="M9 12c0 1.66 1.34 3 3 3"/>
+    </svg>
+    Mit Passkey anmelden
+  </button>
+  <script>
+  async function loginWithPasskey(){
+    const email = document.querySelector('input[name="email"]').value.trim();
+    const btn = document.getElementById('passkeyBtn');
+    btn.disabled = true; btn.textContent = '⏳ Warte auf Passkey…';
+    try {
+      // Step 1: get options from server
+      const beginRes = await fetch('/api/auth/passkey/login/begin', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({email})
+      }).then(r=>r.json());
+      if(!beginRes.ok) throw new Error(beginRes.error || 'Challenge fehlgeschlagen');
+
+      const opts = beginRes.options;
+      // Decode base64url fields for WebAuthn API
+      opts.challenge = _b64uToBuffer(opts.challenge);
+      if(opts.allowCredentials){
+        opts.allowCredentials = opts.allowCredentials.map(c=>({...c, id:_b64uToBuffer(c.id)}));
+      }
+
+      // Step 2: browser authenticator
+      const credential = await navigator.credentials.get({publicKey: opts});
+
+      // Step 3: send to server
+      const credJson = {
+        id: credential.id,
+        rawId: _bufToB64u(credential.rawId),
+        type: credential.type,
+        response: {
+          clientDataJSON: _bufToB64u(credential.response.clientDataJSON),
+          authenticatorData: _bufToB64u(credential.response.authenticatorData),
+          signature: _bufToB64u(credential.response.signature),
+          userHandle: credential.response.userHandle ? _bufToB64u(credential.response.userHandle) : null,
+        }
+      };
+      const res = await fetch('/api/auth/passkey/login/complete', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(credJson)
+      }).then(r=>r.json());
+
+      if(res.ok){ window.location = res.redirect || '/'; return; }
+      throw new Error(res.error || 'Passkey-Login fehlgeschlagen');
+    } catch(e) {
+      btn.disabled = false;
+      btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 10c-1.1 0-2 .9-2 2v4c0 1.1.9 2 2 2s2-.9 2-2v-4c0-1.1-.9-2-2-2z"/><path d="M12 6C8.69 6 6 8.69 6 12c0 2.1.9 4 2.3 5.3"/><path d="M17.7 17.3C19.1 16 20 14.1 20 12c0-4.42-3.58-8-8-8S4 7.58 4 12"/><path d="M9 12c0 1.66 1.34 3 3 3"/></svg> Mit Passkey anmelden';
+      // Show error below button
+      let errEl = document.getElementById('passkeyError');
+      if(!errEl){ errEl = document.createElement('div'); errEl.id='passkeyError';
+        errEl.style.cssText='color:var(--danger);font-size:.72rem;font-family:var(--mono);margin-top:8px;text-align:center';
+        document.getElementById('passkeyBtn').after(errEl); }
+      errEl.textContent = e.name === 'NotAllowedError' ? 'Passkey-Eingabe abgebrochen' : e.message;
+    }
+  }
+
+  // Helper: base64url ↔ ArrayBuffer
+  function _b64uToBuffer(b64u){
+    const bin=atob(b64u.replace(/-/g,'+').replace(/_/g,'/'));
+    const buf=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
+    return buf.buffer;
+  }
+  function _bufToB64u(buf){
+    const bytes=new Uint8Array(buf);
+    let bin=''; bytes.forEach(b=>bin+=String.fromCharCode(b));
+    return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+  }
+
+  // Check if WebAuthn is supported; hide button if not
+  if(!window.PublicKeyCredential){
+    document.getElementById('passkeyBtn').style.display='none';
+    document.getElementById('passkeyDivider').style.display='none';
+  }
+  </script>
+
   <a href="/forgot-password" style="display:block;text-align:center;margin-top:14px;font-size:.72rem;
     font-family:var(--mono);color:var(--mute);text-decoration:none">Passwort vergessen?</a>
 

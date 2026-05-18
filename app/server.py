@@ -11,9 +11,15 @@ from meter_providers import read_meter as _read_meter_impl, MeterResult
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "1.9.8"
+APP_VERSION   = "1.9.9"
 
 CHANGELOG = [
+    {"version":"1.9.9","changes":[
+        "Passkey (WebAuthn/FIDO2) Authentifizierung: Anmelden per Fingerabdruck, Face ID oder Hardware-Key",
+        "Passkey-Registrierung und -Verwaltung in den Sicherheitseinstellungen",
+        "Mehrere Passkeys pro Benutzer möglich (mit eigenem Namen)",
+        "Passkey-Login-Button auf der Anmeldeseite",
+    ]},
     {"version":"1.9.3","changes":[
         "Automatische Template-Analyse mit Konfidenz-Score",
         "Zellmapping für Einzelzellen (Header/Footer-Bereich)",
@@ -530,6 +536,16 @@ def init_db():
     # live migration: add user_id column to audit_log
     try: con.execute("ALTER TABLE audit_log ADD COLUMN user_id INTEGER")
     except Exception: pass
+    con.execute("""CREATE TABLE IF NOT EXISTS webauthn_credentials (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id       INTEGER NOT NULL,
+        credential_id TEXT NOT NULL UNIQUE,
+        public_key    TEXT NOT NULL,
+        sign_count    INTEGER NOT NULL DEFAULT 0,
+        name          TEXT NOT NULL DEFAULT 'Passkey',
+        created_at    TEXT NOT NULL,
+        last_used_at  TEXT
+    )""")
     con.commit(); con.close()
 
 def get_sessions(year=None, month=None, location=None, vehicle_id=None, limit=50):
@@ -816,7 +832,9 @@ def start_tracker():
 _AUTH_EXEMPT = {"/login", "/logout", "/setup",
                 "/auth/google", "/auth/google/callback",
                 "/auth/microsoft", "/auth/microsoft/callback",
-                "/forgot-password"}
+                "/forgot-password",
+                "/api/auth/passkey/login/begin",
+                "/api/auth/passkey/login/complete"}
 
 _AUTH_EXEMPT_PREFIXES = ("/reset-password", "/invite")
 
@@ -850,7 +868,9 @@ def _check_csrf():
     """Verify CSRF token for state-changing requests. Returns error response or None."""
     if request.method in ("GET", "HEAD", "OPTIONS"):
         return None
-    _csrf_exempt_paths = {"/login", "/setup", "/forgot-password"}
+    _csrf_exempt_paths = {"/login", "/setup", "/forgot-password",
+                          "/api/auth/passkey/login/begin",
+                          "/api/auth/passkey/login/complete"}
     _csrf_exempt_prefixes = ("/reset-password", "/invite", "/auth/")
     if request.path in _csrf_exempt_paths:
         return None
@@ -1236,6 +1256,270 @@ def api_auth_status():
         "microsoft_enabled":  bool(cfg.get("oauth_microsoft_client_id","")),
         "has_users":          _has_users(),
     })
+
+# ── WebAuthn / Passkey helpers ────────────────────────────────────────────────
+
+def _webauthn_rp_id() -> str:
+    """Get WebAuthn relying party ID (hostname without port)."""
+    base_url = load_config().get("oauth_base_url", "").rstrip("/")
+    if base_url:
+        from urllib.parse import urlparse
+        return urlparse(base_url).hostname or "localhost"
+    host = request.host or "localhost"
+    return host.split(":")[0]  # strip port
+
+def _webauthn_rp_name() -> str:
+    return "EV Tracker"
+
+def _webauthn_origin() -> str:
+    """Get expected origin for WebAuthn."""
+    base_url = load_config().get("oauth_base_url", "").rstrip("/")
+    if base_url:
+        return base_url
+    return f"{request.scheme}://{request.host}"
+
+# ── WebAuthn / Passkey routes ─────────────────────────────────────────────────
+
+@app.route("/api/auth/passkey/register/begin", methods=["POST"])
+@require_login
+def api_passkey_register_begin():
+    import webauthn
+    from webauthn.helpers.structs import (
+        AuthenticatorSelectionCriteria, ResidentKeyRequirement,
+        UserVerificationRequirement, AttestationConveyancePreference
+    )
+    user = _current_user()
+    if not user:
+        return jsonify({"ok": False, "error": "Nicht angemeldet"}), 401
+
+    con = _get_db()
+    existing = con.execute(
+        "SELECT credential_id FROM webauthn_credentials WHERE user_id=?",
+        (user["id"],)
+    ).fetchall()
+    con.close()
+
+    from webauthn.helpers.structs import PublicKeyCredentialDescriptor
+    from webauthn.helpers import base64url_to_bytes
+    exclude_creds = []
+    for row in existing:
+        try:
+            exclude_creds.append(PublicKeyCredentialDescriptor(
+                id=base64url_to_bytes(row["credential_id"])
+            ))
+        except Exception:
+            pass
+
+    try:
+        options = webauthn.generate_registration_options(
+            rp_id=_webauthn_rp_id(),
+            rp_name=_webauthn_rp_name(),
+            user_id=str(user["id"]).encode(),
+            user_name=user["email"],
+            user_display_name=user["name"],
+            authenticator_selection=AuthenticatorSelectionCriteria(
+                resident_key=ResidentKeyRequirement.PREFERRED,
+                user_verification=UserVerificationRequirement.PREFERRED,
+            ),
+            attestation=AttestationConveyancePreference.NONE,
+            exclude_credentials=exclude_creds,
+        )
+        session["webauthn_reg_challenge"] = webauthn.helpers.bytes_to_base64url(options.challenge)
+        import json as _json
+        from webauthn.helpers import options_to_json
+        return jsonify({"ok": True, "options": _json.loads(options_to_json(options))})
+    except Exception as e:
+        log.exception("Passkey register begin failed")
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/auth/passkey/register/complete", methods=["POST"])
+@require_login
+def api_passkey_register_complete():
+    import webauthn
+    from webauthn.helpers.structs import RegistrationCredential
+    user = _current_user()
+    if not user:
+        return jsonify({"ok": False, "error": "Nicht angemeldet"}), 401
+
+    challenge_b64 = session.pop("webauthn_reg_challenge", None)
+    if not challenge_b64:
+        return jsonify({"ok": False, "error": "Keine Registrierungs-Challenge gefunden"}), 400
+
+    body = request.get_json(force=True) or {}
+    cred_name = body.pop("name", "Passkey")
+
+    try:
+        from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
+        expected_challenge = base64url_to_bytes(challenge_b64)
+
+        credential = RegistrationCredential.parse_raw(json.dumps(body))
+        verification = webauthn.verify_registration_response(
+            credential=credential,
+            expected_challenge=expected_challenge,
+            expected_rp_id=_webauthn_rp_id(),
+            expected_origin=_webauthn_origin(),
+            require_user_verification=False,
+        )
+
+        cred_id = bytes_to_base64url(verification.credential_id)
+        pub_key = bytes_to_base64url(verification.credential_public_key)
+
+        con = _get_db()
+        now = datetime.utcnow().isoformat()
+        con.execute(
+            "INSERT INTO webauthn_credentials (user_id, credential_id, public_key, sign_count, name, created_at) VALUES (?,?,?,?,?,?)",
+            (user["id"], cred_id, pub_key, verification.sign_count, cred_name, now)
+        )
+        con.commit(); con.close()
+        _audit("passkey_registered", f"user={user['email']} name={cred_name}", ip=request.remote_addr)
+        return jsonify({"ok": True, "message": f"Passkey '{cred_name}' erfolgreich registriert"})
+    except Exception as e:
+        log.exception("Passkey register complete failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+@app.route("/api/auth/passkey/credentials")
+@require_login
+def api_passkey_credentials():
+    user = _current_user()
+    if not user:
+        return jsonify({"ok": False, "error": "Nicht angemeldet"}), 401
+    con = _get_db()
+    rows = con.execute(
+        "SELECT id, name, created_at, last_used_at FROM webauthn_credentials WHERE user_id=? ORDER BY created_at DESC",
+        (user["id"],)
+    ).fetchall()
+    con.close()
+    return jsonify({"ok": True, "credentials": [dict(r) for r in rows]})
+
+
+@app.route("/api/auth/passkey/credentials/<int:cred_db_id>", methods=["DELETE"])
+@require_login
+def api_passkey_credential_delete(cred_db_id):
+    user = _current_user()
+    if not user:
+        return jsonify({"ok": False, "error": "Nicht angemeldet"}), 401
+    con = _get_db()
+    con.execute("DELETE FROM webauthn_credentials WHERE id=? AND user_id=?", (cred_db_id, user["id"]))
+    con.commit(); con.close()
+    _audit("passkey_deleted", f"cred_id={cred_db_id}", ip=request.remote_addr)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/auth/passkey/login/begin", methods=["POST"])
+def api_passkey_login_begin():
+    import webauthn
+    from webauthn.helpers.structs import UserVerificationRequirement
+
+    body = request.get_json(silent=True) or {}
+    email = body.get("email", "").strip().lower()
+
+    allow_creds = []
+    if email:
+        user = _get_user_by_email(email)
+        if user:
+            con = _get_db()
+            rows = con.execute(
+                "SELECT credential_id FROM webauthn_credentials WHERE user_id=?",
+                (user["id"],)
+            ).fetchall()
+            con.close()
+            from webauthn.helpers.structs import PublicKeyCredentialDescriptor
+            from webauthn.helpers import base64url_to_bytes
+            for row in rows:
+                try:
+                    allow_creds.append(PublicKeyCredentialDescriptor(
+                        id=base64url_to_bytes(row["credential_id"])
+                    ))
+                except Exception:
+                    pass
+
+    try:
+        options = webauthn.generate_authentication_options(
+            rp_id=_webauthn_rp_id(),
+            allow_credentials=allow_creds,
+            user_verification=UserVerificationRequirement.PREFERRED,
+        )
+        from webauthn.helpers import bytes_to_base64url
+        session["webauthn_auth_challenge"] = bytes_to_base64url(options.challenge)
+        import json as _json
+        from webauthn.helpers import options_to_json
+        return jsonify({"ok": True, "options": _json.loads(options_to_json(options))})
+    except Exception as e:
+        log.exception("Passkey login begin failed")
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/auth/passkey/login/complete", methods=["POST"])
+def api_passkey_login_complete():
+    import webauthn
+    from webauthn.helpers.structs import AuthenticationCredential
+
+    challenge_b64 = session.pop("webauthn_auth_challenge", None)
+    if not challenge_b64:
+        return jsonify({"ok": False, "error": "Keine Authentifizierungs-Challenge"}), 400
+
+    body = request.get_json(force=True) or {}
+
+    try:
+        from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
+        expected_challenge = base64url_to_bytes(challenge_b64)
+
+        credential = AuthenticationCredential.parse_raw(json.dumps(body))
+        cred_id_b64 = bytes_to_base64url(credential.raw_id)
+
+        con = _get_db()
+        row = con.execute(
+            """SELECT wc.id as cred_id, wc.credential_id, wc.public_key, wc.sign_count, wc.name as cred_name,
+                      u.id as user_id, u.email, u.name, u.role, u.status
+               FROM webauthn_credentials wc
+               JOIN users u ON wc.user_id = u.id
+               WHERE wc.credential_id=?""",
+            (cred_id_b64,)
+        ).fetchone()
+
+        if not row:
+            con.close()
+            return jsonify({"ok": False, "error": "Passkey nicht gefunden"}), 400
+
+        row = dict(row)
+        if row.get("status") == "disabled":
+            con.close()
+            return jsonify({"ok": False, "error": "Konto deaktiviert"}), 403
+
+        verification = webauthn.verify_authentication_response(
+            credential=credential,
+            expected_challenge=expected_challenge,
+            expected_rp_id=_webauthn_rp_id(),
+            expected_origin=_webauthn_origin(),
+            credential_public_key=base64url_to_bytes(row["public_key"]),
+            credential_current_sign_count=row["sign_count"],
+            require_user_verification=False,
+        )
+
+        now = datetime.utcnow().isoformat()
+        con.execute(
+            "UPDATE webauthn_credentials SET sign_count=?, last_used_at=? WHERE credential_id=?",
+            (verification.new_sign_count, now, cred_id_b64)
+        )
+        con.execute(
+            "UPDATE users SET last_login_at=?, failed_attempts=0, locked_until=NULL WHERE id=?",
+            (now, row["user_id"])
+        )
+        con.commit(); con.close()
+
+        session["user_id"]    = row["user_id"]
+        session["user_email"] = row["email"]
+        session["user_role"]  = row["role"]
+        session["user_name"]  = row["name"]
+        _audit("passkey_login", f"user={row['email']}", ip=request.remote_addr)
+
+        return jsonify({"ok": True, "redirect": "/"})
+    except Exception as e:
+        log.exception("Passkey login complete failed")
+        return jsonify({"ok": False, "error": str(e)}), 400
+
 
 # ── OAuth2 helpers ────────────────────────────────────────────────────────────
 
