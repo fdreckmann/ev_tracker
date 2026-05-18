@@ -1362,7 +1362,8 @@ def api_passkey_register_complete():
             require_user_verification=False,
         )
 
-        cred_id = bytes_to_base64url(verification.credential_id)
+        # Use body["id"] directly — same base64url the browser will send on login
+        cred_id = body.get("id") or bytes_to_base64url(verification.credential_id)
         pub_key = bytes_to_base64url(verification.credential_public_key)
 
         con = _get_db()
@@ -1467,8 +1468,13 @@ def api_passkey_login_complete():
 
         # credential id is the base64url "id" field from the browser response
         cred_id_b64 = body.get("id", "")
+        log.debug("Passkey login: browser cred_id=%s", cred_id_b64[:20] if cred_id_b64 else "(empty)")
 
         con = _get_db()
+        # Also log stored IDs to diagnose mismatch
+        stored = con.execute("SELECT credential_id FROM webauthn_credentials").fetchall()
+        log.debug("Passkey login: stored IDs=%s", [r["credential_id"][:20] for r in stored])
+
         row = con.execute(
             """SELECT wc.id as cred_id, wc.credential_id, wc.public_key, wc.sign_count, wc.name as cred_name,
                       u.id as user_id, u.email, u.name, u.role, u.status
@@ -1480,7 +1486,8 @@ def api_passkey_login_complete():
 
         if not row:
             con.close()
-            return jsonify({"ok": False, "error": "Passkey nicht gefunden"}), 400
+            # Return the browser id to help diagnose
+            return jsonify({"ok": False, "error": f"Passkey nicht gefunden (id={cred_id_b64[:30] if cred_id_b64 else 'leer'})"}), 400
 
         row = dict(row)
         if row.get("status") == "disabled":
