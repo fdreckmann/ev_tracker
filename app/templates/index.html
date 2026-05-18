@@ -718,6 +718,18 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           <button class="btn-p" style="font-size:.78rem;padding:7px 16px" onclick="saveOAuthConfig()">💾 OAuth speichern</button>
           <span id="oauthSaveInfo" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-left:10px"></span>
         </div>
+
+        <!-- Passkeys -->
+        <div style="border-top:1px solid var(--brd);padding-top:14px;margin-top:14px">
+          <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">Passkeys (biometrisch / Hardware-Key)</div>
+          <div id="passkeyList" style="margin-bottom:12px">
+            <div style="font-size:.73rem;font-family:var(--mono);color:var(--mute)">Lade…</div>
+          </div>
+          <button class="btn-s" onclick="registerPasskey()" style="font-size:.78rem">
+            ➕ Passkey hinzufügen
+          </button>
+          <span id="passkeyMsg" style="font-size:.73rem;font-family:var(--mono);color:var(--acc);margin-left:10px"></span>
+        </div>
       </div>
 
       <!-- EXPORT VORLAGEN -->
@@ -3497,6 +3509,95 @@ async function disableTotp(){
   loadAuthStatus();
 }
 
+// ── Passkeys ──────────────────────────────────────────────────────────────────
+async function loadPasskeys(){
+  try {
+    const r = await fetch('/api/auth/passkey/credentials').then(r=>r.json());
+    const el = $('passkeyList');
+    if(!el) return;
+    if(!r.ok || !r.credentials.length){
+      el.innerHTML='<div style="font-size:.73rem;font-family:var(--mono);color:var(--mute)">Keine Passkeys registriert</div>';
+      return;
+    }
+    el.innerHTML = r.credentials.map(c=>`
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(255,255,255,.04);border:1px solid var(--brd);border-radius:8px;margin-bottom:6px">
+        <div>
+          <div style="font-size:.78rem;font-family:var(--mono);color:#fff">🔑 ${c.name}</div>
+          <div style="font-size:.68rem;font-family:var(--mono);color:var(--mute)">Erstellt: ${c.created_at?.substring(0,10)} ${c.last_used_at?'· Zuletzt: '+c.last_used_at.substring(0,10):''}</div>
+        </div>
+        <button onclick="deletePasskey(${c.id})" style="background:rgba(255,79,90,.1);border:1px solid rgba(255,79,90,.3);color:var(--danger);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.72rem">✕ Entfernen</button>
+      </div>
+    `).join('');
+  } catch(e){ console.error(e); }
+}
+
+async function registerPasskey(){
+  if(!window.PublicKeyCredential){
+    toast('Dieser Browser unterstützt keine Passkeys','err'); return;
+  }
+  const name = prompt('Name für diesen Passkey (z.B. "MacBook Touch ID"):') || 'Passkey';
+  if(!name) return;
+  const msg = $('passkeyMsg');
+  msg.textContent = '⏳ Warte auf Authenticator…';
+  try {
+    // Step 1: get options
+    const beginRes = await apiFetch('/api/auth/passkey/register/begin', {method:'POST'}).then(r=>r.json());
+    if(!beginRes.ok) throw new Error(beginRes.error);
+
+    const opts = beginRes.options;
+    opts.challenge = _b64uToBuffer(opts.challenge);
+    opts.user.id   = _b64uToBuffer(opts.user.id);
+    if(opts.excludeCredentials){
+      opts.excludeCredentials = opts.excludeCredentials.map(c=>({...c, id:_b64uToBuffer(c.id)}));
+    }
+
+    // Step 2: browser creates credential
+    const credential = await navigator.credentials.create({publicKey: opts});
+
+    // Step 3: send to server
+    const credJson = {
+      name,
+      id: credential.id,
+      rawId: _bufToB64u(credential.rawId),
+      type: credential.type,
+      response: {
+        clientDataJSON:    _bufToB64u(credential.response.clientDataJSON),
+        attestationObject: _bufToB64u(credential.response.attestationObject),
+      }
+    };
+    const res = await apiFetch('/api/auth/passkey/register/complete', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(credJson)
+    }).then(r=>r.json());
+
+    if(res.ok){ msg.textContent='✅ '+res.message; await loadPasskeys(); }
+    else throw new Error(res.error);
+  } catch(e){
+    msg.style.color='var(--danger)';
+    msg.textContent = e.name==='NotAllowedError' ? '⚠ Abgebrochen' : '❌ '+e.message;
+    setTimeout(()=>{ msg.textContent=''; msg.style.color='var(--acc)'; }, 4000);
+  }
+}
+
+async function deletePasskey(id){
+  if(!confirm('Passkey wirklich entfernen?')) return;
+  const r = await apiFetch(`/api/auth/passkey/credentials/${id}`, {method:'DELETE'}).then(r=>r.json());
+  if(r.ok){ toast('Passkey entfernt'); await loadPasskeys(); }
+  else toast('Fehler: '+r.error,'err');
+}
+
+// base64url helpers for passkey operations
+function _b64uToBuffer(b64u){
+  const bin=atob(b64u.replace(/-/g,'+').replace(/_/g,'/'));
+  const buf=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
+  return buf.buffer;
+}
+function _bufToB64u(buf){
+  const bytes=new Uint8Array(buf);
+  let bin=''; bytes.forEach(b=>bin+=String.fromCharCode(b));
+  return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+
 // ── Backup ───────────────────────────────────────────────────────────────────
 async function loadBackups(){
   const data = await fetch('/api/backup/list').then(r=>r.json());
@@ -3825,7 +3926,7 @@ function cfgSection(id, btn){
   if(id==='audit') loadAuditLog();
   if(id==='smtp')  loadSmtpConfig();
   if(id==='export-tpl') loadExportTemplates();
-  if(id==='auth') { loadAuthStatus(); checkSmtpForTotp(); }
+  if(id==='auth') { loadAuthStatus(); checkSmtpForTotp(); loadPasskeys(); }
   if(id==='fahrzeuge') loadVehicleList();
   if(id==='benutzer') loadUserList();
   if(id==='profil')   loadMyProfile();
