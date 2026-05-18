@@ -1,6 +1,6 @@
 """Meter provider implementations for EV Tracker."""
 from __future__ import annotations
-import logging, time
+import logging, time, re
 from dataclasses import dataclass, field
 from typing import Optional, Any
 
@@ -26,14 +26,31 @@ def build_base_url(cfg: dict, default_scheme: str = "http") -> str:
         return f"{scheme}://{ip}:{port}"
     return f"{scheme}://{ip}"
 
-def normalize_energy_value(raw: Any, unit: str = "kwh", factor: float = 1.0) -> Optional[float]:
-    """Convert raw value to kWh. unit: 'kwh'|'wh'|'mwh'. factor applied after unit conversion."""
+def normalize_energy_value(raw: Any, unit: str = "auto", factor: float = 1.0) -> Optional[float]:
+    """Convert raw value to kWh.
+    unit: 'auto'|'kWh'|'Wh'|'MWh'|'mWh' (case-insensitive legacy: 'kwh'|'wh'|'mwh').
+    factor applied after unit conversion.
+    'auto': heuristic based on magnitude.
+    """
     try:
         v = float(raw)
-        if unit == "wh":
+        unit_lower = unit.lower()
+        if unit_lower == "auto":
+            if v > 100000:
+                # Probably Wh
+                v = v / 1000.0
+            elif v > 1000:
+                # Could be kWh or Wh — interpret as kWh (no conversion)
+                pass
+            # else: < 1000, probably kWh already
+        elif unit_lower in ("wh", "watt-hour", "watthour"):
             v /= 1000.0
-        elif unit == "mwh":
+        elif unit_lower in ("kwh", "kilowatt-hour", "kilowatthour"):
+            pass  # already kWh
+        elif unit_lower in ("mwh", "megawatt-hour", "megawatthour"):
             v *= 1000.0
+        elif unit_lower in ("mwh_milli", "milli-wh", "milliwatthour"):
+            v /= 1000000.0
         return round(v * factor, 3)
     except (TypeError, ValueError):
         return None
@@ -76,23 +93,41 @@ def _get_text(url: str, timeout: int = 8, auth=None, debug: list = None) -> Opti
             debug.append(f"  → ERROR: {e}")
         return None
 
-def _json_path(data: dict, path: str) -> Optional[Any]:
-    """Traverse nested dict/list using dot notation. Keys with colons supported."""
-    # path like "StatusSNS.ENERGY.Total" or "result:data.value"
-    # colons are alternative separators for keys containing dots
-    parts = path.replace(":", ".").split(".")
+def _json_path(data, path: str):
+    """Navigate nested dict/list by dot-separated path. Colon is part of key name."""
+    if not path or data is None:
+        return None
+    # Split only on "." — colons stay in key names
+    parts = path.split(".")
     cur = data
-    for p in parts:
-        if isinstance(cur, dict):
-            cur = cur.get(p)
-        elif isinstance(cur, list):
-            try:
-                cur = cur[int(p)]
-            except (ValueError, IndexError):
-                return None
-        else:
-            return None
+    for part in parts:
         if cur is None:
+            return None
+        # Support array index notation: "emeters[0]" or pure numeric "0"
+        m = re.match(r'^(.*?)\[(\d+)\]$', part)
+        if m:
+            key, idx = m.group(1), int(m.group(2))
+            if key:
+                cur = cur.get(key) if isinstance(cur, dict) else None
+            if isinstance(cur, (list, tuple)):
+                cur = cur[idx] if idx < len(cur) else None
+            elif isinstance(cur, dict):
+                cur = cur.get(str(idx))
+            else:
+                return None
+        elif isinstance(cur, dict):
+            if part.isdigit():
+                # Check if key exists as string first
+                if part in cur:
+                    cur = cur.get(part)
+                else:
+                    return None
+            else:
+                cur = cur.get(part)
+        elif isinstance(cur, (list, tuple)) and part.isdigit():
+            idx = int(part)
+            cur = cur[idx] if idx < len(cur) else None
+        else:
             return None
     return cur
 
@@ -166,103 +201,171 @@ class ShellyMeterProvider(BaseMeterProvider):
             return self._result(error="Keine IP konfiguriert", debug=debug)
 
         channel = int(self.cfg.get("meter_channel", 0))
-        phase_mode = self.cfg.get("meter_phase_mode", "total")  # total|a|b|c|sum
+        phase_mode = self.cfg.get("meter_phase_mode", "total")  # total|a|b|c|sum_phases
+        unit = self.cfg.get("meter_value_unit", "auto")
         username = self.cfg.get("meter_username", "")
         password = self.cfg.get("meter_password", "")
         auth = (username, password) if username and password else None
+        custom_json_path = self.cfg.get("meter_json_path", "").strip()
+
+        # --- If meter_json_path is set, try custom path first ---
+        if custom_json_path:
+            debug.append(f"=== Versuche meter_json_path='{custom_json_path}' ===")
+            for ep in ["/rpc/Shelly.GetStatus", "/status"]:
+                data = _get_json(f"{self.base_url}{ep}", timeout=self.timeout, auth=auth, debug=debug)
+                if data is None:
+                    continue
+                raw = _json_path(data, custom_json_path)
+                if raw is not None:
+                    val = normalize_energy_value(raw, unit=unit)
+                    if val is not None:
+                        debug.append(f"  → custom path '{custom_json_path}' = {raw} → {val} kWh")
+                        return self._result(value=val, debug=debug)
+            debug.append(f"  → meter_json_path nicht gefunden, versuche Auto-Detection")
 
         # --- Try Gen2/Plus/Pro RPC API first ---
         debug.append("=== Versuche Gen2/Plus/Pro RPC API ===")
-        # Try Shelly.GetStatus (Gen2)
-        for rpc_path in ["/rpc/Shelly.GetStatus", "/rpc/EM.GetStatus?id=0", "/rpc/Switch.GetStatus?id=0"]:
-            data = _get_json(f"{self.base_url}{rpc_path}", timeout=self.timeout, auth=auth, debug=debug)
-            if data is None:
-                continue
-            # Gen2 EM: data["em:0"]["total_act_energy"] in Wh
-            em_key = f"em:{channel}"
-            if em_key in data:
-                em = data[em_key]
-                debug.append(f"  → Gen2 EM key '{em_key}' found")
-                if phase_mode == "total":
-                    raw = em.get("total_act_energy") or em.get("a_act_energy", 0) + em.get("b_act_energy", 0) + em.get("c_act_energy", 0)
-                elif phase_mode == "a":
-                    raw = em.get("a_act_energy")
-                elif phase_mode == "b":
-                    raw = em.get("b_act_energy")
-                elif phase_mode == "c":
-                    raw = em.get("c_act_energy")
-                else:
-                    raw = em.get("total_act_energy")
-                if raw is not None:
-                    val = normalize_energy_value(raw, unit="wh")
-                    debug.append(f"  → raw={raw} Wh → {val} kWh")
-                    return self._result(value=val, debug=debug)
-            # Gen2 switch: data["switch:0"]["aenergy"]["total"] in Wh
-            sw_key = f"switch:{channel}"
-            if sw_key in data:
-                sw = data[sw_key]
-                debug.append(f"  → Gen2 Switch key '{sw_key}' found")
-                aen = sw.get("aenergy", {})
-                raw = aen.get("total")
-                if raw is not None:
-                    val = normalize_energy_value(raw, unit="wh")
-                    debug.append(f"  → raw={raw} Wh → {val} kWh")
-                    return self._result(value=val, debug=debug)
-            # If data has "switch:0" at top level
-            if "aenergy" in data:
-                raw = data["aenergy"].get("total")
-                if raw is not None:
-                    val = normalize_energy_value(raw, unit="wh")
-                    debug.append(f"  → Gen2 aenergy.total={raw} Wh → {val} kWh")
-                    return self._result(value=val, debug=debug)
-            # Try result wrapper (some firmware versions)
-            if "result" in data:
-                result = data["result"]
-                if isinstance(result, dict):
-                    for key in [f"em:{channel}", f"switch:{channel}"]:
-                        if key in result:
-                            sub = result[key]
-                            raw = sub.get("total_act_energy") or (sub.get("aenergy") or {}).get("total")
-                            if raw is not None:
-                                val = normalize_energy_value(raw, unit="wh")
-                                return self._result(value=val, debug=debug)
+
+        # 1. GET /rpc/Shelly.GetStatus — try multiple field patterns
+        data = _get_json(f"{self.base_url}/rpc/Shelly.GetStatus", timeout=self.timeout, auth=auth, debug=debug)
+        if data is not None:
+            result = self._parse_gen2_status(data, channel, phase_mode, unit, debug)
+            if result is not None:
+                return self._result(value=result, debug=debug)
+
+        # 2. GET /rpc/Switch.GetStatus?id=0
+        data = _get_json(f"{self.base_url}/rpc/Switch.GetStatus?id=0", timeout=self.timeout, auth=auth, debug=debug)
+        if data is not None:
+            raw = _json_path(data, "aenergy.total")
+            if raw is not None:
+                val = normalize_energy_value(raw, unit="Wh")
+                debug.append(f"  → Switch.GetStatus?id=0 aenergy.total={raw} Wh → {val} kWh")
+                return self._result(value=val, debug=debug)
+
+        # 3. GET /rpc/Switch.GetStatus?id=1
+        data = _get_json(f"{self.base_url}/rpc/Switch.GetStatus?id=1", timeout=self.timeout, auth=auth, debug=debug)
+        if data is not None:
+            raw = _json_path(data, "aenergy.total")
+            if raw is not None:
+                val = normalize_energy_value(raw, unit="Wh")
+                debug.append(f"  → Switch.GetStatus?id=1 aenergy.total={raw} Wh → {val} kWh")
+                return self._result(value=val, debug=debug)
+
+        # 4. GET /rpc/PM1.GetStatus?id=0
+        data = _get_json(f"{self.base_url}/rpc/PM1.GetStatus?id=0", timeout=self.timeout, auth=auth, debug=debug)
+        if data is not None:
+            raw = _json_path(data, "aenergy.total")
+            if raw is not None:
+                val = normalize_energy_value(raw, unit="Wh")
+                debug.append(f"  → PM1.GetStatus?id=0 aenergy.total={raw} Wh → {val} kWh")
+                return self._result(value=val, debug=debug)
 
         # --- Try Gen1 API ---
         debug.append("=== Versuche Gen1 API ===")
-        gen1_endpoints = [
-            f"/emeter/{channel}",   # Shelly EM, 3EM
-            f"/meter/{channel}",    # Shelly 1PM, 2.5
-            "/status",              # fallback: full status
-        ]
-        for ep in gen1_endpoints:
-            data = _get_json(f"{self.base_url}{ep}", timeout=self.timeout, auth=auth, debug=debug)
-            if data is None:
-                continue
-            # /emeter/N: {"total": ..., "power": ...} — total in Wh
-            if "total" in data:
+
+        # 5. GET /emeter/0, /emeter/1, /emeter/2
+        for em_ch in range(3):
+            data = _get_json(f"{self.base_url}/emeter/{em_ch}", timeout=self.timeout, auth=auth, debug=debug)
+            if data is not None and "total" in data:
                 raw = data["total"]
-                debug.append(f"  → Gen1 {ep}: total={raw} Wh")
-                val = normalize_energy_value(raw, unit="wh")
+                val = normalize_energy_value(raw, unit="Wh")
+                debug.append(f"  → Gen1 /emeter/{em_ch}: total={raw} Wh → {val} kWh")
                 return self._result(value=val, debug=debug)
-            # /status may have emmeters or meters list
-            if "emmeters" in data:
-                emmeters = data["emmeters"]
-                if channel < len(emmeters):
-                    raw = emmeters[channel].get("total")
-                    if raw is not None:
-                        val = normalize_energy_value(raw, unit="wh")
-                        debug.append(f"  → Gen1 status.emmeters[{channel}].total={raw} Wh → {val} kWh")
-                        return self._result(value=val, debug=debug)
-            if "meters" in data:
-                meters = data["meters"]
-                if channel < len(meters):
-                    raw = meters[channel].get("total")
-                    if raw is not None:
-                        val = normalize_energy_value(raw, unit="wh")
-                        debug.append(f"  → Gen1 status.meters[{channel}].total={raw} Wh → {val} kWh")
-                        return self._result(value=val, debug=debug)
+
+        # 6. GET /meter/0 (in Wh)
+        data = _get_json(f"{self.base_url}/meter/0", timeout=self.timeout, auth=auth, debug=debug)
+        if data is not None and "total" in data:
+            raw = data["total"]
+            val = normalize_energy_value(raw, unit="Wh")
+            debug.append(f"  → Gen1 /meter/0: total={raw} Wh → {val} kWh")
+            return self._result(value=val, debug=debug)
+
+        # 7. GET /status — try emeters array (NOT emmeters!)
+        data = _get_json(f"{self.base_url}/status", timeout=self.timeout, auth=auth, debug=debug)
+        if data is not None:
+            # Try emeters[channel].total
+            emeters = data.get("emeters")
+            if isinstance(emeters, list) and channel < len(emeters):
+                raw = emeters[channel].get("total")
+                if raw is not None:
+                    val = normalize_energy_value(raw, unit="Wh")
+                    debug.append(f"  → Gen1 status.emeters[{channel}].total={raw} Wh → {val} kWh")
+                    return self._result(value=val, debug=debug)
+            # Also try meters list
+            meters = data.get("meters")
+            if isinstance(meters, list) and channel < len(meters):
+                raw = meters[channel].get("total")
+                if raw is not None:
+                    val = normalize_energy_value(raw, unit="Wh")
+                    debug.append(f"  → Gen1 status.meters[{channel}].total={raw} Wh → {val} kWh")
+                    return self._result(value=val, debug=debug)
 
         return self._result(error="Kein Zählerstand gefunden (alle Endpunkte fehlgeschlagen)", debug=debug)
+
+    def _parse_gen2_status(self, data: dict, channel: int, phase_mode: str, unit: str, debug: list) -> Optional[float]:
+        """Parse Gen2 /rpc/Shelly.GetStatus response. Returns kWh or None."""
+
+        # switch:0.aenergy.total, switch:1.aenergy.total
+        for sw_ch in [0, 1]:
+            sw_key = f"switch:{sw_ch}"
+            if sw_key in data:
+                sw = data[sw_key]
+                aen = sw.get("aenergy", {}) if isinstance(sw, dict) else {}
+                raw = aen.get("total") if isinstance(aen, dict) else None
+                if raw is not None:
+                    val = normalize_energy_value(raw, unit="Wh")
+                    debug.append(f"  → Gen2 {sw_key}.aenergy.total={raw} Wh → {val} kWh")
+                    return val
+
+        # pm1:0.aenergy.total
+        pm_key = f"pm1:{channel}"
+        if pm_key in data:
+            pm = data[pm_key]
+            aen = pm.get("aenergy", {}) if isinstance(pm, dict) else {}
+            raw = aen.get("total") if isinstance(aen, dict) else None
+            if raw is not None:
+                val = normalize_energy_value(raw, unit="Wh")
+                debug.append(f"  → Gen2 {pm_key}.aenergy.total={raw} Wh → {val} kWh")
+                return val
+
+        # em:0.total_act (in Wh)
+        em_key = f"em:{channel}"
+        if em_key in data:
+            em = data[em_key]
+            if isinstance(em, dict):
+                raw = em.get("total_act")
+                if raw is not None:
+                    val = normalize_energy_value(raw, unit="Wh")
+                    debug.append(f"  → Gen2 {em_key}.total_act={raw} Wh → {val} kWh")
+                    return val
+                # Also check total_act_energy
+                raw = em.get("total_act_energy")
+                if raw is not None:
+                    val = normalize_energy_value(raw, unit="Wh")
+                    debug.append(f"  → Gen2 {em_key}.total_act_energy={raw} Wh → {val} kWh")
+                    return val
+                # Phase mode sum_phases
+                if phase_mode == "sum_phases":
+                    a = em.get("a_act_energy", 0) or 0
+                    b = em.get("b_act_energy", 0) or 0
+                    c = em.get("c_act_energy", 0) or 0
+                    raw = a + b + c
+                    val = normalize_energy_value(raw, unit="Wh")
+                    debug.append(f"  → Gen2 {em_key} sum_phases={raw} Wh → {val} kWh")
+                    return val
+
+        # emdata:0.total_act — requires separate call to /rpc/EMData.GetStatus?id=0
+        # (handled separately, not from GetStatus)
+
+        # If data has aenergy at top level (e.g. direct Switch.GetStatus response used here)
+        if "aenergy" in data:
+            raw = data["aenergy"].get("total") if isinstance(data.get("aenergy"), dict) else None
+            if raw is not None:
+                val = normalize_energy_value(raw, unit="Wh")
+                debug.append(f"  → Gen2 top-level aenergy.total={raw} Wh → {val} kWh")
+                return val
+
+        return None
 
 
 class TasmotaMeterProvider(BaseMeterProvider):
@@ -275,52 +378,116 @@ class TasmotaMeterProvider(BaseMeterProvider):
 
         username = self.cfg.get("meter_username", "")
         password = self.cfg.get("meter_password", "")
+        # Build auth — use Basic Auth if credentials set
         auth = (username, password) if username and password else None
-        custom_path = self.cfg.get("meter_json_path", "").strip()  # e.g. "StatusSNS.ENERGY.Total"
+        custom_path = self.cfg.get("meter_custom_path", "").strip()
+        json_path = self.cfg.get("meter_json_path", "").strip()
 
+        # Endpoints to try in order
         endpoints = [
-            "/cm?cmnd=Status%208",
+            "/cm?cmnd=Status%208",    # StatusSNS
+            "/cm?cmnd=Status%2010",   # StatusSNS (alternative)
             "/cm?cmnd=StatusSNS",
-            "/cm?cmnd=Status%200",
             "/cm?cmnd=EnergyTotal",
-            "/cm?user={user}&password={pass}&cmnd=Status%208",
         ]
 
-        for ep_tpl in endpoints:
-            ep = ep_tpl.replace("{user}", username).replace("{pass}", password)
-            data = _get_json(f"{self.base_url}{ep}", timeout=self.timeout, auth=auth, debug=debug)
-            if data is None:
-                continue
+        # If meter_custom_path set, prepend it
+        if custom_path:
+            endpoints = [custom_path] + endpoints
 
-            # If user specified a custom JSON path, try it first
-            if custom_path:
-                val = _json_path(data, custom_path)
+        # Also add auth query param variants if credentials present
+        if username and password:
+            # Note: passwords never logged
+            auth_endpoints = [
+                f"/cm?user={username}&password=***&cmnd=Status%208",
+            ]
+            # Use actual password in URL but never show it in debug
+            auth_url_suffix = f"&user={username}&password={password}"
+        else:
+            auth_url_suffix = ""
+
+        for ep in endpoints:
+            # Build actual URL (with auth params if needed, but shown safely in debug)
+            if auth_url_suffix and "user=" not in ep and "password=" not in ep:
+                actual_ep = ep + auth_url_suffix
+                # For debug, show masked version
+                debug_ep = ep + f"&user={username}&password=***"
+            else:
+                actual_ep = ep
+                debug_ep = ep
+
+            data = _get_json(f"{self.base_url}{actual_ep}", timeout=self.timeout,
+                             auth=auth, debug=None)
+            # Log manually with masked URL
+            debug.append(f"GET {self.base_url}{debug_ep}")
+            if data is None:
+                debug.append(f"  → no data / error")
+                continue
+            debug.append(f"  → got JSON response")
+
+            # If meter_json_path set, try it on this response
+            if json_path:
+                val = _json_path(data, json_path)
                 if val is not None:
                     kwh = normalize_energy_value(val)
-                    debug.append(f"  → custom path '{custom_path}' = {val} → {kwh} kWh")
+                    debug.append(f"  → meter_json_path '{json_path}' = {val} → {kwh} kWh")
                     if kwh is not None:
                         return self._result(value=kwh, debug=debug)
 
-            # Try common paths
-            paths_to_try = [
-                "StatusSNS.ENERGY.Total",
-                "StatusSNS.ENERGY.TotalStartTime",  # skip
-                "ENERGY.Total",
-                "StatusSNS.SML.Total_in",
-                "StatusSNS.SML.Energy",
-                "Total",
-            ]
-            for path in paths_to_try:
-                if "TotalStartTime" in path:
-                    continue
-                val = _json_path(data, path)
-                if val is not None:
-                    kwh = normalize_energy_value(val)
-                    if kwh is not None and kwh > 0:
-                        debug.append(f"  → path '{path}' = {val} → {kwh} kWh")
-                        return self._result(value=kwh, debug=debug)
+            # Try common paths in priority order
+            found = self._try_tasmota_paths(data, debug)
+            if found is not None:
+                return self._result(value=found, debug=debug)
 
         return self._result(error="Kein Energiewert gefunden", debug=debug)
+
+    def _try_tasmota_paths(self, data: dict, debug: list) -> Optional[float]:
+        """Try known Tasmota JSON paths. Returns kWh or None."""
+        # Priority paths — do NOT use Today, Yesterday, Power, Voltage, Current
+        priority_paths = [
+            "StatusSNS.ENERGY.Total",
+            "StatusSNS.ENERGY.Total_in",
+            "ENERGY.Total",
+            "ENERGY.Total_in",
+            "StatusSNS.SML.Total",
+            "StatusSNS.SML.Total_in",
+            "StatusSNS.SML.E_in",
+        ]
+        for path in priority_paths:
+            val = _json_path(data, path)
+            if val is not None:
+                try:
+                    fval = float(val)
+                except (TypeError, ValueError):
+                    continue
+                kwh = normalize_energy_value(fval)
+                if kwh is not None:
+                    debug.append(f"  → path '{path}' = {val} → {kwh} kWh")
+                    return kwh
+
+        # Generic: StatusSNS.<first_sensor_key>.Total / Total_in / E_in
+        sns = data.get("StatusSNS") if isinstance(data, dict) else None
+        if isinstance(sns, dict):
+            # Skip known non-sensor keys
+            skip_keys = {"Time", "TempUnit", "ENERGY", "SML"}
+            for key, sensor_val in sns.items():
+                if key in skip_keys:
+                    continue
+                if not isinstance(sensor_val, dict):
+                    continue
+                for subkey in ["Total", "Total_in", "E_in"]:
+                    raw = sensor_val.get(subkey)
+                    if raw is not None:
+                        try:
+                            fraw = float(raw)
+                        except (TypeError, ValueError):
+                            continue
+                        kwh = normalize_energy_value(fraw)
+                        if kwh is not None:
+                            debug.append(f"  → generic StatusSNS.{key}.{subkey} = {raw} → {kwh} kWh")
+                            return kwh
+
+        return None
 
 
 class GoEMeterProvider(BaseMeterProvider):
@@ -495,7 +662,7 @@ class GenericHttpMeterProvider(BaseMeterProvider):
             return self._result(error="Keine URL konfiguriert", debug=debug)
 
         json_path = self.cfg.get("meter_json_path", "").strip()
-        unit = self.cfg.get("meter_value_unit", "kwh").lower()
+        unit = self.cfg.get("meter_value_unit", "auto").lower()
         factor = float(self.cfg.get("meter_value_factor", 1.0))
         username = self.cfg.get("meter_username", "")
         password = self.cfg.get("meter_password", "")
