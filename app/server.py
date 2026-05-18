@@ -1337,7 +1337,6 @@ def api_passkey_register_begin():
 @require_login
 def api_passkey_register_complete():
     import webauthn
-    from webauthn.helpers.structs import RegistrationCredential
     user = _current_user()
     if not user:
         return jsonify({"ok": False, "error": "Nicht angemeldet"}), 401
@@ -1353,9 +1352,8 @@ def api_passkey_register_complete():
         from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
         expected_challenge = base64url_to_bytes(challenge_b64)
 
-        credential = RegistrationCredential.parse_raw(json.dumps(body))
         verification = webauthn.verify_registration_response(
-            credential=credential,
+            credential=body,
             expected_challenge=expected_challenge,
             expected_rp_id=_webauthn_rp_id(),
             expected_origin=_webauthn_origin(),
@@ -1454,7 +1452,6 @@ def api_passkey_login_begin():
 @app.route("/api/auth/passkey/login/complete", methods=["POST"])
 def api_passkey_login_complete():
     import webauthn
-    from webauthn.helpers.structs import AuthenticationCredential
 
     challenge_b64 = session.pop("webauthn_auth_challenge", None)
     if not challenge_b64:
@@ -1466,8 +1463,8 @@ def api_passkey_login_complete():
         from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
         expected_challenge = base64url_to_bytes(challenge_b64)
 
-        credential = AuthenticationCredential.parse_raw(json.dumps(body))
-        cred_id_b64 = bytes_to_base64url(credential.raw_id)
+        # credential id is the base64url "id" field from the browser response
+        cred_id_b64 = body.get("id", "")
 
         con = _get_db()
         row = con.execute(
@@ -1489,7 +1486,7 @@ def api_passkey_login_complete():
             return jsonify({"ok": False, "error": "Konto deaktiviert"}), 403
 
         verification = webauthn.verify_authentication_response(
-            credential=credential,
+            credential=body,
             expected_challenge=expected_challenge,
             expected_rp_id=_webauthn_rp_id(),
             expected_origin=_webauthn_origin(),
