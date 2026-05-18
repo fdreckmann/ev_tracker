@@ -974,7 +974,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <option value="9">September</option><option value="10">Oktober</option>
         <option value="11">November</option><option value="12">Dezember</option>
       </select>
-      <select id="expLoc" onchange="loadExpPreview()">
+      <select id="expLoc" onchange="_lastExportPreviewToken=null;loadExpPreview()">
         <option value="all">🔁 Alle Standorte</option>
         <option value="home">Nur Zuhause</option>
         <option value="extern">Nur Extern</option>
@@ -3350,8 +3350,8 @@ async function loadExpPreview(){
   $('es_eff').textContent  = eff;
 }
 
-$('expY')?.addEventListener('change',loadExpPreview);
-$('expM')?.addEventListener('change',loadExpPreview);
+$('expY')?.addEventListener('change',()=>{ _lastExportPreviewToken=null; loadExpPreview(); });
+$('expM')?.addEventListener('change',()=>{ _lastExportPreviewToken=null; loadExpPreview(); });
 
 async function doExport(){
   const y=$('expY').value, m=$('expM').value, loc=$('expLoc').value;
