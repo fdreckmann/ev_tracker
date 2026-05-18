@@ -1276,7 +1276,9 @@ def _webauthn_origin() -> str:
     base_url = load_config().get("oauth_base_url", "").rstrip("/")
     if base_url:
         return base_url
-    return f"{request.scheme}://{request.host}"
+    # Respect X-Forwarded-Proto from reverse proxies (nginx, Traefik, etc.)
+    scheme = request.headers.get("X-Forwarded-Proto", request.scheme)
+    return f"{scheme}://{request.host}"
 
 # ── WebAuthn / Passkey routes ─────────────────────────────────────────────────
 
