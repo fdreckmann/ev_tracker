@@ -967,26 +967,85 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <div id="smtpStatusBadge" style="margin-bottom:14px;padding:8px 14px;border-radius:8px;font-size:.75rem;font-family:var(--mono);background:rgba(74,92,114,.15);border:1px solid var(--brd);color:var(--mute);display:inline-block">
           ⏳ Status unbekannt
         </div>
-        <div class="form-grid">
-          <div class="fg"><label>SMTP-Server</label>
-            <input type="text" id="smtp_host" placeholder="smtp.gmail.com"></div>
-          <div class="fg"><label>Port</label>
-            <input type="number" id="smtp_port" placeholder="587" value="587"></div>
-          <div class="fg full"><label>Verschlüsselung</label>
-            <select id="smtp_tls">
-              <option value="starttls">STARTTLS (Port 587) — empfohlen</option>
-              <option value="ssl">SSL/TLS (Port 465)</option>
-              <option value="none">Keine (Port 25) — unsicher</option>
+        <div class="form-grid" style="margin-bottom:6px">
+          <div class="fg full"><label>Authentifizierungsmethode</label>
+            <select id="smtp_auth_method" onchange="onSmtpAuthMethodChange()">
+              <option value="basic">Benutzername + Passwort</option>
+              <option value="app_password">App-Passwort</option>
+              <option value="oauth2_google">Google OAuth2</option>
+              <option value="oauth2_microsoft">Microsoft 365 OAuth2</option>
+              <option value="relay_no_auth">SMTP Relay ohne Anmeldung</option>
             </select></div>
-          <div class="fg"><label>Benutzername</label>
-            <input type="text" id="smtp_user" placeholder="user@gmail.com"></div>
-          <div class="fg"><label>Passwort</label>
-            <input type="password" id="smtp_password" placeholder="App-Passwort oder Passwort"></div>
+        </div>
+        <p style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin:0 0 14px">
+          Bei OAuth2 erfolgt die 2FA direkt beim Anbieter. Die App speichert kein Mailbox-Passwort.
+        </p>
+
+        <div id="smtp_basic_panel">
+          <div class="form-grid">
+            <div class="fg"><label>SMTP-Server</label>
+              <input type="text" id="smtp_host" placeholder="smtp.gmail.com"></div>
+            <div class="fg"><label>Port</label>
+              <input type="number" id="smtp_port" placeholder="587" value="587"></div>
+            <div class="fg full"><label>Verschlüsselung</label>
+              <select id="smtp_tls">
+                <option value="starttls">STARTTLS (Port 587) — empfohlen</option>
+                <option value="ssl">SSL/TLS (Port 465)</option>
+                <option value="none">Keine (Port 25) — unsicher</option>
+              </select></div>
+            <div class="fg"><label>Benutzername</label>
+              <input type="text" id="smtp_user" placeholder="user@gmail.com"></div>
+            <div class="fg"><label>Passwort</label>
+              <input type="password" id="smtp_password" placeholder="App-Passwort oder Passwort"></div>
+          </div>
+        </div>
+
+        <div id="smtp_google_panel" style="display:none">
+          <div class="form-grid">
+            <div class="fg full"><label>Sender-Adresse</label>
+              <input type="email" id="smtp_google_sender_email" placeholder="ev@meinserver.de"></div>
+            <div class="fg full"><label>Client ID</label>
+              <input type="text" id="smtp_google_client_id" placeholder="xxxxxx.apps.googleusercontent.com"></div>
+            <div class="fg full"><label>Client Secret</label>
+              <input type="password" id="smtp_google_client_secret" placeholder="•••• (unverändert lassen)"></div>
+          </div>
+          <div style="margin:8px 0 4px;font-size:.78rem;font-family:var(--mono)">
+            <span id="smtp_google_status" style="color:var(--mute)">⏳ Status unbekannt</span>
+          </div>
+          <div class="btn-row">
+            <button class="btn-p" onclick="smtpOAuthConnect('google')">🔗 Mit Google verbinden</button>
+            <button class="btn-d" onclick="smtpOAuthDisconnect('google')">⛔ Verbindung trennen</button>
+            <button class="btn-g" onclick="sendSmtpTestMail()">📧 Testmail senden</button>
+          </div>
+        </div>
+
+        <div id="smtp_ms_panel" style="display:none">
+          <div class="form-grid">
+            <div class="fg full"><label>Sender-Adresse</label>
+              <input type="email" id="smtp_ms_sender_email" placeholder="ev@meinserver.de"></div>
+            <div class="fg"><label>Tenant ID</label>
+              <input type="text" id="smtp_ms_tenant_id" placeholder="common"></div>
+            <div class="fg"><label>Client ID</label>
+              <input type="text" id="smtp_ms_client_id" placeholder="00000000-0000-0000-0000-000000000000"></div>
+            <div class="fg full"><label>Client Secret</label>
+              <input type="password" id="smtp_ms_client_secret" placeholder="•••• (unverändert lassen)"></div>
+          </div>
+          <div style="margin:8px 0 4px;font-size:.78rem;font-family:var(--mono)">
+            <span id="smtp_ms_status" style="color:var(--mute)">⏳ Status unbekannt</span>
+          </div>
+          <div class="btn-row">
+            <button class="btn-p" onclick="smtpOAuthConnect('microsoft')">🔗 Mit Microsoft verbinden</button>
+            <button class="btn-d" onclick="smtpOAuthDisconnect('microsoft')">⛔ Verbindung trennen</button>
+            <button class="btn-g" onclick="sendSmtpTestMail()">📧 Testmail senden</button>
+          </div>
+        </div>
+
+        <div class="form-grid" style="margin-top:14px">
           <div class="fg"><label>Absendername</label>
             <input type="text" id="smtp_from_name" placeholder="EV Tracker" value="EV Tracker"></div>
           <div class="fg"><label>Absender-E-Mail</label>
             <input type="email" id="smtp_from_email" placeholder="ev@meinserver.de"></div>
-          <div class="fg"><label>Reply-To (optional)</label>
+          <div class="fg full"><label>Reply-To (optional)</label>
             <input type="email" id="smtp_reply_to" placeholder="info@meinserver.de"></div>
         </div>
         <div class="btn-row">
@@ -5114,7 +5173,7 @@ function cfgSection(id, btn){
   }
   // lazy-load data for sections
   if(id==='audit') loadAuditLog();
-  if(id==='smtp')  loadSmtpConfig();
+  if(id==='smtp')  { loadSmtpConfig(); refreshSmtpOAuthStatus(); }
   if(id==='export-tpl') loadExportTemplates();
   if(id==='auth') { loadAuthStatus(); checkSmtpForTotp(); loadPasskeys(); }
   if(id==='fahrzeuge') loadVehicleList();
@@ -5125,12 +5184,75 @@ function cfgSection(id, btn){
 }
 
 // ── SMTP ─────────────────────────────────────────────────────────────────────
+let _smtpOAuthListenerAdded = false;
+
+function onSmtpAuthMethodChange(){
+  const m = ($('smtp_auth_method')||{}).value || 'basic';
+  const isOauthGoogle = m==='oauth2_google';
+  const isOauthMs     = m==='oauth2_microsoft';
+  const showBasic     = !isOauthGoogle && !isOauthMs;
+  const bp=$('smtp_basic_panel'); if(bp) bp.style.display = showBasic?'':'none';
+  const gp=$('smtp_google_panel'); if(gp) gp.style.display = isOauthGoogle?'':'none';
+  const mp=$('smtp_ms_panel'); if(mp) mp.style.display = isOauthMs?'':'none';
+}
+
 async function loadSmtpConfig(){
   const c = await fetch('/api/config').then(r=>r.json());
-  const fields = ['smtp_host','smtp_port','smtp_tls','smtp_user','smtp_from_name','smtp_from_email','smtp_reply_to'];
+  const fields = ['smtp_host','smtp_port','smtp_tls','smtp_user','smtp_from_name','smtp_from_email','smtp_reply_to',
+    'smtp_auth_method','smtp_google_client_id','smtp_google_sender_email',
+    'smtp_ms_client_id','smtp_ms_sender_email','smtp_ms_tenant_id'];
   fields.forEach(f=>{ const el=$(f); if(el&&c[f]!=null) el.value=c[f]; });
-  // don't prefill password
+  // don't prefill password / secret fields
   updateSmtpStatus(c);
+  onSmtpAuthMethodChange();
+  refreshSmtpOAuthStatus();
+}
+
+async function refreshSmtpOAuthStatus(){
+  let s;
+  try { s = await fetch('/api/smtp/oauth/status').then(r=>r.json()); }
+  catch(e){ return; }
+  if(!s) return;
+  const render=(elId, info)=>{
+    const el=$(elId); if(!el||!info) return;
+    if(!info.client_configured){
+      el.textContent='⚠️ Client-ID/Secret zuerst speichern';
+      el.style.color='var(--warn)';
+    } else if(info.connected){
+      el.textContent='✅ Verbunden'+(info.sender?(' — '+info.sender):'');
+      el.style.color='var(--acc)';
+    } else {
+      el.textContent='⚪ Nicht verbunden';
+      el.style.color='var(--mute)';
+    }
+  };
+  render('smtp_google_status', s.google);
+  render('smtp_ms_status', s.microsoft);
+}
+
+async function smtpOAuthConnect(provider){
+  await saveSmtpConfig();
+  if(!_smtpOAuthListenerAdded){
+    _smtpOAuthListenerAdded = true;
+    window.addEventListener('message', ev=>{
+      if(ev.data==='smtp_oauth_done'){ refreshSmtpOAuthStatus(); loadSmtpConfig(); }
+    });
+  }
+  let r;
+  try { r = await fetch('/api/smtp/oauth/'+provider+'/connect').then(r=>r.json()); }
+  catch(e){ toast('Verbindung fehlgeschlagen','err'); return; }
+  if(r && r.auth_url){
+    window.open(r.auth_url,'smtp_oauth','width=520,height=680');
+  } else {
+    toast((r&&r.error)||'Keine Auth-URL erhalten','err');
+  }
+}
+
+async function smtpOAuthDisconnect(provider){
+  if(!confirm('Verbindung wirklich trennen?')) return;
+  const r=await fetch('/api/smtp/oauth/'+provider+'/disconnect',{method:'POST'}).then(r=>r.json()).catch(()=>({}));
+  if(r&&r.ok) toast('Verbindung getrennt','ok');
+  refreshSmtpOAuthStatus();
 }
 
 function updateSmtpStatus(c){
@@ -5158,9 +5280,19 @@ async function saveSmtpConfig(){
     smtp_from_name:  $('smtp_from_name').value.trim(),
     smtp_from_email: $('smtp_from_email').value.trim(),
     smtp_reply_to:   $('smtp_reply_to').value.trim(),
+    smtp_auth_method:        ($('smtp_auth_method')||{}).value||'basic',
+    smtp_google_client_id:   $('smtp_google_client_id').value.trim(),
+    smtp_google_sender_email:$('smtp_google_sender_email').value.trim(),
+    smtp_ms_tenant_id:       $('smtp_ms_tenant_id').value.trim(),
+    smtp_ms_client_id:       $('smtp_ms_client_id').value.trim(),
+    smtp_ms_sender_email:    $('smtp_ms_sender_email').value.trim(),
   };
   const pw = $('smtp_password').value;
   if(pw) data.smtp_password = pw;
+  const gsec = $('smtp_google_client_secret').value;
+  if(gsec) data.smtp_google_client_secret = gsec;
+  const msec = $('smtp_ms_client_secret').value;
+  if(msec) data.smtp_ms_client_secret = msec;
   const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());
   if(r.ok){ toast('SMTP gespeichert','ok'); updateSmtpStatus(data); }
   else toast('Fehler beim Speichern','err');
@@ -5175,9 +5307,11 @@ async function testSmtpConn(){
     smtp_tls:$('smtp_tls').value,
     smtp_user:$('smtp_user').value.trim(),
     smtp_password:$('smtp_password').value,
+    smtp_auth_method:($('smtp_auth_method')||{}).value||'basic',
   };
   const r=await fetch('/api/smtp/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());
-  res.textContent=r.ok?('✅ '+r.message):('❌ '+r.error);
+  const am=r.auth_method?(' ['+r.auth_method+']'):'';
+  res.textContent=r.ok?('✅ '+r.message+am):('❌ '+r.error+am);
   res.style.color=r.ok?'var(--acc)':'var(--danger)';
 }
 

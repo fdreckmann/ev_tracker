@@ -470,6 +470,24 @@ DEFAULT_CONFIG = {
     "smtp_from_email":"",
     "smtp_reply_to":  "",
 
+    # SMTP authentication method
+    "smtp_auth_method": "basic",  # basic|app_password|oauth2_google|oauth2_microsoft|relay_no_auth
+    # Google OAuth2 SMTP
+    "smtp_google_client_id":        "",
+    "smtp_google_client_secret":    "",
+    "smtp_google_refresh_token":    "",
+    "smtp_google_access_token":     "",
+    "smtp_google_token_expires_at": 0,
+    "smtp_google_sender_email":     "",
+    # Microsoft 365 OAuth2 SMTP
+    "smtp_ms_tenant_id":         "common",
+    "smtp_ms_client_id":         "",
+    "smtp_ms_client_secret":     "",
+    "smtp_ms_refresh_token":     "",
+    "smtp_ms_access_token":      "",
+    "smtp_ms_token_expires_at":  0,
+    "smtp_ms_sender_email":      "",
+
     # Export templates (stored as list in config)
     "export_templates": [],  # [{id, name, mapping, start_row, is_default}]
 
@@ -1445,20 +1463,150 @@ def _email_html(title: str, *paragraphs: str) -> str:
 def _email_btn(url: str, label: str) -> str:
     return f"<a href='{url}' style='display:inline-block;background:#1e6fb5;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:.875rem;font-weight:600;margin:8px 0'>{label}</a>"
 
-def _send_email(to_addr: str, subject: str, body_html: str, body_text: str = None) -> tuple:
+def _xoauth2_string(user: str, access_token: str) -> str:
+    """Build the SASL XOAUTH2 auth string."""
+    import base64 as _b64
+    raw = f"user={user}\x01auth=Bearer {access_token}\x01\x01"
+    return _b64.b64encode(raw.encode()).decode()
+
+
+def _smtp_google_access_token(cfg: dict):
+    """Return a valid Google access token, refreshing if needed.
+    Returns (token, error)."""
+    now = time.time()
+    tok = cfg.get("smtp_google_access_token", "")
+    exp = float(cfg.get("smtp_google_token_expires_at", 0) or 0)
+    if tok and exp - 60 > now:
+        return tok, None
+    refresh = cfg.get("smtp_google_refresh_token", "")
+    if not refresh:
+        return None, "Google nicht verbunden (kein Refresh-Token)"
+    try:
+        r = requests.post("https://oauth2.googleapis.com/token", data={
+            "client_id":     cfg.get("smtp_google_client_id", ""),
+            "client_secret": cfg.get("smtp_google_client_secret", ""),
+            "refresh_token": refresh,
+            "grant_type":    "refresh_token",
+        }, timeout=15)
+        r.raise_for_status()
+        j = r.json()
+        new_tok = j.get("access_token", "")
+        ttl     = int(j.get("expires_in", 3600))
+        if not new_tok:
+            return None, "Kein Access-Token von Google erhalten"
+        live = load_config()
+        live["smtp_google_access_token"]     = new_tok
+        live["smtp_google_token_expires_at"] = now + ttl
+        save_config(live)
+        return new_tok, None
+    except Exception as e:
+        return None, f"Google Token-Refresh fehlgeschlagen: {e}"
+
+
+def _smtp_ms_access_token(cfg: dict):
+    """Return a valid Microsoft access token, refreshing if needed.
+    Returns (token, error)."""
+    now = time.time()
+    tok = cfg.get("smtp_ms_access_token", "")
+    exp = float(cfg.get("smtp_ms_token_expires_at", 0) or 0)
+    if tok and exp - 60 > now:
+        return tok, None
+    refresh = cfg.get("smtp_ms_refresh_token", "")
+    if not refresh:
+        return None, "Microsoft nicht verbunden (kein Refresh-Token)"
+    tenant = cfg.get("smtp_ms_tenant_id", "common") or "common"
+    try:
+        r = requests.post(
+            f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
+            data={
+                "client_id":     cfg.get("smtp_ms_client_id", ""),
+                "client_secret": cfg.get("smtp_ms_client_secret", ""),
+                "refresh_token": refresh,
+                "grant_type":    "refresh_token",
+                "scope":         "https://outlook.office365.com/SMTP.Send offline_access",
+            }, timeout=15)
+        r.raise_for_status()
+        j = r.json()
+        new_tok = j.get("access_token", "")
+        ttl     = int(j.get("expires_in", 3600))
+        if not new_tok:
+            return None, "Kein Access-Token von Microsoft erhalten"
+        live = load_config()
+        live["smtp_ms_access_token"]     = new_tok
+        live["smtp_ms_token_expires_at"] = now + ttl
+        # Microsoft may issue a rotated refresh token
+        if j.get("refresh_token"):
+            live["smtp_ms_refresh_token"] = j["refresh_token"]
+        save_config(live)
+        return new_tok, None
+    except Exception as e:
+        return None, f"Microsoft Token-Refresh fehlgeschlagen: {e}"
+
+
+def _smtp_open(cfg: dict):
+    """Open an authenticated SMTP connection based on smtp_auth_method.
+    Returns (server, from_email, error). server is None on error."""
     import smtplib, ssl as _ssl
+    method = cfg.get("smtp_auth_method", "basic") or "basic"
+
+    if method == "oauth2_google":
+        host, port, tls = "smtp.gmail.com", 587, "starttls"
+        sender = cfg.get("smtp_google_sender_email", "") or cfg.get("smtp_from_email", "")
+        token, err = _smtp_google_access_token(cfg)
+        if err:
+            return None, None, err
+    elif method == "oauth2_microsoft":
+        host, port, tls = "smtp.office365.com", 587, "starttls"
+        sender = cfg.get("smtp_ms_sender_email", "") or cfg.get("smtp_from_email", "")
+        token, err = _smtp_ms_access_token(cfg)
+        if err:
+            return None, None, err
+    else:
+        host = cfg.get("smtp_host", "")
+        port = int(cfg.get("smtp_port", 587))
+        tls  = cfg.get("smtp_tls", "starttls")
+        sender = cfg.get("smtp_from_email", "")
+        token  = None
+        if not host:
+            return None, None, "SMTP nicht konfiguriert"
+
+    try:
+        ctx = _ssl.create_default_context()
+        if tls == "ssl":
+            srv = smtplib.SMTP_SSL(host, port, context=ctx, timeout=15)
+        else:
+            srv = smtplib.SMTP(host, port, timeout=15)
+            if tls == "starttls":
+                srv.starttls(context=ctx)
+        if method in ("oauth2_google", "oauth2_microsoft"):
+            auth = _xoauth2_string(sender, token)
+            code, resp = srv.docmd("AUTH", "XOAUTH2 " + auth)
+            if code not in (235, 503):
+                srv.quit()
+                return None, None, f"XOAUTH2 abgelehnt (Code {code})"
+        elif method == "relay_no_auth":
+            pass
+        else:
+            user = cfg.get("smtp_user", "")
+            pw   = cfg.get("smtp_password", "")
+            if user:
+                srv.login(user, pw)
+        return srv, sender, None
+    except Exception as e:
+        return None, None, str(e)
+
+
+def _send_email(to_addr: str, subject: str, body_html: str, body_text: str = None) -> tuple:
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText as _MIMEText
     cfg  = load_config()
-    host = cfg.get("smtp_host","")
-    port = int(cfg.get("smtp_port", 587))
-    tls  = cfg.get("smtp_tls","starttls")
-    user = cfg.get("smtp_user","")
-    pw   = cfg.get("smtp_password","")
-    frm  = cfg.get("smtp_from_email","")
     name = cfg.get("smtp_from_name","EV Tracker")
-    if not host or not frm:
-        return False, "SMTP nicht konfiguriert"
+    srv, frm, err = _smtp_open(cfg)
+    if err:
+        return False, err
+    if not frm:
+        srv.quit()
+        return False, "Keine Absenderadresse konfiguriert"
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
@@ -1467,19 +1615,12 @@ def _send_email(to_addr: str, subject: str, body_html: str, body_text: str = Non
         if body_text:
             msg.attach(_MIMEText(body_text, "plain", "utf-8"))
         msg.attach(_MIMEText(body_html, "html", "utf-8"))
-        ctx = _ssl.create_default_context()
-        if tls == "ssl":
-            srv = smtplib.SMTP_SSL(host, port, context=ctx, timeout=10)
-        else:
-            srv = smtplib.SMTP(host, port, timeout=10)
-            if tls == "starttls":
-                srv.starttls(context=ctx)
-        if user:
-            srv.login(user, pw)
         srv.sendmail(frm, [to_addr], msg.as_string())
         srv.quit()
         return True, None
     except Exception as e:
+        try: srv.quit()
+        except Exception: pass
         return False, str(e)
 
 @app.route("/api/auth/setup", methods=["POST"])
@@ -2191,9 +2332,21 @@ def index():
     resp.headers["Expires"]       = "0"
     return resp
 
+_SENSITIVE_CONFIG_KEYS = {
+    "smtp_password", "oauth_google_client_secret", "oauth_microsoft_client_secret",
+    "smtp_google_client_secret", "smtp_google_refresh_token", "smtp_google_access_token",
+    "smtp_ms_client_secret", "smtp_ms_refresh_token", "smtp_ms_access_token",
+}
+_SECRET_MASK = "********"
+
 @app.route("/api/config", methods=["GET"])
 @require_login
-def api_get_config(): return jsonify(load_config())
+def api_get_config():
+    cfg = dict(load_config())
+    for k in _SENSITIVE_CONFIG_KEYS:
+        if cfg.get(k):
+            cfg[k] = _SECRET_MASK
+    return jsonify(cfg)
 
 @app.route("/api/config", methods=["POST"])
 @require_admin
@@ -2205,10 +2358,16 @@ def api_save_config():
     for key in DEFAULT_CONFIG:
         if key in data:
             v=data[key]
+            # Never overwrite a stored secret with the masked placeholder
+            if key in _SENSITIVE_CONFIG_KEYS and v == _SECRET_MASK:
+                continue
             if key in floats and v!="": v=float(v)
             elif key in ints: v=int(v)
             cfg[key]=v
-    save_config(cfg); return jsonify({"ok":True})
+    save_config(cfg)
+    if any(str(k).startswith("smtp_") for k in data):
+        _audit("smtp_config_updated", ip=request.remote_addr)
+    return jsonify({"ok":True})
 
 @app.route("/api/providers")
 def api_providers(): return jsonify(get_all_capabilities())
@@ -3720,40 +3879,193 @@ def api_csrf_token():
     return jsonify({"token": session["csrf_token"]})
 
 # ── SMTP ─────────────────────────────────────────────────────────────────────
-@app.route("/api/smtp/test", methods=["POST"])
-def smtp_test():
-    import smtplib, ssl as _ssl
-    data = request.json or {}
+
+_SMTP_OAUTH = {
+    "google": {
+        "auth_url":  "https://accounts.google.com/o/oauth2/v2/auth",
+        "token_url": "https://oauth2.googleapis.com/token",
+        "scope":     "https://mail.google.com/",
+        "cid":       "smtp_google_client_id",
+        "csec":      "smtp_google_client_secret",
+        "refresh":   "smtp_google_refresh_token",
+        "access":    "smtp_google_access_token",
+        "expires":   "smtp_google_token_expires_at",
+        "sender":    "smtp_google_sender_email",
+    },
+    "microsoft": {
+        "token_url": None,  # tenant-specific, built dynamically
+        "scope":     "https://outlook.office365.com/SMTP.Send offline_access",
+        "cid":       "smtp_ms_client_id",
+        "csec":      "smtp_ms_client_secret",
+        "refresh":   "smtp_ms_refresh_token",
+        "access":    "smtp_ms_access_token",
+        "expires":   "smtp_ms_token_expires_at",
+        "sender":    "smtp_ms_sender_email",
+    },
+}
+
+
+@app.route("/api/smtp/oauth/status")
+@require_admin
+def api_smtp_oauth_status():
+    """Connection status only — never exposes tokens/secrets."""
     cfg = load_config()
-    host = data.get("smtp_host") or cfg.get("smtp_host","")
-    port = int(data.get("smtp_port") or cfg.get("smtp_port", 587))
-    tls  = data.get("smtp_tls") or cfg.get("smtp_tls","starttls")
-    user = data.get("smtp_user") or cfg.get("smtp_user","")
-    pw   = data.get("smtp_password") or cfg.get("smtp_password","")
-    if not host:
-        return jsonify({"ok": False, "error": "Kein SMTP-Server konfiguriert"})
+    return jsonify({
+        "auth_method": cfg.get("smtp_auth_method", "basic"),
+        "google": {
+            "connected": bool(cfg.get("smtp_google_refresh_token")),
+            "sender":    cfg.get("smtp_google_sender_email", ""),
+            "client_configured": bool(cfg.get("smtp_google_client_id")),
+        },
+        "microsoft": {
+            "connected": bool(cfg.get("smtp_ms_refresh_token")),
+            "sender":    cfg.get("smtp_ms_sender_email", ""),
+            "client_configured": bool(cfg.get("smtp_ms_client_id")),
+        },
+    })
+
+
+@app.route("/api/smtp/oauth/<provider>/connect")
+@require_admin
+def api_smtp_oauth_connect(provider):
+    if provider not in _SMTP_OAUTH:
+        return jsonify({"error": "Unbekannter Provider"}), 400
+    cfg = load_config()
+    spec = _SMTP_OAUTH[provider]
+    client_id = cfg.get(spec["cid"], "")
+    if not client_id:
+        return jsonify({"error": f"{provider.title()} Client-ID fehlt"}), 400
+    state = secrets.token_urlsafe(24)
+    session["smtp_oauth_state"]    = state
+    session["smtp_oauth_provider"] = provider
+    redirect_uri = _oauth_redirect_base() + f"/smtp/oauth/{provider}/callback"
+    from urllib.parse import urlencode
+    if provider == "google":
+        params = {
+            "client_id": client_id, "redirect_uri": redirect_uri,
+            "response_type": "code", "scope": spec["scope"],
+            "access_type": "offline", "prompt": "consent", "state": state,
+        }
+        url = spec["auth_url"] + "?" + urlencode(params)
+    else:
+        tenant = cfg.get("smtp_ms_tenant_id", "common") or "common"
+        params = {
+            "client_id": client_id, "redirect_uri": redirect_uri,
+            "response_type": "code", "scope": spec["scope"],
+            "response_mode": "query", "state": state,
+        }
+        url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize?" + urlencode(params)
+    return jsonify({"auth_url": url})
+
+
+@app.route("/smtp/oauth/<provider>/callback")
+@require_admin
+def smtp_oauth_callback(provider):
+    if provider not in _SMTP_OAUTH:
+        return "Unbekannter Provider", 400
+    state = request.args.get("state", "")
+    code  = request.args.get("code", "")
+    if not code or state != session.pop("smtp_oauth_state", ""):
+        return "<script>window.close()</script>OAuth-Fehler: ungültiger State", 400
+    session.pop("smtp_oauth_provider", None)
+    cfg  = load_config()
+    spec = _SMTP_OAUTH[provider]
+    redirect_uri = _oauth_redirect_base() + f"/smtp/oauth/{provider}/callback"
     try:
-        ctx = _ssl.create_default_context()
-        if tls == "ssl":
-            srv = smtplib.SMTP_SSL(host, port, context=ctx, timeout=10)
+        if provider == "google":
+            token_url = spec["token_url"]
+            extra = {}
         else:
-            srv = smtplib.SMTP(host, port, timeout=10)
-            if tls == "starttls":
-                srv.starttls(context=ctx)
-        if user:
-            srv.login(user, pw)
-        srv.quit()
-        _audit("smtp_test", f"host={host}:{port} tls={tls}")
-        return jsonify({"ok": True, "message": f"✅ Verbindung zu {host}:{port} erfolgreich"})
+            tenant = cfg.get("smtp_ms_tenant_id", "common") or "common"
+            token_url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
+            extra = {"scope": spec["scope"]}
+        r = requests.post(token_url, data={
+            "code": code,
+            "client_id":     cfg.get(spec["cid"], ""),
+            "client_secret": cfg.get(spec["csec"], ""),
+            "redirect_uri":  redirect_uri,
+            "grant_type":    "authorization_code",
+            **extra,
+        }, timeout=15)
+        r.raise_for_status()
+        j = r.json()
+        refresh = j.get("refresh_token", "")
+        access  = j.get("access_token", "")
+        ttl     = int(j.get("expires_in", 3600))
+        if not refresh:
+            return ("<script>window.close()</script>Kein Refresh-Token erhalten — "
+                    "bitte App-Registrierung auf 'offline access' prüfen.", 400)
+        # Determine sender email from the granted token
+        sender = cfg.get(spec["sender"], "") or cfg.get("smtp_from_email", "")
+        cfg[spec["refresh"]] = refresh
+        cfg[spec["access"]]  = access
+        cfg[spec["expires"]] = time.time() + ttl
+        if sender:
+            cfg[spec["sender"]] = sender
+        cfg["smtp_auth_method"] = "oauth2_" + provider
+        save_config(cfg)
+        _audit("smtp_oauth_connected", f"provider={provider}", ip=request.remote_addr)
+        return ("<html><body style='background:#0f1117;color:#6ee7b7;font-family:sans-serif;"
+                "text-align:center;padding:60px'><h2>✅ "
+                f"{provider.title()} verbunden</h2><p>Dieses Fenster kann geschlossen werden.</p>"
+                "<script>setTimeout(()=>window.close(),1500);"
+                "if(window.opener)window.opener.postMessage('smtp_oauth_done','*')</script></body></html>")
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+        return f"<script>window.close()</script>OAuth fehlgeschlagen: {e}", 500
+
+
+@app.route("/api/smtp/oauth/<provider>/disconnect", methods=["POST"])
+@require_admin
+def api_smtp_oauth_disconnect(provider):
+    if provider not in _SMTP_OAUTH:
+        return jsonify({"error": "Unbekannter Provider"}), 400
+    spec = _SMTP_OAUTH[provider]
+    cfg  = load_config()
+    for k in (spec["refresh"], spec["access"]):
+        cfg[k] = ""
+    cfg[spec["expires"]] = 0
+    if cfg.get("smtp_auth_method") == "oauth2_" + provider:
+        cfg["smtp_auth_method"] = "basic"
+    save_config(cfg)
+    _audit("smtp_oauth_disconnected", f"provider={provider}", ip=request.remote_addr)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/smtp/test", methods=["POST"])
+@require_admin
+def smtp_test():
+    data = request.json or {}
+    cfg  = load_config()
+    method = data.get("smtp_auth_method") or cfg.get("smtp_auth_method", "basic")
+    # For a live test, merge any provided non-secret overrides
+    test_cfg = dict(cfg)
+    for k in ("smtp_host", "smtp_port", "smtp_tls", "smtp_user", "smtp_auth_method"):
+        if data.get(k) not in (None, ""):
+            test_cfg[k] = data[k]
+    if data.get("smtp_password") and data["smtp_password"] != _SECRET_MASK:
+        test_cfg["smtp_password"] = data["smtp_password"]
+    test_cfg["smtp_auth_method"] = method
+    srv, frm, err = _smtp_open(test_cfg)
+    if err:
+        return jsonify({"ok": False, "error": err, "auth_method": method})
+    try:
+        srv.quit()
+    except Exception:
+        pass
+    _audit("smtp_test", f"method={method}", ip=request.remote_addr)
+    return jsonify({"ok": True, "message": "✅ SMTP-Verbindung erfolgreich",
+                    "auth_method": method})
 
 @app.route("/api/smtp/send-test", methods=["POST"])
+@require_admin
 def smtp_send_test():
     data = request.json or {}
     cfg = load_config()
     to  = data.get("to") or cfg.get("smtp_from_email","")
-    if not cfg.get("smtp_host","") or not cfg.get("smtp_from_email",""):
+    method = cfg.get("smtp_auth_method", "basic")
+    has_basic  = bool(cfg.get("smtp_host","") and cfg.get("smtp_from_email",""))
+    has_oauth  = method in ("oauth2_google", "oauth2_microsoft")
+    if not (has_basic or has_oauth) or not to:
         return jsonify({"ok": False, "error": "SMTP nicht konfiguriert"})
     body_html = _email_html(
         "SMTP Testmail",
@@ -3763,8 +4075,9 @@ def smtp_send_test():
     )
     ok, err = _send_email(to, "EV Tracker — SMTP Test", body_html)
     if ok:
-        _audit("smtp_send_test", f"to={to}")
-        return jsonify({"ok": True, "message": f"Testmail an {to} versendet"})
+        _audit("smtp_test_sent", f"to={to} method={method}", ip=request.remote_addr)
+        return jsonify({"ok": True, "message": f"Testmail an {to} versendet ({method})",
+                        "auth_method": method})
     return jsonify({"ok": False, "error": err or "Unbekannter Fehler"})
 
 # ── Export Templates ──────────────────────────────────────────────────────────
@@ -3961,9 +4274,25 @@ def _get_report_sessions(start_date, end_date, location_filter="all", vehicle_fi
     return [dict(r) for r in rows]
 
 
+def _report_filter_labels(cfg, is_de):
+    loc = cfg.get("report_email_location_filter", "all")
+    veh = cfg.get("report_email_vehicle_filter", "all")
+    if is_de:
+        loc_lbl = {"all": "Alle Ladevorgänge", "home": "Nur Zuhause / Intern",
+                   "external": "Nur Extern"}.get(loc, loc)
+        veh_lbl = "Alle Fahrzeuge" if veh == "all" else veh
+    else:
+        loc_lbl = {"all": "All charging sessions", "home": "Home only",
+                   "external": "External only"}.get(loc, loc)
+        veh_lbl = "All vehicles" if veh == "all" else veh
+    return loc_lbl, veh_lbl
+
+
 def _build_report_html(sessions, period_info, cfg, lang="de"):
     is_de      = lang != "en"
     plabel     = period_info.get("label_de" if is_de else "label_en", "")
+    loc_filter = cfg.get("report_email_location_filter", "all")
+    loc_lbl, veh_lbl = _report_filter_labels(cfg, is_de)
     total_kwh  = sum(s.get("kwh_charged") or 0 for s in sessions)
     total_cost = sum(s.get("cost_eur")    or 0 for s in sessions)
     total_secs = sum(s.get("duration_sec") or 0 for s in sessions)
@@ -3975,13 +4304,14 @@ def _build_report_html(sessions, period_info, cfg, lang="de"):
     n          = len(sessions)
     if is_de:
         title = "EV Tracker — Lade-Report"
-        rows  = [("Zeitraum", plabel), ("Ladevorgänge", str(n)),
+        rows  = [("Zeitraum", plabel), ("Filter", loc_lbl), ("Fahrzeug", veh_lbl),
+                 ("Ladevorgänge", str(n)),
                  ("Geladene kWh", f"{total_kwh:.2f} kWh"),
                  ("Gesamtkosten", f"{total_cost:.2f} €"),
                  ("Ø Preis/kWh", f"{avg_price:.4f} €"),
                  ("Ladezeit gesamt", f"{total_h:.1f} h"),
                  ("Ø Ladeleistung", f"{avg_power:.1f} kW")]
-        if home_kwh or ext_kwh:
+        if loc_filter == "all" and (home_kwh or ext_kwh):
             rows.append(("Zuhause / Extern", f"{home_kwh:.1f} / {ext_kwh:.1f} kWh"))
         empty_txt = "Keine Ladevorgänge im gewählten Zeitraum."
     else:
@@ -4012,18 +4342,18 @@ def _build_report_html(sessions, period_info, cfg, lang="de"):
 
 
 def _send_email_with_attachments(to_addr, subject, body_html, attachments=None):
-    import smtplib as _smtp, ssl as _ssl
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
     from email.mime.base import MIMEBase
     from email import encoders as _enc
     cfg  = load_config()
-    host = cfg.get("smtp_host",""); port = int(cfg.get("smtp_port", 587))
-    tls  = cfg.get("smtp_tls","starttls"); user = cfg.get("smtp_user","")
-    pw   = cfg.get("smtp_password",""); frm  = cfg.get("smtp_from_email","")
     name = cfg.get("smtp_from_name","EV Tracker")
-    if not host or not frm:
-        return False, "SMTP nicht konfiguriert"
+    srv, frm, err = _smtp_open(cfg)
+    if err:
+        return False, err
+    if not frm:
+        srv.quit()
+        return False, "Keine Absenderadresse konfiguriert"
     try:
         msg = MIMEMultipart(); msg["From"] = f"{name} <{frm}>"; msg["To"] = to_addr
         msg["Subject"] = subject; msg.attach(MIMEText(body_html, "html", "utf-8"))
@@ -4032,16 +4362,11 @@ def _send_email_with_attachments(to_addr, subject, body_html, attachments=None):
             _enc.encode_base64(part)
             part.add_header("Content-Disposition", "attachment", filename=fname)
             msg.attach(part)
-        ctx = _ssl.create_default_context()
-        if tls == "ssl":
-            srv = _smtp.SMTP_SSL(host, port, context=ctx, timeout=15)
-        else:
-            srv = _smtp.SMTP(host, port, timeout=15)
-            if tls == "starttls": srv.starttls(context=ctx)
-        if user: srv.login(user, pw)
         srv.sendmail(frm, to_addr, msg.as_string()); srv.quit()
         return True, None
     except Exception as e:
+        try: srv.quit()
+        except Exception: pass
         return False, str(e)
 
 
