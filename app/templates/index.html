@@ -599,6 +599,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <button class="cfg-nav-btn" onclick="cfgSection('audit',this)">📜 Audit-Log</button>
       <div style="height:1px;background:var(--brd);margin:8px 4px"></div>
       <button class="cfg-nav-btn" onclick="cfgSection('benutzer',this)">👥 Benutzer</button>
+      <button class="cfg-nav-btn" onclick="cfgSection('roles',this)" data-requires-permission="users:manage_permissions">🔐 Rollen &amp; Rechte</button>
       <button class="cfg-nav-btn" onclick="cfgSection('profil',this)">👤 Mein Profil</button>
     </nav>
 
@@ -1076,8 +1077,67 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         </div>
       </div>
 
+      <!-- ========= ROLLEN & BERECHTIGUNGEN ========= -->
+      <div id="cfgsec-roles" class="cfg-section" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h3 style="margin:0;font-size:.85rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.12em">🔐 Rollen &amp; Berechtigungen</h3>
+          <button onclick="openCreateRoleModal()" style="padding:8px 14px;border-radius:6px;background:#3d5afe;border:none;color:#fff;cursor:pointer;font-size:13px">
+            + Neue Rolle
+          </button>
+        </div>
+
+        <div id="rolesList">
+          <p style="color:#8892b0;font-size:.78rem;font-family:var(--mono)">Lade Rollen…</p>
+        </div>
+      </div>
+
     </div><!-- content -->
   </div><!-- flex container -->
+</div>
+
+<!-- Modal: Rolle erstellen/bearbeiten -->
+<div id="roleEditModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2000;overflow-y:auto">
+  <div style="max-width:700px;margin:40px auto;background:#1a1d2e;border-radius:12px;padding:24px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3 id="roleEditTitle" style="margin:0;color:#e6f1ff">Rolle bearbeiten</h3>
+      <button onclick="closeRoleEditModal()" style="background:transparent;border:none;color:#8892b0;font-size:20px;cursor:pointer">✕</button>
+    </div>
+
+    <div style="margin-bottom:12px">
+      <label style="display:block;margin-bottom:4px;font-size:13px;color:#8892b0">Rollenname</label>
+      <input type="text" id="roleEditName" placeholder="z.B. Buchhaltung" style="width:100%;padding:8px;border-radius:6px;background:#2d3147;border:1px solid #3d4166;color:#e6f1ff;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="display:block;margin-bottom:4px;font-size:13px;color:#8892b0">Beschreibung</label>
+      <input type="text" id="roleEditDesc" placeholder="Kurze Beschreibung" style="width:100%;padding:8px;border-radius:6px;background:#2d3147;border:1px solid #3d4166;color:#e6f1ff;box-sizing:border-box">
+    </div>
+
+    <div id="rolePermissionsGrid" style="max-height:400px;overflow-y:auto">
+      <p style="color:#8892b0">Lade Berechtigungen…</p>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button onclick="closeRoleEditModal()" style="padding:8px 16px;border-radius:6px;background:#2d3147;border:none;color:#8892b0;cursor:pointer">Abbrechen</button>
+      <button onclick="saveRoleEdit()" style="padding:8px 16px;border-radius:6px;background:#3d5afe;border:none;color:#fff;cursor:pointer;font-weight:600">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Rollen einem User zuweisen -->
+<div id="userRolesModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2000">
+  <div style="max-width:500px;margin:100px auto;background:#1a1d2e;border-radius:12px;padding:24px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3 id="userRolesModalTitle" style="margin:0;color:#e6f1ff">Rollen zuweisen</h3>
+      <button onclick="closeUserRolesModal()" style="background:transparent;border:none;color:#8892b0;font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <div id="userRolesList" style="margin-bottom:16px">
+      <p style="color:#8892b0">Lade…</p>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="closeUserRolesModal()" style="padding:8px 16px;border-radius:6px;background:#2d3147;border:none;color:#8892b0;cursor:pointer">Abbrechen</button>
+      <button onclick="saveUserRoles()" style="padding:8px 16px;border-radius:6px;background:#3d5afe;border:none;color:#fff;cursor:pointer;font-weight:600">Speichern</button>
+    </div>
+  </div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════
@@ -4579,8 +4639,9 @@ async function loadUserList(){
           ${u.last_login_at?'Letzter Login: '+u.last_login_at.replace('T',' ').substring(0,16):'Noch kein Login'}
         </div>
       </div>
-      <div style="display:flex;gap:6px;flex-shrink:0">
+      <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
         ${(u.status==='invited'||!u.totp_enabled)?`<button class="btn-s" style="font-size:.72rem;padding:5px 10px" onclick="inviteUser(${u.id})">✉ Einladen</button>`:''}
+        ${hasPermission('users:manage_permissions')?`<button onclick="openUserRolesModal(${u.id},'${(u.name||'').replace(/'/g,'\\\'')}')" style="padding:4px 8px;border-radius:4px;background:#1a3d6e;border:none;color:#64ffda;cursor:pointer;font-size:11px">🔑 Rollen</button>`:''}
         <button class="btn-s" style="font-size:.72rem;padding:5px 12px" onclick="openEditUserModal(${u.id})">✏ Bearbeiten</button>
       </div>
     </div>
@@ -4758,6 +4819,7 @@ function cfgSection(id, btn){
   if(id==='fahrzeuge') loadVehicleList();
   if(id==='benutzer') loadUserList();
   if(id==='profil')   loadMyProfile();
+  if(id==='roles')    loadRolesSection();
 }
 
 // ── SMTP ─────────────────────────────────────────────────────────────────────
@@ -5341,6 +5403,357 @@ window.addEventListener('resize', function() {
     mobileNavTo(_mobileCurrentSection || 'home');
   }
 });
+
+// =========================================================
+// PERMISSION SYSTEM
+// =========================================================
+
+window._myPermissions = new Set();
+window._myRoles = [];
+window._permissionsLoaded = false;
+
+async function loadMyPermissions() {
+  try {
+    const r = await fetch('/api/me/permissions').then(x => x.json());
+    if (r.ok) {
+      window._myPermissions = new Set(r.permissions || []);
+      window._myRoles = (r.user && r.user.roles) || [];
+      window._permissionsLoaded = true;
+      applyPermissionVisibility();
+    }
+  } catch(e) {
+    console.warn('Could not load permissions:', e);
+  }
+}
+
+function hasPermission(key) {
+  return window._myPermissions.has('admin:all') || window._myPermissions.has(key);
+}
+
+function applyPermissionVisibility() {
+  // Elemente mit data-requires-permission ausblenden wenn keine Permission
+  document.querySelectorAll('[data-requires-permission]').forEach(el => {
+    const perm = el.getAttribute('data-requires-permission');
+    if (!hasPermission(perm)) {
+      el.style.display = 'none';
+    } else {
+      el.style.removeProperty('display');
+    }
+  });
+
+  // Spezifische UI-Anpassungen
+  _applyExportPermissions();
+  _applySettingsPermissions();
+  _applyUpdatePermissions();
+  _applyBackupPermissions();
+}
+
+function _applyExportPermissions() {
+  // Export-Button
+  const exportBtn = document.querySelector('[onclick*="doExport"]') ||
+                    document.querySelector('[onclick*="export"]');
+  if (exportBtn && !hasPermission('export:create')) {
+    exportBtn.disabled = true;
+    exportBtn.title = 'Keine Berechtigung: export:create';
+    exportBtn.style.opacity = '0.5';
+  }
+  // Template-Mapping
+  const mappingBtn = document.querySelector('[onclick*="openMappingModal"]') ||
+                     document.querySelector('[onclick*="Mapping"]');
+  if (mappingBtn && !hasPermission('templates:edit_mapping')) {
+    mappingBtn.disabled = true;
+    mappingBtn.title = 'Keine Berechtigung: templates:edit_mapping';
+    mappingBtn.style.opacity = '0.5';
+  }
+}
+
+function _applySettingsPermissions() {
+  if (!hasPermission('settings:edit')) {
+    // Settings-Speichern-Buttons deaktivieren
+    document.querySelectorAll('[onclick*="saveSettings"], [onclick*="saveCfg"]').forEach(btn => {
+      btn.disabled = true;
+      btn.title = 'Keine Berechtigung: settings:edit';
+      btn.style.opacity = '0.5';
+    });
+  }
+}
+
+function _applyUpdatePermissions() {
+  if (!hasPermission('updates:start')) {
+    document.querySelectorAll('[onclick*="startUpdate"], [onclick*="doUpdate"]').forEach(btn => {
+      btn.style.display = 'none';
+    });
+  }
+}
+
+function _applyBackupPermissions() {
+  if (!hasPermission('backup:restore')) {
+    document.querySelectorAll('[onclick*="restoreBackup"], [onclick*="doRestore"]').forEach(btn => {
+      btn.style.display = 'none';
+    });
+  }
+}
+
+// Permissions beim Laden abrufen
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', loadMyPermissions);
+} else {
+  loadMyPermissions();
+}
+
+// =========================================================
+// ROLES ADMIN UI
+// =========================================================
+
+let _allRoles = [];
+let _allPermGroups = [];
+let _editingRoleId = null;
+let _userRolesTargetId = null;
+let _userRolesSelected = [];
+
+async function loadRolesSection() {
+  // Nur für admins zugänglich
+  if (!hasPermission('users:manage_permissions')) {
+    const el = document.getElementById('rolesList');
+    if (el) el.innerHTML = '<p style="color:#ff5252;font-size:.78rem;font-family:var(--mono)">Keine Berechtigung: users:manage_permissions</p>';
+    return;
+  }
+  await Promise.all([loadAllRoles(), loadAllPermGroups()]);
+}
+
+async function loadAllRoles() {
+  try {
+    const r = await fetch('/api/admin/roles').then(x => x.json());
+    if (r.ok) {
+      _allRoles = r.roles || [];
+      renderRolesList();
+    }
+  } catch(e) {
+    const el = document.getElementById('rolesList');
+    if (el) el.innerHTML = '<p style="color:#ff5252;font-size:.78rem;font-family:var(--mono)">Fehler beim Laden</p>';
+  }
+}
+
+async function loadAllPermGroups() {
+  try {
+    const r = await fetch('/api/admin/permissions').then(x => x.json());
+    if (r.ok) _allPermGroups = r.groups || [];
+  } catch(e) {}
+}
+
+function renderRolesList() {
+  const el = document.getElementById('rolesList');
+  if (!el) return;
+  if (_allRoles.length === 0) {
+    el.innerHTML = '<p style="color:#8892b0;font-size:.78rem;font-family:var(--mono)">Keine Rollen vorhanden.</p>';
+    return;
+  }
+  el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead>
+      <tr style="color:#8892b0;text-align:left">
+        <th style="padding:8px;border-bottom:1px solid #2d3147">Rolle</th>
+        <th style="padding:8px;border-bottom:1px solid #2d3147">Beschreibung</th>
+        <th style="padding:8px;border-bottom:1px solid #2d3147">Rechte</th>
+        <th style="padding:8px;border-bottom:1px solid #2d3147">Benutzer</th>
+        <th style="padding:8px;border-bottom:1px solid #2d3147">Aktionen</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${_allRoles.map(role => `
+        <tr style="border-bottom:1px solid #1a1d2e">
+          <td style="padding:8px">
+            <span style="font-weight:600;color:#e6f1ff">${escRoles(role.name)}</span>
+            ${role.is_system ? '<span style="font-size:10px;background:#2d3147;padding:2px 5px;border-radius:3px;margin-left:6px;color:#8892b0">System</span>' : ''}
+          </td>
+          <td style="padding:8px;color:#8892b0">${escRoles(role.description||'')}</td>
+          <td style="padding:8px;color:#64ffda">${(role.permissions||[]).length}</td>
+          <td style="padding:8px;color:#8892b0">${role.user_count||0}</td>
+          <td style="padding:8px">
+            <button onclick="openEditRoleModal(${role.id})" style="padding:4px 10px;border-radius:4px;background:#1a3d6e;border:none;color:#64ffda;cursor:pointer;font-size:12px;margin-right:4px">
+              Bearbeiten
+            </button>
+            ${!role.is_system ? `<button onclick="deleteRole(${role.id},'${escRoles(role.name)}')" style="padding:4px 10px;border-radius:4px;background:#3d1a1a;border:none;color:#ff5252;cursor:pointer;font-size:12px">Löschen</button>` : ''}
+          </td>
+        </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+function escRoles(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function openCreateRoleModal() {
+  _editingRoleId = null;
+  document.getElementById('roleEditTitle').textContent = 'Neue Rolle erstellen';
+  document.getElementById('roleEditName').value = '';
+  document.getElementById('roleEditDesc').value = '';
+  renderPermissionsCheckboxes([]);
+  document.getElementById('roleEditModal').style.display = 'block';
+}
+
+function openEditRoleModal(roleId) {
+  const role = _allRoles.find(r => r.id === roleId);
+  if (!role) return;
+  _editingRoleId = roleId;
+  document.getElementById('roleEditTitle').textContent = `Rolle bearbeiten: ${role.name}`;
+  document.getElementById('roleEditName').value = role.name;
+  document.getElementById('roleEditDesc').value = role.description || '';
+  renderPermissionsCheckboxes(role.permissions || []);
+  document.getElementById('roleEditModal').style.display = 'block';
+}
+
+function closeRoleEditModal() {
+  document.getElementById('roleEditModal').style.display = 'none';
+}
+
+function renderPermissionsCheckboxes(checkedPerms) {
+  const el = document.getElementById('rolePermissionsGrid');
+  if (!el) return;
+  if (!_allPermGroups || _allPermGroups.length === 0) {
+    el.innerHTML = '<p style="color:#8892b0">Lade Berechtigungen…</p>';
+    loadAllPermGroups().then(() => renderPermissionsCheckboxes(checkedPerms));
+    return;
+  }
+  const checkedSet = new Set(checkedPerms);
+  el.innerHTML = _allPermGroups.map(group => `
+    <div style="margin-bottom:16px">
+      <div style="font-weight:600;color:#64ffda;margin-bottom:8px;font-size:12px;text-transform:uppercase;letter-spacing:0.5px">
+        ${escRoles(group.name)}
+        <button onclick="selectAllGroupPerms('${escRoles(group.name).replace(/'/g,'&apos;')}')" style="margin-left:8px;padding:2px 6px;font-size:10px;background:#1a3d6e;border:none;color:#64ffda;border-radius:3px;cursor:pointer">Alle</button>
+        <button onclick="deselectAllGroupPerms('${escRoles(group.name).replace(/'/g,'&apos;')}')" style="padding:2px 6px;font-size:10px;background:#2d3147;border:none;color:#8892b0;border-radius:3px;cursor:pointer">Keine</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        ${(group.permissions||[]).map(p => `
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px;border-radius:4px;background:#1a1d2e" data-perm-group="${escRoles(group.name)}">
+            <input type="checkbox" class="perm-checkbox" value="${escRoles(p.key)}"
+              ${checkedSet.has(p.key) ? 'checked' : ''}
+              style="width:14px;height:14px;cursor:pointer">
+            <span style="font-size:12px;color:#e6f1ff">${escRoles(p.label)}</span>
+          </label>`).join('')}
+      </div>
+    </div>`).join('');
+}
+
+function selectAllGroupPerms(groupName) {
+  document.querySelectorAll(`[data-perm-group="${groupName}"] .perm-checkbox`).forEach(cb => cb.checked = true);
+}
+
+function deselectAllGroupPerms(groupName) {
+  document.querySelectorAll(`[data-perm-group="${groupName}"] .perm-checkbox`).forEach(cb => cb.checked = false);
+}
+
+async function saveRoleEdit() {
+  const name = (document.getElementById('roleEditName').value || '').trim();
+  const desc = (document.getElementById('roleEditDesc').value || '').trim();
+  const perms = [...document.querySelectorAll('.perm-checkbox:checked')].map(cb => cb.value);
+
+  if (!name) { alert('Rollenname eingeben'); return; }
+
+  const body = {name, description: desc, permissions: perms};
+  const saveBtn = document.querySelector('#roleEditModal button[onclick="saveRoleEdit()"]');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '⏳ Speichern…'; }
+
+  try {
+    let url = '/api/admin/roles';
+    let method = 'POST';
+    if (_editingRoleId) { url += '/' + _editingRoleId; method = 'PUT'; }
+
+    const r = await fetch(url, {
+      method,
+      headers: {'Content-Type':'application/json','X-CSRFToken':window._csrfToken||''},
+      body: JSON.stringify(body)
+    }).then(x => x.json());
+
+    if (r.ok) {
+      closeRoleEditModal();
+      await loadAllRoles();
+    } else {
+      alert(r.error || 'Fehler beim Speichern');
+    }
+  } catch(e) {
+    alert('Fehler: ' + e.message);
+  } finally {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Speichern'; }
+  }
+}
+
+async function deleteRole(roleId, roleName) {
+  if (!confirm(`Rolle "${roleName}" wirklich löschen?`)) return;
+  try {
+    const r = await fetch('/api/admin/roles/' + roleId, {
+      method: 'DELETE',
+      headers: {'X-CSRFToken':window._csrfToken||''}
+    }).then(x => x.json());
+    if (r.ok) {
+      await loadAllRoles();
+    } else {
+      alert(r.error || 'Fehler beim Löschen');
+    }
+  } catch(e) {
+    alert('Fehler: ' + e.message);
+  }
+}
+
+// ── User Roles zuweisen ───────────────────────────────────────────────────────
+
+async function openUserRolesModal(userId, userName) {
+  _userRolesTargetId = userId;
+  document.getElementById('userRolesModalTitle').textContent = `Rollen für: ${userName}`;
+  document.getElementById('userRolesModal').style.display = 'block';
+
+  try {
+    const [rolesResp, currentResp] = await Promise.all([
+      fetch('/api/admin/roles').then(x=>x.json()),
+      fetch('/api/admin/users/'+userId+'/roles').then(x=>x.json())
+    ]);
+    const currentRoleIds = new Set((currentResp.role_ids||[]));
+    const allRoles = rolesResp.roles || [];
+    _userRolesSelected = [...currentRoleIds];
+
+    document.getElementById('userRolesList').innerHTML = allRoles.map(role => `
+      <label style="display:flex;align-items:center;gap:8px;padding:10px;border-radius:6px;background:#1a1d2e;margin-bottom:6px;cursor:pointer">
+        <input type="checkbox" class="user-role-checkbox" value="${role.id}"
+          ${currentRoleIds.has(role.id) ? 'checked' : ''}
+          style="width:16px;height:16px">
+        <div>
+          <div style="font-size:13px;font-weight:600;color:#e6f1ff">${escRoles(role.name)}</div>
+          <div style="font-size:11px;color:#8892b0">${escRoles(role.description||'')} · ${(role.permissions||[]).length} Rechte</div>
+        </div>
+      </label>`).join('');
+  } catch(e) {
+    document.getElementById('userRolesList').innerHTML = '<p style="color:#ff5252">Fehler beim Laden</p>';
+  }
+}
+
+function closeUserRolesModal() {
+  document.getElementById('userRolesModal').style.display = 'none';
+}
+
+async function saveUserRoles() {
+  if (!_userRolesTargetId) return;
+  const roleIds = [...document.querySelectorAll('.user-role-checkbox:checked')].map(cb => parseInt(cb.value));
+  const saveBtn = document.querySelector('#userRolesModal button[onclick="saveUserRoles()"]');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '⏳'; }
+  try {
+    const r = await fetch('/api/admin/users/'+_userRolesTargetId+'/roles', {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json','X-CSRFToken':window._csrfToken||''},
+      body: JSON.stringify({role_ids: roleIds})
+    }).then(x => x.json());
+    if (r.ok) {
+      closeUserRolesModal();
+      // Benutzerliste neu laden
+      if (typeof loadUserList === 'function') loadUserList();
+    } else {
+      alert(r.error || 'Fehler');
+    }
+  } catch(e) {
+    alert('Fehler: ' + e.message);
+  } finally {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Speichern'; }
+  }
+}
 </script>
 
 <!-- ========= MOBILE BOTTOM NAVIGATION ========= -->
