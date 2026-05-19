@@ -317,6 +317,11 @@ ALL_PERMISSIONS = {
     "system:status":            {"label": "Systemstatus ansehen",           "group": "System"},
     "system:logs":              {"label": "Logs ansehen",                   "group": "System"},
     "system:health":            {"label": "Health-Check",                   "group": "System"},
+    # Reports
+    "reports:view":             {"label": "Reports ansehen",                "group": "Reports"},
+    "reports:configure":        {"label": "Reports konfigurieren",          "group": "Reports"},
+    "reports:send":             {"label": "Report senden",                  "group": "Reports"},
+    "reports:history":          {"label": "Report-Historie ansehen",        "group": "Reports"},
     # Admin-Sonderrecht
     "admin:all":                {"label": "Vollzugriff (Admin)",            "group": "Admin"},
 }
@@ -335,6 +340,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "meter:view", "meter:test",
         "providers:view",
         "settings:view",
+        "reports:view", "reports:history",
     ],
     "readonly": [
         "dashboard:view", "vehicles:view", "sessions:view",
@@ -472,6 +478,28 @@ DEFAULT_CONFIG = {
     "signature_mapping": {},          # {"cell":"B42","width":220,"height":80,"offset_x":0,"offset_y":0}
     "export_include_signature": False,
     "signature_padding_px": 24,
+
+    # Email Reports
+    "report_email_enabled":          False,
+    "report_email_recipients":       [],
+    "report_email_schedule_type":    "monthly",
+    "report_email_time":             "08:00",
+    "report_email_weekday":          1,
+    "report_email_day_of_month":     1,
+    "report_email_month":            1,
+    "report_email_custom_days":      14,
+    "report_email_cron":             "",
+    "report_email_period_mode":      "previous_period",
+    "report_email_custom_start_date": "",
+    "report_email_custom_end_date":   "",
+    "report_email_location_filter":  "all",
+    "report_email_vehicle_filter":   "all",
+    "report_email_include_excel":    True,
+    "report_email_include_summary":  True,
+    "report_email_language":         "auto",
+    "report_email_include_signature": False,
+    "report_email_template_id":      None,
+    "report_email_last_sent_key":    "",
 
     # Multi-vehicle: additional vehicles beyond the primary (v0)
     "extra_vehicles":    [],
@@ -700,6 +728,20 @@ def init_db():
         can_edit   INTEGER DEFAULT 0,
         can_export INTEGER DEFAULT 0,
         PRIMARY KEY (user_id, vehicle_id)
+    )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS email_report_history (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        sent_at       TEXT NOT NULL,
+        schedule_type TEXT,
+        period_start  TEXT,
+        period_end    TEXT,
+        period_key    TEXT,
+        location_filter TEXT DEFAULT 'all',
+        vehicle_filter  TEXT DEFAULT 'all',
+        recipients    TEXT,
+        status        TEXT NOT NULL DEFAULT 'sent',
+        error         TEXT,
+        triggered_by  TEXT DEFAULT 'auto'
     )""")
     # Seed default roles
     now_iso = datetime.utcnow().isoformat()
@@ -2994,6 +3036,8 @@ def api_export_download_token(token):
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
+import calendar as _calendar
+
 # ── Backup ────────────────────────────────────────────────────────────────────
 import zipfile, subprocess
 from threading import Timer
@@ -3816,8 +3860,419 @@ def get_audit_log():
     con.close()
     return jsonify([dict(r) for r in rows])
 
+# ── Email Reports ─────────────────────────────────────────────────────────────
+
+_report_timer = None
+
+_DE_MONTHS_FULL = ["Januar","Februar","März","April","Mai","Juni",
+                    "Juli","August","September","Oktober","November","Dezember"]
+_EN_MONTHS_FULL = ["January","February","March","April","May","June",
+                    "July","August","September","October","November","December"]
+
+
+def calculate_report_period(schedule_type, period_mode, now, config):
+    """Return dict with start, end (date objects), label_de, label_en, period_key."""
+    from datetime import date, timedelta
+    today = now.date() if hasattr(now, 'date') else now
+
+    if period_mode == "custom_range":
+        s = config.get("report_email_custom_start_date", "")
+        e = config.get("report_email_custom_end_date", "")
+        try:
+            start = date.fromisoformat(s); end = date.fromisoformat(e)
+        except Exception:
+            start = end = today
+        return {"start": start, "end": end,
+                "label_de": f"{start.strftime('%d.%m.%Y')} – {end.strftime('%d.%m.%Y')}",
+                "label_en": f"{start.isoformat()} – {end.isoformat()}",
+                "period_key": f"custom:{start}:{end}"}
+
+    if schedule_type == "daily":
+        d = (today - timedelta(days=1)) if period_mode == "previous_period" else today
+        return {"start": d, "end": d, "label_de": d.strftime("%d.%m.%Y"),
+                "label_en": d.isoformat(), "period_key": f"daily:{d}"}
+
+    if schedule_type == "weekly":
+        if period_mode == "previous_period":
+            this_mon = today - timedelta(days=today.weekday())
+            start = this_mon - timedelta(weeks=1)
+        else:
+            start = today - timedelta(days=today.weekday())
+        end = start + timedelta(days=6)
+        year, week, _ = start.isocalendar()
+        return {"start": start, "end": end,
+                "label_de": f"KW {week:02d} / {year}", "label_en": f"Week {week:02d} / {year}",
+                "period_key": f"weekly:{year}-W{week:02d}"}
+
+    if schedule_type == "monthly":
+        if period_mode == "previous_period":
+            first_this = today.replace(day=1)
+            end = first_this - timedelta(days=1); start = end.replace(day=1)
+        else:
+            start = today.replace(day=1)
+            last = _calendar.monthrange(today.year, today.month)[1]
+            end = today.replace(day=last)
+        return {"start": start, "end": end,
+                "label_de": f"{_DE_MONTHS_FULL[start.month-1]} {start.year}",
+                "label_en": f"{_EN_MONTHS_FULL[start.month-1]} {start.year}",
+                "period_key": f"monthly:{start.year}-{start.month:02d}"}
+
+    if schedule_type == "quarterly":
+        q = (today.month - 1) // 3 + 1; year = today.year
+        if period_mode == "previous_period":
+            q -= 1
+            if q == 0: q = 4; year -= 1
+        sm = (q - 1) * 3 + 1; em = sm + 2
+        start = date(year, sm, 1)
+        end   = date(year, em, _calendar.monthrange(year, em)[1])
+        return {"start": start, "end": end,
+                "label_de": f"Q{q} {year}", "label_en": f"Q{q} {year}",
+                "period_key": f"quarterly:{year}-Q{q}"}
+
+    if schedule_type == "yearly":
+        year = (today.year - 1) if period_mode == "previous_period" else today.year
+        return {"start": date(year, 1, 1), "end": date(year, 12, 31),
+                "label_de": str(year), "label_en": str(year),
+                "period_key": f"yearly:{year}"}
+
+    if schedule_type == "custom_days":
+        x = int(config.get("report_email_custom_days", 14))
+        end = today; start = today - timedelta(days=x)
+        return {"start": start, "end": end,
+                "label_de": f"Letzte {x} Tage", "label_en": f"Last {x} days",
+                "period_key": f"custom_days:{x}:{today}"}
+
+    return calculate_report_period("monthly", period_mode, now, config)
+
+
+def _get_report_sessions(start_date, end_date, location_filter="all", vehicle_filter="all"):
+    from datetime import timedelta
+    where  = ["end_ts IS NOT NULL", "start_ts >= ?", "start_ts < ?"]
+    params = [start_date.isoformat(), (end_date + timedelta(days=1)).isoformat()]
+    if location_filter == "home":
+        where.append("location = 'home'")
+    elif location_filter == "external":
+        where.append("location = 'extern'")
+    if vehicle_filter and vehicle_filter != "all":
+        where.append("vehicle_id = ?"); params.append(vehicle_filter)
+    sql = f"SELECT * FROM sessions WHERE {' AND '.join(where)} ORDER BY start_ts ASC"
+    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    rows = con.execute(sql, params).fetchall(); con.close()
+    return [dict(r) for r in rows]
+
+
+def _build_report_html(sessions, period_info, cfg, lang="de"):
+    is_de      = lang != "en"
+    plabel     = period_info.get("label_de" if is_de else "label_en", "")
+    total_kwh  = sum(s.get("kwh_charged") or 0 for s in sessions)
+    total_cost = sum(s.get("cost_eur")    or 0 for s in sessions)
+    total_secs = sum(s.get("duration_sec") or 0 for s in sessions)
+    home_kwh   = sum((s.get("kwh_charged") or 0) for s in sessions if s.get("location") == "home")
+    ext_kwh    = sum((s.get("kwh_charged") or 0) for s in sessions if s.get("location") == "extern")
+    total_h    = total_secs / 3600
+    avg_price  = total_cost / total_kwh if total_kwh else 0
+    avg_power  = total_kwh / total_h if total_h else 0
+    n          = len(sessions)
+    if is_de:
+        title = "EV Tracker — Lade-Report"
+        rows  = [("Zeitraum", plabel), ("Ladevorgänge", str(n)),
+                 ("Geladene kWh", f"{total_kwh:.2f} kWh"),
+                 ("Gesamtkosten", f"{total_cost:.2f} €"),
+                 ("Ø Preis/kWh", f"{avg_price:.4f} €"),
+                 ("Ladezeit gesamt", f"{total_h:.1f} h"),
+                 ("Ø Ladeleistung", f"{avg_power:.1f} kW")]
+        if home_kwh or ext_kwh:
+            rows.append(("Zuhause / Extern", f"{home_kwh:.1f} / {ext_kwh:.1f} kWh"))
+        empty_txt = "Keine Ladevorgänge im gewählten Zeitraum."
+    else:
+        title = "EV Tracker — Charging Report"
+        rows  = [("Period", plabel), ("Sessions", str(n)),
+                 ("Energy charged", f"{total_kwh:.2f} kWh"),
+                 ("Total cost", f"{total_cost:.2f} €"),
+                 ("Avg price/kWh", f"{avg_price:.4f} €"),
+                 ("Total charge time", f"{total_h:.1f} h"),
+                 ("Avg charge power", f"{avg_power:.1f} kW")]
+        if home_kwh or ext_kwh:
+            rows.append(("Home / External", f"{home_kwh:.1f} / {ext_kwh:.1f} kWh"))
+        empty_txt = "No charging sessions in the selected period."
+    trows = "".join(
+        f'<tr><td style="padding:6px 14px;color:#888;white-space:nowrap">{k}</td>'
+        f'<td style="padding:6px 14px;font-weight:600;color:#fff">{v}</td></tr>'
+        for k, v in rows)
+    empty = f'<p style="color:#f59e0b;margin:16px 0">{empty_txt}</p>' if not sessions else ""
+    return (f'<!DOCTYPE html><html><head><meta charset="utf-8"></head>'
+            f'<body style="background:#0f1117;color:#e8e8f0;font-family:sans-serif;margin:0;padding:24px">'
+            f'<div style="max-width:560px;margin:0 auto"><div style="background:#1e2030;border-radius:12px;padding:28px">'
+            f'<h1 style="color:#6ee7b7;font-size:1.3rem;margin:0 0 6px">⚡ {title}</h1>'
+            f'<hr style="border:none;border-top:1px solid #2d3147;margin:16px 0">'
+            f'{empty}<table style="width:100%;border-collapse:collapse">{trows}</table>'
+            f'<hr style="border:none;border-top:1px solid #2d3147;margin:16px 0">'
+            f'<p style="color:#555;font-size:.75rem;margin:0">EV Tracker v{APP_VERSION}</p>'
+            f'</div></div></body></html>')
+
+
+def _send_email_with_attachments(to_addr, subject, body_html, attachments=None):
+    import smtplib as _smtp, ssl as _ssl
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    from email.mime.base import MIMEBase
+    from email import encoders as _enc
+    cfg  = load_config()
+    host = cfg.get("smtp_host",""); port = int(cfg.get("smtp_port", 587))
+    tls  = cfg.get("smtp_tls","starttls"); user = cfg.get("smtp_user","")
+    pw   = cfg.get("smtp_password",""); frm  = cfg.get("smtp_from_email","")
+    name = cfg.get("smtp_from_name","EV Tracker")
+    if not host or not frm:
+        return False, "SMTP nicht konfiguriert"
+    try:
+        msg = MIMEMultipart(); msg["From"] = f"{name} <{frm}>"; msg["To"] = to_addr
+        msg["Subject"] = subject; msg.attach(MIMEText(body_html, "html", "utf-8"))
+        for fname, data, mime_type in (attachments or []):
+            part = MIMEBase(*mime_type.split("/", 1)); part.set_payload(data)
+            _enc.encode_base64(part)
+            part.add_header("Content-Disposition", "attachment", filename=fname)
+            msg.attach(part)
+        ctx = _ssl.create_default_context()
+        if tls == "ssl":
+            srv = _smtp.SMTP_SSL(host, port, context=ctx, timeout=15)
+        else:
+            srv = _smtp.SMTP(host, port, timeout=15)
+            if tls == "starttls": srv.starttls(context=ctx)
+        if user: srv.login(user, pw)
+        srv.sendmail(frm, to_addr, msg.as_string()); srv.quit()
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
+def _log_report_history(period_info, cfg, status, error, triggered_by):
+    try:
+        con = _get_db()
+        con.execute("""INSERT INTO email_report_history
+            (sent_at,schedule_type,period_start,period_end,period_key,
+             location_filter,vehicle_filter,recipients,status,error,triggered_by)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (datetime.utcnow().isoformat(),
+             cfg.get("report_email_schedule_type","monthly"),
+             period_info["start"].isoformat(), period_info["end"].isoformat(),
+             period_info["period_key"],
+             cfg.get("report_email_location_filter","all"),
+             cfg.get("report_email_vehicle_filter","all"),
+             json.dumps(cfg.get("report_email_recipients",[])),
+             status, error, triggered_by))
+        con.commit(); con.close()
+    except Exception as e:
+        log.warning("Report-History-Log fehlgeschlagen: %s", e)
+
+
+def _send_report_email(cfg=None, triggered_by="auto"):
+    if cfg is None: cfg = load_config()
+    if not cfg.get("report_email_enabled"):
+        return False, "Reports nicht aktiviert"
+    if not cfg.get("smtp_host","") or not cfg.get("smtp_from_email",""):
+        return False, "SMTP nicht konfiguriert"
+    recipients = cfg.get("report_email_recipients", [])
+    if not recipients:
+        return False, "Keine Empfänger konfiguriert"
+    stype       = cfg.get("report_email_schedule_type", "monthly")
+    period_mode = cfg.get("report_email_period_mode", "previous_period")
+    period_info = calculate_report_period(stype, period_mode, datetime.now(), cfg)
+    period_key  = period_info["period_key"]
+    if triggered_by == "auto" and cfg.get("report_email_last_sent_key","") == period_key:
+        log.info("Report bereits gesendet für %s — übersprungen", period_key)
+        _log_report_history(period_info, cfg, "skipped", None, triggered_by)
+        return True, None
+    loc_filter = cfg.get("report_email_location_filter", "all")
+    veh_filter = cfg.get("report_email_vehicle_filter", "all")
+    lang       = cfg.get("report_email_language", "auto")
+    if lang == "auto": lang = "de"
+    sessions   = _get_report_sessions(period_info["start"], period_info["end"], loc_filter, veh_filter)
+    if cfg.get("report_email_include_summary", True):
+        html = _build_report_html(sessions, period_info, cfg, lang)
+    else:
+        html = f"<p>EV Tracker Report — {period_info.get('label_de','')}</p>"
+    plabel  = period_info.get("label_de" if lang != "en" else "label_en", period_key)
+    subject = f"EV Tracker — Report {plabel}"
+    attachments = []
+    if cfg.get("report_email_include_excel") and sessions:
+        try:
+            from export_excel import export as _export_func
+            sig_path = str(SIGNATURE_PATH) if SIGNATURE_PATH.exists() and cfg.get("report_email_include_signature") else None
+            sig_map  = cfg.get("signature_mapping", {}) if sig_path else {}
+            xl_loc   = "extern" if loc_filter == "external" else loc_filter
+            xl_bytes, _ = _export_func(
+                sessions=sessions, year=period_info["start"].year,
+                month=period_info["start"].month, location=xl_loc,
+                config=cfg, lang=lang, include_signature=bool(sig_path),
+                signature_path=sig_path, signature_mapping=sig_map, return_warnings=True)
+            attachments.append(("Ladeprotokoll.xlsx", xl_bytes,
+                                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+        except Exception as e:
+            log.warning("Report-Excel-Anhang fehlgeschlagen: %s", e)
+    errors = []
+    for to in recipients:
+        ok, err = _send_email_with_attachments(to, subject, html, attachments)
+        if not ok: errors.append(f"{to}: {err}")
+    if errors:
+        _log_report_history(period_info, cfg, "error", "; ".join(errors), triggered_by)
+        return False, "; ".join(errors)
+    cfg["report_email_last_sent_key"] = period_key
+    save_config(cfg)
+    _log_report_history(period_info, cfg, "sent", None, triggered_by)
+    log.info("Report gesendet: %s → %s", period_key, recipients)
+    return True, None
+
+
+def _next_report_seconds(cfg, now=None):
+    if not cfg.get("report_email_enabled"): return None
+    stype  = cfg.get("report_email_schedule_type", "monthly")
+    t_str  = cfg.get("report_email_time", "08:00")
+    if now is None: now = datetime.now()
+    try: t_hour, t_min = [int(x) for x in t_str.split(":")]
+    except Exception: t_hour, t_min = 8, 0
+    today = now.date()
+    from datetime import date, timedelta
+
+    if stype == "daily":
+        fire = datetime.combine(today, datetime.min.time()).replace(hour=t_hour, minute=t_min)
+        if fire <= now: fire += timedelta(days=1)
+        return (fire - now).total_seconds()
+
+    if stype == "weekly":
+        wd = int(cfg.get("report_email_weekday", 1)) - 1
+        da = (wd - today.weekday()) % 7 or 7
+        fire = datetime.combine(today + timedelta(days=da), datetime.min.time()).replace(hour=t_hour, minute=t_min)
+        if fire <= now: fire += timedelta(weeks=1)
+        return (fire - now).total_seconds()
+
+    if stype == "monthly":
+        dom = int(cfg.get("report_email_day_of_month", 1))
+        try:
+            fire = datetime.combine(today.replace(day=dom), datetime.min.time()).replace(hour=t_hour, minute=t_min)
+            if fire > now: return (fire - now).total_seconds()
+        except ValueError: pass
+        nm = today.month % 12 + 1; ny = today.year + (1 if today.month == 12 else 0)
+        try: fire = datetime(ny, nm, dom, t_hour, t_min)
+        except ValueError: fire = datetime(ny, nm, _calendar.monthrange(ny, nm)[1], t_hour, t_min)
+        return (fire - now).total_seconds()
+
+    if stype == "quarterly":
+        dom = int(cfg.get("report_email_day_of_month", 1))
+        for yo in range(2):
+            for qm in [1, 4, 7, 10]:
+                try:
+                    fire = datetime(today.year + yo, qm, dom, t_hour, t_min)
+                    if fire > now: return (fire - now).total_seconds()
+                except ValueError: continue
+        return 90 * 86400
+
+    if stype == "yearly":
+        mo  = int(cfg.get("report_email_month", 1))
+        dom = int(cfg.get("report_email_day_of_month", 1))
+        for year in [today.year, today.year + 1]:
+            try:
+                fire = datetime(year, mo, dom, t_hour, t_min)
+                if fire > now: return (fire - now).total_seconds()
+            except ValueError: continue
+        return 365 * 86400
+
+    if stype == "custom_days":
+        x    = int(cfg.get("report_email_custom_days", 14))
+        fire = datetime.combine(today, datetime.min.time()).replace(hour=t_hour, minute=t_min)
+        if fire <= now: fire += timedelta(days=x)
+        return (fire - now).total_seconds()
+
+    if stype == "custom_cron":
+        cron = cfg.get("report_email_cron", "").strip()
+        if not cron: return None
+        try:
+            parts = cron.split()
+            if len(parts) >= 2:
+                c_min, c_hour = int(parts[0]), int(parts[1])
+                fire = datetime.combine(today, datetime.min.time()).replace(hour=c_hour, minute=c_min)
+                if fire <= now: fire += timedelta(days=1)
+                return (fire - now).total_seconds()
+        except Exception: return None
+
+    return None
+
+
+def schedule_report():
+    global _report_timer
+    cfg  = load_config()
+    secs = _next_report_seconds(cfg)
+    if not secs or secs <= 0: return
+    def run():
+        try:
+            ok, err = _send_report_email(triggered_by="auto")
+            if not ok: log.warning("Auto-Report Fehler: %s", err)
+        except Exception as e:
+            log.warning("Auto-Report Exception: %s", e)
+        schedule_report()
+    _report_timer = Timer(secs, run); _report_timer.daemon = True; _report_timer.start()
+    log.info("Nächster Auto-Report: %s", (datetime.now() + timedelta(seconds=secs)).strftime("%d.%m.%Y %H:%M"))
+
+
+@app.route("/api/report/config", methods=["GET"])
+@require_login
+def api_report_config_get():
+    if not has_permission(_current_user(), "reports:view"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    cfg  = load_config()
+    keys = [k for k in DEFAULT_CONFIG if k.startswith("report_email_")]
+    return jsonify({k: cfg.get(k, DEFAULT_CONFIG[k]) for k in keys})
+
+
+@app.route("/api/report/config", methods=["POST"])
+@require_admin
+def api_report_config_save():
+    if not has_permission(_current_user(), "reports:configure"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    data = request.get_json(force=True) or {}
+    cfg  = load_config()
+    allowed = [k for k in DEFAULT_CONFIG if k.startswith("report_email_")]
+    for k in allowed:
+        if k in data:
+            cfg[k] = data[k]
+    save_config(cfg)
+    schedule_report()
+    _audit("report_config_saved", ip=request.remote_addr)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/report/send-now", methods=["POST"])
+@require_login
+def api_report_send_now():
+    if not has_permission(_current_user(), "reports:send"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    data = request.get_json(force=True) or {}
+    cfg  = load_config()
+    # Allow overriding config for this send
+    for k in ["report_email_location_filter","report_email_vehicle_filter",
+              "report_email_period_mode","report_email_schedule_type",
+              "report_email_recipients","report_email_language"]:
+        if k in data: cfg[k] = data[k]
+    cfg["report_email_enabled"] = True
+    ok, err = _send_report_email(cfg=cfg, triggered_by="manual")
+    _audit("report_send_now", f"ok={ok} err={err}", ip=request.remote_addr)
+    return jsonify({"ok": ok, "error": err})
+
+
+@app.route("/api/report/history")
+@require_login
+def api_report_history():
+    if not has_permission(_current_user(), "reports:history"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    limit = int(request.args.get("limit", 50))
+    con = _get_db()
+    rows = con.execute(
+        "SELECT * FROM email_report_history ORDER BY id DESC LIMIT ?", (limit,)
+    ).fetchall()
+    con.close()
+    return jsonify([dict(r) for r in rows])
+
 if __name__=="__main__":
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     app.secret_key = _get_secret_key()
-    init_db(); start_tracker(); schedule_backup()
+    init_db(); start_tracker(); schedule_backup(); schedule_report()
     app.run(host="0.0.0.0",port=8080,debug=False)
