@@ -11,7 +11,7 @@ from meter_providers import read_meter as _read_meter_impl, MeterResult
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "2.0.1"
+APP_VERSION   = "2.0.2"
 
 CHANGELOG = [
     {"version":"2.0.0","changes":[
@@ -518,6 +518,8 @@ DEFAULT_CONFIG = {
     "report_email_include_signature": False,
     "report_email_template_id":      None,
     "report_email_last_sent_key":    "",
+    "report_email_single_month":     "",   # YYYY-MM, used when period_mode=="single_month"
+    "report_email_months":           [],   # list of YYYY-MM, used when period_mode=="multiple_months"
 
     # Multi-vehicle: additional vehicles beyond the primary (v0)
     "extra_vehicles":    [],
@@ -761,6 +763,10 @@ def init_db():
         error         TEXT,
         triggered_by  TEXT DEFAULT 'auto'
     )""")
+    # Migrate: add columns if missing
+    for _col in ["period_label TEXT", "period_mode TEXT"]:
+        try: con.execute(f"ALTER TABLE email_report_history ADD COLUMN {_col}")
+        except Exception: pass
     # Seed default roles
     now_iso = datetime.utcnow().isoformat()
     default_roles = [
@@ -4183,10 +4189,43 @@ _EN_MONTHS_FULL = ["January","February","March","April","May","June",
                     "July","August","September","October","November","December"]
 
 
+def _month_period(ym_str):
+    """Build a period dict for a single YYYY-MM string."""
+    from datetime import date
+    try:
+        year, month = int(ym_str[:4]), int(ym_str[5:7])
+        start = date(year, month, 1)
+        last = _calendar.monthrange(year, month)[1]
+        end = date(year, month, last)
+        return {"start": start, "end": end,
+                "label_de": f"{_DE_MONTHS_FULL[month-1]} {year}",
+                "label_en": f"{_EN_MONTHS_FULL[month-1]} {year}",
+                "period_key": f"monthly:{year}-{month:02d}"}
+    except Exception:
+        return None
+
+
 def calculate_report_period(schedule_type, period_mode, now, config):
     """Return dict with start, end (date objects), label_de, label_en, period_key."""
     from datetime import date, timedelta
     today = now.date() if hasattr(now, 'date') else now
+
+    if period_mode == "single_month":
+        ym = config.get("report_email_single_month", "")
+        p = _month_period(ym)
+        if p: return p
+        return calculate_report_period(schedule_type, "current_period", now, config)
+
+    if period_mode == "multiple_months":
+        months = config.get("report_email_months", [])
+        valid = sorted(set(m for m in months if len(m) == 7 and m[4] == "-"))
+        if valid:
+            p = _month_period(valid[0])
+            if p:
+                combined_key = "months:" + ",".join(valid)
+                p = dict(p); p["period_key"] = combined_key
+                return p
+        return calculate_report_period(schedule_type, "current_period", now, config)
 
     if period_mode == "custom_range":
         s = config.get("report_email_custom_start_date", "")
@@ -4256,6 +4295,17 @@ def calculate_report_period(schedule_type, period_mode, now, config):
                 "period_key": f"custom_days:{x}:{today}"}
 
     return calculate_report_period("monthly", period_mode, now, config)
+
+
+def calculate_report_periods(schedule_type, period_mode, now, config):
+    """Return list of period dicts. Usually one, multiple for multiple_months."""
+    if period_mode == "multiple_months":
+        months = config.get("report_email_months", [])
+        valid = sorted(set(m for m in months if len(m) == 7 and m[4] == "-"))[:24]
+        periods = [p for m in valid for p in [_month_period(m)] if p]
+        if periods:
+            return periods
+    return [calculate_report_period(schedule_type, period_mode, now, config)]
 
 
 def _get_report_sessions(start_date, end_date, location_filter="all", vehicle_filter="all"):
@@ -4341,6 +4391,61 @@ def _build_report_html(sessions, period_info, cfg, lang="de"):
             f'</div></div></body></html>')
 
 
+def _build_multi_month_html(periods_sessions, cfg, lang="de"):
+    """Build email HTML for multiple months. periods_sessions: list of (period_info, sessions)."""
+    is_de   = lang != "en"
+    title   = "EV Tracker — Lade-Report" if is_de else "EV Tracker — Charging Report"
+    n_months = len(periods_sessions)
+    subj_lbl = (f"Bericht {n_months} Monate" if is_de else f"Report {n_months} months") if n_months != 1 else (
+        periods_sessions[0][0].get("label_de" if is_de else "label_en", ""))
+    if is_de:
+        hdr_cells = ["Monat","Ladevorgänge","kWh","Kosten","Ø Preis/kWh"]
+    else:
+        hdr_cells = ["Month","Sessions","kWh","Cost","Avg Price/kWh"]
+    hdr_row = "".join(
+        f'<th style="padding:6px 10px;color:#888;text-align:left;white-space:nowrap">{h}</th>'
+        for h in hdr_cells)
+    data_rows = ""
+    total_kwh = total_cost = total_n = 0
+    for period_info, sessions in periods_sessions:
+        plabel = period_info.get("label_de" if is_de else "label_en", "")
+        kwh    = sum(s.get("kwh_charged") or 0 for s in sessions)
+        cost   = sum(s.get("cost_eur") or 0 for s in sessions)
+        n      = len(sessions)
+        avg_p  = cost / kwh if kwh else 0
+        total_kwh += kwh; total_cost += cost; total_n += n
+        data_rows += (
+            f'<tr style="border-bottom:1px solid rgba(255,255,255,.04)">'
+            f'<td style="padding:5px 10px;color:#e8e8f0">{plabel}</td>'
+            f'<td style="padding:5px 10px;color:#e8e8f0;text-align:right">{n}</td>'
+            f'<td style="padding:5px 10px;color:#e8e8f0;text-align:right">{kwh:.2f}</td>'
+            f'<td style="padding:5px 10px;color:#e8e8f0;text-align:right">{cost:.2f} €</td>'
+            f'<td style="padding:5px 10px;color:#e8e8f0;text-align:right">{avg_p:.4f} €</td>'
+            f'</tr>')
+    avg_total_p = total_cost / total_kwh if total_kwh else 0
+    data_rows += (
+        f'<tr style="border-top:1px solid #2d3147;font-weight:700">'
+        f'<td style="padding:5px 10px;color:#6ee7b7">{"Gesamt" if is_de else "Total"}</td>'
+        f'<td style="padding:5px 10px;color:#6ee7b7;text-align:right">{total_n}</td>'
+        f'<td style="padding:5px 10px;color:#6ee7b7;text-align:right">{total_kwh:.2f}</td>'
+        f'<td style="padding:5px 10px;color:#6ee7b7;text-align:right">{total_cost:.2f} €</td>'
+        f'<td style="padding:5px 10px;color:#6ee7b7;text-align:right">{avg_total_p:.4f} €</td>'
+        f'</tr>')
+    return (
+        f'<!DOCTYPE html><html><head><meta charset="utf-8"></head>'
+        f'<body style="background:#0f1117;color:#e8e8f0;font-family:sans-serif;margin:0;padding:24px">'
+        f'<div style="max-width:640px;margin:0 auto"><div style="background:#1e2030;border-radius:12px;padding:28px">'
+        f'<h1 style="color:#6ee7b7;font-size:1.3rem;margin:0 0 6px">⚡ {title}</h1>'
+        f'<p style="color:#888;margin:0 0 16px;font-size:.85rem">{subj_lbl}</p>'
+        f'<hr style="border:none;border-top:1px solid #2d3147;margin:16px 0">'
+        f'<table style="width:100%;border-collapse:collapse">'
+        f'<thead><tr style="border-bottom:1px solid #2d3147">{hdr_row}</tr></thead>'
+        f'<tbody>{data_rows}</tbody></table>'
+        f'<hr style="border:none;border-top:1px solid #2d3147;margin:16px 0">'
+        f'<p style="color:#555;font-size:.75rem;margin:0">EV Tracker v{APP_VERSION}</p>'
+        f'</div></div></body></html>')
+
+
 def _send_email_with_attachments(to_addr, subject, body_html, attachments=None):
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
@@ -4372,11 +4477,13 @@ def _send_email_with_attachments(to_addr, subject, body_html, attachments=None):
 
 def _log_report_history(period_info, cfg, status, error, triggered_by):
     try:
+        period_label = period_info.get("label_de", period_info.get("period_key", ""))
         con = _get_db()
         con.execute("""INSERT INTO email_report_history
             (sent_at,schedule_type,period_start,period_end,period_key,
-             location_filter,vehicle_filter,recipients,status,error,triggered_by)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+             location_filter,vehicle_filter,recipients,status,error,triggered_by,
+             period_label,period_mode)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (datetime.utcnow().isoformat(),
              cfg.get("report_email_schedule_type","monthly"),
              period_info["start"].isoformat(), period_info["end"].isoformat(),
@@ -4384,7 +4491,9 @@ def _log_report_history(period_info, cfg, status, error, triggered_by):
              cfg.get("report_email_location_filter","all"),
              cfg.get("report_email_vehicle_filter","all"),
              json.dumps(cfg.get("report_email_recipients",[])),
-             status, error, triggered_by))
+             status, error, triggered_by,
+             period_label,
+             cfg.get("report_email_period_mode","previous_period")))
         con.commit(); con.close()
     except Exception as e:
         log.warning("Report-History-Log fehlgeschlagen: %s", e)
@@ -4401,50 +4510,94 @@ def _send_report_email(cfg=None, triggered_by="auto"):
         return False, "Keine Empfänger konfiguriert"
     stype       = cfg.get("report_email_schedule_type", "monthly")
     period_mode = cfg.get("report_email_period_mode", "previous_period")
-    period_info = calculate_report_period(stype, period_mode, datetime.now(), cfg)
-    period_key  = period_info["period_key"]
-    if triggered_by == "auto" and cfg.get("report_email_last_sent_key","") == period_key:
-        log.info("Report bereits gesendet für %s — übersprungen", period_key)
-        _log_report_history(period_info, cfg, "skipped", None, triggered_by)
-        return True, None
-    loc_filter = cfg.get("report_email_location_filter", "all")
-    veh_filter = cfg.get("report_email_vehicle_filter", "all")
-    lang       = cfg.get("report_email_language", "auto")
+    loc_filter  = cfg.get("report_email_location_filter", "all")
+    veh_filter  = cfg.get("report_email_vehicle_filter", "all")
+    lang        = cfg.get("report_email_language", "auto")
     if lang == "auto": lang = "de"
-    sessions   = _get_report_sessions(period_info["start"], period_info["end"], loc_filter, veh_filter)
-    if cfg.get("report_email_include_summary", True):
-        html = _build_report_html(sessions, period_info, cfg, lang)
-    else:
-        html = f"<p>EV Tracker Report — {period_info.get('label_de','')}</p>"
-    plabel  = period_info.get("label_de" if lang != "en" else "label_en", period_key)
-    subject = f"EV Tracker — Report {plabel}"
+    is_de       = lang != "en"
+
+    periods = calculate_report_periods(stype, period_mode, datetime.now(), cfg)
+    combined_key = periods[0]["period_key"] if periods else "unknown"
+
+    if triggered_by == "auto" and cfg.get("report_email_last_sent_key","") == combined_key:
+        log.info("Report bereits gesendet für %s — übersprungen", combined_key)
+        _log_report_history(periods[0], cfg, "skipped", None, triggered_by)
+        return True, None
+
     attachments = []
-    if cfg.get("report_email_include_excel") and sessions:
-        try:
-            from export_excel import export as _export_func
-            sig_path = str(SIGNATURE_PATH) if SIGNATURE_PATH.exists() and cfg.get("report_email_include_signature") else None
-            sig_map  = cfg.get("signature_mapping", {}) if sig_path else {}
-            xl_loc   = "extern" if loc_filter == "external" else loc_filter
-            xl_bytes, _ = _export_func(
-                sessions=sessions, year=period_info["start"].year,
-                month=period_info["start"].month, location=xl_loc,
-                config=cfg, lang=lang, include_signature=bool(sig_path),
-                signature_path=sig_path, signature_mapping=sig_map, return_warnings=True)
-            attachments.append(("Ladeprotokoll.xlsx", xl_bytes,
-                                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-        except Exception as e:
-            log.warning("Report-Excel-Anhang fehlgeschlagen: %s", e)
+
+    if period_mode == "multiple_months" and len(periods) > 1:
+        # Multi-month: per-month sessions + combined HTML + multi-sheet Excel
+        periods_sessions = []
+        for p in periods:
+            s = _get_report_sessions(p["start"], p["end"], loc_filter, veh_filter)
+            periods_sessions.append((p, s))
+        all_sessions = [s for _, ss in periods_sessions for s in ss]
+        if cfg.get("report_email_include_summary", True):
+            html = _build_multi_month_html(periods_sessions, cfg, lang)
+        else:
+            n_months = len(periods)
+            html = f"<p>EV Tracker Report — {n_months} {'Monate' if is_de else 'months'}</p>"
+        n_months = len(periods)
+        if is_de:
+            subject = f"EV Tracker — Bericht {n_months} Monate"
+        else:
+            subject = f"EV Tracker — Report {n_months} months"
+        if cfg.get("report_email_include_excel") and all_sessions:
+            try:
+                from export_excel import export_multi_month_bytes as _emm
+                sig_path = str(SIGNATURE_PATH) if SIGNATURE_PATH.exists() and cfg.get("report_email_include_signature") else None
+                sig_map  = cfg.get("signature_mapping", {}) if sig_path else {}
+                xl_bytes, _ = _emm(
+                    periods_sessions=periods_sessions,
+                    loc_filter=loc_filter, config=cfg, lang=lang,
+                    include_signature=bool(sig_path),
+                    signature_path=sig_path, signature_mapping=sig_map)
+                attachments.append(("Ladeprotokoll.xlsx", xl_bytes,
+                                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+            except Exception as e:
+                log.warning("Multi-Monats-Excel-Anhang fehlgeschlagen: %s", e)
+        # use first period for history logging
+        log_period = periods[0]
+        log_period = dict(log_period); log_period["period_key"] = combined_key
+    else:
+        # Single period (includes single_month)
+        period_info = periods[0]
+        sessions    = _get_report_sessions(period_info["start"], period_info["end"], loc_filter, veh_filter)
+        if cfg.get("report_email_include_summary", True):
+            html = _build_report_html(sessions, period_info, cfg, lang)
+        else:
+            html = f"<p>EV Tracker Report — {period_info.get('label_de','')}</p>"
+        plabel  = period_info.get("label_de" if is_de else "label_en", combined_key)
+        subject = f"EV Tracker — {('Monatsbericht' if is_de else 'Monthly Report')} {plabel}" if period_mode in ("single_month","previous_period","current_period") and stype == "monthly" else f"EV Tracker — Report {plabel}"
+        if cfg.get("report_email_include_excel") and sessions:
+            try:
+                from export_excel import export as _export_func
+                sig_path = str(SIGNATURE_PATH) if SIGNATURE_PATH.exists() and cfg.get("report_email_include_signature") else None
+                sig_map  = cfg.get("signature_mapping", {}) if sig_path else {}
+                xl_loc   = "extern" if loc_filter == "external" else loc_filter
+                xl_bytes, _ = _export_func(
+                    year=period_info["start"].year, month=period_info["start"].month,
+                    location=xl_loc, config=cfg, lang=lang,
+                    include_signature=bool(sig_path),
+                    signature_path=sig_path, signature_mapping=sig_map, return_warnings=True)
+                attachments.append(("Ladeprotokoll.xlsx", xl_bytes,
+                                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+            except Exception as e:
+                log.warning("Report-Excel-Anhang fehlgeschlagen: %s", e)
+        log_period = period_info
+
     errors = []
     for to in recipients:
         ok, err = _send_email_with_attachments(to, subject, html, attachments)
         if not ok: errors.append(f"{to}: {err}")
     if errors:
-        _log_report_history(period_info, cfg, "error", "; ".join(errors), triggered_by)
+        _log_report_history(log_period, cfg, "error", "; ".join(errors), triggered_by)
         return False, "; ".join(errors)
-    cfg["report_email_last_sent_key"] = period_key
+    cfg["report_email_last_sent_key"] = combined_key
     save_config(cfg)
-    _log_report_history(period_info, cfg, "sent", None, triggered_by)
-    log.info("Report gesendet: %s → %s", period_key, recipients)
+    _log_report_history(log_period, cfg, "sent", None, triggered_by)
+    log.info("Report gesendet: %s → %s", combined_key, recipients)
     return True, None
 
 
@@ -4575,7 +4728,8 @@ def api_report_send_now():
     # Allow overriding config for this send
     for k in ["report_email_location_filter","report_email_vehicle_filter",
               "report_email_period_mode","report_email_schedule_type",
-              "report_email_recipients","report_email_language"]:
+              "report_email_recipients","report_email_language",
+              "report_email_single_month","report_email_months"]:
         if k in data: cfg[k] = data[k]
     cfg["report_email_enabled"] = True
     ok, err = _send_report_email(cfg=cfg, triggered_by="manual")

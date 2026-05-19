@@ -1,6 +1,18 @@
 {
-  "version": "2.0.1",
+  "version": "2.0.2",
   "changelog": [
+    {
+      "version": "2.0.2",
+      "date": "2026-05-19",
+      "changes": [
+        "Monatsauswahl für Reports: fester Monat (single_month) und mehrere Monate (multiple_months) als neue Zeitraum-Modi",
+        "Multi-Monats-Excel: ein Tabellenblatt pro Monat in einer Datei",
+        "Multi-Monats-E-Mail: Übersichtstabelle mit Ladevorgängen, kWh, Kosten und Ø Preis/kWh pro Monat",
+        "Betreff lokalisiert: 'EV Tracker Monatsbericht Mai 2026' / 'EV Tracker Bericht 3 Monate'",
+        "Chip-Auswahl für mehrere Monate in der UI (max. 24 Monate, Validierung, sortiert)",
+        "Versandhistorie zeigt jetzt period_label statt Start/Ende-Datum"
+      ]
+    },
     {
       "version": "2.0.1",
       "date": "2026-05-19",

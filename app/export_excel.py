@@ -997,6 +997,96 @@ def preview_export(year, month, location="all", col_override=None, start_row=Non
         "warnings": warnings_out,
     }
 
+def export_multi_month_bytes(periods_sessions, loc_filter="all", config=None, lang="de",
+                              include_signature=False, signature_path=None, signature_mapping=None):
+    """Create a multi-sheet XLSX with one sheet per month.
+    periods_sessions: list of (period_info, sessions) tuples.
+    Returns (bytes, warnings).
+    """
+    import io
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    warnings_list = []
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)  # remove default empty sheet
+
+    mn = MONTH_NAMES.get(lang, MONTH_NAMES["de"])
+
+    for period_info, sessions in periods_sessions:
+        start = period_info["start"]
+        year, month = start.year, start.month
+        sheet_name = f"{mn[month]} {year}"[:31]
+        ws = wb.create_sheet(title=sheet_name)
+        ws.freeze_panes = "A3"
+
+        # Title row
+        ws.merge_cells("A1:K1")
+        t = ws["A1"]
+        t.value     = period_info.get("label_de" if lang != "en" else "label_en", sheet_name)
+        t.font      = Font(name="Arial", bold=True, size=13, color=C_FG)
+        t.fill      = PatternFill("solid", start_color=C_HDR)
+        t.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 26
+
+        hdrs = [
+            t_export("row_num", lang),
+            t_export("date", lang),
+            t_export("start", lang),
+            t_export("end", lang),
+            t_export("odo_start", lang),
+            t_export("odo_end", lang),
+            t_export("soc_start", lang),
+            t_export("soc_end", lang),
+            t_export("kwh", lang),
+            t_export("cost", lang),
+            t_export("location", lang),
+        ]
+        for col, h in enumerate(hdrs, 1):
+            cs(ws, 2, col, h, bold=True, bg="#"+C_HDR, fg=C_FG, al="center")
+
+        ds = 3
+        for i, s in enumerate(sessions):
+            r  = ds + i
+            rd = to_row(s, i + 1, lang=lang)
+            bg = row_bg(s)
+            cs(ws, r, 1,  rd["row_num"],     bg=bg, al="center")
+            cs(ws, r, 2,  rd["date"],        bg=bg, nf="DD.MM.YYYY", al="center")
+            cs(ws, r, 3,  rd["start_time"],  bg=bg, nf="HH:MM", al="center")
+            cs(ws, r, 4,  rd["end_time"],    bg=bg, nf="HH:MM", al="center")
+            cs(ws, r, 5,  rd["odo_start"],   bg=bg, nf='#,##0 "km"', al="right")
+            cs(ws, r, 6,  rd["odo_end"],     bg=bg, nf='#,##0 "km"', al="right")
+            cs(ws, r, 7,  rd["soc_start"],   bg=bg, nf='0"%"', al="right")
+            cs(ws, r, 8,  rd["soc_end"],     bg=bg, nf='0"%"', al="right")
+            cs(ws, r, 9,  rd["kwh_charged"], bg=bg, nf='0.00 "kWh"', al="right")
+            cs(ws, r, 10, rd["cost_eur"],    bg=bg, nf='€#,##0.00', al="right")
+            cs(ws, r, 11, rd["location"],    bg=bg, al="center")
+
+        n = len(sessions)
+        if n:
+            tr = ds + n
+            for col in range(1, 12):
+                v  = ("Σ" if col == 1
+                      else f"=SUM(I{ds}:I{ds+n-1})" if col == 9
+                      else f"=SUM(J{ds}:J{ds+n-1})" if col == 10
+                      else "")
+                nf = ('0.00 "kWh"' if col == 9 else '€#,##0.00' if col == 10 else None)
+                cs(ws, tr, col, v, bold=True, bg="#"+C_SUM, nf=nf,
+                   al="center" if col == 1 else "right")
+
+        # Column widths
+        col_widths = [6, 12, 9, 9, 12, 12, 10, 10, 12, 12, 18]
+        for i, w in enumerate(col_widths, 1):
+            ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+
+    if not wb.worksheets:
+        wb.create_sheet("Leer")
+
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue(), warnings_list
+
+
 if __name__ == "__main__":
     y, m = (map(int, sys.argv[1].split("-")) if len(sys.argv) > 1
             else (datetime.now().year, datetime.now().month))
