@@ -1553,8 +1553,8 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     <p style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
       Mit Maus, Touch oder Stift zeichnen
     </p>
-    <div style="border:2px solid var(--brd);border-radius:8px;background:#fff;overflow:hidden;touch-action:none">
-      <canvas id="sigCanvas" width="540" height="180" style="display:block;width:100%;cursor:crosshair"></canvas>
+    <div style="border:2px solid var(--brd);border-radius:8px;background:#fff;touch-action:none">
+      <canvas id="sigCanvas" width="540" height="220" style="display:block;width:100%;cursor:crosshair"></canvas>
     </div>
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
       <button class="btn-p" onclick="saveSigDraw()">💾 Speichern</button>
@@ -3839,9 +3839,16 @@ let _sigCtx = null;
 function openSignatureDraw(){
   $('sigDrawModal').style.display='flex';
   const canvas = $('sigCanvas');
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = 540, cssH = 220;
+  canvas.width  = cssW * dpr;
+  canvas.height = cssH * dpr;
+  canvas.style.width  = cssW + 'px';
+  canvas.style.height = cssH + 'px';
   _sigCtx = canvas.getContext('2d');
+  _sigCtx.scale(dpr, dpr);
   _sigCtx.fillStyle = '#ffffff';
-  _sigCtx.fillRect(0, 0, canvas.width, canvas.height);
+  _sigCtx.fillRect(0, 0, cssW, cssH);
   _sigCtx.strokeStyle = '#000000';
   _sigCtx.lineWidth = 2;
   _sigCtx.lineCap = 'round';
@@ -3850,10 +3857,8 @@ function openSignatureDraw(){
 
   function getPos(e, canvas){
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
     const src = e.touches ? e.touches[0] : e;
-    return { x: (src.clientX - rect.left) * scaleX, y: (src.clientY - rect.top) * scaleY };
+    return { x: src.clientX - rect.left, y: src.clientY - rect.top };
   }
   canvas.onmousedown = e => { _sigDrawing=true; const p=getPos(e,canvas); _sigCtx.beginPath(); _sigCtx.moveTo(p.x,p.y); };
   canvas.onmousemove = e => { if(!_sigDrawing) return; const p=getPos(e,canvas); _sigCtx.lineTo(p.x,p.y); _sigCtx.stroke(); };
@@ -3864,9 +3869,8 @@ function openSignatureDraw(){
 }
 
 function clearSigCanvas(){
-  const canvas=$('sigCanvas');
   _sigCtx.fillStyle='#ffffff';
-  _sigCtx.fillRect(0,0,canvas.width,canvas.height);
+  _sigCtx.fillRect(0,0,540,220);
 }
 
 function closeSigDraw(){ $('sigDrawModal').style.display='none'; }

@@ -720,7 +720,7 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
                         pass
                 img.width  = sig_w
                 img.height = sig_h
-                # Try to apply offset using OneCellAnchor if offset values are provided
+                # Apply offset using OneCellAnchor if offset values are provided
                 offset_x = int(signature_mapping.get("offset_x", 0))
                 offset_y = int(signature_mapping.get("offset_y", 0))
                 placed = False
@@ -729,22 +729,25 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
                         import re as _re_sig
                         from openpyxl.utils import column_index_from_string as _col_idx
                         from openpyxl.drawing.anchor import OneCellAnchor, AnchorMarker
+                        from openpyxl.drawing.xdr import XDRPositiveSize2D
                         try:
                             from openpyxl.utils.units import pixels_to_EMU
-                            emu_x = pixels_to_EMU(offset_x)
-                            emu_y = pixels_to_EMU(offset_y)
                         except (ImportError, Exception):
-                            emu_x = offset_x * 9525
-                            emu_y = offset_y * 9525
+                            def pixels_to_EMU(px): return px * 9525
                         m2 = _re_sig.match(r'^([A-Za-z]+)(\d+)$', sig_cell)
                         if m2:
                             col_str = m2.group(1).upper()
                             row_num2 = int(m2.group(2)) - 1  # 0-based
                             col_num2 = _col_idx(col_str) - 1  # 0-based
-                            marker = AnchorMarker(col=col_num2, colOff=emu_x, row=row_num2, rowOff=emu_y)
-                            anchor = OneCellAnchor(_from=marker, ext=None)
-                            anchor.ext.cx = img.width * 9525
-                            anchor.ext.cy = img.height * 9525
+                            marker = AnchorMarker(
+                                col=col_num2, colOff=pixels_to_EMU(offset_x),
+                                row=row_num2, rowOff=pixels_to_EMU(offset_y)
+                            )
+                            ext = XDRPositiveSize2D(
+                                cx=pixels_to_EMU(sig_w),
+                                cy=pixels_to_EMU(sig_h)
+                            )
+                            anchor = OneCellAnchor(_from=marker, ext=ext)
                             img.anchor = anchor
                             ws.add_image(img)
                             placed = True

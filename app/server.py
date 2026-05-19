@@ -471,6 +471,7 @@ DEFAULT_CONFIG = {
     "signature":        {"source": None, "created_at": None},
     "signature_mapping": {},          # {"cell":"B42","width":220,"height":80,"offset_x":0,"offset_y":0}
     "export_include_signature": False,
+    "signature_padding_px": 24,
 
     # Multi-vehicle: additional vehicles beyond the primary (v0)
     "extra_vehicles":    [],
@@ -2660,6 +2661,21 @@ def api_template_mapping():
     })
 
 
+def _normalize_signature_image(img, padding=None):
+    """Crop to visible content bbox, then add transparent padding."""
+    from PIL import Image as _PILImage, ImageOps as _ImageOps
+    cfg = load_config()
+    if padding is None:
+        padding = int(cfg.get("signature_padding_px", 24))
+    img = img.convert("RGBA")
+    alpha = img.getchannel("A")
+    bbox = alpha.getbbox()
+    if bbox:
+        img = img.crop(bbox)
+    img = _ImageOps.expand(img, border=padding, fill=(255, 255, 255, 0))
+    return img
+
+
 # ── Signature routes ──────────────────────────────────────────────────────────
 
 @app.route("/api/signature")
@@ -2701,7 +2717,7 @@ def api_signature_upload():
         from PIL import Image as _PILImage
         import io as _io
         img = _PILImage.open(_io.BytesIO(data))
-        img = img.convert("RGBA")
+        img = _normalize_signature_image(img)
         SIGNATURE_DIR.mkdir(parents=True, exist_ok=True)
         img.save(str(SIGNATURE_PATH), "PNG")
     except Exception as e:
@@ -2725,7 +2741,7 @@ def api_signature_draw():
         raw = _b64.b64decode(image_data.split("base64,", 1)[1])
         from PIL import Image as _PILImage
         img = _PILImage.open(_io.BytesIO(raw))
-        img = img.convert("RGBA")
+        img = _normalize_signature_image(img)
         SIGNATURE_DIR.mkdir(parents=True, exist_ok=True)
         img.save(str(SIGNATURE_PATH), "PNG")
     except Exception as e:
