@@ -593,7 +593,13 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <button class="cfg-nav-btn" onclick="cfgSection('notify',this)">🔔 Benachrichtigungen</button>
       <div style="height:1px;background:var(--brd);margin:8px 4px"></div>
       <button class="cfg-nav-btn" onclick="cfgSection('smtp',this)">📧 SMTP</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('reports',this)" data-requires-permission="reports:view">📊 Berichte</button>
+      <button class="cfg-nav-btn" onclick="cfgSection('reports',this)" data-requires-permission="reports:view">📊 Auto-Berichte</button>
+      <button class="cfg-nav-btn" onclick="cfgSection('abrechnung',this)" data-requires-permission="billing:view">💼 Abrechnung</button>
+      <button class="cfg-nav-btn" onclick="cfgSection('report-archive',this)" data-requires-permission="reports:archive">📁 Report-Archiv</button>
+      <button class="cfg-nav-btn" onclick="cfgSection('tarif',this)" data-requires-permission="tariffs:view">⚡ Stromtarif</button>
+      <button class="cfg-nav-btn" onclick="cfgSection('api-tokens',this)" data-requires-permission="api_tokens:view">🔑 API-Tokens</button>
+      <button class="cfg-nav-btn" onclick="cfgSection('mqtt',this)" data-requires-permission="mqtt:view">📡 MQTT</button>
+      <button class="cfg-nav-btn" onclick="cfgSection('notif-rules',this)" data-requires-permission="notifications:view">🔔 Benachr.-Regeln</button>
       <button class="cfg-nav-btn" onclick="cfgSection('auth',this)">🔐 Login &amp; Sicherheit</button>
       <div style="height:1px;background:var(--brd);margin:8px 4px"></div>
       <button class="cfg-nav-btn" onclick="cfgSection('export-tpl',this)">📋 Export-Vorlagen</button>
@@ -968,6 +974,409 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           <div id="rep_history_body" style="font-size:.75rem;font-family:var(--mono);overflow-x:auto"></div>
         </div>
       </div>
+
+      <!-- ══════════════════════════════════════════════════════════
+           ABRECHNUNG / BILLING
+           ══════════════════════════════════════════════════════════ -->
+      <div id="cfgsec-abrechnung" class="cfg-section" style="display:none">
+        <div class="card">
+          <div class="card-title">💼 Abrechnung / Arbeitgeber-Erstattung</div>
+          <!-- Summary strip -->
+          <div id="billing_summary_strip" style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:18px;padding:14px;background:#1e2030;border-radius:8px;font-size:.8rem">
+            <span>⏳ Lade…</span>
+          </div>
+          <!-- Wizard tabs -->
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
+            <button class="btn-s billing-tab active" onclick="billingTab(1,this)">1 Was abrechnen</button>
+            <button class="btn-s billing-tab" onclick="billingTab(2,this)">2 Erstattung</button>
+            <button class="btn-s billing-tab" onclick="billingTab(3,this)">3 Report-Daten</button>
+            <button class="btn-s billing-tab" onclick="billingTab(4,this)">4 Versand</button>
+          </div>
+          <!-- Step 1 -->
+          <div id="billing_step_1">
+            <label class="cfg-lbl">Fahrzeug</label>
+            <select id="billing_vehicle_id" onchange="loadBillingConfig()"
+              style="width:100%;max-width:320px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem;margin-bottom:12px">
+              <option value="v0">Primärfahrzeug (v0)</option>
+            </select>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:12px">
+              <input type="checkbox" id="billing_enabled">
+              <span class="cfg-lbl" style="margin:0">Abrechnung aktiviert</span>
+            </label>
+            <label class="cfg-lbl">Was soll abgerechnet werden?</label>
+            <select id="billing_location_filter" style="width:100%;max-width:320px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
+              <option value="all">Alle Ladevorgänge</option>
+              <option value="home">Nur Zuhause / Intern</option>
+              <option value="external">Nur Extern</option>
+            </select>
+          </div>
+          <!-- Step 2 -->
+          <div id="billing_step_2" style="display:none">
+            <label class="cfg-lbl">Erstattungsmodell</label>
+            <select id="billing_reimb_mode" onchange="onBillingReimbModeChange()"
+              style="width:100%;max-width:320px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem;margin-bottom:12px">
+              <option value="fixed_price">Fester Betrag pro kWh</option>
+              <option value="actual_cost">Tatsächliche Kosten</option>
+              <option value="tariff_based">Dynamischer Tarif</option>
+            </select>
+            <div id="billing_fixed_price_row">
+              <label class="cfg-lbl">Erstattungssatz (EUR/kWh)</label>
+              <input type="number" id="billing_reimb_price" step="0.001" min="0" max="5"
+                style="width:160px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+              <div style="color:var(--mute);font-size:.7rem;margin-top:4px">z. B. 0.30 für 30 Cent/kWh pauschal (Arbeitgeber-Satz)</div>
+            </div>
+          </div>
+          <!-- Step 3 -->
+          <div id="billing_step_3" style="display:none">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+              <div><label class="cfg-lbl">Fahrer</label>
+                <input type="text" id="billing_driver" placeholder="Max Mustermann"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+              <div><label class="cfg-lbl">Kennzeichen</label>
+                <input type="text" id="billing_plate" placeholder="B-EV 1234"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+              <div><label class="cfg-lbl">Abteilung</label>
+                <input type="text" id="billing_dept" placeholder="IT / Vertrieb"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+              <div><label class="cfg-lbl">Kostenstelle</label>
+                <input type="text" id="billing_cc" placeholder="4711"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+              <div><label class="cfg-lbl">Personalnummer</label>
+                <input type="text" id="billing_emp_id"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+              <div><label class="cfg-lbl">Arbeitgeber-E-Mail</label>
+                <input type="email" id="billing_employer_email"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+            </div>
+            <div style="display:flex;gap:18px;margin-top:12px;flex-wrap:wrap">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.82rem">
+                <input type="checkbox" id="billing_req_signature"> Signatur erforderlich
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.82rem">
+                <input type="checkbox" id="billing_req_approval"> Freigabe erforderlich
+              </label>
+            </div>
+          </div>
+          <!-- Step 4 -->
+          <div id="billing_step_4" style="display:none">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.82rem;margin-bottom:12px">
+              <input type="checkbox" id="billing_auto_send"> Automatisch versenden
+            </label>
+            <label class="cfg-lbl">Empfänger (E-Mail)</label>
+            <textarea id="billing_recipients" rows="3" placeholder="arbeitgeber@firma.de"
+              style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.78rem;resize:vertical"></textarea>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:18px" data-requires-permission="billing:configure">
+            <button class="btn-p" onclick="saveBillingConfig()">💾 Speichern</button>
+            <span id="billing_status" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);align-self:center"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════════
+           REPORT-ARCHIV
+           ══════════════════════════════════════════════════════════ -->
+      <div id="cfgsec-report-archive" class="cfg-section" style="display:none">
+        <div class="card">
+          <div class="card-title">📁 Report-Archiv</div>
+          <!-- Create report strip -->
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:18px;padding:14px;background:#1e2030;border-radius:8px">
+            <div><label class="cfg-lbl" style="margin-bottom:4px">Zeitraum-Modus</label>
+              <select id="arc_period_mode" style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:7px;color:var(--txt);font-size:.82rem">
+                <option value="previous_period">Vorheriger Monat</option>
+                <option value="current_period">Aktueller Monat</option>
+                <option value="single_month">Fester Monat</option>
+                <option value="custom_range">Benutzerdefiniert</option>
+              </select></div>
+            <div><label class="cfg-lbl" style="margin-bottom:4px">Ladeort</label>
+              <select id="arc_loc_filter" style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:7px;color:var(--txt);font-size:.82rem">
+                <option value="all">Alle</option><option value="home">Zuhause</option><option value="external">Extern</option>
+              </select></div>
+            <div style="display:flex;gap:8px;margin-top:18px">
+              <label style="display:flex;align-items:center;gap:5px;font-size:.78rem"><input type="checkbox" id="arc_inc_excel" checked> Excel</label>
+              <label style="display:flex;align-items:center;gap:5px;font-size:.78rem"><input type="checkbox" id="arc_inc_pdf"> PDF</label>
+            </div>
+            <button class="btn-p" onclick="createReport()" style="margin-top:18px">📊 Report erstellen</button>
+          </div>
+          <!-- Archive table -->
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <span style="font-size:.85rem;font-weight:600">Archivierte Reports</span>
+            <button class="btn-s" onclick="loadReportArchive()" style="font-size:.75rem">🔄 Aktualisieren</button>
+          </div>
+          <div id="archive_table_body" style="font-size:.75rem;font-family:var(--mono);overflow-x:auto">
+            <span style="color:var(--mute)">Klicke „Aktualisieren" um Reports zu laden.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════════
+           STROMTARIF
+           ══════════════════════════════════════════════════════════ -->
+      <div id="cfgsec-tarif" class="cfg-section" style="display:none">
+        <div class="card">
+          <div class="card-title">⚡ Stromtarif-Konfiguration</div>
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div>
+              <label class="cfg-lbl">Tarif-Provider</label>
+              <select id="tariff_provider" onchange="onTariffProviderChange()"
+                style="width:100%;max-width:320px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
+                <option value="fixed">Fester Preis</option>
+                <option value="octopus">Octopus Energy</option>
+                <option value="tibber">Tibber</option>
+                <option value="generic_http">Generic HTTP</option>
+              </select>
+            </div>
+            <!-- Fixed price panel -->
+            <div id="tariff_panel_fixed">
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+                <div><label class="cfg-lbl">Preis Zuhause (€/kWh)</label>
+                  <input type="number" id="tariff_price_home" step="0.001" min="0"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+                <div><label class="cfg-lbl">Preis AC Extern (€/kWh)</label>
+                  <input type="number" id="tariff_price_ac" step="0.001" min="0"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+                <div><label class="cfg-lbl">Preis DC Extern (€/kWh)</label>
+                  <input type="number" id="tariff_price_dc" step="0.001" min="0"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+              </div>
+            </div>
+            <!-- Octopus panel -->
+            <div id="tariff_panel_octopus" style="display:none">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+                <div><label class="cfg-lbl">API Key</label>
+                  <input type="password" id="tariff_octopus_api_key" placeholder="sk_live_…"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+                <div><label class="cfg-lbl">Account ID</label>
+                  <input type="text" id="tariff_octopus_account_id" placeholder="A-12345678"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+                <div><label class="cfg-lbl">Produkt-Code</label>
+                  <input type="text" id="tariff_octopus_product_code" placeholder="AGILE-24-10-01"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+                <div><label class="cfg-lbl">Tariff-Code</label>
+                  <input type="text" id="tariff_octopus_tariff_code" placeholder="E-1R-AGILE-24-10-01-C"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+                <div><label class="cfg-lbl">GBP→EUR Faktor</label>
+                  <input type="number" id="tariff_octopus_gbp_eur_factor" step="0.01" min="0.5" max="3"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+              </div>
+            </div>
+            <!-- Tibber panel -->
+            <div id="tariff_panel_tibber" style="display:none">
+              <label class="cfg-lbl">Tibber API Token</label>
+              <input type="password" id="tariff_tibber_token" placeholder="51c48a…"
+                style="width:100%;max-width:400px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+              <div style="color:var(--mute);font-size:.7rem;margin-top:4px">Token aus dem Tibber Developer Portal</div>
+            </div>
+            <!-- Generic HTTP panel -->
+            <div id="tariff_panel_generic_http" style="display:none">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+                <div style="grid-column:1/-1"><label class="cfg-lbl">URL</label>
+                  <input type="text" id="tariff_generic_url" placeholder="https://api.example.com/price"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+                <div><label class="cfg-lbl">JSON-Pfad</label>
+                  <input type="text" id="tariff_generic_json_path" placeholder="data.current_price"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+                <div><label class="cfg-lbl">Einheit</label>
+                  <select id="tariff_generic_unit" style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
+                    <option value="EUR/kWh">EUR/kWh</option>
+                    <option value="p/kWh">p/kWh (Pence)</option>
+                    <option value="Wh">Wh (→ EUR/kWh)</option>
+                  </select></div>
+                <div><label class="cfg-lbl">Multiplikator</label>
+                  <input type="number" id="tariff_generic_factor" step="0.001" min="0"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+              </div>
+            </div>
+            <!-- Fallback -->
+            <div>
+              <label class="cfg-lbl">Fallback-Preis (€/kWh) <span style="color:var(--mute);font-size:.7rem">— wird genutzt wenn API nicht erreichbar</span></label>
+              <input type="number" id="tariff_fallback_price" step="0.001" min="0"
+                style="width:160px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap" data-requires-permission="tariffs:configure">
+              <button class="btn-p" onclick="saveTariffConfig()">💾 Speichern</button>
+              <button class="btn-s" onclick="testTariff()" data-requires-permission="tariffs:test">🔌 Verbindung testen</button>
+              <button class="btn-s" onclick="loadTariffPrices()" data-requires-permission="tariffs:view">📈 Preise heute</button>
+              <span id="tariff_status" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);align-self:center"></span>
+            </div>
+          </div>
+        </div>
+        <div class="card" id="tariff_prices_card" style="display:none">
+          <div class="card-title">📈 Aktuelle Preise</div>
+          <div id="tariff_prices_body" style="font-size:.75rem;font-family:var(--mono)"></div>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════════
+           API TOKENS
+           ══════════════════════════════════════════════════════════ -->
+      <div id="cfgsec-api-tokens" class="cfg-section" style="display:none">
+        <div class="card">
+          <div class="card-title">🔑 API-Tokens</div>
+          <p style="font-size:.8rem;color:var(--mute);margin:0 0 16px">Externe Anwendungen können über Bearer-Tokens auf die /api/v1/ API zugreifen.</p>
+          <!-- Create form -->
+          <div style="padding:14px;background:#1e2030;border-radius:8px;margin-bottom:18px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:end;margin-bottom:12px">
+              <div><label class="cfg-lbl">Token-Name</label>
+                <input type="text" id="api_token_name" placeholder="Mein Script"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+              <div><label class="cfg-lbl">Ablaufdatum (optional)</label>
+                <input type="date" id="api_token_expires"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+            </div>
+            <label class="cfg-lbl">Scopes</label>
+            <div id="api_token_scopes" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px"></div>
+            <button class="btn-p" onclick="createApiToken()" data-requires-permission="api_tokens:create">➕ Token erstellen</button>
+          </div>
+          <!-- New token display (shown after creation) -->
+          <div id="api_token_new_display" style="display:none;padding:14px;background:#162032;border:1px solid #3b82f6;border-radius:8px;margin-bottom:18px">
+            <div style="font-size:.8rem;color:#f59e0b;margin-bottom:6px;font-weight:600">⚠️ Token wird nur einmalig angezeigt. Jetzt kopieren!</div>
+            <code id="api_token_new_value" style="font-size:.85rem;color:#6ee7b7;word-break:break-all"></code>
+            <button onclick="navigator.clipboard?.writeText($('api_token_new_value').textContent); this.textContent='✅ Kopiert'"
+              class="btn-s" style="margin-top:8px;font-size:.75rem">📋 Kopieren</button>
+          </div>
+          <!-- Token list -->
+          <div id="api_tokens_list_body" style="font-size:.75rem;font-family:var(--mono);overflow-x:auto">
+            <span style="color:var(--mute)">Lade…</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════════
+           MQTT
+           ══════════════════════════════════════════════════════════ -->
+      <div id="cfgsec-mqtt" class="cfg-section" style="display:none">
+        <div class="card">
+          <div class="card-title">📡 MQTT-Konfiguration</div>
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+              <input type="checkbox" id="mqtt_enabled">
+              <span style="font-size:.85rem">MQTT aktivieren</span>
+            </label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+              <div><label class="cfg-lbl">Host</label>
+                <input type="text" id="mqtt_host" placeholder="192.168.1.10"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+              <div><label class="cfg-lbl">Port</label>
+                <input type="number" id="mqtt_port" min="1" max="65535"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+              <div><label class="cfg-lbl">Benutzername</label>
+                <input type="text" id="mqtt_username"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+              <div><label class="cfg-lbl">Passwort</label>
+                <input type="password" id="mqtt_password"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+              <div><label class="cfg-lbl">Basis-Topic</label>
+                <input type="text" id="mqtt_base_topic" placeholder="evtracker"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+              <div><label class="cfg-lbl">Publish-Intervall (Sek.)</label>
+                <input type="number" id="mqtt_publish_interval" min="10" max="3600"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+            </div>
+            <div style="display:flex;gap:18px;flex-wrap:wrap">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.82rem">
+                <input type="checkbox" id="mqtt_tls"> TLS/SSL
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.82rem">
+                <input type="checkbox" id="mqtt_discovery_enabled"> Home Assistant Discovery
+              </label>
+            </div>
+            <!-- Topic overview -->
+            <div style="padding:12px;background:#1a1a2e;border-radius:8px;font-size:.72rem;font-family:var(--mono);color:var(--mute)">
+              <div style="color:#6ee7b7;margin-bottom:6px;font-weight:600">📋 Topics (Basis-Topic/…)</div>
+              <div>vehicles/&lt;id&gt;/soc &nbsp;·&nbsp; vehicles/&lt;id&gt;/location &nbsp;·&nbsp; vehicles/&lt;id&gt;/charging</div>
+              <div>sessions/current/state &nbsp;·&nbsp; sessions/current/kwh &nbsp;·&nbsp; sessions/current/cost</div>
+              <div>reports/last/status &nbsp;·&nbsp; reports/last/period &nbsp;·&nbsp; status</div>
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap" data-requires-permission="mqtt:configure">
+              <button class="btn-p" onclick="saveMqttConfig()">💾 Speichern</button>
+              <button class="btn-s" onclick="testMqtt()" data-requires-permission="mqtt:test">🔌 Verbindung testen</button>
+              <button class="btn-s" onclick="triggerHaDiscovery()" data-requires-permission="mqtt:configure">🏠 HA Discovery senden</button>
+              <span id="mqtt_status" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);align-self:center"></span>
+            </div>
+          </div>
+        </div>
+        <!-- Notification channels (global) -->
+        <div class="card">
+          <div class="card-title">🔔 Notification-Kanäle (global)</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+            <div><label class="cfg-lbl">ntfy Server</label>
+              <input type="text" id="ntfy_server" placeholder="https://ntfy.sh"
+                style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+            <div><label class="cfg-lbl">ntfy Token (optional)</label>
+              <input type="password" id="ntfy_token"
+                style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+            <div><label class="cfg-lbl">Gotify Server</label>
+              <input type="text" id="gotify_server" placeholder="https://gotify.example.com"
+                style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+            <div><label class="cfg-lbl">Gotify App-Token</label>
+              <input type="password" id="gotify_token"
+                style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+          </div>
+          <div style="margin-top:14px" data-requires-permission="mqtt:configure">
+            <button class="btn-p" onclick="saveNotifChannels()">💾 Kanäle speichern</button>
+            <span id="notif_channels_status" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-left:12px"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════════
+           BENACHRICHTIGUNGS-REGELN
+           ══════════════════════════════════════════════════════════ -->
+      <div id="cfgsec-notif-rules" class="cfg-section" style="display:none">
+        <div class="card">
+          <div class="card-title">🔔 Benachrichtigungs-Regeln</div>
+          <!-- Create rule form -->
+          <div style="padding:14px;background:#1e2030;border-radius:8px;margin-bottom:18px">
+            <div style="font-size:.82rem;font-weight:600;margin-bottom:10px;color:var(--txt)">Neue Regel</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div><label class="cfg-lbl">Name</label>
+                <input type="text" id="nr_name" placeholder="z. B. Ladeende → E-Mail"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+              <div><label class="cfg-lbl">Event</label>
+                <select id="nr_event" style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
+                  <option value="charging_stopped">Ladevorgang beendet</option>
+                </select></div>
+              <div><label class="cfg-lbl">Kanal</label>
+                <select id="nr_channel" onchange="onNrChannelChange()" style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
+                  <option value="email">E-Mail</option>
+                  <option value="ntfy">ntfy</option>
+                  <option value="gotify">Gotify</option>
+                  <option value="webhook">Webhook</option>
+                  <option value="mqtt">MQTT Event</option>
+                </select></div>
+              <div><label class="cfg-lbl" id="nr_recipient_lbl">Empfänger</label>
+                <input type="text" id="nr_recipient" placeholder="user@example.com"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+              <div><label class="cfg-lbl">Fahrzeug-Filter</label>
+                <select id="nr_vehicle" style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
+                  <option value="all">Alle Fahrzeuge</option>
+                </select></div>
+              <div style="display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.82rem;margin-bottom:4px">
+                  <input type="checkbox" id="nr_quiet_enabled" onchange="onNrQuietChange()"> Ruhezeit
+                </label>
+              </div>
+              <div id="nr_quiet_fields" style="display:none;grid-column:1/-1">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                  <div><label class="cfg-lbl">Von</label>
+                    <input type="time" id="nr_quiet_start" value="22:00"
+                      style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+                  <div><label class="cfg-lbl">Bis</label>
+                    <input type="time" id="nr_quiet_end" value="07:00"
+                      style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+                </div>
+              </div>
+            </div>
+            <button class="btn-p" onclick="createNotifRule()" style="margin-top:12px" data-requires-permission="notifications:configure">➕ Regel erstellen</button>
+          </div>
+          <!-- Rules list -->
+          <div id="notif_rules_body" style="font-size:.75rem;font-family:var(--mono);overflow-x:auto">
+            <span style="color:var(--mute)">Lade Regeln…</span>
+          </div>
+        </div>
+      </div>
+
       <div id="cfgsec-notify" class="cfg-section" style="display:none">
         <div class="cfg-sec-title">Push Notifications (Home Assistant)</div>
         <div class="form-grid">
@@ -5226,6 +5635,489 @@ async function loadReportHistory(){
   } catch(e){ body.textContent = '❌ '+e.message; }
 }
 
+// ── BILLING ───────────────────────────────────────────────────────────────────
+function billingTab(n, btn){
+  [1,2,3,4].forEach(i=>{ const el=$('billing_step_'+i); if(el) el.style.display=i===n?'':'none'; });
+  document.querySelectorAll('.billing-tab').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+}
+
+function onBillingReimbModeChange(){
+  const m = $('billing_reimb_mode')?.value||'fixed_price';
+  const fp = $('billing_fixed_price_row');
+  if(fp) fp.style.display = m==='fixed_price'?'':'none';
+}
+
+async function loadBillingConfig(){
+  const vid = $('billing_vehicle_id')?.value||'v0';
+  try{
+    const r = await apiFetch(`/api/billing/config/${vid}`).then(r=>r.json());
+    const s = id=>$(id);
+    if(s('billing_enabled'))      s('billing_enabled').checked         = !!r.enabled;
+    if(s('billing_location_filter')) s('billing_location_filter').value= r.location_filter||'all';
+    if(s('billing_reimb_mode'))   s('billing_reimb_mode').value        = r.reimbursement_mode||'fixed_price';
+    if(s('billing_reimb_price'))  s('billing_reimb_price').value       = r.reimbursement_price_per_kwh||0.30;
+    if(s('billing_driver'))       s('billing_driver').value            = r.driver_name||'';
+    if(s('billing_plate'))        s('billing_plate').value             = r.license_plate||'';
+    if(s('billing_dept'))         s('billing_dept').value              = r.department||'';
+    if(s('billing_cc'))           s('billing_cc').value                = r.cost_center||'';
+    if(s('billing_emp_id'))       s('billing_emp_id').value            = r.employee_id||'';
+    if(s('billing_employer_email')) s('billing_employer_email').value  = r.employer_email||'';
+    if(s('billing_req_signature')) s('billing_req_signature').checked  = !!r.requires_signature;
+    if(s('billing_req_approval'))  s('billing_req_approval').checked   = !!r.requires_approval;
+    if(s('billing_auto_send'))     s('billing_auto_send').checked      = !!r.auto_send;
+    if(s('billing_recipients'))    s('billing_recipients').value       = (r.recipients||[]).join('\n');
+    onBillingReimbModeChange();
+    loadBillingSummary();
+  }catch(e){ console.warn('loadBillingConfig',e); }
+}
+
+async function loadBillingSummary(){
+  const strip = $('billing_summary_strip');
+  if(!strip) return;
+  try{
+    const r = await apiFetch('/api/billing/summary').then(r=>r.json());
+    strip.innerHTML = [
+      `<span>📅 <b>${r.month||''}</b></span>`,
+      `<span>⚡ kWh gesamt: <b>${(r.total_kwh||0).toFixed(2)}</b></span>`,
+      `<span>💰 Kosten: <b>${(r.total_cost||0).toFixed(2)} €</b></span>`,
+      `<span>💼 Erstattbar: <b>${(r.reimbursable_kwh||0).toFixed(2)} kWh</b></span>`,
+      `<span style="color:#6ee7b7">✅ Erstattung: <b>${(r.reimbursement_total||0).toFixed(2)} €</b></span>`,
+    ].join('');
+  }catch(e){ if(strip) strip.innerHTML='<span style="color:var(--mute)">Keine Daten</span>'; }
+}
+
+async function saveBillingConfig(){
+  const g=id=>$(id), st=$('billing_status');
+  const vid = g('billing_vehicle_id')?.value||'v0';
+  const payload = {
+    enabled:                    g('billing_enabled')?.checked||false,
+    location_filter:            g('billing_location_filter')?.value||'all',
+    reimbursement_mode:         g('billing_reimb_mode')?.value||'fixed_price',
+    reimbursement_price_per_kwh: parseFloat(g('billing_reimb_price')?.value||0.30),
+    driver_name:                g('billing_driver')?.value||'',
+    license_plate:              g('billing_plate')?.value||'',
+    department:                 g('billing_dept')?.value||'',
+    cost_center:                g('billing_cc')?.value||'',
+    employee_id:                g('billing_emp_id')?.value||'',
+    employer_email:             g('billing_employer_email')?.value||'',
+    requires_signature:         g('billing_req_signature')?.checked||false,
+    requires_approval:          g('billing_req_approval')?.checked||false,
+    auto_send:                  g('billing_auto_send')?.checked||false,
+    recipients: (g('billing_recipients')?.value||'').split(/[\n,]+/).map(s=>s.trim()).filter(Boolean),
+  };
+  if(st){st.textContent='⏳ Speichere…';st.style.color='var(--mute)';}
+  try{
+    const r = await apiFetch(`/api/billing/config/${vid}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());
+    if(st){st.textContent=r.ok?'✅ Gespeichert':'❌ '+(r.error||'Fehler');st.style.color=r.ok?'#6ee7b7':'#f87171';}
+  }catch(e){if(st){st.textContent='❌ '+e.message;st.style.color='#f87171';}}
+}
+
+// ── REPORT ARCHIVE ────────────────────────────────────────────────────────────
+async function loadReportArchive(){
+  const body = $('archive_table_body');
+  if(!body) return;
+  body.textContent='⏳ Lade…';
+  try{
+    const rows = await apiFetch('/api/reports/archive').then(r=>r.json());
+    if(!rows.length){body.textContent='Noch keine archivierten Reports.';return;}
+    const STATUS_COLORS={generated:'#6ee7b7',sent:'#6ee7b7',approved:'#6ee7b7',failed:'#f87171',draft:'#f59e0b'};
+    body.innerHTML=`<table style="width:100%;border-collapse:collapse">
+      <thead><tr style="color:var(--mute);border-bottom:1px solid var(--brd)">
+        <th style="padding:6px 8px;text-align:left">Datum</th>
+        <th style="padding:6px 8px;text-align:left">Zeitraum</th>
+        <th style="padding:6px 8px;text-align:left">Filter</th>
+        <th style="padding:6px 8px;text-align:left">Status</th>
+        <th style="padding:6px 8px;text-align:left">Aktionen</th>
+      </tr></thead>
+      <tbody>${rows.map(r=>{
+        const c=STATUS_COLORS[r.status]||'var(--mute)';
+        return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+          <td style="padding:5px 8px">${(r.created_at||'').slice(0,16).replace('T',' ')}</td>
+          <td style="padding:5px 8px">${escapeHtml(r.period_label||'')}</td>
+          <td style="padding:5px 8px">${r.location_filter||'all'}</td>
+          <td style="padding:5px 8px;color:${c};font-weight:600">${r.status||''}</td>
+          <td style="padding:5px 8px;display:flex;gap:6px;flex-wrap:wrap">
+            <button onclick="downloadReport(${r.id},'excel')" class="btn-s" style="font-size:.7rem;padding:3px 8px">📥 XLSX</button>
+            <button onclick="downloadReport(${r.id},'pdf')" class="btn-s" style="font-size:.7rem;padding:3px 8px">📄 PDF</button>
+            <button onclick="sendArchiveReport(${r.id})" class="btn-s" style="font-size:.7rem;padding:3px 8px">📤 Senden</button>
+          </td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+  }catch(e){body.textContent='❌ '+e.message;}
+}
+
+async function createReport(){
+  const st = $('archive_table_body');
+  const payload = {
+    report_email_period_mode: $('arc_period_mode')?.value||'previous_period',
+    report_email_schedule_type: 'monthly',
+    report_email_location_filter: $('arc_loc_filter')?.value||'all',
+    lang: 'de',
+    include_excel: $('arc_inc_excel')?.checked!==false,
+    include_pdf:   $('arc_inc_pdf')?.checked||false,
+  };
+  if(st) st.textContent='⏳ Erstelle Report…';
+  try{
+    const r = await apiFetch('/api/reports/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());
+    if(r.ok){ if(st) st.textContent=''; loadReportArchive(); }
+    else if(st) st.textContent='❌ '+(r.error||'Fehler');
+  }catch(e){if(st) st.textContent='❌ '+e.message;}
+}
+
+function downloadReport(id, fmt){
+  window.open(`/api/reports/${id}/download/${fmt}`, '_blank');
+}
+
+async function sendArchiveReport(id){
+  const to = prompt('Empfänger E-Mail:');
+  if(!to) return;
+  const r = await apiFetch(`/api/reports/${id}/send`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({recipients:[to]})}).then(r=>r.json());
+  alert(r.ok ? '✅ Gesendet' : '❌ '+(r.error||'Fehler'));
+}
+
+// ── TARIFF CONFIG ─────────────────────────────────────────────────────────────
+function onTariffProviderChange(){
+  const p = $('tariff_provider')?.value||'fixed';
+  ['fixed','octopus','tibber','generic_http'].forEach(id=>{
+    const el = $('tariff_panel_'+id);
+    if(el) el.style.display = id===p?'':'none';
+  });
+}
+
+async function loadTariffConfig(){
+  try{
+    const r = await apiFetch('/api/tariff/config').then(r=>r.json());
+    const s=id=>$(id);
+    if(s('tariff_provider'))            { s('tariff_provider').value            = r.tariff_provider||'fixed'; onTariffProviderChange(); }
+    if(s('tariff_price_home'))            s('tariff_price_home').value           = r.price_per_kwh_home||0.30;
+    if(s('tariff_price_ac'))              s('tariff_price_ac').value             = r.price_per_kwh_ac||0.45;
+    if(s('tariff_price_dc'))              s('tariff_price_dc').value             = r.price_per_kwh_dc||0.75;
+    if(s('tariff_fallback_price'))        s('tariff_fallback_price').value       = r.tariff_fallback_price||0.30;
+    if(s('tariff_octopus_api_key'))       s('tariff_octopus_api_key').value      = r.octopus_api_key||'';
+    if(s('tariff_octopus_account_id'))    s('tariff_octopus_account_id').value   = r.octopus_account_id||'';
+    if(s('tariff_octopus_product_code'))  s('tariff_octopus_product_code').value = r.octopus_product_code||'';
+    if(s('tariff_octopus_tariff_code'))   s('tariff_octopus_tariff_code').value  = r.octopus_tariff_code||'';
+    if(s('tariff_octopus_gbp_eur_factor')) s('tariff_octopus_gbp_eur_factor').value = r.octopus_gbp_eur_factor||1.17;
+    if(s('tariff_tibber_token'))          s('tariff_tibber_token').value         = r.tibber_token||'';
+    if(s('tariff_generic_url'))           s('tariff_generic_url').value          = r.generic_tariff_url||'';
+    if(s('tariff_generic_json_path'))     s('tariff_generic_json_path').value    = r.generic_tariff_json_path||'price';
+    if(s('tariff_generic_unit'))          s('tariff_generic_unit').value         = r.generic_tariff_unit||'EUR/kWh';
+    if(s('tariff_generic_factor'))        s('tariff_generic_factor').value       = r.generic_tariff_factor||1.0;
+  }catch(e){ console.warn('loadTariffConfig',e); }
+}
+
+async function saveTariffConfig(){
+  const g=id=>$(id), st=$('tariff_status');
+  const payload = {
+    tariff_provider:          g('tariff_provider')?.value||'fixed',
+    price_per_kwh_home:       parseFloat(g('tariff_price_home')?.value||0.30),
+    price_per_kwh_ac:         parseFloat(g('tariff_price_ac')?.value||0.45),
+    price_per_kwh_dc:         parseFloat(g('tariff_price_dc')?.value||0.75),
+    tariff_fallback_price:    parseFloat(g('tariff_fallback_price')?.value||0.30),
+    octopus_api_key:          g('tariff_octopus_api_key')?.value||'',
+    octopus_account_id:       g('tariff_octopus_account_id')?.value||'',
+    octopus_product_code:     g('tariff_octopus_product_code')?.value||'',
+    octopus_tariff_code:      g('tariff_octopus_tariff_code')?.value||'',
+    octopus_gbp_eur_factor:   parseFloat(g('tariff_octopus_gbp_eur_factor')?.value||1.17),
+    tibber_token:             g('tariff_tibber_token')?.value||'',
+    generic_tariff_url:       g('tariff_generic_url')?.value||'',
+    generic_tariff_json_path: g('tariff_generic_json_path')?.value||'price',
+    generic_tariff_unit:      g('tariff_generic_unit')?.value||'EUR/kWh',
+    generic_tariff_factor:    parseFloat(g('tariff_generic_factor')?.value||1),
+  };
+  if(st){st.textContent='⏳ Speichere…';st.style.color='var(--mute)';}
+  try{
+    const r=await apiFetch('/api/tariff/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());
+    if(st){st.textContent=r.ok?'✅ Gespeichert':'❌ '+(r.error||'Fehler');st.style.color=r.ok?'#6ee7b7':'#f87171';}
+  }catch(e){if(st){st.textContent='❌ '+e.message;st.style.color='#f87171';}}
+}
+
+async function testTariff(){
+  const st=$('tariff_status');
+  if(st){st.textContent='⏳ Teste…';st.style.color='var(--mute)';}
+  try{
+    const r=await apiFetch('/api/tariff/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})}).then(r=>r.json());
+    if(st){st.textContent=(r.ok?'✅ ':'❌ ')+(r.message||'');st.style.color=r.ok?'#6ee7b7':'#f87171';}
+  }catch(e){if(st){st.textContent='❌ '+e.message;st.style.color='#f87171';}}
+}
+
+async function loadTariffPrices(){
+  const card=$('tariff_prices_card'), body=$('tariff_prices_body');
+  if(!card||!body) return;
+  card.style.display='block'; body.textContent='⏳ Lade Preise…';
+  try{
+    const r=await apiFetch('/api/tariff/prices').then(r=>r.json());
+    if(!r.ok){body.textContent='❌ '+(r.error||'Fehler');return;}
+    if(!r.prices||!r.prices.length){body.textContent='Keine Preisdaten verfügbar.';return;}
+    body.innerHTML=`<div style="color:var(--mute);font-size:.7rem;margin-bottom:8px">Provider: ${r.provider}</div>
+      <table style="width:100%;border-collapse:collapse">
+      ${r.prices.map(p=>`<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+        <td style="padding:4px 8px">${(p.ts||'').slice(0,16).replace('T',' ')}</td>
+        <td style="padding:4px 8px;text-align:right;font-weight:600;color:#6ee7b7">${(p.price||0).toFixed(5)} ${p.currency||'EUR'}/kWh</td>
+      </tr>`).join('')}
+      </table>`;
+  }catch(e){body.textContent='❌ '+e.message;}
+}
+
+// ── API TOKENS ────────────────────────────────────────────────────────────────
+const _ALL_SCOPES = ['api:read','api:write','vehicles:read','sessions:read','sessions:write',
+                     'reports:read','reports:create','meter:read','system:read'];
+
+function renderApiTokenScopeCheckboxes(){
+  const c=$('api_token_scopes');
+  if(!c) return;
+  c.innerHTML=_ALL_SCOPES.map(s=>`<label style="display:flex;align-items:center;gap:5px;font-size:.78rem;cursor:pointer;background:#1e2030;padding:4px 10px;border-radius:20px">
+    <input type="checkbox" class="api_scope_cb" value="${s}"> ${s}
+  </label>`).join('');
+}
+
+async function loadApiTokens(){
+  const body=$('api_tokens_list_body');
+  if(!body) return;
+  body.textContent='⏳ Lade…';
+  try{
+    const rows=await apiFetch('/api/tokens').then(r=>r.json());
+    if(!rows.length){body.textContent='Noch keine API-Tokens.';return;}
+    body.innerHTML=`<table style="width:100%;border-collapse:collapse">
+      <thead><tr style="color:var(--mute);border-bottom:1px solid var(--brd)">
+        <th style="padding:6px 8px;text-align:left">Name</th>
+        <th style="padding:6px 8px;text-align:left">Präfix</th>
+        <th style="padding:6px 8px;text-align:left">Scopes</th>
+        <th style="padding:6px 8px;text-align:left">Letzte Nutzung</th>
+        <th style="padding:6px 8px;text-align:left">Ablauf</th>
+        <th style="padding:6px 8px;text-align:left">Aktion</th>
+      </tr></thead>
+      <tbody>${rows.map(r=>{
+        const scopes=(r.scopes||[]).join(', ')||'—';
+        const last=(r.last_used_at||'—').slice(0,16).replace('T',' ');
+        const exp=(r.expires_at||'—').slice(0,10);
+        const statusColor = r.is_active ? '#6ee7b7' : '#f87171';
+        return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+          <td style="padding:5px 8px;color:${statusColor};font-weight:600">${escapeHtml(r.name||'')}</td>
+          <td style="padding:5px 8px;font-family:var(--mono)">${r.token_prefix||''}</td>
+          <td style="padding:5px 8px;font-size:.7rem;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(scopes)}">${escapeHtml(scopes)}</td>
+          <td style="padding:5px 8px">${last}</td>
+          <td style="padding:5px 8px">${exp}</td>
+          <td style="padding:5px 8px">
+            <button onclick="revokeApiToken(${r.id})" class="btn-s" style="font-size:.7rem;padding:3px 8px;background:#3b1c1c;color:#f87171" data-requires-permission="api_tokens:delete">🗑 Widerrufen</button>
+          </td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+  }catch(e){body.textContent='❌ '+e.message;}
+}
+
+async function createApiToken(){
+  const name=$('api_token_name')?.value?.trim();
+  if(!name){ alert('Bitte Token-Name eingeben'); return; }
+  const scopes=[...(document.querySelectorAll('.api_scope_cb:checked')||[])].map(cb=>cb.value);
+  const expires=$('api_token_expires')?.value||null;
+  const payload={name,scopes,expires_at:expires||null};
+  try{
+    const r=await apiFetch('/api/tokens',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());
+    if(r.ok && r.token){
+      const disp=$('api_token_new_display'), val=$('api_token_new_value');
+      if(disp) disp.style.display='block';
+      if(val)  val.textContent=r.token;
+      if($('api_token_name')) $('api_token_name').value='';
+      loadApiTokens();
+    } else alert('❌ '+(r.error||'Fehler'));
+  }catch(e){ alert('❌ '+e.message); }
+}
+
+async function revokeApiToken(id){
+  if(!confirm('Token wirklich widerrufen?')) return;
+  const r=await apiFetch(`/api/tokens/${id}`,{method:'DELETE'}).then(r=>r.json());
+  if(r.ok) loadApiTokens(); else alert('❌ '+(r.error||'Fehler'));
+}
+
+// ── MQTT ──────────────────────────────────────────────────────────────────────
+async function loadMqttConfig(){
+  try{
+    const r=await apiFetch('/api/mqtt/config').then(r=>r.json());
+    const s=id=>$(id);
+    if(s('mqtt_enabled'))            s('mqtt_enabled').checked           = !!r.mqtt_enabled;
+    if(s('mqtt_host'))               s('mqtt_host').value                = r.mqtt_host||'';
+    if(s('mqtt_port'))               s('mqtt_port').value                = r.mqtt_port||1883;
+    if(s('mqtt_username'))           s('mqtt_username').value            = r.mqtt_username||'';
+    if(s('mqtt_password'))           s('mqtt_password').value            = r.mqtt_password||'';
+    if(s('mqtt_base_topic'))         s('mqtt_base_topic').value          = r.mqtt_base_topic||'evtracker';
+    if(s('mqtt_publish_interval'))   s('mqtt_publish_interval').value    = r.mqtt_publish_interval_seconds||60;
+    if(s('mqtt_tls'))                s('mqtt_tls').checked               = !!r.mqtt_tls;
+    if(s('mqtt_discovery_enabled'))  s('mqtt_discovery_enabled').checked = !!r.mqtt_discovery_enabled;
+  }catch(e){ console.warn('loadMqttConfig',e); }
+}
+
+async function loadNotifChannels(){
+  try{
+    const c=await apiFetch('/api/config').then(r=>r.json());
+    const s=id=>$(id);
+    if(s('ntfy_server'))   s('ntfy_server').value  = c.ntfy_server||'https://ntfy.sh';
+    if(s('ntfy_token'))    s('ntfy_token').value   = c.ntfy_token||'';
+    if(s('gotify_server')) s('gotify_server').value= c.gotify_server||'';
+    if(s('gotify_token'))  s('gotify_token').value = c.gotify_token||'';
+  }catch(e){}
+}
+
+async function saveMqttConfig(){
+  const g=id=>$(id), st=$('mqtt_status');
+  const payload={
+    mqtt_enabled:                   g('mqtt_enabled')?.checked||false,
+    mqtt_host:                      g('mqtt_host')?.value||'',
+    mqtt_port:                      parseInt(g('mqtt_port')?.value||1883),
+    mqtt_username:                  g('mqtt_username')?.value||'',
+    mqtt_password:                  g('mqtt_password')?.value||'',
+    mqtt_base_topic:                g('mqtt_base_topic')?.value||'evtracker',
+    mqtt_publish_interval_seconds:  parseInt(g('mqtt_publish_interval')?.value||60),
+    mqtt_tls:                       g('mqtt_tls')?.checked||false,
+    mqtt_discovery_enabled:         g('mqtt_discovery_enabled')?.checked||false,
+  };
+  if(st){st.textContent='⏳ Speichere…';st.style.color='var(--mute)';}
+  try{
+    const r=await apiFetch('/api/mqtt/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());
+    if(st){st.textContent=r.ok?'✅ Gespeichert':'❌ '+(r.error||'Fehler');st.style.color=r.ok?'#6ee7b7':'#f87171';}
+  }catch(e){if(st){st.textContent='❌ '+e.message;st.style.color='#f87171';}}
+}
+
+async function saveNotifChannels(){
+  const g=id=>$(id), st=$('notif_channels_status');
+  const payload={
+    ntfy_server:   g('ntfy_server')?.value||'https://ntfy.sh',
+    ntfy_token:    g('ntfy_token')?.value||'',
+    gotify_server: g('gotify_server')?.value||'',
+    gotify_token:  g('gotify_token')?.value||'',
+  };
+  if(st){st.textContent='⏳ …';st.style.color='var(--mute)';}
+  try{
+    const r=await apiFetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());
+    if(st){st.textContent=r.ok?'✅ Gespeichert':'❌ '+(r.error||'');st.style.color=r.ok?'#6ee7b7':'#f87171';}
+  }catch(e){if(st){st.textContent='❌ '+e.message;st.style.color='#f87171';}}
+}
+
+async function testMqtt(){
+  const st=$('mqtt_status');
+  if(st){st.textContent='⏳ Teste…';st.style.color='var(--mute)';}
+  try{
+    const r=await apiFetch('/api/mqtt/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})}).then(r=>r.json());
+    if(st){st.textContent=(r.ok?'✅ ':'❌ ')+(r.message||'');st.style.color=r.ok?'#6ee7b7':'#f87171';}
+  }catch(e){if(st){st.textContent='❌ '+e.message;st.style.color='#f87171';}}
+}
+
+async function triggerHaDiscovery(){
+  const st=$('mqtt_status');
+  if(st){st.textContent='⏳ Sende Discovery…';st.style.color='var(--mute)';}
+  try{
+    const r=await apiFetch('/api/mqtt/ha-discovery',{method:'POST'}).then(r=>r.json());
+    if(st){st.textContent=r.ok?'✅ Discovery gesendet':'❌ '+(r.error||'');st.style.color=r.ok?'#6ee7b7':'#f87171';}
+  }catch(e){if(st){st.textContent='❌ '+e.message;st.style.color='#f87171';}}
+}
+
+// ── NOTIFICATION RULES ────────────────────────────────────────────────────────
+let _notifEventTypes = [];
+
+function onNrChannelChange(){
+  const c=$('nr_channel')?.value||'email';
+  const lbl=$('nr_recipient_lbl');
+  const inp=$('nr_recipient');
+  const hints={
+    email:'Empfänger (E-Mail)',
+    ntfy:'ntfy Topic-Name',
+    gotify:'Gotify App-Token',
+    webhook:'Webhook-URL',
+    mqtt:'MQTT Sub-Topic (leer = events/<event>)',
+  };
+  if(lbl) lbl.textContent = hints[c]||'Empfänger';
+  if(inp) inp.placeholder = c==='email'?'user@example.com':c==='ntfy'?'evtracker':c==='webhook'?'https://…':'';
+}
+
+function onNrQuietChange(){
+  const qf=$('nr_quiet_fields');
+  if(qf) qf.style.display=$('nr_quiet_enabled')?.checked?'block':'none';
+}
+
+async function loadNotifRules(){
+  const body=$('notif_rules_body');
+  if(!body) return;
+  body.textContent='⏳ Lade…';
+  try{
+    const [rules, meta] = await Promise.all([
+      apiFetch('/api/notifications/rules').then(r=>r.json()),
+      apiFetch('/api/notifications/events').then(r=>r.json()),
+    ]);
+    // Populate event select
+    const evSel=$('nr_event');
+    if(evSel && meta.events){
+      evSel.innerHTML=meta.events.map(e=>`<option value="${e.key}">${escapeHtml(e.label)}</option>`).join('');
+      _notifEventTypes=meta.events;
+    }
+    if(!rules.length){body.textContent='Keine Regeln konfiguriert.';return;}
+    const eventLabel = key => (_notifEventTypes.find(e=>e.key===key)||{}).label||key;
+    const CHAN_ICONS={email:'📧',ntfy:'📱',gotify:'🔔',webhook:'🌐',mqtt:'📡'};
+    body.innerHTML=`<table style="width:100%;border-collapse:collapse">
+      <thead><tr style="color:var(--mute);border-bottom:1px solid var(--brd)">
+        <th style="padding:6px 8px;text-align:left">Name</th>
+        <th style="padding:6px 8px;text-align:left">Event</th>
+        <th style="padding:6px 8px;text-align:left">Kanal</th>
+        <th style="padding:6px 8px;text-align:left">Empfänger</th>
+        <th style="padding:6px 8px;text-align:left">Status</th>
+        <th style="padding:6px 8px;text-align:left">Aktionen</th>
+      </tr></thead>
+      <tbody>${rules.map(r=>{
+        const ci=CHAN_ICONS[r.channel]||'🔔';
+        const sc=r.enabled?'#6ee7b7':'var(--mute)';
+        return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
+          <td style="padding:5px 8px;font-weight:600;color:${sc}">${escapeHtml(r.name||'')}</td>
+          <td style="padding:5px 8px;font-size:.75rem">${escapeHtml(eventLabel(r.event_type))}</td>
+          <td style="padding:5px 8px">${ci} ${r.channel||''}</td>
+          <td style="padding:5px 8px;font-size:.75rem;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(r.recipient||'')}">${escapeHtml(r.recipient||'—')}</td>
+          <td style="padding:5px 8px">
+            <button onclick="toggleNotifRule(${r.id},${r.enabled?0:1})" class="btn-s" style="font-size:.7rem;padding:3px 8px">${r.enabled?'✅ Aktiv':'⏸ Inaktiv'}</button>
+          </td>
+          <td style="padding:5px 8px;display:flex;gap:5px">
+            <button onclick="testNotifRule(${r.id})" class="btn-s" style="font-size:.7rem;padding:3px 8px" data-requires-permission="notifications:test">🧪 Test</button>
+            <button onclick="deleteNotifRule(${r.id})" class="btn-s" style="font-size:.7rem;padding:3px 8px;background:#3b1c1c;color:#f87171" data-requires-permission="notifications:configure">🗑</button>
+          </td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+  }catch(e){body.textContent='❌ '+e.message;}
+}
+
+async function createNotifRule(){
+  const g=id=>$(id);
+  const payload={
+    name:                g('nr_name')?.value||'Neue Regel',
+    enabled:             true,
+    event_type:          g('nr_event')?.value||'charging_stopped',
+    channel:             g('nr_channel')?.value||'email',
+    vehicle_filter:      g('nr_vehicle')?.value||'all',
+    recipient:           g('nr_recipient')?.value||'',
+    quiet_hours_enabled: g('nr_quiet_enabled')?.checked||false,
+    quiet_hours_start:   g('nr_quiet_start')?.value||'22:00',
+    quiet_hours_end:     g('nr_quiet_end')?.value||'07:00',
+  };
+  try{
+    const r=await apiFetch('/api/notifications/rules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());
+    if(r.ok){ if(g('nr_name')) g('nr_name').value=''; loadNotifRules(); }
+    else alert('❌ '+(r.error||'Fehler'));
+  }catch(e){ alert('❌ '+e.message); }
+}
+
+async function toggleNotifRule(id, newEnabled){
+  await apiFetch(`/api/notifications/rules/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:newEnabled})});
+  loadNotifRules();
+}
+
+async function deleteNotifRule(id){
+  if(!confirm('Regel löschen?')) return;
+  const r=await apiFetch(`/api/notifications/rules/${id}`,{method:'DELETE'}).then(r=>r.json());
+  if(r.ok) loadNotifRules(); else alert('❌ '+(r.error||'Fehler'));
+}
+
+async function testNotifRule(id){
+  const r=await apiFetch(`/api/notifications/test/${id}`,{method:'POST'}).then(r=>r.json());
+  alert(r.ok ? '✅ '+r.message : '❌ '+r.message);
+}
+
 function cfgSection(id, btn){
   document.querySelectorAll('.cfg-section').forEach(s=>s.style.display='none');
   const sec = $('cfgsec-'+id);
@@ -5249,6 +6141,12 @@ function cfgSection(id, btn){
   if(id==='profil')   loadMyProfile();
   if(id==='roles')    loadRolesSection();
   if(id==='reports'){ loadReportConfig(); }
+  if(id==='abrechnung')    { loadBillingConfig(); }
+  if(id==='report-archive'){ loadReportArchive(); }
+  if(id==='tarif')         { loadTariffConfig(); }
+  if(id==='api-tokens')    { loadApiTokens(); renderApiTokenScopeCheckboxes(); }
+  if(id==='mqtt')          { loadMqttConfig(); loadNotifChannels(); }
+  if(id==='notif-rules')   { loadNotifRules(); }
 }
 
 // ── SMTP ─────────────────────────────────────────────────────────────────────
