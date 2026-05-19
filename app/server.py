@@ -3961,9 +3961,25 @@ def _get_report_sessions(start_date, end_date, location_filter="all", vehicle_fi
     return [dict(r) for r in rows]
 
 
+def _report_filter_labels(cfg, is_de):
+    loc = cfg.get("report_email_location_filter", "all")
+    veh = cfg.get("report_email_vehicle_filter", "all")
+    if is_de:
+        loc_lbl = {"all": "Alle Ladevorgänge", "home": "Nur Zuhause / Intern",
+                   "external": "Nur Extern"}.get(loc, loc)
+        veh_lbl = "Alle Fahrzeuge" if veh == "all" else veh
+    else:
+        loc_lbl = {"all": "All charging sessions", "home": "Home only",
+                   "external": "External only"}.get(loc, loc)
+        veh_lbl = "All vehicles" if veh == "all" else veh
+    return loc_lbl, veh_lbl
+
+
 def _build_report_html(sessions, period_info, cfg, lang="de"):
     is_de      = lang != "en"
     plabel     = period_info.get("label_de" if is_de else "label_en", "")
+    loc_filter = cfg.get("report_email_location_filter", "all")
+    loc_lbl, veh_lbl = _report_filter_labels(cfg, is_de)
     total_kwh  = sum(s.get("kwh_charged") or 0 for s in sessions)
     total_cost = sum(s.get("cost_eur")    or 0 for s in sessions)
     total_secs = sum(s.get("duration_sec") or 0 for s in sessions)
@@ -3975,13 +3991,14 @@ def _build_report_html(sessions, period_info, cfg, lang="de"):
     n          = len(sessions)
     if is_de:
         title = "EV Tracker — Lade-Report"
-        rows  = [("Zeitraum", plabel), ("Ladevorgänge", str(n)),
+        rows  = [("Zeitraum", plabel), ("Filter", loc_lbl), ("Fahrzeug", veh_lbl),
+                 ("Ladevorgänge", str(n)),
                  ("Geladene kWh", f"{total_kwh:.2f} kWh"),
                  ("Gesamtkosten", f"{total_cost:.2f} €"),
                  ("Ø Preis/kWh", f"{avg_price:.4f} €"),
                  ("Ladezeit gesamt", f"{total_h:.1f} h"),
                  ("Ø Ladeleistung", f"{avg_power:.1f} kW")]
-        if home_kwh or ext_kwh:
+        if loc_filter == "all" and (home_kwh or ext_kwh):
             rows.append(("Zuhause / Extern", f"{home_kwh:.1f} / {ext_kwh:.1f} kWh"))
         empty_txt = "Keine Ladevorgänge im gewählten Zeitraum."
     else:
