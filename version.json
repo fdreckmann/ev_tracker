@@ -1,6 +1,21 @@
 {
-  "version": "2.0.2",
+  "version": "2.0.3",
   "changelog": [
+    {
+      "version": "2.0.3",
+      "date": "2026-05-19",
+      "changes": [
+        "Abrechnung: Billing-Wizard mit Fahrzeug, Zeitraum, Ladeort, Format, Signatur-Schritten",
+        "Report-Archiv: Reports erstellen, verwalten, herunterladen, versenden und genehmigen",
+        "PDF-Export: reportlab-basierter PDF-Report mit Kopfband, Zusammenfassung, Sessiontabelle und Signaturfeld",
+        "Dynamische Tarifprovider: Festpreis, Octopus Energy, Tibber und generischer HTTP-Provider",
+        "API-Tokens: SHA-256-gesicherte Tokens mit Scopes, einmalige Anzeige des Rohwerts",
+        "MQTT: paho-mqtt-Integration mit Home Assistant Auto-Discovery, ntfy/Gotify Kanäle",
+        "Benachrichtigungsregeln: DB-getriebene Regeln mit Ruhezeitfenstern und mehreren Kanälen",
+        "Neue Permissions: reports:archive, billing:*, tariffs:*, export:pdf, api_tokens:*, mqtt:*, notifications:*",
+        "Neue DB-Tabellen: billing_config, reports, api_tokens, notification_rules, tariff_cache"
+      ]
+    },
     {
       "version": "2.0.2",
       "date": "2026-05-19",

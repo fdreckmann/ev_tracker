@@ -11,7 +11,7 @@ from meter_providers import read_meter as _read_meter_impl, MeterResult
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "2.0.2"
+APP_VERSION   = "2.0.3"
 
 CHANGELOG = [
     {"version":"2.0.0","changes":[
@@ -322,6 +322,30 @@ ALL_PERMISSIONS = {
     "reports:configure":        {"label": "Reports konfigurieren",          "group": "Reports"},
     "reports:send":             {"label": "Report senden",                  "group": "Reports"},
     "reports:history":          {"label": "Report-Historie ansehen",        "group": "Reports"},
+    "reports:archive":          {"label": "Report-Archiv ansehen",          "group": "Reports"},
+    "reports:approve":          {"label": "Report freigeben",               "group": "Reports"},
+    "reports:resend":           {"label": "Report erneut senden",           "group": "Reports"},
+    # Billing / Abrechnung
+    "billing:view":             {"label": "Abrechnung ansehen",             "group": "Abrechnung"},
+    "billing:configure":        {"label": "Abrechnung konfigurieren",       "group": "Abrechnung"},
+    # Tarife
+    "tariffs:view":             {"label": "Tarife ansehen",                 "group": "Tarife"},
+    "tariffs:configure":        {"label": "Tarife konfigurieren",           "group": "Tarife"},
+    "tariffs:test":             {"label": "Tarif testen",                   "group": "Tarife"},
+    # PDF
+    "export:pdf":               {"label": "PDF exportieren",                "group": "Export"},
+    # API Tokens
+    "api_tokens:view":          {"label": "API-Tokens ansehen",             "group": "API"},
+    "api_tokens:create":        {"label": "API-Token erstellen",            "group": "API"},
+    "api_tokens:delete":        {"label": "API-Token widerrufen",           "group": "API"},
+    # MQTT
+    "mqtt:view":                {"label": "MQTT ansehen",                   "group": "MQTT"},
+    "mqtt:configure":           {"label": "MQTT konfigurieren",             "group": "MQTT"},
+    "mqtt:test":                {"label": "MQTT testen",                    "group": "MQTT"},
+    # Benachrichtigungen
+    "notifications:view":       {"label": "Benachrichtigungen ansehen",     "group": "Benachrichtigungen"},
+    "notifications:configure":  {"label": "Benachrichtigungen konfigurieren","group": "Benachrichtigungen"},
+    "notifications:test":       {"label": "Testbenachrichtigung senden",    "group": "Benachrichtigungen"},
     # Admin-Sonderrecht
     "admin:all":                {"label": "Vollzugriff (Admin)",            "group": "Admin"},
 }
@@ -332,7 +356,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "dashboard:view", "vehicles:view", "vehicles:switch",
         "sessions:view", "sessions:create", "sessions:edit", "sessions:manual_add",
         "analytics:view",
-        "export:view", "export:create", "export:preview", "export:download",
+        "export:view", "export:create", "export:preview", "export:download", "export:pdf",
         "export:templates_view", "export:signature_use",
         "templates:view", "templates:gallery_use",
         "signature:view", "signature:upload", "signature:draw",
@@ -340,11 +364,17 @@ DEFAULT_ROLE_PERMISSIONS = {
         "meter:view", "meter:test",
         "providers:view",
         "settings:view",
-        "reports:view", "reports:history",
+        "reports:view", "reports:history", "reports:archive", "reports:send",
+        "billing:view",
+        "tariffs:view",
+        "notifications:view",
+        "mqtt:view",
+        "api_tokens:view",
     ],
     "readonly": [
         "dashboard:view", "vehicles:view", "sessions:view",
         "analytics:view", "export:view", "export:preview", "export:download",
+        "reports:view", "billing:view",
     ],
 }
 
@@ -523,6 +553,47 @@ DEFAULT_CONFIG = {
 
     # Multi-vehicle: additional vehicles beyond the primary (v0)
     "extra_vehicles":    [],
+
+    # Tariff provider
+    "tariff_provider":         "fixed",    # fixed|octopus|tibber|generic_http
+    "tariff_currency":         "EUR",
+    "tariff_include_tax":      True,
+    "tariff_include_grid_fees": False,
+    "tariff_fallback_price":   0.30,
+    "octopus_api_key":         "",
+    "octopus_account_id":      "",
+    "octopus_product_code":    "",
+    "octopus_tariff_code":     "",
+    "octopus_gbp_eur_factor":  1.17,
+    "tibber_token":            "",
+    "generic_tariff_url":      "",
+    "generic_tariff_headers":  {},
+    "generic_tariff_json_path": "price",
+    "generic_tariff_unit":     "EUR/kWh",
+    "generic_tariff_factor":   1.0,
+
+    # MQTT
+    "mqtt_enabled":                    False,
+    "mqtt_host":                       "",
+    "mqtt_port":                       1883,
+    "mqtt_username":                   "",
+    "mqtt_password":                   "",
+    "mqtt_tls":                        False,
+    "mqtt_base_topic":                 "evtracker",
+    "mqtt_discovery_enabled":          False,
+    "mqtt_discovery_prefix":           "homeassistant",
+    "mqtt_publish_interval_seconds":   60,
+
+    # Notification channels (global config)
+    "ntfy_server":   "https://ntfy.sh",
+    "ntfy_token":    "",
+    "gotify_server": "",
+    "gotify_token":  "",
+
+    # PDF reports
+    "report_include_pdf":            False,
+    "report_pdf_language":           "auto",
+    "report_pdf_include_signature":  False,
 }
 
 # Fields that belong to a vehicle config (vs. app-level config)
@@ -767,6 +838,95 @@ def init_db():
     for _col in ["period_label TEXT", "period_mode TEXT"]:
         try: con.execute(f"ALTER TABLE email_report_history ADD COLUMN {_col}")
         except Exception: pass
+
+    # Billing config (per-vehicle employer reimbursement settings)
+    con.execute("""CREATE TABLE IF NOT EXISTS billing_config (
+        vehicle_id               TEXT PRIMARY KEY,
+        enabled                  INTEGER DEFAULT 0,
+        location_filter          TEXT DEFAULT 'all',
+        reimbursement_mode       TEXT DEFAULT 'fixed_price',
+        reimbursement_price_per_kwh REAL DEFAULT 0.30,
+        requires_approval        INTEGER DEFAULT 0,
+        report_template_id       TEXT,
+        auto_send                INTEGER DEFAULT 0,
+        recipients               TEXT DEFAULT '[]',
+        driver_name              TEXT DEFAULT '',
+        license_plate            TEXT DEFAULT '',
+        cost_center              TEXT DEFAULT '',
+        employee_id              TEXT DEFAULT '',
+        department               TEXT DEFAULT '',
+        employer_email           TEXT DEFAULT '',
+        requires_signature       INTEGER DEFAULT 0,
+        created_at               TEXT,
+        updated_at               TEXT
+    )""")
+
+    # Report archive
+    con.execute("""CREATE TABLE IF NOT EXISTS reports (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at       TEXT NOT NULL,
+        vehicle_id       TEXT,
+        period_start     TEXT,
+        period_end       TEXT,
+        period_label     TEXT,
+        period_mode      TEXT,
+        location_filter  TEXT DEFAULT 'all',
+        vehicle_filter   TEXT DEFAULT 'all',
+        status           TEXT DEFAULT 'draft',
+        created_by       INTEGER,
+        sent_at          TEXT,
+        recipients       TEXT DEFAULT '[]',
+        excel_path       TEXT,
+        pdf_path         TEXT,
+        summary_json     TEXT DEFAULT '{}',
+        approval_status  TEXT,
+        excel_bytes      BLOB,
+        pdf_bytes        BLOB
+    )""")
+
+    # API tokens
+    con.execute("""CREATE TABLE IF NOT EXISTS api_tokens (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        name         TEXT NOT NULL,
+        token_hash   TEXT NOT NULL UNIQUE,
+        token_prefix TEXT NOT NULL,
+        scopes       TEXT DEFAULT '[]',
+        expires_at   TEXT,
+        last_used_at TEXT,
+        created_by   INTEGER,
+        created_at   TEXT NOT NULL,
+        is_active    INTEGER DEFAULT 1
+    )""")
+
+    # Notification rules
+    con.execute("""CREATE TABLE IF NOT EXISTS notification_rules (
+        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+        name                 TEXT NOT NULL,
+        enabled              INTEGER DEFAULT 1,
+        event_type           TEXT NOT NULL,
+        channel              TEXT NOT NULL,
+        vehicle_filter       TEXT DEFAULT 'all',
+        user_filter          TEXT DEFAULT 'all',
+        recipient            TEXT DEFAULT '',
+        threshold            REAL,
+        quiet_hours_enabled  INTEGER DEFAULT 0,
+        quiet_hours_start    TEXT DEFAULT '22:00',
+        quiet_hours_end      TEXT DEFAULT '07:00',
+        created_at           TEXT,
+        updated_at           TEXT
+    )""")
+
+    # Tariff price cache
+    con.execute("""CREATE TABLE IF NOT EXISTS tariff_cache (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider    TEXT NOT NULL,
+        ts          TEXT NOT NULL,
+        price_per_kwh REAL NOT NULL,
+        currency    TEXT DEFAULT 'EUR',
+        cached_at   TEXT NOT NULL,
+        UNIQUE(provider, ts)
+    )""")
+
     # Seed default roles
     now_iso = datetime.utcnow().isoformat()
     default_roles = [
@@ -4749,6 +4909,845 @@ def api_report_history():
     ).fetchall()
     con.close()
     return jsonify([dict(r) for r in rows])
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BILLING / ARBEITGEBER-ABRECHNUNG
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route("/api/billing/config/<vehicle_id>", methods=["GET"])
+@require_login
+def api_billing_config_get(vehicle_id):
+    if not has_permission(_current_user(), "billing:view"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    con = _get_db()
+    row = con.execute("SELECT * FROM billing_config WHERE vehicle_id=?", (vehicle_id,)).fetchone()
+    con.close()
+    if row:
+        d = dict(row)
+        d["recipients"] = json.loads(d.get("recipients") or "[]")
+        return jsonify(d)
+    return jsonify({"vehicle_id": vehicle_id, "enabled": False,
+                    "reimbursement_mode": "fixed_price", "reimbursement_price_per_kwh": 0.30,
+                    "location_filter": "all", "recipients": []})
+
+
+@app.route("/api/billing/config/<vehicle_id>", methods=["POST"])
+@require_login
+def api_billing_config_save(vehicle_id):
+    if not has_permission(_current_user(), "billing:configure"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    data = request.get_json(force=True) or {}
+    now_iso = datetime.utcnow().isoformat()
+    con = _get_db()
+    existing = con.execute("SELECT id FROM billing_config WHERE vehicle_id=?", (vehicle_id,)).fetchone()
+    recipients = json.dumps(data.get("recipients", []))
+    fields = {
+        "vehicle_id":                vehicle_id,
+        "enabled":                   int(bool(data.get("enabled"))),
+        "location_filter":           data.get("location_filter", "all"),
+        "reimbursement_mode":        data.get("reimbursement_mode", "fixed_price"),
+        "reimbursement_price_per_kwh": float(data.get("reimbursement_price_per_kwh") or 0.30),
+        "requires_approval":         int(bool(data.get("requires_approval"))),
+        "report_template_id":        data.get("report_template_id"),
+        "auto_send":                 int(bool(data.get("auto_send"))),
+        "recipients":                recipients,
+        "driver_name":               data.get("driver_name", ""),
+        "license_plate":             data.get("license_plate", ""),
+        "cost_center":               data.get("cost_center", ""),
+        "employee_id":               data.get("employee_id", ""),
+        "department":                data.get("department", ""),
+        "employer_email":            data.get("employer_email", ""),
+        "requires_signature":        int(bool(data.get("requires_signature"))),
+        "updated_at":                now_iso,
+    }
+    if existing:
+        sets = ", ".join(f"{k}=?" for k in fields if k != "vehicle_id")
+        vals = [fields[k] for k in fields if k != "vehicle_id"] + [vehicle_id]
+        con.execute(f"UPDATE billing_config SET {sets} WHERE vehicle_id=?", vals)
+    else:
+        fields["created_at"] = now_iso
+        keys = list(fields.keys()); vals = [fields[k] for k in keys]
+        con.execute(f"INSERT INTO billing_config ({','.join(keys)}) VALUES ({','.join(['?']*len(keys))})", vals)
+    con.commit(); con.close()
+    _audit("billing_config_saved", f"vehicle={vehicle_id}", ip=request.remote_addr)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/billing/summary")
+@require_login
+def api_billing_summary():
+    if not has_permission(_current_user(), "billing:view"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    from datetime import date
+    today = date.today()
+    first = today.replace(day=1)
+    con = _get_db()
+    sessions = con.execute(
+        "SELECT * FROM sessions WHERE end_ts IS NOT NULL AND start_ts >= ? ORDER BY start_ts DESC",
+        (first.isoformat(),)
+    ).fetchall()
+    rows = [dict(r) for r in sessions]
+    con.close()
+    total_kwh  = sum(r.get("kwh_charged") or 0 for r in rows)
+    total_cost = sum(r.get("cost_eur") or 0 for r in rows)
+    # reimbursement via billing config for first vehicle
+    cfg  = load_config()
+    bc_con = _get_db()
+    bc_row = bc_con.execute("SELECT * FROM billing_config WHERE enabled=1 LIMIT 1").fetchone()
+    bc_con.close()
+    bc = dict(bc_row) if bc_row else {}
+    reimb_rate  = float(bc.get("reimbursement_price_per_kwh") or 0)
+    lf = bc.get("location_filter", "all")
+    if lf == "home":
+        kwh_for_reimb = sum((r.get("kwh_charged") or 0) for r in rows if r.get("location") == "home")
+    elif lf in ("extern","external"):
+        kwh_for_reimb = sum((r.get("kwh_charged") or 0) for r in rows if r.get("location") in ("extern","external"))
+    else:
+        kwh_for_reimb = total_kwh
+    reimb_total = kwh_for_reimb * reimb_rate
+    return jsonify({
+        "month": first.isoformat(),
+        "sessions": len(rows),
+        "total_kwh": round(total_kwh, 3),
+        "total_cost": round(total_cost, 2),
+        "reimbursable_kwh": round(kwh_for_reimb, 3),
+        "reimbursement_total": round(reimb_total, 2),
+        "reimbursement_rate": reimb_rate,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# REPORT ARCHIVE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _save_report_record(vehicle_id, period_info, loc_filter, veh_filter, status,
+                         created_by, excel_bytes=None, pdf_bytes=None, summary=None):
+    """Insert a report into the archive. Returns the new report id."""
+    con = _get_db()
+    cur = con.execute("""INSERT INTO reports
+        (created_at, vehicle_id, period_start, period_end, period_label, period_mode,
+         location_filter, vehicle_filter, status, created_by, excel_bytes, pdf_bytes, summary_json)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (datetime.utcnow().isoformat(),
+         vehicle_id,
+         period_info["start"].isoformat(), period_info["end"].isoformat(),
+         period_info.get("label_de", ""), period_info.get("period_key",""),
+         loc_filter, veh_filter, status, created_by,
+         excel_bytes, pdf_bytes,
+         json.dumps(summary or {})))
+    report_id = cur.lastrowid
+    con.commit(); con.close()
+    return report_id
+
+
+@app.route("/api/reports/archive")
+@require_login
+def api_reports_archive():
+    if not has_permission(_current_user(), "reports:archive"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    limit = int(request.args.get("limit", 100))
+    vehicle_id = request.args.get("vehicle_id")
+    con = _get_db()
+    if vehicle_id:
+        rows = con.execute(
+            "SELECT id,created_at,vehicle_id,period_start,period_end,period_label,period_mode,"
+            "location_filter,vehicle_filter,status,created_by,sent_at,recipients,approval_status"
+            " FROM reports WHERE vehicle_id=? ORDER BY id DESC LIMIT ?",
+            (vehicle_id, limit)).fetchall()
+    else:
+        rows = con.execute(
+            "SELECT id,created_at,vehicle_id,period_start,period_end,period_label,period_mode,"
+            "location_filter,vehicle_filter,status,created_by,sent_at,recipients,approval_status"
+            " FROM reports ORDER BY id DESC LIMIT ?",
+            (limit,)).fetchall()
+    con.close()
+    result = []
+    for r in rows:
+        d = dict(r)
+        try: d["recipients"] = json.loads(d.get("recipients") or "[]")
+        except Exception: pass
+        result.append(d)
+    return jsonify(result)
+
+
+@app.route("/api/reports/create", methods=["POST"])
+@require_login
+def api_reports_create():
+    if not has_permission(_current_user(), "reports:send"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    data     = request.get_json(force=True) or {}
+    cfg      = load_config()
+    for k in ["report_email_period_mode","report_email_schedule_type",
+              "report_email_location_filter","report_email_vehicle_filter",
+              "report_email_language","report_email_single_month","report_email_months"]:
+        if k in data: cfg[k] = data[k]
+    stype      = cfg.get("report_email_schedule_type", "monthly")
+    pmode      = cfg.get("report_email_period_mode", "previous_period")
+    periods    = calculate_report_periods(stype, pmode, datetime.now(), cfg)
+    period_info = periods[0]
+    loc_filter = cfg.get("report_email_location_filter","all")
+    veh_filter = cfg.get("report_email_vehicle_filter","all")
+    lang       = data.get("lang", cfg.get("report_email_language","de"))
+    if lang == "auto": lang = "de"
+    sessions   = _get_report_sessions(period_info["start"], period_info["end"], loc_filter, veh_filter)
+    summary    = {
+        "n": len(sessions),
+        "total_kwh": round(sum(s.get("kwh_charged") or 0 for s in sessions), 3),
+        "total_cost": round(sum(s.get("cost_eur") or 0 for s in sessions), 2),
+    }
+    user = _current_user()
+    # Excel
+    excel_bytes = None
+    if data.get("include_excel", True) and sessions:
+        try:
+            from export_excel import export as _export_func
+            xl_loc = "extern" if loc_filter == "external" else loc_filter
+            excel_bytes, _ = _export_func(
+                year=period_info["start"].year, month=period_info["start"].month,
+                location=xl_loc, config=cfg, lang=lang, return_warnings=True)
+        except Exception as e:
+            log.warning("reports/create Excel: %s", e)
+    # PDF
+    pdf_bytes = None
+    if data.get("include_pdf", False) and sessions:
+        try:
+            from pdf_export import generate_report_pdf
+            bc_con = _get_db()
+            bc_row = bc_con.execute("SELECT * FROM billing_config WHERE vehicle_id=?",
+                                    (veh_filter,)).fetchone()
+            bc_con.close()
+            pdf_bytes = generate_report_pdf(
+                sessions, period_info, cfg, lang=lang,
+                include_signature=data.get("include_signature", False),
+                billing_config=dict(bc_row) if bc_row else None)
+        except Exception as e:
+            log.warning("reports/create PDF: %s", e)
+    report_id = _save_report_record(
+        veh_filter, period_info, loc_filter, veh_filter, "generated",
+        user["id"] if user else None, excel_bytes, pdf_bytes, summary)
+    _audit("report_created", f"id={report_id} period={period_info.get('period_key')}", ip=request.remote_addr)
+    return jsonify({"ok": True, "report_id": report_id, "summary": summary,
+                    "has_excel": excel_bytes is not None, "has_pdf": pdf_bytes is not None})
+
+
+@app.route("/api/reports/<int:report_id>/download/<fmt>")
+@require_login
+def api_report_download(report_id, fmt):
+    if not has_permission(_current_user(), "reports:archive"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    if fmt not in ("excel", "pdf"):
+        return jsonify({"error": "Ungültiges Format"}), 400
+    con = _get_db()
+    row = con.execute("SELECT * FROM reports WHERE id=?", (report_id,)).fetchone()
+    con.close()
+    if not row:
+        return jsonify({"error": "Report nicht gefunden"}), 404
+    col  = "excel_bytes" if fmt == "excel" else "pdf_bytes"
+    data = row[col]
+    if not data:
+        return jsonify({"error": f"Kein {fmt.upper()} für diesen Report gespeichert"}), 404
+    mime = ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            if fmt == "excel" else "application/pdf")
+    ext  = "xlsx" if fmt == "excel" else "pdf"
+    label = (row["period_label"] or str(report_id)).replace(" ", "_")
+    return Response(data, mimetype=mime,
+                    headers={"Content-Disposition": f'attachment; filename="Report_{label}.{ext}"'})
+
+
+@app.route("/api/reports/<int:report_id>/send", methods=["POST"])
+@require_login
+def api_report_send(report_id):
+    if not has_permission(_current_user(), "reports:resend"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    data = request.get_json(force=True) or {}
+    recipients = data.get("recipients", [])
+    con = _get_db()
+    row = con.execute("SELECT * FROM reports WHERE id=?", (report_id,)).fetchone()
+    con.close()
+    if not row:
+        return jsonify({"error": "Report nicht gefunden"}), 404
+    cfg = load_config()
+    lang = data.get("lang", "de")
+    subject = f"EV Tracker — Report {row['period_label'] or report_id}"
+    html = f"<p>EV Tracker Report: <b>{row['period_label']}</b></p>"
+    attachments = []
+    if row["excel_bytes"]:
+        attachments.append(("Report.xlsx", row["excel_bytes"],
+                             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+    if row["pdf_bytes"]:
+        attachments.append(("Report.pdf", row["pdf_bytes"], "application/pdf"))
+    errors = []
+    for to in (recipients or json.loads(row.get("recipients") or "[]")):
+        ok, err = _send_email_with_attachments(to, subject, html, attachments)
+        if not ok: errors.append(f"{to}: {err}")
+    if errors:
+        return jsonify({"ok": False, "error": "; ".join(errors)})
+    now_iso = datetime.utcnow().isoformat()
+    _con = _get_db()
+    _con.execute("UPDATE reports SET status='sent', sent_at=?, recipients=? WHERE id=?",
+                 (now_iso, json.dumps(recipients), report_id))
+    _con.commit(); _con.close()
+    _audit("report_sent", f"id={report_id}", ip=request.remote_addr)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/reports/<int:report_id>/approve", methods=["POST"])
+@require_login
+def api_report_approve(report_id):
+    if not has_permission(_current_user(), "reports:approve"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    con = _get_db()
+    con.execute("UPDATE reports SET approval_status='approved', status='approved' WHERE id=?",
+                (report_id,))
+    con.commit(); con.close()
+    _audit("report_approved", f"id={report_id}", ip=request.remote_addr)
+    return jsonify({"ok": True})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PDF EXPORT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_pdf_tokens: dict = {}  # token -> {bytes, expires}
+
+@app.route("/api/export/pdf", methods=["POST"])
+@require_login
+def api_export_pdf():
+    if not has_permission(_current_user(), "export:pdf"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    data = request.get_json(force=True) or {}
+    cfg  = load_config()
+    try:
+        from pdf_export import generate_report_pdf, _REPORTLAB_AVAILABLE
+        if not _REPORTLAB_AVAILABLE:
+            return jsonify({"error": "PDF nicht verfügbar — reportlab fehlt (requirements.txt anpassen und Docker-Image neu bauen)"}), 503
+    except ImportError:
+        return jsonify({"error": "pdf_export Modul nicht gefunden"}), 503
+    stype      = data.get("schedule_type", cfg.get("report_email_schedule_type","monthly"))
+    pmode      = data.get("period_mode",   data.get("report_email_period_mode", "previous_period"))
+    loc_filter = data.get("location_filter", cfg.get("report_email_location_filter","all"))
+    veh_filter = data.get("vehicle_filter",  cfg.get("report_email_vehicle_filter","all"))
+    lang       = data.get("lang", cfg.get("report_pdf_language","de"))
+    if lang == "auto": lang = "de"
+    cfg["report_email_period_mode"]      = pmode
+    cfg["report_email_schedule_type"]    = stype
+    cfg["report_email_single_month"]     = data.get("single_month", cfg.get("report_email_single_month",""))
+    cfg["report_email_months"]           = data.get("months", cfg.get("report_email_months",[]))
+    periods    = calculate_report_periods(stype, pmode, datetime.now(), cfg)
+    period_info = periods[0]
+    sessions   = _get_report_sessions(period_info["start"], period_info["end"], loc_filter, veh_filter)
+    bc_con = _get_db()
+    bc_row = bc_con.execute("SELECT * FROM billing_config WHERE vehicle_id=?", (veh_filter,)).fetchone()
+    bc_con.close()
+    include_sig = bool(data.get("include_signature", cfg.get("report_pdf_include_signature")))
+    sig_path    = str(SIGNATURE_PATH) if SIGNATURE_PATH.exists() and include_sig else None
+    try:
+        pdf_bytes = generate_report_pdf(
+            sessions, period_info, cfg, lang=lang,
+            include_signature=include_sig, signature_path=sig_path,
+            billing_config=dict(bc_row) if bc_row else None)
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 503
+    except Exception as e:
+        log.exception("PDF generation error")
+        return jsonify({"error": str(e)}), 500
+    import secrets as _sec
+    token = _sec.token_urlsafe(32)
+    _pdf_tokens[token] = {"bytes": pdf_bytes, "expires": datetime.utcnow().timestamp() + 1800}
+    label = (period_info.get("label_de") or "Report").replace(" ", "_")
+    return jsonify({"ok": True, "token": token, "filename": f"EV_Report_{label}.pdf",
+                    "size_bytes": len(pdf_bytes)})
+
+
+@app.route("/api/export/pdf/download/<token>")
+def api_export_pdf_download(token):
+    entry = _pdf_tokens.get(token)
+    if not entry or datetime.utcnow().timestamp() > entry["expires"]:
+        _pdf_tokens.pop(token, None)
+        return jsonify({"error": "Token abgelaufen oder ungültig"}), 404
+    return Response(entry["bytes"], mimetype="application/pdf",
+                    headers={"Content-Disposition": 'attachment; filename="EV_Report.pdf"'})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TARIFF PROVIDER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route("/api/tariff/config", methods=["GET"])
+@require_login
+def api_tariff_config_get():
+    if not has_permission(_current_user(), "tariffs:view"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    cfg  = load_config()
+    keys = [k for k in DEFAULT_CONFIG if k.startswith("tariff_") or k in
+            ("octopus_api_key","octopus_account_id","octopus_product_code","octopus_tariff_code","octopus_gbp_eur_factor",
+             "tibber_token","generic_tariff_url","generic_tariff_headers","generic_tariff_json_path",
+             "generic_tariff_unit","generic_tariff_factor","price_per_kwh_home","price_per_kwh_ac","price_per_kwh_dc")]
+    result = {k: cfg.get(k, DEFAULT_CONFIG.get(k)) for k in keys}
+    for mask_key in ("octopus_api_key", "tibber_token"):
+        if result.get(mask_key):
+            result[mask_key] = "********"
+    return jsonify(result)
+
+
+@app.route("/api/tariff/config", methods=["POST"])
+@require_admin
+def api_tariff_config_save():
+    if not has_permission(_current_user(), "tariffs:configure"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    data = request.get_json(force=True) or {}
+    cfg  = load_config()
+    allowed = [k for k in DEFAULT_CONFIG if k.startswith("tariff_") or k in
+               ("octopus_api_key","octopus_account_id","octopus_product_code","octopus_tariff_code","octopus_gbp_eur_factor",
+                "tibber_token","generic_tariff_url","generic_tariff_headers","generic_tariff_json_path",
+                "generic_tariff_unit","generic_tariff_factor","price_per_kwh_home","price_per_kwh_ac","price_per_kwh_dc")]
+    for k in allowed:
+        if k in data and data[k] != "********":
+            cfg[k] = data[k]
+    save_config(cfg)
+    _audit("tariff_config_saved", ip=request.remote_addr)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/tariff/test", methods=["POST"])
+@require_login
+def api_tariff_test():
+    if not has_permission(_current_user(), "tariffs:test"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    try:
+        from tariff_providers import get_tariff_provider
+    except ImportError:
+        return jsonify({"error": "tariff_providers Modul nicht gefunden"}), 503
+    data = request.get_json(force=True) or {}
+    cfg  = load_config()
+    cfg.update({k: v for k, v in data.items() if v != "********"})
+    try:
+        provider = get_tariff_provider(cfg)
+        result   = provider.test_connection()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"ok": False, "message": str(e)})
+
+
+@app.route("/api/tariff/prices")
+@require_login
+def api_tariff_prices():
+    if not has_permission(_current_user(), "tariffs:view"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    try:
+        from tariff_providers import get_tariff_provider
+    except ImportError:
+        return jsonify({"error": "tariff_providers Modul nicht gefunden"}), 503
+    cfg = load_config()
+    try:
+        provider = get_tariff_provider(cfg)
+        from datetime import date
+        today = datetime.combine(date.today(), datetime.min.time())
+        tomorrow = today.replace(hour=23, minute=59)
+        prices = provider.get_prices_for_range(today, tomorrow)
+        return jsonify({"ok": True, "prices": prices, "provider": cfg.get("tariff_provider","fixed")})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "prices": []})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# API TOKENS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_API_SCOPES = [
+    "api:read","api:write","vehicles:read","sessions:read","sessions:write",
+    "reports:read","reports:create","meter:read","system:read",
+]
+
+def _hash_token(raw: str) -> str:
+    import hashlib
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+def _check_api_token(raw: str):
+    """Validate a Bearer token. Returns token row or None."""
+    con = _get_db()
+    row = con.execute(
+        "SELECT * FROM api_tokens WHERE token_hash=? AND is_active=1",
+        (_hash_token(raw),)).fetchone()
+    if row:
+        expires = row["expires_at"]
+        if expires and datetime.utcnow().isoformat() > expires:
+            con.close(); return None
+        con.execute("UPDATE api_tokens SET last_used_at=? WHERE id=?",
+                    (datetime.utcnow().isoformat(), row["id"]))
+        con.commit()
+    con.close()
+    return dict(row) if row else None
+
+
+@app.route("/api/tokens", methods=["GET"])
+@require_login
+def api_tokens_list():
+    if not has_permission(_current_user(), "api_tokens:view"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    con = _get_db()
+    rows = con.execute(
+        "SELECT id,name,token_prefix,scopes,expires_at,last_used_at,created_at,is_active,created_by"
+        " FROM api_tokens ORDER BY id DESC").fetchall()
+    con.close()
+    result = []
+    for r in rows:
+        d = dict(r)
+        try: d["scopes"] = json.loads(d.get("scopes") or "[]")
+        except Exception: pass
+        result.append(d)
+    return jsonify(result)
+
+
+@app.route("/api/tokens", methods=["POST"])
+@require_login
+def api_tokens_create():
+    if not has_permission(_current_user(), "api_tokens:create"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    data = request.get_json(force=True) or {}
+    name   = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Name erforderlich"}), 400
+    scopes = [s for s in (data.get("scopes") or []) if s in _API_SCOPES]
+    expires_at = data.get("expires_at")  # ISO date string or None
+    import secrets as _sec
+    raw    = "evt_" + _sec.token_urlsafe(40)
+    prefix = raw[:12] + "..."
+    user   = _current_user()
+    con    = _get_db()
+    cur = con.execute("""INSERT INTO api_tokens
+        (name, token_hash, token_prefix, scopes, expires_at, created_by, created_at, is_active)
+        VALUES (?,?,?,?,?,?,?,1)""",
+        (name, _hash_token(raw), prefix, json.dumps(scopes),
+         expires_at, user["id"] if user else None, datetime.utcnow().isoformat()))
+    token_id = cur.lastrowid
+    con.commit(); con.close()
+    _audit("api_token_created", f"id={token_id} name={name}", ip=request.remote_addr)
+    return jsonify({"ok": True, "id": token_id, "token": raw,
+                    "note": "Token wird nur einmalig angezeigt. Bitte sicher aufbewahren."})
+
+
+@app.route("/api/tokens/<int:token_id>", methods=["DELETE"])
+@require_login
+def api_tokens_delete(token_id):
+    if not has_permission(_current_user(), "api_tokens:delete"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    con = _get_db()
+    con.execute("UPDATE api_tokens SET is_active=0 WHERE id=?", (token_id,))
+    con.commit(); con.close()
+    _audit("api_token_revoked", f"id={token_id}", ip=request.remote_addr)
+    return jsonify({"ok": True})
+
+
+# ── /api/v1 — External REST API ───────────────────────────────────────────────
+
+def _require_api_token(required_scope: str):
+    """Decorator/checker for external API token auth."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None, jsonify({"error": "Kein Token angegeben"}), 401
+    raw = auth[7:]
+    token_row = _check_api_token(raw)
+    if not token_row:
+        return None, jsonify({"error": "Ungültiger oder abgelaufener Token"}), 401
+    scopes = json.loads(token_row.get("scopes") or "[]")
+    if required_scope and required_scope not in scopes:
+        return None, jsonify({"error": f"Scope '{required_scope}' fehlt"}), 403
+    return token_row, None, None
+
+
+@app.route("/api/v1/status")
+def api_v1_status():
+    token_row, err_resp, code = _require_api_token("system:read")
+    if err_resp: return err_resp, code
+    return jsonify({"status": "ok", "version": APP_VERSION, "ts": datetime.utcnow().isoformat()})
+
+
+@app.route("/api/v1/vehicles")
+def api_v1_vehicles():
+    token_row, err_resp, code = _require_api_token("vehicles:read")
+    if err_resp: return err_resp, code
+    cfg = load_config()
+    vehicles = [{"id": "v0", "name": cfg.get("car_name","EV"), "provider": cfg.get("provider","ha")}]
+    for v in cfg.get("extra_vehicles", []):
+        vehicles.append({"id": v.get("id"), "name": v.get("car_name"), "provider": v.get("provider")})
+    return jsonify(vehicles)
+
+
+@app.route("/api/v1/sessions")
+def api_v1_sessions():
+    token_row, err_resp, code = _require_api_token("sessions:read")
+    if err_resp: return err_resp, code
+    limit  = min(int(request.args.get("limit", 50)), 500)
+    offset = int(request.args.get("offset", 0))
+    vid    = request.args.get("vehicle_id")
+    con    = _get_db()
+    if vid:
+        rows = con.execute(
+            "SELECT * FROM sessions WHERE vehicle_id=? ORDER BY start_ts DESC LIMIT ? OFFSET ?",
+            (vid, limit, offset)).fetchall()
+    else:
+        rows = con.execute(
+            "SELECT * FROM sessions ORDER BY start_ts DESC LIMIT ? OFFSET ?",
+            (limit, offset)).fetchall()
+    con.close()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/v1/sessions/<int:session_id>")
+def api_v1_session_get(session_id):
+    token_row, err_resp, code = _require_api_token("sessions:read")
+    if err_resp: return err_resp, code
+    con = _get_db()
+    row = con.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()
+    con.close()
+    if not row: return jsonify({"error": "Session nicht gefunden"}), 404
+    return jsonify(dict(row))
+
+
+@app.route("/api/v1/sessions", methods=["POST"])
+def api_v1_session_create():
+    token_row, err_resp, code = _require_api_token("sessions:write")
+    if err_resp: return err_resp, code
+    data = request.get_json(force=True) or {}
+    con  = _get_db()
+    cur  = con.execute("""INSERT INTO sessions
+        (start_ts,end_ts,kwh_charged,cost_eur,location,vehicle_id,provider)
+        VALUES (?,?,?,?,?,?,?)""",
+        (data.get("start_ts"), data.get("end_ts"),
+         data.get("kwh_charged"), data.get("cost_eur"),
+         data.get("location","unknown"), data.get("vehicle_id","v0"), "api"))
+    sid = cur.lastrowid
+    con.commit(); con.close()
+    return jsonify({"ok": True, "id": sid}), 201
+
+
+@app.route("/api/v1/sessions/<int:session_id>", methods=["PUT"])
+def api_v1_session_update(session_id):
+    token_row, err_resp, code = _require_api_token("sessions:write")
+    if err_resp: return err_resp, code
+    data = request.get_json(force=True) or {}
+    allowed = {"kwh_charged","cost_eur","location","end_ts","soc_end","odo_end"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if not updates:
+        return jsonify({"error": "Keine gültigen Felder"}), 400
+    con = _get_db()
+    sets = ", ".join(f"{k}=?" for k in updates)
+    con.execute(f"UPDATE sessions SET {sets} WHERE id=?",
+                list(updates.values()) + [session_id])
+    con.commit(); con.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/v1/reports")
+def api_v1_reports():
+    token_row, err_resp, code = _require_api_token("reports:read")
+    if err_resp: return err_resp, code
+    limit = min(int(request.args.get("limit", 50)), 200)
+    con   = _get_db()
+    rows  = con.execute(
+        "SELECT id,created_at,vehicle_id,period_label,status,sent_at FROM reports ORDER BY id DESC LIMIT ?",
+        (limit,)).fetchall()
+    con.close()
+    return jsonify([dict(r) for r in rows])
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MQTT CONFIGURATION & CONTROL
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_MQTT_CONFIG_KEYS = [k for k in DEFAULT_CONFIG if k.startswith("mqtt_")]
+_MQTT_SENSITIVE   = {"mqtt_password"}
+
+
+@app.route("/api/mqtt/config", methods=["GET"])
+@require_login
+def api_mqtt_config_get():
+    if not has_permission(_current_user(), "mqtt:view"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    cfg = load_config()
+    result = {k: cfg.get(k, DEFAULT_CONFIG.get(k)) for k in _MQTT_CONFIG_KEYS}
+    for k in _MQTT_SENSITIVE:
+        if result.get(k): result[k] = "********"
+    return jsonify(result)
+
+
+@app.route("/api/mqtt/config", methods=["POST"])
+@require_admin
+def api_mqtt_config_save():
+    if not has_permission(_current_user(), "mqtt:configure"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    data = request.get_json(force=True) or {}
+    cfg  = load_config()
+    for k in _MQTT_CONFIG_KEYS:
+        if k in data and data[k] != "********":
+            cfg[k] = data[k]
+    save_config(cfg)
+    # Restart MQTT publisher if enabled
+    try:
+        from mqtt_publisher import start_periodic_publisher, stop_periodic_publisher
+        stop_periodic_publisher()
+        if cfg.get("mqtt_enabled"):
+            from tracker import get_current_state
+            start_periodic_publisher(cfg, get_current_state)
+    except Exception:
+        pass
+    _audit("mqtt_config_saved", ip=request.remote_addr)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/mqtt/test", methods=["POST"])
+@require_login
+def api_mqtt_test():
+    if not has_permission(_current_user(), "mqtt:test"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    data = request.get_json(force=True) or {}
+    cfg  = load_config()
+    cfg.update({k: v for k, v in data.items() if v != "********"})
+    try:
+        from mqtt_publisher import test_connection
+        return jsonify(test_connection(cfg))
+    except Exception as e:
+        return jsonify({"ok": False, "message": str(e)})
+
+
+@app.route("/api/mqtt/publish", methods=["POST"])
+@require_login
+def api_mqtt_publish():
+    if not has_permission(_current_user(), "mqtt:test"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    data = request.get_json(force=True) or {}
+    cfg  = load_config()
+    try:
+        from mqtt_publisher import publish_once
+        ok = publish_once(cfg, data.get("topic","test"), data.get("payload","ping"))
+        return jsonify({"ok": ok})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route("/api/mqtt/ha-discovery", methods=["POST"])
+@require_admin
+def api_mqtt_ha_discovery():
+    if not has_permission(_current_user(), "mqtt:configure"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    cfg = load_config()
+    try:
+        from mqtt_publisher import publish_ha_discovery
+        ok = publish_ha_discovery(cfg)
+        return jsonify({"ok": ok})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# NOTIFICATION RULES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route("/api/notifications/rules", methods=["GET"])
+@require_login
+def api_notif_rules_list():
+    if not has_permission(_current_user(), "notifications:view"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    con  = _get_db()
+    rows = con.execute("SELECT * FROM notification_rules ORDER BY id DESC").fetchall()
+    con.close()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/notifications/rules", methods=["POST"])
+@require_login
+def api_notif_rules_create():
+    if not has_permission(_current_user(), "notifications:configure"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    data = request.get_json(force=True) or {}
+    now_iso = datetime.utcnow().isoformat()
+    con = _get_db()
+    cur = con.execute("""INSERT INTO notification_rules
+        (name,enabled,event_type,channel,vehicle_filter,user_filter,recipient,
+         threshold,quiet_hours_enabled,quiet_hours_start,quiet_hours_end,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (data.get("name","Neue Regel"),
+         int(bool(data.get("enabled", True))),
+         data.get("event_type","charging_stopped"),
+         data.get("channel","email"),
+         data.get("vehicle_filter","all"),
+         data.get("user_filter","all"),
+         data.get("recipient",""),
+         data.get("threshold"),
+         int(bool(data.get("quiet_hours_enabled",False))),
+         data.get("quiet_hours_start","22:00"),
+         data.get("quiet_hours_end","07:00"),
+         now_iso, now_iso))
+    rule_id = cur.lastrowid
+    con.commit(); con.close()
+    _audit("notification_rule_created", f"id={rule_id}", ip=request.remote_addr)
+    return jsonify({"ok": True, "id": rule_id})
+
+
+@app.route("/api/notifications/rules/<int:rule_id>", methods=["PUT"])
+@require_login
+def api_notif_rules_update(rule_id):
+    if not has_permission(_current_user(), "notifications:configure"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    data = request.get_json(force=True) or {}
+    now_iso = datetime.utcnow().isoformat()
+    allowed = {"name","enabled","event_type","channel","vehicle_filter","user_filter",
+               "recipient","threshold","quiet_hours_enabled","quiet_hours_start","quiet_hours_end"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    updates["updated_at"] = now_iso
+    con = _get_db()
+    sets = ", ".join(f"{k}=?" for k in updates)
+    con.execute(f"UPDATE notification_rules SET {sets} WHERE id=?",
+                list(updates.values()) + [rule_id])
+    con.commit(); con.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/notifications/rules/<int:rule_id>", methods=["DELETE"])
+@require_login
+def api_notif_rules_delete(rule_id):
+    if not has_permission(_current_user(), "notifications:configure"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    con = _get_db()
+    con.execute("DELETE FROM notification_rules WHERE id=?", (rule_id,))
+    con.commit(); con.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/notifications/test/<int:rule_id>", methods=["POST"])
+@require_login
+def api_notif_test(rule_id):
+    if not has_permission(_current_user(), "notifications:test"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    con = _get_db()
+    row = con.execute("SELECT * FROM notification_rules WHERE id=?", (rule_id,)).fetchone()
+    con.close()
+    if not row:
+        return jsonify({"error": "Regel nicht gefunden"}), 404
+    cfg = load_config()
+    try:
+        from notification_manager import test_rule
+        result = test_rule(dict(row), cfg)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"ok": False, "message": str(e)})
+
+
+@app.route("/api/notifications/events")
+@require_login
+def api_notif_events():
+    if not has_permission(_current_user(), "notifications:view"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    try:
+        from notification_manager import EVENT_TYPES, EVENT_LABELS_DE, CHANNEL_TYPES, CHANNEL_LABELS
+        return jsonify({
+            "events": [{"key": e, "label": EVENT_LABELS_DE.get(e, e)} for e in EVENT_TYPES],
+            "channels": [{"key": c, "label": CHANNEL_LABELS.get(c, c)} for c in CHANNEL_TYPES],
+        })
+    except ImportError:
+        return jsonify({"events": [], "channels": []})
+
 
 if __name__=="__main__":
     DATA_DIR.mkdir(parents=True, exist_ok=True)
