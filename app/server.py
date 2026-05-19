@@ -2502,6 +2502,7 @@ _SENSITIVE_CONFIG_KEYS = {
     "smtp_password", "oauth_google_client_secret", "oauth_microsoft_client_secret",
     "smtp_google_client_secret", "smtp_google_refresh_token", "smtp_google_access_token",
     "smtp_ms_client_secret", "smtp_ms_refresh_token", "smtp_ms_access_token",
+    "meter_password", "meter_alfen_pass",
 }
 _SECRET_MASK = "********"
 
