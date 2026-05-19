@@ -25,6 +25,12 @@ pyotp>=2.9.0
 # WebAuthn / Passkey
 webauthn>=2.0.0
 
+# PDF reports
+reportlab>=4.0.0
+
+# MQTT / Home Assistant publishing
+paho-mqtt>=2.0.0
+
 # Toyota / Lexus (optional — pip install mytoyota)
 # mytoyota>=0.10.0
 
