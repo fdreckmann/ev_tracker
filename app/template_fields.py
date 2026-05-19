@@ -6,7 +6,11 @@ TABLE_FIELDS = {
     "end_time":      {"label": "Endzeit",           "type": "time",     "synonyms": ["ende", "end", "bis", "endzeit", "ladeende"]},
     "duration":      {"label": "Ladedauer",         "type": "duration", "synonyms": ["dauer", "ladedauer", "ladezeit", "duration", "zeitdauer"]},
     "duration_hours":   {"label": "Ladedauer (h)",       "type": "number",   "synonyms": ["dauer h", "dauer stunden", "ladezeit h", "stunden"]},
-    "charge_power_kw":  {"label": "Ladeleistung (kW)",   "type": "number",   "synonyms": ["ladeleistung", "leistung", "power kw", "charging power", "kw", "durchschnittsleistung"]},
+    "charge_power_kw":  {"label": "Ladeleistung / Ladegeschwindigkeit (kW)", "type": "number", "help": "Berechnung: geladene kWh geteilt durch Ladedauer in Stunden.", "synonyms": [
+        "ladeleistung", "ladeleistung kw", "leistung", "durchschnittsleistung",
+        "ladegeschwindigkeit", "ladegeschwindigkeit kw", "ladegeschwindigkeit kw/stunde", "ladegeschwindigkeit kwh/h",
+        "charging speed", "charging power", "power kw", "kwh per hour", "kwh/h",
+    ]},
     "odo_start":     {"label": "KM-Stand Start",    "type": "number",   "synonyms": ["km start", "km-start", "start km", "kilometerstand start", "km anfang", "odometer start", "tachostand start"]},
     "odo_end":       {"label": "KM-Stand Ende",     "type": "number",   "synonyms": ["km ende", "km-ende", "end km", "kilometerstand", "kilometerstand ende", "km end", "tachostand"]},
     "soc_start":     {"label": "SOC Start (%)",     "type": "percent",  "synonyms": ["soc start", "soc anfang", "akku start", "ladezustand start", "batterie start", "soc von", "ladestand start"]},
@@ -42,5 +46,9 @@ HEADER_FIELDS = {
     "month_name":               {"label": "Monatsname",              "synonyms": ["monatsname", "month name", "monat text"]},
     "export_period":            {"label": "Abrechnungszeitraum",     "synonyms": ["zeitraum", "abrechnungszeitraum", "period", "laufzeit"]},
     "total_charging_hours":     {"label": "Ladezeit gesamt (h)",     "synonyms": ["ladezeit gesamt", "total ladezeit", "ladestunden gesamt", "charging hours"]},
-    "avg_charge_power_kw":      {"label": "Ø Ladeleistung (kW)",     "synonyms": ["durchschnittliche ladeleistung", "ø ladeleistung", "avg power", "mittlere ladeleistung"]},
+    "avg_charge_power_kw":      {"label": "Ø Ladeleistung / Ladegeschwindigkeit (kW)", "help": "Berechnung: geladene kWh geteilt durch Ladedauer in Stunden.", "synonyms": [
+        "durchschnittliche ladeleistung", "ø ladeleistung", "avg power", "mittlere ladeleistung",
+        "durchschnittliche ladegeschwindigkeit", "ø ladegeschwindigkeit",
+        "avg charging speed", "average charging power",
+    ]},
 }
