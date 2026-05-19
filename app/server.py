@@ -1,4 +1,4 @@
-import os, json, time, sqlite3, logging, threading, requests, hashlib, secrets, functools
+import os, json, time, sqlite3, logging, threading, requests, hashlib, secrets, functools, re
 from typing import Optional
 import smtplib, email
 import xml.etree.ElementTree as ET
@@ -221,7 +221,11 @@ def require_admin(f):
             if request.path.startswith("/api/"):
                 return jsonify({"error": "Nicht eingeloggt", "login_required": True}), 401
             return redirect(url_for("login_page", next=request.path))
-        if session.get("user_role") != "admin":
+        user = _get_user_by_id(session.get("user_id"))
+        # Allow if legacy role is admin, OR if user has admin:all permission via roles table
+        is_admin = (session.get("user_role") == "admin") or \
+                   (user and ("admin:all" in _get_user_permissions(user["id"])))
+        if not is_admin:
             if request.path.startswith("/api/"):
                 return jsonify({"error": "Admin-Berechtigung erforderlich"}), 403
             return redirect(url_for("index"))
@@ -231,6 +235,112 @@ def require_admin(f):
 def require_auth(f):
     """Legacy alias — kept for backward compat."""
     return require_login(f)
+
+# ── Permission System ─────────────────────────────────────────────────────────
+
+ALL_PERMISSIONS = {
+    # Dashboard
+    "dashboard:view":           {"label": "Dashboard ansehen",              "group": "Dashboard"},
+    # Fahrzeuge
+    "vehicles:view":            {"label": "Fahrzeuge ansehen",              "group": "Fahrzeuge"},
+    "vehicles:create":          {"label": "Fahrzeug erstellen",             "group": "Fahrzeuge"},
+    "vehicles:edit":            {"label": "Fahrzeug bearbeiten",            "group": "Fahrzeuge"},
+    "vehicles:delete":          {"label": "Fahrzeug löschen",               "group": "Fahrzeuge"},
+    "vehicles:switch":          {"label": "Fahrzeug wechseln",              "group": "Fahrzeuge"},
+    "vehicles:image_manage":    {"label": "Fahrzeugbild verwalten",         "group": "Fahrzeuge"},
+    "vehicles:provider_configure": {"label": "Provider konfigurieren",     "group": "Fahrzeuge"},
+    # Ladevorgänge
+    "sessions:view":            {"label": "Ladevorgänge ansehen",           "group": "Ladevorgänge"},
+    "sessions:create":          {"label": "Ladevorgang erstellen",          "group": "Ladevorgänge"},
+    "sessions:edit":            {"label": "Ladevorgang bearbeiten",         "group": "Ladevorgänge"},
+    "sessions:delete":          {"label": "Ladevorgang löschen",            "group": "Ladevorgänge"},
+    "sessions:manual_add":      {"label": "Manuell hinzufügen",             "group": "Ladevorgänge"},
+    "sessions:validate":        {"label": "Ladevorgang validieren",         "group": "Ladevorgänge"},
+    "sessions:ignore_warnings": {"label": "Warnungen ignorieren",           "group": "Ladevorgänge"},
+    # Analyse
+    "analytics:view":           {"label": "Analyse ansehen",                "group": "Analyse"},
+    # Export
+    "export:view":              {"label": "Export-Bereich ansehen",         "group": "Export"},
+    "export:create":            {"label": "Export erstellen",               "group": "Export"},
+    "export:preview":           {"label": "Export-Vorschau",                "group": "Export"},
+    "export:download":          {"label": "Export herunterladen",           "group": "Export"},
+    "export:templates_view":    {"label": "Templates ansehen",              "group": "Export"},
+    "export:templates_manage":  {"label": "Templates verwalten",            "group": "Export"},
+    "export:signature_use":     {"label": "Signatur im Export nutzen",      "group": "Export"},
+    # Templates
+    "templates:view":           {"label": "Templates ansehen",              "group": "Templates"},
+    "templates:upload":         {"label": "Template hochladen",             "group": "Templates"},
+    "templates:edit_mapping":   {"label": "Template-Mapping bearbeiten",    "group": "Templates"},
+    "templates:delete":         {"label": "Template löschen",               "group": "Templates"},
+    "templates:gallery_use":    {"label": "Template-Galerie nutzen",        "group": "Templates"},
+    # Signatur
+    "signature:view":           {"label": "Signatur ansehen",               "group": "Signatur"},
+    "signature:upload":         {"label": "Signatur hochladen",             "group": "Signatur"},
+    "signature:draw":           {"label": "Signatur zeichnen",              "group": "Signatur"},
+    "signature:delete":         {"label": "Signatur löschen",               "group": "Signatur"},
+    "signature:use_in_export":  {"label": "Signatur im Export verwenden",   "group": "Signatur"},
+    # Zählerstand
+    "meter:view":               {"label": "Zählerstand ansehen",            "group": "Zählerstand"},
+    "meter:test":               {"label": "Zählerstand testen",             "group": "Zählerstand"},
+    "meter:configure":          {"label": "Zählerstand konfigurieren",      "group": "Zählerstand"},
+    # Provider
+    "providers:view":           {"label": "Provider ansehen",               "group": "Provider"},
+    "providers:configure":      {"label": "Provider konfigurieren",         "group": "Provider"},
+    "providers:test":           {"label": "Provider testen",                "group": "Provider"},
+    # Einstellungen
+    "settings:view":            {"label": "Einstellungen ansehen",          "group": "Einstellungen"},
+    "settings:edit":            {"label": "Einstellungen bearbeiten",       "group": "Einstellungen"},
+    # Benutzer
+    "users:view":               {"label": "Benutzer ansehen",               "group": "Benutzer"},
+    "users:create":             {"label": "Benutzer erstellen",             "group": "Benutzer"},
+    "users:edit":               {"label": "Benutzer bearbeiten",            "group": "Benutzer"},
+    "users:delete":             {"label": "Benutzer löschen",               "group": "Benutzer"},
+    "users:reset_password":     {"label": "Passwort zurücksetzen",          "group": "Benutzer"},
+    "users:manage_2fa":         {"label": "2FA verwalten",                  "group": "Benutzer"},
+    "users:manage_permissions": {"label": "Rollen & Rechte verwalten",      "group": "Benutzer"},
+    # Backup
+    "backup:view":              {"label": "Backup ansehen",                 "group": "Backup"},
+    "backup:create":            {"label": "Backup erstellen",               "group": "Backup"},
+    "backup:download":          {"label": "Backup herunterladen",           "group": "Backup"},
+    "backup:restore":           {"label": "Backup wiederherstellen",        "group": "Backup"},
+    "backup:delete":            {"label": "Backup löschen",                 "group": "Backup"},
+    # Updates
+    "updates:view":             {"label": "Updates ansehen",                "group": "Updates"},
+    "updates:check":            {"label": "Updates prüfen",                 "group": "Updates"},
+    "updates:start":            {"label": "Update starten",                 "group": "Updates"},
+    "updates:history":          {"label": "Update-Historie ansehen",        "group": "Updates"},
+    # Audit/Sicherheit
+    "audit:view":               {"label": "Audit-Log ansehen",              "group": "Sicherheit"},
+    "security:view":            {"label": "Sicherheit ansehen",             "group": "Sicherheit"},
+    "api_tokens:manage":        {"label": "API-Tokens verwalten",           "group": "Sicherheit"},
+    # System
+    "system:status":            {"label": "Systemstatus ansehen",           "group": "System"},
+    "system:logs":              {"label": "Logs ansehen",                   "group": "System"},
+    "system:health":            {"label": "Health-Check",                   "group": "System"},
+    # Admin-Sonderrecht
+    "admin:all":                {"label": "Vollzugriff (Admin)",            "group": "Admin"},
+}
+
+DEFAULT_ROLE_PERMISSIONS = {
+    "admin": ["admin:all"],
+    "user": [
+        "dashboard:view", "vehicles:view", "vehicles:switch",
+        "sessions:view", "sessions:create", "sessions:edit", "sessions:manual_add",
+        "analytics:view",
+        "export:view", "export:create", "export:preview", "export:download",
+        "export:templates_view", "export:signature_use",
+        "templates:view", "templates:gallery_use",
+        "signature:view", "signature:upload", "signature:draw",
+        "signature:delete", "signature:use_in_export",
+        "meter:view", "meter:test",
+        "providers:view",
+        "settings:view",
+    ],
+    "readonly": [
+        "dashboard:view", "vehicles:view", "sessions:view",
+        "analytics:view", "export:view", "export:preview", "export:download",
+    ],
+}
 
 DEFAULT_CONFIG = {
     # Provider selection
@@ -556,7 +666,118 @@ def init_db():
         created_at    TEXT NOT NULL,
         last_used_at  TEXT
     )""")
+    # Roles
+    con.execute("""CREATE TABLE IF NOT EXISTS roles (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        name        TEXT UNIQUE NOT NULL,
+        description TEXT DEFAULT '',
+        is_system   INTEGER DEFAULT 0,
+        created_at  TEXT,
+        updated_at  TEXT
+    )""")
+    # Role → Permission mapping
+    con.execute("""CREATE TABLE IF NOT EXISTS role_permissions (
+        role_id         INTEGER NOT NULL,
+        permission_key  TEXT NOT NULL,
+        PRIMARY KEY (role_id, permission_key),
+        FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+    )""")
+    # User → Role mapping (mehrere Rollen pro User möglich)
+    con.execute("""CREATE TABLE IF NOT EXISTS user_roles (
+        user_id INTEGER NOT NULL,
+        role_id INTEGER NOT NULL,
+        PRIMARY KEY (user_id, role_id),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+    )""")
+    # Vehicle access scope (Vorbereitung, noch nicht aktiv)
+    con.execute("""CREATE TABLE IF NOT EXISTS user_vehicle_access (
+        user_id    INTEGER NOT NULL,
+        vehicle_id INTEGER NOT NULL,
+        can_view   INTEGER DEFAULT 1,
+        can_edit   INTEGER DEFAULT 0,
+        can_export INTEGER DEFAULT 0,
+        PRIMARY KEY (user_id, vehicle_id)
+    )""")
+    # Seed default roles
+    now_iso = datetime.utcnow().isoformat()
+    default_roles = [
+        ("admin",    "Vollzugriff",                    1),
+        ("user",     "Normaler Benutzer",               1),
+        ("readonly", "Nur-Lese-Zugriff",               1),
+    ]
+    for name, desc, is_sys in default_roles:
+        existing = con.execute("SELECT id FROM roles WHERE name=?", (name,)).fetchone()
+        if not existing:
+            con.execute(
+                "INSERT INTO roles (name, description, is_system, created_at, updated_at) VALUES (?,?,?,?,?)",
+                (name, desc, is_sys, now_iso, now_iso)
+            )
+            con.commit()
+    # Seed default role permissions
+    for role_name, perms in DEFAULT_ROLE_PERMISSIONS.items():
+        role_row = con.execute("SELECT id FROM roles WHERE name=?", (role_name,)).fetchone()
+        if role_row:
+            role_id = role_row["id"]
+            existing_perms = {r["permission_key"] for r in
+                con.execute("SELECT permission_key FROM role_permissions WHERE role_id=?", (role_id,)).fetchall()}
+            for pkey in perms:
+                if pkey not in existing_perms and pkey in ALL_PERMISSIONS:
+                    con.execute("INSERT OR IGNORE INTO role_permissions (role_id, permission_key) VALUES (?,?)",
+                                (role_id, pkey))
+            con.commit()
+    # Migrate existing users to roles
+    users_without_roles = con.execute("""
+        SELECT u.id, u.role FROM users u
+        WHERE NOT EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id = u.id)
+    """).fetchall()
+    for u in users_without_roles:
+        role_name = u["role"] if u["role"] in ("admin", "user", "readonly") else "user"
+        role_row = con.execute("SELECT id FROM roles WHERE name=?", (role_name,)).fetchone()
+        if role_row:
+            con.execute("INSERT OR IGNORE INTO user_roles (user_id, role_id) VALUES (?,?)",
+                        (u["id"], role_row["id"]))
+    con.commit()
     con.commit(); con.close()
+
+# ── Permission checking ───────────────────────────────────────────────────────
+
+def _get_user_permissions(user_id: int) -> set:
+    """Return set of permission keys for a user (via all assigned roles)."""
+    con = _get_db()
+    rows = con.execute("""
+        SELECT DISTINCT rp.permission_key
+        FROM user_roles ur
+        JOIN role_permissions rp ON ur.role_id = rp.role_id
+        WHERE ur.user_id = ?
+    """, (user_id,)).fetchall()
+    con.close()
+    return {r["permission_key"] for r in rows}
+
+def has_permission(user, permission_key: str) -> bool:
+    """Check if user has a specific permission."""
+    if not user:
+        return False
+    user_id = user["id"] if isinstance(user, dict) else int(user)
+    perms = _get_user_permissions(user_id)
+    return "admin:all" in perms or permission_key in perms
+
+def require_permission(permission_key: str):
+    """Decorator: require a specific permission, return 403 if missing."""
+    def decorator(f):
+        @functools.wraps(f)
+        def wrapper(*args, **kwargs):
+            user = _current_user()
+            if not user:
+                return jsonify({"ok": False, "error": "Nicht angemeldet"}), 401
+            if not has_permission(user, permission_key):
+                _audit("permission_denied",
+                       f"perm={permission_key} endpoint={request.path}",
+                       ip=request.remote_addr)
+                return jsonify({"ok": False, "error": f"Keine Berechtigung: {permission_key}"}), 403
+            return f(*args, **kwargs)
+        return wrapper
+    return decorator
 
 def get_sessions(year=None, month=None, location=None, vehicle_id=None, limit=50):
     where = ["end_ts IS NOT NULL"]; params = []
@@ -1531,6 +1752,233 @@ def api_passkey_login_complete():
         return jsonify({"ok": False, "error": str(e)}), 400
 
 
+# ── Permissions API ───────────────────────────────────────────────────────────
+
+@app.route("/api/me/permissions")
+@require_login
+def api_me_permissions():
+    user = _current_user()
+    if not user:
+        return jsonify({"ok": False, "error": "Nicht angemeldet"}), 401
+    con = _get_db()
+    # Rollen des Users
+    roles = con.execute("""
+        SELECT r.name FROM user_roles ur JOIN roles r ON ur.role_id = r.id
+        WHERE ur.user_id = ?
+    """, (user["id"],)).fetchall()
+    con.close()
+    perms = _get_user_permissions(user["id"])
+    # Wenn admin:all → alle Permissions zurückgeben
+    if "admin:all" in perms:
+        perms = set(ALL_PERMISSIONS.keys())
+    return jsonify({
+        "ok": True,
+        "user": {"id": user["id"], "email": user.get("email",""), "name": user.get("name",""),
+                 "roles": [r["name"] for r in roles]},
+        "permissions": sorted(perms),
+    })
+
+
+@app.route("/api/admin/permissions")
+@require_login
+def api_admin_permissions_list():
+    """Return all known permission keys with metadata."""
+    user = _current_user()
+    if not user or not has_permission(user, "users:manage_permissions"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung"}), 403
+    groups = {}
+    for key, meta in ALL_PERMISSIONS.items():
+        g = meta["group"]
+        if g not in groups:
+            groups[g] = []
+        groups[g].append({"key": key, "label": meta["label"]})
+    return jsonify({"ok": True, "groups": [{"name": g, "permissions": p} for g,p in groups.items()]})
+
+
+# ── Roles CRUD ────────────────────────────────────────────────────────────────
+
+@app.route("/api/admin/roles")
+@require_login
+def api_admin_roles_list():
+    user = _current_user()
+    if not user or not has_permission(user, "users:manage_permissions"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung"}), 403
+    con = _get_db()
+    roles = [dict(r) for r in con.execute("SELECT * FROM roles ORDER BY is_system DESC, name").fetchall()]
+    for role in roles:
+        perms = [r["permission_key"] for r in
+            con.execute("SELECT permission_key FROM role_permissions WHERE role_id=?",
+                       (role["id"],)).fetchall()]
+        role["permissions"] = perms
+        user_count = con.execute("SELECT COUNT(*) as c FROM user_roles WHERE role_id=?",
+                                  (role["id"],)).fetchone()["c"]
+        role["user_count"] = user_count
+    con.close()
+    return jsonify({"ok": True, "roles": roles})
+
+
+@app.route("/api/admin/roles", methods=["POST"])
+@require_login
+def api_admin_roles_create():
+    user = _current_user()
+    if not user or not has_permission(user, "users:manage_permissions"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung"}), 403
+    body = request.get_json(force=True) or {}
+    name = (body.get("name") or "").strip()
+    if not name or len(name) < 2:
+        return jsonify({"ok": False, "error": "Rollenname zu kurz"}), 400
+    if not re.match(r'^[a-zA-Z0-9_\-äöüÄÖÜß ]+$', name):
+        return jsonify({"ok": False, "error": "Ungültiger Rollenname"}), 400
+    desc = (body.get("description") or "").strip()[:200]
+    perms = [p for p in (body.get("permissions") or []) if p in ALL_PERMISSIONS]
+    now_iso = datetime.utcnow().isoformat()
+    con = _get_db()
+    try:
+        cur = con.execute(
+            "INSERT INTO roles (name, description, is_system, created_at, updated_at) VALUES (?,?,0,?,?)",
+            (name, desc, now_iso, now_iso)
+        )
+        role_id = cur.lastrowid
+        for pkey in perms:
+            con.execute("INSERT INTO role_permissions (role_id, permission_key) VALUES (?,?)",
+                        (role_id, pkey))
+        con.commit()
+        _audit("role_created", f"name={name} perms={len(perms)}", ip=request.remote_addr)
+        return jsonify({"ok": True, "role_id": role_id})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    finally:
+        con.close()
+
+
+@app.route("/api/admin/roles/<int:role_id>", methods=["PUT"])
+@require_login
+def api_admin_roles_update(role_id):
+    user = _current_user()
+    if not user or not has_permission(user, "users:manage_permissions"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung"}), 403
+    body = request.get_json(force=True) or {}
+    con = _get_db()
+    role = con.execute("SELECT * FROM roles WHERE id=?", (role_id,)).fetchone()
+    if not role:
+        con.close()
+        return jsonify({"ok": False, "error": "Rolle nicht gefunden"}), 404
+    role = dict(role)
+    name = (body.get("name") or role["name"]).strip()
+    desc = (body.get("description") or role["description"] or "").strip()[:200]
+    perms = [p for p in (body.get("permissions") or []) if p in ALL_PERMISSIONS]
+    now_iso = datetime.utcnow().isoformat()
+    try:
+        con.execute("UPDATE roles SET name=?, description=?, updated_at=? WHERE id=?",
+                    (name, desc, now_iso, role_id))
+        con.execute("DELETE FROM role_permissions WHERE role_id=?", (role_id,))
+        for pkey in perms:
+            con.execute("INSERT INTO role_permissions (role_id, permission_key) VALUES (?,?)",
+                        (role_id, pkey))
+        con.commit()
+        _audit("role_updated", f"id={role_id} name={name} perms={len(perms)}", ip=request.remote_addr)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    finally:
+        con.close()
+
+
+@app.route("/api/admin/roles/<int:role_id>", methods=["DELETE"])
+@require_login
+def api_admin_roles_delete(role_id):
+    user = _current_user()
+    if not user or not has_permission(user, "users:manage_permissions"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung"}), 403
+    con = _get_db()
+    role = con.execute("SELECT * FROM roles WHERE id=?", (role_id,)).fetchone()
+    if not role:
+        con.close()
+        return jsonify({"ok": False, "error": "Rolle nicht gefunden"}), 404
+    role = dict(role)
+    if role["is_system"]:
+        con.close()
+        return jsonify({"ok": False, "error": "Systemrolle kann nicht gelöscht werden"}), 400
+    # Sicherheit: mindestens ein User mit admin:all muss bleiben
+    admin_role = con.execute("SELECT id FROM roles WHERE name='admin'").fetchone()
+    if admin_role:
+        remaining_admins = con.execute("""
+            SELECT COUNT(*) as c FROM user_roles ur
+            JOIN role_permissions rp ON ur.role_id = rp.role_id
+            WHERE rp.permission_key = 'admin:all' AND ur.role_id != ?
+        """, (role_id,)).fetchone()["c"]
+        if remaining_admins == 0 and role.get("name") == "admin":
+            con.close()
+            return jsonify({"ok": False, "error": "Mindestens eine Admin-Rolle muss erhalten bleiben"}), 400
+    con.execute("DELETE FROM role_permissions WHERE role_id=?", (role_id,))
+    con.execute("DELETE FROM user_roles WHERE role_id=?", (role_id,))
+    con.execute("DELETE FROM roles WHERE id=?", (role_id,))
+    con.commit()
+    con.close()
+    _audit("role_deleted", f"id={role_id} name={role['name']}", ip=request.remote_addr)
+    return jsonify({"ok": True})
+
+
+# ── User Roles ────────────────────────────────────────────────────────────────
+
+@app.route("/api/admin/users/<int:target_user_id>/roles")
+@require_login
+def api_admin_user_roles_get(target_user_id):
+    user = _current_user()
+    if not user or not has_permission(user, "users:manage_permissions"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung"}), 403
+    con = _get_db()
+    roles = [r["role_id"] for r in
+        con.execute("SELECT role_id FROM user_roles WHERE user_id=?", (target_user_id,)).fetchall()]
+    con.close()
+    return jsonify({"ok": True, "role_ids": roles})
+
+
+@app.route("/api/admin/users/<int:target_user_id>/roles", methods=["PUT"])
+@require_login
+def api_admin_user_roles_set(target_user_id):
+    user = _current_user()
+    if not user or not has_permission(user, "users:manage_permissions"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung"}), 403
+    body = request.get_json(force=True) or {}
+    role_ids = [int(r) for r in (body.get("role_ids") or [])]
+    con = _get_db()
+    # Sicherheit: mind. ein User mit admin:all
+    current_user_has_admin = "admin:all" in _get_user_permissions(target_user_id)
+    if current_user_has_admin and target_user_id == user["id"]:
+        new_perms_check = set()
+        for rid in role_ids:
+            p = {r["permission_key"] for r in
+                 con.execute("SELECT permission_key FROM role_permissions WHERE role_id=?", (rid,)).fetchall()}
+            new_perms_check |= p
+        if "admin:all" not in new_perms_check:
+            # Check if other admins exist
+            other_admins = con.execute("""
+                SELECT COUNT(DISTINCT ur.user_id) as c FROM user_roles ur
+                JOIN role_permissions rp ON ur.role_id = rp.role_id
+                WHERE rp.permission_key = 'admin:all' AND ur.user_id != ?
+            """, (target_user_id,)).fetchone()["c"]
+            if other_admins == 0:
+                con.close()
+                return jsonify({"ok": False, "error": "Mindestens ein Admin muss admin:all behalten"}), 400
+    # Validate role_ids
+    valid_ids = {r["id"] for r in con.execute("SELECT id FROM roles").fetchall()}
+    role_ids = [r for r in role_ids if r in valid_ids]
+    con.execute("DELETE FROM user_roles WHERE user_id=?", (target_user_id,))
+    for rid in role_ids:
+        con.execute("INSERT INTO user_roles (user_id, role_id) VALUES (?,?)", (target_user_id, rid))
+    con.commit()
+    # Also update legacy users.role field for backwards compat
+    if role_ids:
+        first_role = con.execute("SELECT name FROM roles WHERE id=?", (role_ids[0],)).fetchone()
+        if first_role:
+            con.execute("UPDATE users SET role=? WHERE id=?", (first_role["name"], target_user_id))
+            con.commit()
+    con.close()
+    _audit("user_roles_changed", f"user_id={target_user_id} roles={role_ids}", ip=request.remote_addr)
+    return jsonify({"ok": True})
+
+
 # ── OAuth2 helpers ────────────────────────────────────────────────────────────
 
 def _oauth_redirect_base() -> str:
@@ -2302,6 +2750,9 @@ def api_signature_delete():
 @app.route("/api/export")
 @require_login
 def api_export():
+    user = _current_user()
+    if not has_permission(user, "export:create"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: export:create"}), 403
     import io as _io_exp
     from export_excel import export
     y=request.args.get("year",datetime.now().year,type=int)
@@ -2388,6 +2839,9 @@ def _cleanup_export_tokens():
 @app.route("/api/export/preview", methods=["POST"])
 @require_login
 def api_export_preview():
+    user = _current_user()
+    if not has_permission(user, "export:preview"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: export:preview"}), 403
     import io as _io_prev
     import openpyxl as _opxl_prev
     from export_excel import export as _export_func
@@ -2606,6 +3060,9 @@ def api_backup_download(filename):
 
 @app.route("/api/backup/restore",methods=["POST"])
 def api_backup_restore():
+    user = _current_user()
+    if not has_permission(user, "backup:restore"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: backup:restore"}), 403
     name=request.json.get("name","")
     if ".." in name or "/" in name: return jsonify({"ok":False,"error":"ungültig"}),400
     path=BACKUP_DIR/name
@@ -2959,6 +3416,9 @@ def api_update_check():
 @app.route("/api/update/pull", methods=["POST"])
 @require_admin
 def api_update_pull():
+    user = _current_user()
+    if not has_permission(user, "updates:start"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: updates:start"}), 403
     cfg = load_config()
     tag = cfg.get("update_channel","latest")
     ok, msg = docker_pull_and_restart(tag)
