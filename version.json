@@ -1,6 +1,15 @@
 {
-  "version": "2.0.0",
+  "version": "2.0.1",
   "changelog": [
+    {
+      "version": "2.0.1",
+      "date": "2026-05-19",
+      "changes": [
+        "Bugfix: init_db() Absturz beim ersten Start — fehlende row_factory verhinderte RBAC-Seeding (TypeError beim Schlüsselzugriff auf SQLite-Ergebnis)",
+        "Docker-Container startete ohne Fehlermeldung, aber Flask war nicht erreichbar (keine Website)",
+        "Doppelter con.commit() am Ende von init_db() entfernt"
+      ]
+    },
     {
       "version": "2.0.0",
       "date": "2026-05-18",
