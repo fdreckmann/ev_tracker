@@ -217,6 +217,250 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 .modal-meta{font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:20px}
 .modal-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:20px}
 .modal-chart{height:240px;margin-bottom:16px}
+
+/* =========================================================
+   MOBILE RESPONSIVE — max-width: 768px
+   Desktop-Ansicht bleibt ab 769px erhalten
+   ========================================================= */
+
+/* Bottom Nav nur Mobile */
+#mobileBottomNav { display: none; }
+
+.mobile-nav-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: transparent;
+  border: none;
+  color: #8892b0;
+  cursor: pointer;
+  padding: 6px 4px;
+  font-size: 11px;
+  transition: color 0.15s;
+}
+.mobile-nav-btn.active {
+  color: #64ffda;
+}
+.mobile-nav-btn:active {
+  background: rgba(100,255,218,0.08);
+}
+.mobile-nav-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+.mobile-nav-label {
+  font-size: 10px;
+  letter-spacing: 0.2px;
+}
+
+@media (max-width: 768px) {
+
+  /* Grundlayout */
+  body {
+    padding-bottom: 70px; /* Platz für Bottom Nav */
+  }
+
+  /* Input-Felder full width */
+  input[type="text"], input[type="number"], input[type="email"],
+  input[type="password"], select, textarea {
+    width: 100% !important;
+    box-sizing: border-box;
+  }
+
+  /* Buttons größer für Touch */
+  button, .btn, .btn-oauth {
+    min-height: 44px;
+  }
+
+  /* Modals fullscreen auf Mobile */
+  .modal-box, .modal-content {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    min-height: 100vh;
+    overflow-y: auto;
+  }
+
+  /* Tabellen horizontal scrollbar statt overflow */
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+  }
+
+  /* Session-Tabelle auf Mobile durch Karten ersetzen */
+  #sessionTableWrapper {
+    display: none;
+  }
+  #mobileSessionCards {
+    display: block;
+  }
+
+  /* Desktop-only Elemente ausblenden */
+  .desktop-only {
+    display: none !important;
+  }
+  .mobile-only {
+    display: block !important;
+  }
+
+  /* Settings als Gruppen */
+  .settings-group {
+    margin-bottom: 8px;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .settings-group-header {
+    padding: 14px 16px;
+    background: #1e2230;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 600;
+    font-size: 15px;
+    user-select: none;
+  }
+  .settings-group-header::after {
+    content: '▼';
+    font-size: 12px;
+    transition: transform 0.2s;
+  }
+  .settings-group-header.open::after {
+    transform: rotate(180deg);
+  }
+  .settings-group-body {
+    display: none;
+    padding: 12px;
+    background: #161825;
+  }
+  .settings-group-body.open {
+    display: block;
+  }
+
+  /* Bottom Nav sichtbar auf Mobile */
+  #mobileBottomNav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    background: #1a1d2e;
+    border-top: 1px solid #2d3147;
+    height: 60px;
+    align-items: stretch;
+  }
+
+  /* Dashboard Cards sichtbar auf Mobile */
+  #mobileDashboard {
+    display: block;
+  }
+
+  /* Mobile Export Steps */
+  #mobileExportFlow {
+    display: block;
+  }
+
+  /* Flex-Rows umbrechen */
+  .flex-row, [style*="display:flex"] {
+    flex-wrap: wrap;
+  }
+
+  /* Grid-Layouts vereinfachen */
+  [style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Karten-Grundstil */
+  .mobile-card {
+    background: #1e2230;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+  .mobile-card h3 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    color: #8892b0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .mobile-card .value {
+    font-size: 22px;
+    font-weight: 700;
+    color: #e6f1ff;
+  }
+  .mobile-card .label {
+    font-size: 12px;
+    color: #8892b0;
+    margin-top: 2px;
+  }
+  .stat-row {
+    display: flex;
+    gap: 12px;
+  }
+  .stat-item {
+    flex: 1;
+  }
+
+  /* Session-Karte */
+  .session-card {
+    background: #1e2230;
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: background 0.15s;
+    border-left: 3px solid #3d5afe;
+  }
+  .session-card.home {
+    border-left-color: #00bfa5;
+  }
+  .session-card.extern {
+    border-left-color: #ff6d00;
+  }
+  .session-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .session-card-date {
+    font-size: 13px;
+    font-weight: 600;
+    color: #e6f1ff;
+  }
+  .session-card-cost {
+    font-size: 14px;
+    font-weight: 700;
+    color: #64ffda;
+  }
+  .session-card-details {
+    display: flex;
+    gap: 16px;
+    font-size: 12px;
+    color: #8892b0;
+  }
+  .session-card-details span::before {
+    margin-right: 3px;
+  }
+}
+
+@media (min-width: 769px) {
+  /* Desktop: Mobile-Elemente verstecken */
+  #mobileBottomNav { display: none !important; }
+  #mobileDashboard { display: none !important; }
+  #mobileSessionCards { display: none !important; }
+  #mobileExportFlow { display: none !important; }
+  .mobile-only { display: none !important; }
+}
 </style>
 </head>
 <body>
@@ -4680,6 +4924,612 @@ async function loadAuditLog(){
     </tr>`).join('')}</tbody>
   </table>`;
 }
+
+// =========================================================
+// MOBILE NAVIGATION
+// =========================================================
+
+let _mobileCurrentSection = 'home';
+let _mobileLang = 'de';
+
+function mobileNavTo(section) {
+  _mobileCurrentSection = section;
+
+  // Alle Mobile-Sections ausblenden
+  const sections = ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore'];
+  sections.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+
+  // Aktiven Nav-Button markieren
+  document.querySelectorAll('.mobile-nav-btn').forEach(b => b.classList.remove('active'));
+
+  // Aktiven Bereich anzeigen
+  if (section === 'home') {
+    const el = document.getElementById('mobileDashboard');
+    if (el) el.style.display = 'block';
+    document.getElementById('mbnHome')?.classList.add('active');
+    refreshMobileDashboard();
+  } else if (section === 'sessions') {
+    const el = document.getElementById('mobileSessionCards');
+    if (el) el.style.display = 'block';
+    document.getElementById('mbnSessions')?.classList.add('active');
+    renderMobileSessionCards();
+  } else if (section === 'analysis') {
+    // Auf Desktop-Analyse-Bereich scrollen oder cfgSection aufrufen
+    document.getElementById('mbnAnalysis')?.classList.add('active');
+    // Falls ein Analyse-Bereich existiert, dorthin scrollen
+    const analysisEl = document.querySelector('[data-section="analysis"]') || document.getElementById('analysisSection');
+    if (analysisEl) analysisEl.scrollIntoView({behavior:'smooth'});
+    else {
+      // Fallback: Desktop-Settings öffnen
+      switchToDesktopSettings();
+    }
+  } else if (section === 'export') {
+    const el = document.getElementById('mobileExportFlow');
+    if (el) el.style.display = 'block';
+    document.getElementById('mbnExport')?.classList.add('active');
+    initMobileExport();
+  } else if (section === 'more') {
+    const el = document.getElementById('mobileMore');
+    if (el) el.style.display = 'block';
+    document.getElementById('mbnMore')?.classList.add('active');
+    initMobileMore();
+  }
+
+  // Auf Mobile: Desktop-Hauptcontent ausblenden wenn wir eigene Section zeigen
+  if (window.innerWidth <= 768) {
+    const mainContent = document.getElementById('mainContent') || document.querySelector('.main-content') || document.querySelector('main');
+    if (mainContent && section !== 'analysis') {
+      mainContent.style.display = (section === 'home' || section === 'sessions' || section === 'export' || section === 'more') ? 'none' : 'block';
+    }
+  }
+}
+
+function switchToDesktopSettings() {
+  // Zeige Desktop-Ansicht wieder
+  const mainContent = document.getElementById('mainContent') || document.querySelector('.main-content') || document.querySelector('main');
+  if (mainContent) mainContent.style.display = '';
+  // Blende Mobile-Sections aus
+  ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+}
+
+// =========================================================
+// MOBILE DASHBOARD
+// =========================================================
+
+async function refreshMobileDashboard() {
+  // Fahrzeugdaten aus dem vorhandenen State lesen
+  // (nutzt dieselben Daten wie Desktop, kein doppelter API-Call)
+  try {
+    // Fahrzeugname/Kennzeichen
+    const cfg = window._currentConfig || {};
+    const vehicleName = document.getElementById('vehicleNameDisplay')?.textContent
+      || cfg.vehicle_name || cfg.vehicle_model || '—';
+    const plate = cfg.kennzeichen || cfg.vehicle_plate || '—';
+    const elName = document.getElementById('mobileVehicleName');
+    const elPlate = document.getElementById('mobileVehiclePlate');
+    if (elName) elName.textContent = vehicleName;
+    if (elPlate) elPlate.textContent = plate;
+
+    // SOC aus bestehendem State
+    const socEl = document.querySelector('[data-soc]') || document.getElementById('socValue');
+    const soc = socEl ? parseInt(socEl.textContent) : null;
+    if (soc != null && !isNaN(soc)) {
+      const bar = document.getElementById('mobileSocBar');
+      const pct = document.getElementById('mobileSocPct');
+      if (bar) bar.style.width = soc + '%';
+      if (pct) pct.textContent = soc + '%';
+      if (bar) {
+        bar.style.background = soc > 60 ? '#64ffda' : soc > 20 ? '#ffd740' : '#ff5252';
+      }
+    }
+
+    // Monatsstatistik aus bestehendem State lesen
+    const sessions = window._allSessions || window._sessions || [];
+    const now = new Date();
+    const monthSessions = sessions.filter(s => {
+      const d = new Date(s.start_time || s.date || '');
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    });
+    const totalKwh = monthSessions.reduce((a,s) => a + (parseFloat(s.kwh_charged)||0), 0);
+    const totalCost = monthSessions.reduce((a,s) => a + (parseFloat(s.cost_eur)||0), 0);
+    const avgPrice = totalKwh > 0 ? totalCost/totalKwh : 0;
+
+    const kwh = document.getElementById('mobileMonthKwh');
+    const cost = document.getElementById('mobileMonthCost');
+    const cnt = document.getElementById('mobileMonthSessions');
+    const avg = document.getElementById('mobileMonthAvgPrice');
+    if (kwh) kwh.textContent = totalKwh.toFixed(1) + ' kWh';
+    if (cost) cost.textContent = totalCost.toFixed(2) + ' €';
+    if (cnt) cnt.textContent = monthSessions.length;
+    if (avg) avg.textContent = avgPrice > 0 ? avgPrice.toFixed(3) + ' €' : '—';
+
+    // Letzte 3 Ladevorgänge
+    renderMobileRecentSessions(sessions.slice(-3).reverse());
+  } catch(e) {
+    console.warn('Mobile dashboard refresh error:', e);
+  }
+}
+
+function renderMobileRecentSessions(sessions) {
+  const el = document.getElementById('mobileRecentSessions');
+  if (!el) return;
+  if (!sessions || sessions.length === 0) {
+    el.innerHTML = '<p style="color:#8892b0;font-size:13px">Keine Ladevorgänge vorhanden.</p>';
+    return;
+  }
+  el.innerHTML = sessions.map(s => buildSessionCard(s, true)).join('');
+}
+
+// =========================================================
+// MOBILE SESSION CARDS
+// =========================================================
+
+function renderMobileSessionCards() {
+  const el = document.getElementById('mobileSessionCardList');
+  if (!el) return;
+  const sessions = window._allSessions || window._sessions || [];
+  if (!sessions || sessions.length === 0) {
+    el.innerHTML = '<p style="color:#8892b0">Keine Ladevorgänge vorhanden.</p>';
+    return;
+  }
+  el.innerHTML = [...sessions].reverse().map(s => buildSessionCard(s, false)).join('');
+}
+
+function buildSessionCard(s, compact) {
+  const date = s.date || (s.start_time ? s.start_time.split('T')[0] : '—');
+  const kwh = parseFloat(s.kwh_charged || 0).toFixed(1);
+  const cost = parseFloat(s.cost_eur || 0).toFixed(2);
+  const loc = s.location || '';
+  const isHome = loc.toLowerCase().includes('home') || loc.toLowerCase().includes('zuhause') || loc === '';
+  const cls = isHome ? 'home' : 'extern';
+  const dur = s.duration || '';
+  const start = s.start_time ? s.start_time.slice(11,16) : '';
+
+  return `<div class="session-card ${cls}" onclick="mobileSessionDetail(${s.id||0})">
+    <div class="session-card-header">
+      <span class="session-card-date">${date}${start ? ' · '+start : ''}</span>
+      <span class="session-card-cost">${cost} €</span>
+    </div>
+    <div class="session-card-details">
+      <span>⚡ ${kwh} kWh</span>
+      ${dur ? '<span>⏱ '+dur+'</span>' : ''}
+      ${loc ? '<span>📍 '+loc+'</span>' : ''}
+    </div>
+  </div>`;
+}
+
+function mobileSessionDetail(sessionId) {
+  // Vorhandene Detail-Modal-Funktion nutzen falls vorhanden
+  if (typeof openSessionDetail === 'function') {
+    openSessionDetail(sessionId);
+  } else if (typeof showSessionDetail === 'function') {
+    showSessionDetail(sessionId);
+  }
+}
+
+function mobileQuickAddSession() {
+  // Vorhandene Funktion zum Hinzufügen nutzen
+  if (typeof openAddSessionModal === 'function') openAddSessionModal();
+  else if (typeof addSession === 'function') addSession();
+  else {
+    // Fallback: Desktop-Ansicht zeigen
+    switchToDesktopSettings();
+  }
+}
+
+// =========================================================
+// MOBILE EXPORT
+// =========================================================
+
+let _mobileExportLang = 'de';
+let _mobileExportToken = null;
+
+function initMobileExport() {
+  const now = new Date();
+  const monthInput = document.getElementById('mobileExportMonth');
+  if (monthInput && !monthInput.value) {
+    monthInput.value = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+  }
+}
+
+function setMobileLang(lang) {
+  _mobileExportLang = lang;
+  document.getElementById('mobileLangDe').style.background = lang === 'de' ? '#3d5afe' : '#2d3147';
+  document.getElementById('mobileLangDe').style.color = lang === 'de' ? '#fff' : '#8892b0';
+  document.getElementById('mobileLangEn').style.background = lang === 'en' ? '#3d5afe' : '#2d3147';
+  document.getElementById('mobileLangEn').style.color = lang === 'en' ? '#fff' : '#8892b0';
+}
+
+async function doMobileExport() {
+  const monthVal = document.getElementById('mobileExportMonth')?.value;
+  if (!monthVal) { alert('Bitte Monat wählen'); return; }
+  const incSig = document.getElementById('mobileIncludeSignature')?.checked || false;
+
+  const resultEl = document.getElementById('mobileExportResult');
+  if (resultEl) resultEl.innerHTML = '<p>⏳ Exportiere…</p>';
+
+  try {
+    // Token nutzen falls vorhanden, sonst neuen Export
+    if (_mobileExportToken) {
+      window.location.href = `/api/export/download/${_mobileExportToken}`;
+      return;
+    }
+    // Fallback: doExport() nutzen falls vorhanden
+    if (typeof doExport === 'function') {
+      doExport();
+    } else {
+      const r = await fetch('/api/export', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','X-CSRFToken': window._csrfToken||''},
+        body: JSON.stringify({month: monthVal, language: _mobileExportLang, include_signature: incSig})
+      });
+      if (r.ok) {
+        const blob = await r.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `ladeprotokoll_${monthVal}.xlsx`; a.click();
+        if (resultEl) resultEl.innerHTML = '<p style="color:#64ffda">✅ Export erfolgreich</p>';
+      } else {
+        const j = await r.json();
+        if (resultEl) resultEl.innerHTML = `<p style="color:#ff5252">❌ ${j.error||'Fehler'}</p>`;
+      }
+    }
+  } catch(e) {
+    if (resultEl) resultEl.innerHTML = `<p style="color:#ff5252">❌ ${e.message}</p>`;
+  }
+}
+
+async function doMobileExportPreview() {
+  const monthVal = document.getElementById('mobileExportMonth')?.value;
+  if (!monthVal) { alert('Bitte Monat wählen'); return; }
+  const [year, month] = monthVal.split('-').map(Number);
+  const incSig = document.getElementById('mobileIncludeSignature')?.checked || false;
+  const resultEl = document.getElementById('mobileExportResult');
+  if (resultEl) resultEl.innerHTML = '<p>⏳ Lade Vorschau…</p>';
+
+  try {
+    const r = await fetch('/api/export/preview', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','X-CSRFToken':window._csrfToken||''},
+      body: JSON.stringify({month: monthVal, year, month_num: month, language: _mobileExportLang, include_signature: incSig})
+    }).then(x => x.json());
+
+    if (!r.ok) {
+      if (resultEl) resultEl.innerHTML = `<p style="color:#ff5252">❌ ${r.error||'Fehler'}</p>`;
+      return;
+    }
+
+    _mobileExportToken = r.download_token || null;
+
+    let html = '';
+    if (r.warnings && r.warnings.length > 0) {
+      html += `<div style="background:#332;padding:8px;border-radius:6px;margin-bottom:8px;font-size:12px">
+        ⚠️ ${r.warnings.join(' · ')}</div>`;
+    }
+
+    // Erste 10 Datenzeilen aus erstem Sheet zeigen
+    const sheet = (r.sheets||[])[0];
+    if (sheet && sheet.rows && sheet.rows.length > 0) {
+      const rows = typeof sheet.rows[0] === 'object' && sheet.rows[0].cells
+        ? sheet.rows[0].cells.map ? sheet.rows.slice(0,10) : []
+        : sheet.rows.slice(0,10).map((cells,i)=>({row:i+1,is_data:true,cells}));
+
+      html += `<div style="overflow-x:auto;margin-bottom:8px">
+        <table style="border-collapse:collapse;font-size:11px;width:100%">`;
+      rows.forEach(row => {
+        const cells = row.cells || row;
+        const isData = row.is_data !== undefined ? row.is_data : true;
+        html += `<tr style="background:${isData?'transparent':'#1a2030'}">`;
+        cells.slice(0, 6).forEach(c => {
+          const v = c == null ? '' : String(c);
+          html += `<td style="padding:4px 6px;border:1px solid #2d3147;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${v.replace(/</g,'&lt;')}</td>`;
+        });
+        html += '</tr>';
+      });
+      html += '</table></div>';
+    } else {
+      html += '<p style="color:#8892b0;font-size:13px">Keine Vorschau verfügbar.</p>';
+    }
+
+    if (_mobileExportToken) {
+      html += `<button onclick="window.location.href='/api/export/download/${_mobileExportToken}'"
+        style="width:100%;padding:12px;border-radius:8px;background:#3d5afe;border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;margin-top:8px">
+        📥 Diese Datei herunterladen</button>`;
+    }
+
+    if (resultEl) resultEl.innerHTML = html;
+  } catch(e) {
+    if (resultEl) resultEl.innerHTML = `<p style="color:#ff5252">❌ ${e.message}</p>`;
+  }
+}
+
+// =========================================================
+// MOBILE MORE / SETTINGS
+// =========================================================
+
+function toggleSettingsGroup(header) {
+  header.classList.toggle('open');
+  const body = header.nextElementSibling;
+  if (body) body.classList.toggle('open');
+}
+
+function initMobileMore() {
+  // Einfache Links zu den jeweiligen Desktop-Einstellungs-Bereichen
+  const groups = {
+    mobileGrpVehicles: [
+      {label: '🚗 Fahrzeuge verwalten', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('fahrzeuge'); }},
+    ],
+    mobileGrpProvider: [
+      {label: '🔌 Provider konfigurieren', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('verbindung'); }},
+      {label: '📊 Zählerstand testen', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('zaehler'); }},
+    ],
+    mobileGrpExport: [
+      {label: '📥 Export-Einstellungen', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('export-tpl'); }},
+    ],
+    mobileGrpSignature: [
+      {label: '✍️ Unterschrift hochladen', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('auth'); }},
+    ],
+    mobileGrpSecurity: [
+      {label: '👤 Benutzer & Sicherheit', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('auth'); }},
+    ],
+    mobileGrpSystem: [
+      {label: '⚙️ Allgemeine Einstellungen', action: function(){ switchToDesktopSettings(); }},
+      {label: '🔄 Updates & Version', action: function(){ switchToDesktopSettings(); document.getElementById('updateSection')?.scrollIntoView({behavior:'smooth'}); }},
+    ],
+    mobileGrpBackup: [
+      {label: '💾 Backup & Restore', action: function(){ switchToDesktopSettings(); tab('backup', document.querySelector('nav button:nth-child(5)')); }},
+    ],
+  };
+
+  Object.entries(groups).forEach(function([id, items]) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = items.map(function(item) {
+      return `<button onclick="(${item.action.toString()})()"
+        style="display:block;width:100%;text-align:left;padding:12px;margin-bottom:4px;border-radius:6px;background:transparent;border:1px solid #2d3147;color:#e6f1ff;font-size:14px;cursor:pointer">
+        ${item.label}
+      </button>`;
+    }).join('');
+  });
+}
+
+// =========================================================
+// MOBILE INIT
+// =========================================================
+
+function initMobileView() {
+  if (window.innerWidth > 768) return; // Nur auf Mobile
+
+  // Home-Section initial anzeigen
+  mobileNavTo('home');
+
+  // Auf vorhandene Session-Daten warten und dann aktualisieren
+  const checkData = setInterval(function() {
+    if (window._allSessions || window._sessions) {
+      clearInterval(checkData);
+      refreshMobileDashboard();
+    }
+  }, 500);
+  setTimeout(function() { clearInterval(checkData); }, 10000);
+}
+
+// Beim Laden initialisieren
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initMobileView);
+} else {
+  initMobileView();
+}
+
+// Beim Resize zwischen Mobile und Desktop umschalten
+window.addEventListener('resize', function() {
+  if (window.innerWidth > 768) {
+    // Desktop: alle Mobile-Sections ausblenden, Main-Content zeigen
+    ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore'].forEach(function(id) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+    const mainContent = document.getElementById('mainContent') || document.querySelector('.main-content') || document.querySelector('main');
+    if (mainContent) mainContent.style.display = '';
+  } else {
+    // Mobile: aktuelle Section anzeigen
+    mobileNavTo(_mobileCurrentSection || 'home');
+  }
+});
 </script>
+
+<!-- ========= MOBILE BOTTOM NAVIGATION ========= -->
+<nav id="mobileBottomNav" role="navigation" aria-label="Mobile Navigation">
+  <button class="mobile-nav-btn active" id="mbnHome" onclick="mobileNavTo('home')" aria-label="Home">
+    <span class="mobile-nav-icon">🏠</span>
+    <span class="mobile-nav-label">Home</span>
+  </button>
+  <button class="mobile-nav-btn" id="mbnSessions" onclick="mobileNavTo('sessions')" aria-label="Laden">
+    <span class="mobile-nav-icon">⚡</span>
+    <span class="mobile-nav-label">Laden</span>
+  </button>
+  <button class="mobile-nav-btn" id="mbnAnalysis" onclick="mobileNavTo('analysis')" aria-label="Analyse">
+    <span class="mobile-nav-icon">📊</span>
+    <span class="mobile-nav-label">Analyse</span>
+  </button>
+  <button class="mobile-nav-btn" id="mbnExport" onclick="mobileNavTo('export')" aria-label="Export">
+    <span class="mobile-nav-icon">📥</span>
+    <span class="mobile-nav-label">Export</span>
+  </button>
+  <button class="mobile-nav-btn" id="mbnMore" onclick="mobileNavTo('more')" aria-label="Mehr">
+    <span class="mobile-nav-icon">☰</span>
+    <span class="mobile-nav-label">Mehr</span>
+  </button>
+</nav>
+
+<!-- ========= MOBILE DASHBOARD ========= -->
+<div id="mobileDashboard" style="display:none;padding:12px">
+
+  <!-- Fahrzeugkarte -->
+  <div class="mobile-card" id="mobileVehicleCard">
+    <h3>🚗 Fahrzeug</h3>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div id="mobileVehicleImg" style="width:64px;height:64px;border-radius:8px;background:#2d3147;display:flex;align-items:center;justify-content:center;font-size:28px">🚘</div>
+      <div>
+        <div class="value" id="mobileVehicleName" style="font-size:16px">—</div>
+        <div class="label" id="mobileVehiclePlate">—</div>
+        <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
+          <div style="flex:1;height:8px;background:#2d3147;border-radius:4px;min-width:80px">
+            <div id="mobileSocBar" style="height:100%;width:0%;background:#64ffda;border-radius:4px;transition:width 0.5s"></div>
+          </div>
+          <span id="mobileSocPct" style="font-size:13px;font-weight:700;color:#64ffda">—</span>
+        </div>
+        <div class="label" id="mobileVehicleLocation" style="margin-top:4px">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Monatskarte -->
+  <div class="mobile-card">
+    <h3>📅 Dieser Monat</h3>
+    <div class="stat-row">
+      <div class="stat-item">
+        <div class="value" id="mobileMonthKwh">—</div>
+        <div class="label">kWh geladen</div>
+      </div>
+      <div class="stat-item">
+        <div class="value" id="mobileMonthCost">—</div>
+        <div class="label">Kosten</div>
+      </div>
+    </div>
+    <div class="stat-row" style="margin-top:10px">
+      <div class="stat-item">
+        <div class="value" style="font-size:16px" id="mobileMonthSessions">—</div>
+        <div class="label">Ladevorgänge</div>
+      </div>
+      <div class="stat-item">
+        <div class="value" style="font-size:16px" id="mobileMonthAvgPrice">—</div>
+        <div class="label">Ø Preis/kWh</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Schnellaktionen -->
+  <div class="mobile-card">
+    <h3>⚡ Schnellaktionen</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <button onclick="mobileNavTo('export')" style="padding:12px 8px;border-radius:8px;background:#1a3d6e;border:none;color:#64ffda;font-size:13px;cursor:pointer">
+        📥 Export erstellen
+      </button>
+      <button onclick="mobileQuickAddSession()" style="padding:12px 8px;border-radius:8px;background:#1a3d6e;border:none;color:#64ffda;font-size:13px;cursor:pointer">
+        ➕ Ladevorgang
+      </button>
+      <button onclick="mobileNavTo('more');setTimeout(()=>cfgSection&&cfgSection('meter'),200)" style="padding:12px 8px;border-radius:8px;background:#1a3d6e;border:none;color:#64ffda;font-size:13px;cursor:pointer">
+        🔌 Zähler testen
+      </button>
+      <button onclick="showVehicleSelector&&showVehicleSelector()" style="padding:12px 8px;border-radius:8px;background:#1a3d6e;border:none;color:#64ffda;font-size:13px;cursor:pointer">
+        🚗 Fahrzeug
+      </button>
+    </div>
+  </div>
+
+  <!-- Letzte Ladevorgänge (Preview) -->
+  <div class="mobile-card">
+    <h3>🕐 Letzte Ladevorgänge</h3>
+    <div id="mobileRecentSessions">
+      <p style="color:#8892b0;font-size:13px">Lade Daten…</p>
+    </div>
+    <button onclick="mobileNavTo('sessions')" style="width:100%;margin-top:8px;padding:10px;background:transparent;border:1px solid #2d3147;border-radius:6px;color:#8892b0;font-size:13px;cursor:pointer">
+      Alle anzeigen →
+    </button>
+  </div>
+</div>
+
+<!-- ========= MOBILE SESSION CARDS ========= -->
+<div id="mobileSessionCards" style="display:none;padding:12px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <h2 style="margin:0;font-size:18px">Ladevorgänge</h2>
+    <button onclick="mobileQuickAddSession()" style="padding:8px 14px;border-radius:6px;background:#3d5afe;border:none;color:#fff;font-size:13px;cursor:pointer">+ Hinzufügen</button>
+  </div>
+  <div id="mobileSessionCardList">
+    <p style="color:#8892b0">Lade…</p>
+  </div>
+</div>
+
+<!-- ========= MOBILE EXPORT FLOW ========= -->
+<div id="mobileExportFlow" style="display:none;padding:12px">
+  <h2 style="margin:0 0 16px 0;font-size:18px">📥 Export erstellen</h2>
+  <div class="mobile-card">
+    <h3>Schritt 1: Monat wählen</h3>
+    <input type="month" id="mobileExportMonth" style="width:100%;padding:10px;border-radius:6px;background:#2d3147;border:1px solid #3d4166;color:#e6f1ff;font-size:15px">
+  </div>
+  <div class="mobile-card">
+    <h3>Schritt 2: Sprache</h3>
+    <div style="display:flex;gap:8px">
+      <button id="mobileLangDe" onclick="setMobileLang('de')" style="flex:1;padding:10px;border-radius:6px;background:#3d5afe;border:none;color:#fff;font-size:14px;cursor:pointer">🇩🇪 Deutsch</button>
+      <button id="mobileLangEn" onclick="setMobileLang('en')" style="flex:1;padding:10px;border-radius:6px;background:#2d3147;border:none;color:#8892b0;font-size:14px;cursor:pointer">🇬🇧 English</button>
+    </div>
+  </div>
+  <div class="mobile-card">
+    <h3>Schritt 3: Optionen</h3>
+    <label style="display:flex;align-items:center;gap:10px;margin-bottom:10px;cursor:pointer">
+      <input type="checkbox" id="mobileIncludeSignature" style="width:20px;height:20px">
+      <span style="font-size:14px">Unterschrift einschließen</span>
+    </label>
+  </div>
+  <div style="display:flex;gap:8px">
+    <button onclick="doMobileExportPreview()" style="flex:1;padding:14px;border-radius:8px;background:#1a3d6e;border:none;color:#64ffda;font-size:14px;font-weight:600;cursor:pointer">👁 Vorschau</button>
+    <button onclick="doMobileExport()" style="flex:1;padding:14px;border-radius:8px;background:#3d5afe;border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer">📥 Herunterladen</button>
+  </div>
+  <div id="mobileExportResult" style="margin-top:12px"></div>
+</div>
+
+<!-- ========= MOBILE MORE / SETTINGS ========= -->
+<div id="mobileMore" style="display:none;padding:12px">
+  <h2 style="margin:0 0 16px 0;font-size:18px">☰ Mehr</h2>
+
+  <div class="settings-group">
+    <div class="settings-group-header" onclick="toggleSettingsGroup(this)">🚗 Fahrzeuge</div>
+    <div class="settings-group-body" id="mobileGrpVehicles"></div>
+  </div>
+
+  <div class="settings-group">
+    <div class="settings-group-header" onclick="toggleSettingsGroup(this)">🔌 Provider &amp; Zählerstand</div>
+    <div class="settings-group-body" id="mobileGrpProvider"></div>
+  </div>
+
+  <div class="settings-group">
+    <div class="settings-group-header" onclick="toggleSettingsGroup(this)">📥 Export &amp; Templates</div>
+    <div class="settings-group-body" id="mobileGrpExport"></div>
+  </div>
+
+  <div class="settings-group">
+    <div class="settings-group-header" onclick="toggleSettingsGroup(this)">✍️ Signatur</div>
+    <div class="settings-group-body" id="mobileGrpSignature"></div>
+  </div>
+
+  <div class="settings-group">
+    <div class="settings-group-header" onclick="toggleSettingsGroup(this)">👤 Benutzer &amp; Sicherheit</div>
+    <div class="settings-group-body" id="mobileGrpSecurity"></div>
+  </div>
+
+  <div class="settings-group">
+    <div class="settings-group-header" onclick="toggleSettingsGroup(this)">⚙️ System &amp; Updates</div>
+    <div class="settings-group-body" id="mobileGrpSystem"></div>
+  </div>
+
+  <div class="settings-group">
+    <div class="settings-group-header" onclick="toggleSettingsGroup(this)">💾 Backup &amp; Restore</div>
+    <div class="settings-group-body" id="mobileGrpBackup"></div>
+  </div>
+
+  <!-- Links zu den Desktop-Einstellungen -->
+  <div style="margin-top:16px;padding:12px;background:#1e2230;border-radius:8px">
+    <p style="font-size:12px;color:#8892b0;margin:0 0 8px 0">Für erweiterte Einstellungen:</p>
+    <button onclick="switchToDesktopSettings()" style="width:100%;padding:12px;border-radius:6px;background:transparent;border:1px solid #2d3147;color:#8892b0;font-size:13px;cursor:pointer">
+      🖥️ Vollständige Einstellungen öffnen
+    </button>
+  </div>
+</div>
 </body>
 </html>
