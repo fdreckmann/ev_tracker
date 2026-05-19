@@ -2704,21 +2704,6 @@ async function loadCharts(){
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
-async function loadConfig(){
-  const c = await fetch('/api/config').then(r=>r.json());
-  const m = {c_car:'car_name',c_notify:'notify_service',
-             c_bat:'battery_capacity_kwh',
-             c_price_home:'price_per_kwh_home',c_price_ac:'price_per_kwh_ac',c_price_dc:'price_per_kwh_dc',
-             c_dc_thresh:'dc_threshold_kw',
-             c_entsoe_key:'entsoe_api_key',c_ac_markup:'entsoe_ac_markup',c_dc_markup:'entsoe_dc_markup',
-             c_poll:'poll_interval'};
-  for(const[id,key]of Object.entries(m)){const el=$(id);if(el)el.value=c[key]||'';}
-  await loadProviderFields(c.provider||'ha');
-  document.querySelectorAll('[id^="pf_"]').forEach(el=>{
-    const key=el.id.replace('pf_','');
-    if(c[key]!==undefined&&el.type!=='password') el.value=c[key]||el.value;
-  });
-}
 // ── Provider selection ───────────────────────────────────────────────────────
 function selectProvider(id){
   $('c_provider').value=id;
@@ -4146,22 +4131,30 @@ function toggleMeterAdvanced(){
 function collectMeterFormConfig() {
   const g = id => { const el=$(id); return el ? el.value : ''; };
   const factorRaw = g('c_meter_value_factor');
+  const src = g('c_meter_source');
+  // Only read password/json-path from the field that belongs to the active source
+  // to prevent stale values in hidden inputs from being saved.
+  const password = src === 'shelly'   ? g('c_meter_password_shelly')
+                 : src === 'generic'  ? g('c_meter_generic_pass')
+                 : '';
+  const jsonPath = src === 'tasmota'  ? g('c_meter_json_path_tasmota')
+                 : src === 'generic'  ? g('c_meter_json_path_generic')
+                 : '';
   return {
-    meter_source:         g('c_meter_source'),
+    meter_source:         src,
     meter_sensor:         g('c_meter_sensor'),
     meter_device_ip:      g('c_meter_device_ip'),
     meter_device_scheme:  g('c_meter_device_scheme') || 'http',
     meter_device_port:    g('c_meter_device_port') || '',
-    meter_username:       g('c_meter_generic_user') || g('c_meter_username') || '',
-    meter_password:       g('c_meter_password_shelly') || g('c_meter_generic_pass') || g('c_meter_password') || '',
+    meter_username:       src === 'generic' ? g('c_meter_generic_user') : '',
+    meter_password:       password,
     meter_channel:        parseInt(g('c_meter_channel') || '0') || 0,
     meter_phase_mode:     g('c_meter_phase_mode') || 'total',
-    meter_json_path:      g('c_meter_json_path_tasmota') || g('c_meter_json_path_generic') || '',
+    meter_json_path:      jsonPath,
     meter_generic_url:    g('c_meter_generic_url') || '',
     meter_value_unit:     g('c_meter_value_unit') || 'auto',
-    meter_value_factor:   factorRaw === '' ? null : (parseFloat(factorRaw) || null),
-    meter_timeout_seconds: parseInt(g('c_meter_timeout_seconds') || '10') || 10,
-    meter_custom_path:    g('c_meter_custom_path') || '',
+    meter_value_factor:   factorRaw === '' ? 1.0 : (parseFloat(factorRaw) || 1.0),
+    meter_timeout_seconds: parseInt(g('c_meter_timeout_seconds') || '8') || 8,
   };
 }
 async function saveMeterSource(){
@@ -5394,7 +5387,7 @@ async function disableMyTotp(){
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-initCsrf();
+initCsrf().then(()=>loadConfig());
 initExpSelects();
 refreshStatus();
 loadCharts();
@@ -6140,6 +6133,7 @@ function cfgSection(id, btn){
   if(id==='benutzer') loadUserList();
   if(id==='profil')   loadMyProfile();
   if(id==='roles')    loadRolesSection();
+  if(id==='zaehler')  loadConfig();
   if(id==='reports'){ loadReportConfig(); }
   if(id==='abrechnung')    { loadBillingConfig(); }
   if(id==='report-archive'){ loadReportArchive(); }
