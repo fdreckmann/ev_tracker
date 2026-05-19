@@ -869,6 +869,8 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
                   <option value="previous_period">Vorheriger Zeitraum</option>
                   <option value="current_period">Aktueller Zeitraum</option>
                   <option value="custom_range">Benutzerdefinierter Zeitraum</option>
+                  <option value="single_month">Fester Monat</option>
+                  <option value="multiple_months">Mehrere Monate</option>
                 </select>
               </div>
             </div>
@@ -886,6 +888,26 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
                 <label class="cfg-lbl">Bis</label>
                 <input type="date" id="rep_custom_end" style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
               </div>
+            </div>
+
+            <!-- Single month picker -->
+            <div id="rep_single_month_row" style="display:none">
+              <label class="cfg-lbl">Monat auswählen</label>
+              <input type="month" id="rep_single_month"
+                style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
+              <div style="color:var(--mute);font-size:.7rem;margin-top:4px">Bei festen Monatsauswahlen wird dieser Monat unabhängig vom Ausführungsintervall verwendet.</div>
+            </div>
+
+            <!-- Multiple months picker -->
+            <div id="rep_months_row" style="display:none">
+              <label class="cfg-lbl">Monate auswählen</label>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+                <input type="month" id="rep_months_add_input"
+                  style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:6px 10px;color:var(--txt);font-size:.82rem">
+                <button class="btn-s" onclick="repMonthsAdd()" style="padding:6px 14px;font-size:.78rem">+ Hinzufügen</button>
+              </div>
+              <div id="rep_months_chips" style="display:flex;flex-wrap:wrap;gap:6px;min-height:30px"></div>
+              <div style="color:var(--mute);font-size:.7rem;margin-top:6px">Bei festen Monatsauswahlen werden diese Monate unabhängig vom Ausführungsintervall verwendet. Max. 24 Monate.</div>
             </div>
 
             <!-- Filters -->
@@ -5030,6 +5052,44 @@ function onRepScheduleTypeChange(){
 
   const crr = $('rep_custom_range_row');
   if (crr) crr.style.display = pmode === 'custom_range' ? 'grid' : 'none';
+  const smr = $('rep_single_month_row');
+  if (smr) smr.style.display = pmode === 'single_month' ? '' : 'none';
+  const mmr = $('rep_months_row');
+  if (mmr) mmr.style.display = pmode === 'multiple_months' ? '' : 'none';
+}
+
+let _repMonths = [];
+
+function repMonthsAdd(){
+  const inp = $('rep_months_add_input');
+  if (!inp || !inp.value) return;
+  const ym = inp.value; // YYYY-MM
+  if (!/^\d{4}-\d{2}$/.test(ym)) return;
+  if (_repMonths.includes(ym)) { inp.value=''; return; }
+  if (_repMonths.length >= 24) { alert('Maximal 24 Monate erlaubt.'); return; }
+  _repMonths.push(ym);
+  _repMonths.sort();
+  repMonthsRender();
+  inp.value = '';
+}
+
+function repMonthsRemove(ym){
+  _repMonths = _repMonths.filter(m => m !== ym);
+  repMonthsRender();
+}
+
+function repMonthsRender(){
+  const c = $('rep_months_chips');
+  if (!c) return;
+  const DE_MONTHS = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+  c.innerHTML = _repMonths.map(ym => {
+    const [y,m] = ym.split('-');
+    const label = `${DE_MONTHS[parseInt(m)-1]} ${y}`;
+    return `<span style="background:#2d3147;border-radius:20px;padding:4px 12px;font-size:.78rem;display:flex;align-items:center;gap:6px">
+      ${label}
+      <button onclick="repMonthsRemove('${ym}')" style="background:none;border:none;color:#f87171;cursor:pointer;padding:0;font-size:.9rem;line-height:1">✕</button>
+    </span>`;
+  }).join('');
 }
 
 async function loadReportConfig(){
@@ -5056,6 +5116,10 @@ async function loadReportConfig(){
       if (s('rep_cron'))         s('rep_cron').value         = r.report_email_cron||'';
       if (s('rep_custom_start')) s('rep_custom_start').value = r.report_email_custom_start_date||'';
       if (s('rep_custom_end'))   s('rep_custom_end').value   = r.report_email_custom_end_date||'';
+      if (s('rep_single_month')) s('rep_single_month').value = r.report_email_single_month||'';
+      _repMonths = (r.report_email_months||[]).filter(m => /^\d{4}-\d{2}$/.test(m));
+      _repMonths.sort();
+      repMonthsRender();
     }, 50);
     // Populate vehicle filter
     const vf = s('rep_vehicle_filter');
@@ -5086,6 +5150,8 @@ async function saveReportConfig(){
     report_email_cron:             g('rep_cron')?.value||'',
     report_email_custom_start_date: g('rep_custom_start')?.value||'',
     report_email_custom_end_date:   g('rep_custom_end')?.value||'',
+    report_email_single_month:      g('rep_single_month')?.value||'',
+    report_email_months:            _repMonths.slice(),
     report_email_location_filter:  g('rep_location_filter')?.value||'all',
     report_email_vehicle_filter:   g('rep_vehicle_filter')?.value||'all',
     report_email_include_excel:    g('rep_include_excel')?.checked!==false,
@@ -5114,6 +5180,8 @@ async function sendReportNow(isTest){
     report_email_recipients:      isTest ? recipients_raw.slice(0,1) : recipients_raw,
     report_email_schedule_type:   g('rep_schedule_type')?.value||'monthly',
     report_email_period_mode:     g('rep_period_mode')?.value||'previous_period',
+    report_email_single_month:    g('rep_single_month')?.value||'',
+    report_email_months:          _repMonths.slice(),
   };
   const st = $('rep_status');
   if (st) { st.textContent = '⏳ Sende…'; st.style.color = 'var(--mute)'; }
@@ -5137,7 +5205,7 @@ async function loadReportHistory(){
     body.innerHTML = `<table style="width:100%;border-collapse:collapse">
       <thead><tr style="color:var(--mute);border-bottom:1px solid var(--brd)">
         <th style="padding:6px 10px;text-align:left">Datum</th>
-        <th style="padding:6px 10px;text-align:left">Zeitraum</th>
+        <th style="padding:6px 10px;text-align:left">Zeitraum / Label</th>
         <th style="padding:6px 10px;text-align:left">Filter</th>
         <th style="padding:6px 10px;text-align:left">Empfänger</th>
         <th style="padding:6px 10px;text-align:left">Status</th>
@@ -5148,7 +5216,7 @@ async function loadReportHistory(){
         const color = STATUS_COLORS[r.status]||'var(--mute)';
         return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
           <td style="padding:5px 10px">${(r.sent_at||'').replace('T',' ').slice(0,16)}</td>
-          <td style="padding:5px 10px">${r.period_start||''} – ${r.period_end||''}</td>
+          <td style="padding:5px 10px">${r.period_label || ((r.period_start||'') + ' – ' + (r.period_end||''))}</td>
           <td style="padding:5px 10px">${LOC_LABELS[r.location_filter||'all']||r.location_filter||'alle'}</td>
           <td style="padding:5px 10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(recip)}">${escapeHtml(recip)}</td>
           <td style="padding:5px 10px;color:${color};font-weight:600">${r.status||''}</td>
