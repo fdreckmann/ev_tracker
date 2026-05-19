@@ -563,6 +563,7 @@ def build_vehicle_config(vehicle: dict, cfg=None) -> dict:
 def init_db():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
     con.execute("""CREATE TABLE IF NOT EXISTS sessions (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
         start_ts      TEXT, end_ts TEXT,
@@ -738,7 +739,7 @@ def init_db():
             con.execute("INSERT OR IGNORE INTO user_roles (user_id, role_id) VALUES (?,?)",
                         (u["id"], role_row["id"]))
     con.commit()
-    con.commit(); con.close()
+    con.close()
 
 # ── Permission checking ───────────────────────────────────────────────────────
 
