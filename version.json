@@ -1,6 +1,26 @@
 {
-  "version": "2.0.7",
+  "version": "2.0.8",
   "changelog": [
+    {
+      "version": "2.0.8",
+      "date": "2026-05-20",
+      "changes": [
+        "Sicherheit: Fahrzeug-Löschen nutzt vehicles:delete Permission statt @require_admin",
+        "Sicherheit: vehicle_id-Validierung vor jeder Aktion (Regex + Traversal-Check)",
+        "Neu: Archiv-Modus (Standard) — soft-delete mit archived=True, deleted_at, Tracker gestoppt",
+        "Neu: Hard-Delete via ?mode=hard — blockiert wenn Sessions/Berichte existieren (ohne delete_sessions=true)",
+        "Neu: Hard-Delete mit delete_sessions=true — löscht alle zugehörigen Sessions, Berichte, Billing-Config",
+        "Neu: Fahrzeugbild-Ordner wird bei Hard-Delete entfernt, bei Archivierung erhalten",
+        "Neu: Audit-Events vehicle_archived, vehicle_hard_deleted, vehicle_delete_failed",
+        "Neu: _vehicle_states und _vehicle_stops werden nach Archive/Delete bereinigt",
+        "Neu: get_all_vehicles(include_archived=False) filtert archivierte Fahrzeuge standardmäßig",
+        "Frontend: saveVehicleModal() nutzt apiFetch (CSRF-sicher) statt fetch()",
+        "Frontend: 'Archivieren'-Button (📦) ersetzt 'Löschen' im Fahrzeug-Modal",
+        "Frontend: 'Endgültig löschen'-Button (🗑) mit Bestätigung 'LÖSCHEN' eingeben",
+        "Frontend: archiveVehicleModal() mit Bestätigungsdialog, Toast 'Fahrzeug archiviert'",
+        "Frontend: hardDeleteVehicleModal() prüft Session-Anzahl, fordert explizite Texteingabe"
+      ]
+    },
     {
       "version": "2.0.7",
       "date": "2026-05-20",
