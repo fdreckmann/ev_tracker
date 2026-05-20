@@ -1,6 +1,26 @@
 {
-  "version": "2.0.6",
+  "version": "2.0.7",
   "changelog": [
+    {
+      "version": "2.0.7",
+      "date": "2026-05-20",
+      "changes": [
+        "Sicherheit: GET /api/sessions erfordert sessions:view",
+        "Sicherheit: DELETE /api/sessions/<id> erfordert sessions:delete + @require_login",
+        "Sicherheit: GET /api/sessions/<id>/points erfordert sessions:view + @require_login",
+        "Sicherheit: POST /api/sessions/<id>/location erfordert sessions:edit + @require_login",
+        "Sicherheit: POST /api/sessions/<id>/cost erfordert sessions:edit + @require_login",
+        "Sicherheit: GET /api/vehicles/<id>/image erfordert vehicles:view",
+        "Sicherheit: GET /api/vehicles/<id>/image/file erfordert vehicles:view (Fallback: Placeholder)",
+        "Neu: PATCH /api/sessions/<id> — Session-Felder bearbeiten (kwh_charged, price_per_kwh, cost_eur, charger_power_kw)",
+        "Neu: _update_vehicle_image_meta() — speichert image_mode/image_path für v0 und extra_vehicles",
+        "Bugfix: Multi-Month PDF Dateiname enthält alle Monate (2026-01_2026-03…) statt nur erstem",
+        "Bugfix: PDF Download Content-Disposition nutzt tatsächlichen Dateinamen aus Token",
+        "Bugfix: period_label in Reportarchiv listet Monatsnamen statt '3 Monate'",
+        "Analyse: template_analyzer nutzt CHARGER_POWER_PRIORITY_KEYWORDS für Tiebreaker",
+        "Analyse: 'Ladegeschwindigkeit KW/Stunde' → charger_power_kw auch bei Partial-Matches"
+      ]
+    },
     {
       "version": "2.0.6",
       "date": "2026-05-20",
