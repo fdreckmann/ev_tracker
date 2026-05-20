@@ -11,7 +11,7 @@ from meter_providers import read_meter as _read_meter_impl, MeterResult
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "2.0.5"
+APP_VERSION   = "2.0.6"
 
 CHANGELOG = [
     {"version":"2.0.0","changes":[
@@ -596,6 +596,13 @@ DEFAULT_CONFIG = {
     "report_include_pdf":            False,
     "report_pdf_language":           "auto",
     "report_pdf_include_signature":  False,
+
+    # Vehicle image (primary vehicle v0)
+    "vehicle_image_mode":          "none",    # none|upload|builtin|auto
+    "vehicle_image_path":          "",
+    "vehicle_default_image_key":   "",
+    "vehicle_image_source":        "",
+    "vehicle_image_attribution":   "",
 }
 
 # Fields that belong to a vehicle config (vs. app-level config)
@@ -1448,6 +1455,14 @@ def _check_csrf():
     if not token or token != session.get("csrf_token",""):
         return jsonify({"error": "CSRF-Token ungültig"}), 403
     return None
+
+@app.after_request
+def add_security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+    return response
 
 @app.route("/login", methods=["GET","POST"])
 def login_page():
@@ -2732,19 +2747,48 @@ def api_delete_vehicle(vid):
 _VEH_IMG_DIR = DATA_DIR / "vehicles"
 _VEH_IMG_MAX_BYTES = 3 * 1024 * 1024  # 3 MB
 _VEH_IMG_ALLOWED_MIME = {"image/png", "image/jpeg", "image/webp"}
+_VEH_ID_RE = re.compile(r'^[a-zA-Z0-9_-]{1,64}$')
+
+def _validate_vehicle_id(vid: str) -> bool:
+    """Reject IDs with slashes, dots, traversal sequences or unsafe chars."""
+    if not vid or not _VEH_ID_RE.match(vid):
+        return False
+    if ".." in vid or "/" in vid or "\\" in vid:
+        return False
+    return True
+
+def _safe_veh_img_path(vid: str) -> "Path":
+    """Return resolved car.webp path; raises ValueError for unsafe IDs or traversal."""
+    if not _validate_vehicle_id(vid):
+        raise ValueError(f"Ungültige vehicle_id: {vid!r}")
+    base = _VEH_IMG_DIR.resolve()
+    target = (base / vid / "car.webp").resolve()
+    if not str(target).startswith(str(base) + "/"):
+        raise ValueError(f"Pfad-Traversal verhindert für vehicle_id: {vid!r}")
+    return target
 
 @app.route("/api/vehicles/<vid>/image")
 @require_login
 def api_vehicle_image_meta(vid):
-    img_path = _VEH_IMG_DIR / vid / "car.webp"
+    try:
+        img_path = _safe_veh_img_path(vid)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     return jsonify({"exists": img_path.exists(), "vehicle_id": vid,
                     "url": f"/api/vehicles/{vid}/image/file" if img_path.exists() else None})
 
 @app.route("/api/vehicles/<vid>/image/file")
 @require_login
 def api_vehicle_image_file(vid):
-    img_path = _VEH_IMG_DIR / vid / "car.webp"
+    try:
+        img_path = _safe_veh_img_path(vid)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     if not img_path.exists():
+        # Serve placeholder SVG from static dir
+        ph = Path(__file__).parent / "static" / "vehicle_images" / "placeholder_car.svg"
+        if ph.exists():
+            return send_file(str(ph), mimetype="image/svg+xml")
         return jsonify({"error": "Kein Bild vorhanden"}), 404
     return send_file(str(img_path), mimetype="image/webp")
 
@@ -2753,24 +2797,32 @@ def api_vehicle_image_file(vid):
 def api_vehicle_image_upload(vid):
     if not has_permission(_current_user(), "vehicles:image_manage"):
         return jsonify({"error": "Keine Berechtigung: vehicles:image_manage"}), 403
+    try:
+        img_path = _safe_veh_img_path(vid)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
     if "file" not in request.files:
         return jsonify({"ok": False, "error": "Keine Datei"}), 400
     f = request.files["file"]
-    # Read content for size + type check
     raw = f.read(_VEH_IMG_MAX_BYTES + 1)
     if len(raw) > _VEH_IMG_MAX_BYTES:
         return jsonify({"ok": False, "error": "Datei zu groß (max. 3 MB)"}), 400
     try:
         from PIL import Image as _PilImage
-        import io
-        img = _PilImage.open(io.BytesIO(raw))
-        img.verify()
-        img = _PilImage.open(io.BytesIO(raw))
-        img_dir = _VEH_IMG_DIR / vid
-        img_dir.mkdir(parents=True, exist_ok=True)
-        img.save(str(img_dir / "car.webp"), "WEBP", quality=85)
+        import io as _io
+        _img = _PilImage.open(_io.BytesIO(raw))
+        _img.verify()
+        _img = _PilImage.open(_io.BytesIO(raw))
+        img_path.parent.mkdir(parents=True, exist_ok=True)
+        _img.save(str(img_path), "WEBP", quality=85)
     except Exception as e:
         return jsonify({"ok": False, "error": f"Ungültiges Bild: {e}"}), 400
+    # Update image_mode in config if this is the primary vehicle
+    if vid == "v0":
+        cfg = load_config()
+        cfg["vehicle_image_mode"] = "upload"
+        cfg["vehicle_image_path"] = f"/api/vehicles/{vid}/image/file"
+        save_config(cfg)
     _audit("vehicle_image_uploaded", f"vehicle_id={vid}", ip=request.remote_addr)
     return jsonify({"ok": True, "url": f"/api/vehicles/{vid}/image/file"})
 
@@ -2779,10 +2831,18 @@ def api_vehicle_image_upload(vid):
 def api_vehicle_image_delete(vid):
     if not has_permission(_current_user(), "vehicles:image_manage"):
         return jsonify({"error": "Keine Berechtigung: vehicles:image_manage"}), 403
-    img_path = _VEH_IMG_DIR / vid / "car.webp"
+    try:
+        img_path = _safe_veh_img_path(vid)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     if img_path.exists():
         img_path.unlink()
         _audit("vehicle_image_deleted", f"vehicle_id={vid}", ip=request.remote_addr)
+    if vid == "v0":
+        cfg = load_config()
+        cfg["vehicle_image_mode"] = "none"
+        cfg["vehicle_image_path"] = ""
+        save_config(cfg)
     return jsonify({"ok": True})
 
 
@@ -3557,6 +3617,10 @@ _RESTORE_ALLOWED_FILES = {
 _RESTORE_ALLOWED_DIRS = {
     "templates/", "signatures/", "vehicles/", "uploads/",
 }
+# WAL and SHM side-files are excluded from restore: they may be inconsistent
+# without the matching DB and could corrupt the database on startup.
+_RESTORE_BLOCKED_FILES = {"sessions.db-wal", "sessions.db-shm",
+                          "ev_tracker.db-wal", "ev_tracker.db-shm"}
 _BACKUP_MAX_UPLOAD_BYTES = 200 * 1024 * 1024  # 200 MB
 
 def restore_backup(zip_path):
@@ -3599,6 +3663,10 @@ def restore_backup(zip_path):
             if member.endswith("/"):
                 continue
             if member.startswith("backups/"):
+                continue
+            basename = member.rsplit("/", 1)[-1]
+            if basename in _RESTORE_BLOCKED_FILES:
+                log.debug("Restore: WAL/SHM-Datei blockiert %r", member)
                 continue
             is_allowed = (
                 member in _RESTORE_ALLOWED_FILES or
@@ -5435,12 +5503,15 @@ def api_reports_create():
                                     (veh_filter,)).fetchone()
             bc_con.close()
             if len(periods) > 1:
-                # Multi-month PDF: generate per first period with a note
-                pdf_bytes = generate_report_pdf(
-                    all_sessions, period_info, cfg, lang=lang,
+                from pdf_export import generate_multi_month_report_pdf as _gmm
+                _periods_sessions = [
+                    (p, _get_report_sessions(p["start"], p["end"], loc_filter, veh_filter))
+                    for p in periods
+                ]
+                pdf_bytes = _gmm(
+                    _periods_sessions, cfg, lang=lang,
                     include_signature=data.get("include_signature", False),
-                    billing_config=dict(bc_row) if bc_row else None,
-                    report_id=None)
+                    billing_config=dict(bc_row) if bc_row else None)
             else:
                 pdf_bytes = generate_report_pdf(
                     all_sessions, period_info, cfg, lang=lang,
@@ -5575,19 +5646,30 @@ def api_export_pdf():
     cfg["report_email_schedule_type"]    = stype
     cfg["report_email_single_month"]     = data.get("single_month", cfg.get("report_email_single_month",""))
     cfg["report_email_months"]           = data.get("months", cfg.get("report_email_months",[]))
-    periods    = calculate_report_periods(stype, pmode, datetime.now(), cfg)
+    periods     = calculate_report_periods(stype, pmode, datetime.now(), cfg)
     period_info = periods[0]
-    sessions   = _get_report_sessions(period_info["start"], period_info["end"], loc_filter, veh_filter)
     bc_con = _get_db()
     bc_row = bc_con.execute("SELECT * FROM billing_config WHERE vehicle_id=?", (veh_filter,)).fetchone()
     bc_con.close()
     include_sig = bool(data.get("include_signature", cfg.get("report_pdf_include_signature")))
     sig_path    = str(SIGNATURE_PATH) if SIGNATURE_PATH.exists() and include_sig else None
+    bc_dict     = dict(bc_row) if bc_row else None
     try:
-        pdf_bytes = generate_report_pdf(
-            sessions, period_info, cfg, lang=lang,
-            include_signature=include_sig, signature_path=sig_path,
-            billing_config=dict(bc_row) if bc_row else None)
+        if len(periods) > 1:
+            from pdf_export import generate_multi_month_report_pdf as _gen_multi
+            periods_sessions = [
+                (p, _get_report_sessions(p["start"], p["end"], loc_filter, veh_filter))
+                for p in periods
+            ]
+            pdf_bytes = _gen_multi(periods_sessions, cfg, lang=lang,
+                                   include_signature=include_sig,
+                                   billing_config=bc_dict)
+        else:
+            sessions  = _get_report_sessions(period_info["start"], period_info["end"], loc_filter, veh_filter)
+            pdf_bytes = generate_report_pdf(
+                sessions, period_info, cfg, lang=lang,
+                include_signature=include_sig, signature_path=sig_path,
+                billing_config=bc_dict)
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 503
     except Exception as e:

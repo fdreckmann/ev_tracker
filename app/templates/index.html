@@ -504,6 +504,17 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 ══════════════════════════════════════════════════════ -->
 <div class="panel active" id="panel-dashboard">
 
+  <!-- Vehicle image card -->
+  <div id="dashVehicleCard" style="display:flex;align-items:center;gap:16px;background:var(--card);border:1px solid var(--brd);border-radius:12px;padding:14px 18px;margin-bottom:14px">
+    <img id="dashVehicleImg" src="/static/vehicle_images/placeholder_car.svg"
+         alt="Fahrzeug" style="height:70px;width:auto;border-radius:8px;object-fit:contain;background:#1e2030"
+         onerror="this.src='/static/vehicle_images/placeholder_car.svg'">
+    <div>
+      <div style="font-weight:600;font-size:1rem" id="dashVehicleName">{{ cfg.car_name }}</div>
+      <div id="dashVehiclePlate" style="font-size:.8rem;color:var(--mute)">—</div>
+    </div>
+  </div>
+
   <!-- Charge bar -->
   <div class="cbar-wrap" id="cbarWrap">
     <div class="cbar-lbl">⚡ Ladevorgang aktiv — <span id="cbarSession"></span></div>
@@ -2962,6 +2973,9 @@ async function loadConfig(){
     }
   }
   if($('expLang')) $('expLang').value = c.export_language || 'de';
+  // Update dashboard vehicle card
+  if($('dashVehicleName') && c.car_name) $('dashVehicleName').textContent = c.car_name;
+  if($('dashVehiclePlate')) $('dashVehiclePlate').textContent = c.template_kennzeichen || '—';
   const m = {c_car:'car_name',c_notify:'notify_service',
              c_bat:'battery_capacity_kwh',
              c_price_home:'price_per_kwh_home',c_price_ac:'price_per_kwh_ac',c_price_dc:'price_per_kwh_dc',
@@ -5477,6 +5491,7 @@ initCsrf().then(()=>loadConfig());
 initExpSelects();
 refreshStatus();
 loadCharts();
+loadDashboardVehicleImage();
 loadSignatureStatus();
 loadProviderFields('{{ cfg.provider }}').then(()=>{
   const cfg_saved = {};
@@ -6198,8 +6213,22 @@ async function testNotifRule(id){
 }
 
 // ── Vehicle Image ─────────────────────────────────────────────────────────────
+async function loadDashboardVehicleImage(vid) {
+  const dashImg = $('dashVehicleImg');
+  if (!dashImg) return;
+  const useVid = vid || 'v0';
+  const r = await apiFetch(`/api/vehicles/${encodeURIComponent(useVid)}/image`).then(r=>r.json()).catch(()=>null);
+  if (r && r.exists && r.url) {
+    dashImg.src = r.url + '?t=' + Date.now();
+  } else {
+    dashImg.src = '/static/vehicle_images/placeholder_car.svg';
+  }
+}
+
 async function loadVehicleImage(vid) {
   if (!vid) return;
+  // Also refresh dashboard image when the modal image changes
+  if (vid === 'v0') loadDashboardVehicleImage('v0');
   const r = await apiFetch(`/api/vehicles/${encodeURIComponent(vid)}/image`).then(r=>r.json()).catch(()=>null);
   const preview = $('vmImagePreview');
   const placeholder = $('vmImagePlaceholder');
