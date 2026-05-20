@@ -2663,7 +2663,7 @@ Oder leer lassen um Gesamtbetrag direkt einzugeben:`,
   }
 
   const r=await fetch(`/api/sessions/${id}/cost`,{method:'POST',
-    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+    headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify(body)}).then(r=>r.json());
   if(r.ok){ toast(`Session #${id} Kosten aktualisiert: ${fmt(r.cost_eur,2)} €`); loadSessions(); }
   else toast('Fehler','err');
 }
@@ -2687,7 +2687,7 @@ async function editLocation(id, current){
   const loc=map[choice.trim()];
   if(!loc){toast('Ungültige Eingabe — 1, 2 oder 3','err');return;}
   const r=await fetch(`/api/sessions/${id}/location`,{method:'POST',
-    headers:{'Content-Type':'application/json'},
+    headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},
     body:JSON.stringify({location:loc})}).then(r=>r.json());
   if(r.ok){toast(`Session #${id} → ${labels[loc]}`);loadSessions();}
   else toast('Fehler','err');
@@ -2829,7 +2829,7 @@ async function saveConfig(){
     poll_interval:        parseInt($('c_poll').value),
   };
   const r = await fetch('/api/config',{method:'POST',
-    headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+    headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify(cfg)});
   if(r.ok){ toast('Konfiguration gespeichert'); $('carName').textContent=cfg.car_name; }
   else toast('Fehler beim Speichern','err');
 }
@@ -2840,7 +2840,7 @@ async function testEntsoe(){
   if(!key){ const c=await fetch('/api/config').then(r=>r.json()); key=c.entsoe_api_key||''; }
   if(!key){ res.textContent='⚠ Kein API Key eingetragen'; return; }
   const r=await fetch('/api/entsoe/test',{method:'POST',
-    headers:{'Content-Type':'application/json'},
+    headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},
     body:JSON.stringify({entsoe_api_key:key})}).then(r=>r.json());
   if(r.ok) res.innerHTML=`<span style="color:var(--acc)">✅ ${r.price_kwh.toFixed(4)} €/kWh (${r.price_mwh} €/MWh) — DE Spotpreis</span>`;
   else res.innerHTML=`<span style="color:var(--danger)">❌ ${r.error}</span>`;
@@ -2854,7 +2854,7 @@ async function testConn(){
   const saved=await fetch('/api/config').then(r=>r.json()).catch(()=>({}));
   if(!body.ha_token) body.ha_token=saved.ha_token||'';
   const r=await fetch('/api/test-connection',{method:'POST',
-    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+    headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify(body)}).then(r=>r.json());
   if(r.ok){ res.className='conn-res ok'; res.textContent=r.message; }
   else{ res.className='conn-res err'; res.textContent='❌ '+(r.message||r.error||'Fehler'); }
 }
@@ -3038,7 +3038,7 @@ async function saveConfig(){
     poll_interval:        parseInt($('c_poll').value),
   };
   const r = await fetch('/api/config',{method:'POST',
-    headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+    headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify(cfg)});
   if(r.ok){ toast('Konfiguration gespeichert'); $('carName').textContent=cfg.car_name; }
   else toast('Fehler beim Speichern','err');
 }
@@ -3049,7 +3049,7 @@ async function testEntsoe(){
   if(!key){ const c=await fetch('/api/config').then(r=>r.json()); key=c.entsoe_api_key||''; }
   if(!key){ res.textContent='⚠ Kein API Key eingetragen'; return; }
   const r=await fetch('/api/entsoe/test',{method:'POST',
-    headers:{'Content-Type':'application/json'},
+    headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},
     body:JSON.stringify({entsoe_api_key:key})}).then(r=>r.json());
   if(r.ok) res.innerHTML=`<span style="color:var(--acc)">✅ ${r.price_kwh.toFixed(4)} €/kWh (${r.price_mwh} €/MWh) — DE Spotpreis</span>`;
   else res.innerHTML=`<span style="color:var(--danger)">❌ ${r.error}</span>`;
@@ -4183,7 +4183,7 @@ async function uploadTpl(file){
   if(!file) return;
   if(!file.name.endsWith('.xlsx')){ toast('Nur .xlsx Dateien','err'); return; }
   const fd=new FormData(); fd.append('file',file);
-  const r=await fetch('/api/template',{method:'POST',body:fd}).then(r=>r.json());
+  const r=await fetch('/api/template',{method:'POST',body:fd,headers:{'X-CSRF-Token':csrfToken}}).then(r=>r.json());
   if(r.ok){
     toast(`Template hochgeladen: ${r.filename}`);
     await refreshTplInfo();
@@ -4311,7 +4311,7 @@ async function saveTplHeaderFields(){
     template_meter_start:   parseFloat($('c_template_meter_start').value)||0,
   };
   const r=await fetch('/api/config',{method:'POST',
-    headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+    headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify(cfg)});
   const info=$('tplHeaderSaveInfo');
   if(r.ok){ info.textContent='✓ Gespeichert'; setTimeout(()=>info.textContent='',2500); }
   else { info.textContent='Fehler'; }
@@ -4703,7 +4703,7 @@ function setChannel(ch){
   });
   $('channelInfo').textContent = CHANNEL_INFO[ch]||'';
   // save to config
-  fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},
+  fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},
     body:JSON.stringify({update_channel:ch})});
   $('updateInfo').textContent='—';
   $('updateBtn').style.display='none';
@@ -4772,7 +4772,7 @@ async function doUpdate(){
 
   let r;
   try {
-    r = await fetch('/api/update/pull',{method:'POST'}).then(res=>res.json());
+    r = await fetch('/api/update/pull',{method:'POST',headers:{'X-CSRF-Token':csrfToken}}).then(res=>res.json());
   } catch(_) {
     bar.style.width='100%'; lbl.textContent='✅ Fertig!';
     $('updateInfo').innerHTML='<span style="color:var(--acc)">✅ Update erfolgreich — Seite lädt in 5s neu…</span>';
@@ -5050,7 +5050,7 @@ async function saveOAuthConfig(){
     oauth_microsoft_client_secret:$('oauth_microsoft_client_secret').value.trim(),
     oauth_microsoft_tenant:       $('oauth_microsoft_tenant').value.trim()||'common',
   };
-  const r = await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(x=>x.json());
+  const r = await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify(data)}).then(x=>x.json());
   const info = $('oauthSaveInfo');
   if(r.ok){
     info.innerHTML='<span style="color:var(--acc)">✅ Gespeichert</span>';
@@ -5067,7 +5067,7 @@ async function setAuthPassword(){
   if(!pw){ toast('Passwort darf nicht leer sein','err'); return; }
   if(pw !== pw2){ toast('Passwörter stimmen nicht überein','err'); return; }
   if(pw.length < 6){ toast('Passwort muss mindestens 6 Zeichen haben','err'); return; }
-  await fetch('/api/auth/setup',{method:'POST',headers:{'Content-Type':'application/json'},
+  await fetch('/api/auth/setup',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},
     body:JSON.stringify({password:pw})});
   $('authNewPw').value=''; $('authNewPw2').value='';
   toast('Passwort gesetzt — beim nächsten Aufruf wird Login verlangt','ok');
@@ -5076,14 +5076,14 @@ async function setAuthPassword(){
 
 async function disableAuth(){
   if(!confirm('Login deaktivieren?\nDie App ist dann ohne Passwort erreichbar.')) return;
-  await fetch('/api/auth/setup',{method:'POST',headers:{'Content-Type':'application/json'},
+  await fetch('/api/auth/setup',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},
     body:JSON.stringify({disable_password:true})});
   toast('Login deaktiviert','ok');
   loadAuthStatus();
 }
 
 async function setupTotp(){
-  const r = await fetch('/api/auth/totp/setup',{method:'POST'}).then(r=>r.json());
+  const r = await fetch('/api/auth/totp/setup',{method:'POST',headers:{'X-CSRF-Token':csrfToken}}).then(r=>r.json());
   if(!r.ok){ toast(r.error||'Fehler','err'); return; }
   $('totpSecret').textContent='Secret: '+r.secret;
   // Render QR via Google Charts API (no server-side dep)
@@ -5096,7 +5096,7 @@ async function setupTotp(){
 
 async function disableTotp(){
   if(!confirm('2FA deaktivieren?')) return;
-  await fetch('/api/auth/totp/disable',{method:'POST'});
+  await fetch('/api/auth/totp/disable',{method:'POST',headers:{'X-CSRF-Token':csrfToken}});
   $('totpQrWrap').style.display='none';
   toast('2FA deaktiviert','ok');
   loadAuthStatus();
@@ -5231,7 +5231,7 @@ async function loadBackups(){
 
 async function createBackup(){
   const btn=event.target; btn.disabled=true; btn.textContent='⏳ Erstelle…';
-  const r=await fetch('/api/backup/create',{method:'POST'}).then(r=>r.json());
+  const r=await fetch('/api/backup/create',{method:'POST',headers:{'X-CSRF-Token':csrfToken}}).then(r=>r.json());
   btn.disabled=false; btn.textContent='💾 Backup jetzt erstellen';
   if(r.ok){ toast(`Backup erstellt: ${r.name} (${(r.size/1024).toFixed(1)} KB)`); loadBackups(); }
   else toast('Fehler: '+r.error,'err');
@@ -5246,7 +5246,7 @@ async function restoreBackup(name){
 
 Aktuelle Daten werden überschrieben!`)) return;
   const r=await fetch('/api/backup/restore',{method:'POST',
-    headers:{'Content-Type':'application/json'},
+    headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},
     body:JSON.stringify({name})}).then(r=>r.json());
   if(r.ok){ toast('Restore erfolgreich — Seite wird neu geladen…'); setTimeout(()=>location.reload(),2000); }
   else toast('Restore fehlgeschlagen: '+r.error,'err');
@@ -5258,7 +5258,7 @@ async function uploadRestore(file){
 
 Aktuelle Daten werden überschrieben!`)) return;
   const fd=new FormData(); fd.append('file',file);
-  const r=await fetch('/api/backup/upload',{method:'POST',body:fd}).then(r=>r.json());
+  const r=await fetch('/api/backup/upload',{method:'POST',body:fd,headers:{'X-CSRF-Token':csrfToken}}).then(r=>r.json());
   if(r.ok){ toast('Restore erfolgreich — Seite wird neu geladen…'); setTimeout(()=>location.reload(),2000); }
   else toast('Fehler: '+r.error,'err');
   $('restoreFile').value='';
@@ -5275,7 +5275,7 @@ function setCron(val){ $('backupCron').value=val; saveCron(); }
 async function saveCron(){
   const cron=$('backupCron').value.trim();
   const r=await fetch('/api/backup/cron',{method:'POST',
-    headers:{'Content-Type':'application/json'},
+    headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},
     body:JSON.stringify({cron})}).then(r=>r.json());
   if(r.ok){
     toast(cron?`Auto-Backup: ${r.next}`:'Auto-Backup deaktiviert');
@@ -6417,7 +6417,7 @@ async function smtpOAuthConnect(provider){
 
 async function smtpOAuthDisconnect(provider){
   if(!confirm('Verbindung wirklich trennen?')) return;
-  const r=await fetch('/api/smtp/oauth/'+provider+'/disconnect',{method:'POST'}).then(r=>r.json()).catch(()=>({}));
+  const r=await fetch('/api/smtp/oauth/'+provider+'/disconnect',{method:'POST',headers:{'X-CSRF-Token':csrfToken}}).then(r=>r.json()).catch(()=>({}));
   if(r&&r.ok) toast('Verbindung getrennt','ok');
   refreshSmtpOAuthStatus();
 }
@@ -6460,7 +6460,7 @@ async function saveSmtpConfig(){
   if(gsec) data.smtp_google_client_secret = gsec;
   const msec = $('smtp_ms_client_secret').value;
   if(msec) data.smtp_ms_client_secret = msec;
-  const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());
+  const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify(data)}).then(r=>r.json());
   if(r.ok){ toast('SMTP gespeichert','ok'); updateSmtpStatus(data); }
   else toast('Fehler beim Speichern','err');
 }
@@ -6476,7 +6476,7 @@ async function testSmtpConn(){
     smtp_password:$('smtp_password').value,
     smtp_auth_method:($('smtp_auth_method')||{}).value||'basic',
   };
-  const r=await fetch('/api/smtp/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());
+  const r=await fetch('/api/smtp/test',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify(data)}).then(r=>r.json());
   const am=r.auth_method?(' ['+r.auth_method+']'):'';
   res.textContent=r.ok?('✅ '+r.message+am):('❌ '+r.error+am);
   res.style.color=r.ok?'var(--acc)':'var(--danger)';
@@ -6488,7 +6488,7 @@ async function sendSmtpTestMail(){
   if(!to){ toast('Bitte Empfänger-Adresse eingeben','err'); return; }
   res.textContent='⏳ Sende Testmail…'; res.style.color='var(--mute)';
   await saveSmtpConfig();
-  const r=await fetch('/api/smtp/send-test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to})}).then(r=>r.json());
+  const r=await fetch('/api/smtp/send-test',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify({to})}).then(r=>r.json());
   res.textContent=r.ok?('✅ '+r.message):('❌ '+r.error);
   res.style.color=r.ok?'var(--acc)':'var(--danger)';
 }
@@ -6531,7 +6531,7 @@ async function saveCurrentAsTemplate(){
   if(!name) return;
   const saved=await fetch('/api/template/mapping').then(r=>r.json()).catch(()=>({}));
   const r=await fetch('/api/export/templates',{method:'POST',
-    headers:{'Content-Type':'application/json'},
+    headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},
     body:JSON.stringify({name,mapping:saved.mapping||{},start_row:saved.start_row})
   }).then(r=>r.json());
   if(r.ok){ toast('Vorlage gespeichert','ok'); loadExportTemplates(); }
@@ -6542,7 +6542,7 @@ async function loadExportTemplate(tid){
   const templates=await fetch('/api/export/templates').then(r=>r.json());
   const t=templates.find(x=>x.id===tid);
   if(!t) return;
-  await fetch('/api/template/mapping',{method:'POST',headers:{'Content-Type':'application/json'},
+  await fetch('/api/template/mapping',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},
     body:JSON.stringify({mapping:t.mapping||{},start_row:t.start_row})});
   toast('Vorlage "'+t.name+'" geladen','ok');
   loadMappingPreview();
