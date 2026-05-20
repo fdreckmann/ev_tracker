@@ -6624,7 +6624,7 @@ async function doMobileExport() {
     } else {
       const r = await fetch('/api/export', {
         method: 'POST',
-        headers: {'Content-Type':'application/json','X-CSRFToken': window._csrfToken||''},
+        headers: {'Content-Type':'application/json','X-CSRF-Token': csrfToken},
         body: JSON.stringify({month: monthVal, language: _mobileExportLang, include_signature: incSig})
       });
       if (r.ok) {

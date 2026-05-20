@@ -215,19 +215,26 @@ def send_notification(rule: dict, event_type: str, context: dict, config: dict) 
         return False
 
 
-def fire_event(event_type: str, context: dict, config: dict) -> None:
+def fire_event(event_type: str, context: dict, config: dict,
+               db_path=None) -> None:
     """
     Fire an event: load all matching rules from DB and dispatch notifications.
     Runs in a background thread to avoid blocking.
+    db_path: explicit Path to the SQLite DB (defaults to sessions.db next to data/)
     """
     def _dispatch():
         try:
             import sqlite3
             from pathlib import Path
-            db_path = Path(__file__).parent.parent / "data" / "ev_tracker.db"
-            if not db_path.exists():
+            _db = db_path
+            if _db is None:
+                # Fallback: look for sessions.db relative to this file
+                _db = Path(__file__).parent.parent / "data" / "sessions.db"
+                if not _db.exists():
+                    _db = Path(__file__).parent.parent / "data" / "ev_tracker.db"
+            if not Path(_db).exists():
                 return
-            con = sqlite3.connect(str(db_path))
+            con = sqlite3.connect(str(_db))
             con.row_factory = sqlite3.Row
             rows = con.execute(
                 "SELECT * FROM notification_rules WHERE enabled=1 AND event_type=?",

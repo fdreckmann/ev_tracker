@@ -1,6 +1,30 @@
 {
-  "version": "2.0.3",
+  "version": "2.0.4",
   "changelog": [
+    {
+      "version": "2.0.4",
+      "date": "2026-05-20",
+      "changes": [
+        "Sicherheit: CSRF-Schutz global aktiviert — POST ohne gültigen X-CSRF-Token wird mit 403 abgewiesen",
+        "Sicherheit: Backup-Restore Zip-Slip-Schutz — Allowlist + Pfad-Validierung + automatisches Sicherheits-Backup vor Restore",
+        "Sicherheit: Alle Backup-Endpunkte erfordern Login und spezifische Permissions (backup:view/create/download/restore/delete)",
+        "SQLite WAL-Modus, foreign_keys, busy_timeout=5000, synchronous=NORMAL aktiviert",
+        "21 Indexe für sessions, users, audit_log, reports, api_tokens, notification_rules ergänzt",
+        "Bugfix: MQTT-Publisher-Start nutzt nicht mehr nicht-existentes tracker-Modul",
+        "Bugfix: Notification Manager nutzt jetzt sessions.db statt hartkodierten ev_tracker.db-Pfad",
+        "Bugfix: fire_event() nimmt db_path-Parameter entgegen; wird bei charging_started/stopped und Backup aufgerufen",
+        "Bugfix: Signatur-Offset-Import aus openpyxl.drawing.spreadsheet_drawing mit Fallback",
+        "Bugfix: Multi-Monats-Reports haben korrekten kombinierten period_key (months:YYYY-MM,...)",
+        "Bugfix: Toter Code nach vorzeitigem return in _send_report_email entfernt; save_config() wird aufgerufen",
+        "Neu: GET /api/health — öffentlicher Health-Check ohne Auth",
+        "Neu: GET /api/system/status — Systemstatus mit DB-Größe, Backup-Info, MQTT-Status (Permission: system:status)",
+        "Neu: Fahrzeugbild-Routen — GET/POST/DELETE /api/vehicles/<vid>/image mit Pillow-Validierung, max 3 MB",
+        "Neu: home_charger_power_kw in DEFAULT_CONFIG; charger_power_kw + tariff_provider Felder in sessions",
+        "Neu: POST /api/v1/reports/create — Report per API-Token mit Scope reports:create",
+        "Frontend: X-CSRFToken → X-CSRF-Token vereinheitlicht (alle fetch-Aufrufe)",
+        "Architektur: app/routes/ und app/services/ angelegt für schrittweise Modularisierung"
+      ]
+    },
     {
       "version": "2.0.3",
       "date": "2026-05-19",

@@ -728,12 +728,15 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
                     try:
                         import re as _re_sig
                         from openpyxl.utils import column_index_from_string as _col_idx
-                        from openpyxl.drawing.anchor import OneCellAnchor, AnchorMarker
+                        try:
+                            from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, AnchorMarker
+                        except ImportError:
+                            from openpyxl.drawing.anchor import OneCellAnchor, AnchorMarker
                         from openpyxl.drawing.xdr import XDRPositiveSize2D
                         try:
                             from openpyxl.utils.units import pixels_to_EMU
                         except (ImportError, Exception):
-                            def pixels_to_EMU(px): return px * 9525
+                            def pixels_to_EMU(px): return int(px * 9525)
                         m2 = _re_sig.match(r'^([A-Za-z]+)(\d+)$', sig_cell)
                         if m2:
                             col_str = m2.group(1).upper()
@@ -751,12 +754,16 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
                             img.anchor = anchor
                             ws.add_image(img)
                             placed = True
-                    except Exception:
+                    except Exception as _anchor_err:
+                        import logging as _log_sig
+                        _log_sig.getLogger(__name__).warning(
+                            "Signatur-Offset fehlgeschlagen, Fallback auf einfaches Einfügen: %s", _anchor_err)
                         placed = False
                 if not placed:
                     ws.add_image(img, sig_cell)
         except Exception as e:
-            print(f"Signatur-Einfügung fehlgeschlagen: {e}")
+            import logging as _log_sig2
+            _log_sig2.getLogger(__name__).warning("Signatur-Einfügung fehlgeschlagen: %s", e)
     # ── End signature ────────────────────────────────────────────────────────
 
     wb.save(out)

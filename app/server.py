@@ -11,7 +11,7 @@ from meter_providers import read_meter as _read_meter_impl, MeterResult
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "2.0.3"
+APP_VERSION   = "2.0.4"
 
 CHANGELOG = [
     {"version":"2.0.0","changes":[
@@ -472,6 +472,7 @@ DEFAULT_CONFIG = {
     "meter_timeout_seconds": 8,     # request timeout
     "meter_verify_ssl":  True,      # verify SSL certificate
     "meter_prefer_meter_delta": False,  # use meter delta instead of SoC for kwh_charged
+    "home_charger_power_kw":    11.0,   # installed wallbox power at home (kW)
 
     # Auth — password + TOTP
     "auth_password_hash": "",
@@ -585,6 +586,7 @@ DEFAULT_CONFIG = {
     "mqtt_publish_interval_seconds":   60,
 
     # Notification channels (global config)
+    "notifications_enabled": False,
     "ntfy_server":   "https://ntfy.sh",
     "ntfy_token":    "",
     "gotify_server": "",
@@ -684,6 +686,11 @@ def init_db():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
+    # Performance + reliability pragmas
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA foreign_keys=ON")
+    con.execute("PRAGMA busy_timeout=5000")
+    con.execute("PRAGMA synchronous=NORMAL")
     con.execute("""CREATE TABLE IF NOT EXISTS sessions (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
         start_ts      TEXT, end_ts TEXT,
@@ -725,9 +732,12 @@ def init_db():
         ("price_per_kwh","REAL"),
         ("entsoe_spot",  "REAL"),
         ("provider",     "TEXT DEFAULT 'ha'"),
-        ("kwh_source",      "TEXT DEFAULT 'soc'"),
-        ("meter_delta_kwh", "REAL"),
-        ("meter_error",     "TEXT"),
+        ("kwh_source",         "TEXT DEFAULT 'soc'"),
+        ("meter_delta_kwh",    "REAL"),
+        ("meter_error",        "TEXT"),
+        ("charger_power_kw",   "REAL"),
+        ("tariff_provider",    "TEXT"),
+        ("tariff_price_source","TEXT DEFAULT 'config'"),
     ]:
         try:
             con.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
@@ -966,6 +976,37 @@ def init_db():
             con.execute("INSERT OR IGNORE INTO user_roles (user_id, role_id) VALUES (?,?)",
                         (u["id"], role_row["id"]))
     con.commit()
+
+    # Idempotent indexes for performance
+    _indexes = [
+        ("idx_sessions_vehicle",    "sessions(vehicle_id)"),
+        ("idx_sessions_start_ts",   "sessions(start_ts)"),
+        ("idx_sessions_end_ts",     "sessions(end_ts)"),
+        ("idx_sessions_location",   "sessions(location)"),
+        ("idx_sessions_charger",    "sessions(charger_type)"),
+        ("idx_sessions_kwh_source", "sessions(kwh_source)"),
+        ("idx_users_email",         "users(email)"),
+        ("idx_users_role",          "users(role)"),
+        ("idx_users_status",        "users(status)"),
+        ("idx_audit_ts",            "audit_log(ts)"),
+        ("idx_audit_user",          "audit_log(user_id)"),
+        ("idx_audit_action",        "audit_log(action)"),
+        ("idx_reports_vehicle",     "reports(vehicle_id)"),
+        ("idx_reports_period",      "reports(period_start, period_end)"),
+        ("idx_reports_status",      "reports(status)"),
+        ("idx_reports_created",     "reports(created_at)"),
+        ("idx_api_tokens_hash",     "api_tokens(token_hash)"),
+        ("idx_api_tokens_active",   "api_tokens(is_active)"),
+        ("idx_notif_enabled",       "notification_rules(enabled)"),
+        ("idx_notif_event",         "notification_rules(event_type)"),
+        ("idx_notif_channel",       "notification_rules(channel)"),
+    ]
+    for idx_name, idx_target in _indexes:
+        try:
+            con.execute(f"CREATE INDEX IF NOT EXISTS {idx_name} ON {idx_target}")
+        except Exception:
+            pass
+    con.commit()
     con.close()
 
 # ── Permission checking ───────────────────────────────────────────────────────
@@ -1189,6 +1230,14 @@ def tracker_loop(vehicle_id: str = "v0"):
                      provider_id,meter_start_val,vehicle_id))
                 con.commit(); session_id=cur.lastrowid; session_active=True
                 st["session_id"]=session_id
+                try:
+                    from notification_manager import fire_event as _fire_event
+                    _fire_event("charging_started", {
+                        "vehicle_id": vehicle_id, "session_id": session_id,
+                        "location": location, "soc_start": soc_start,
+                        "charger_type": charger_type,
+                    }, load_config(), db_path=DB_PATH)
+                except Exception: pass
                 cur.execute("INSERT INTO session_points (session_id,ts,soc,power_kw) VALUES (?,?,?,?)",
                             (session_id,datetime.now().isoformat(timespec="seconds"),soc_start,power_kw))
                 con.commit()
@@ -1250,6 +1299,14 @@ def tracker_loop(vehicle_id: str = "v0"):
                 log.info("✅ [%s] Session #%d | %.2f kWh | %.2f €",vehicle_id,session_id,kwh or 0,cost or 0)
                 ha_notify(vcfg,f"✅ {vcfg['car_name']} fertig",
                     f"{'🏠' if location=='home' else '⚡'} · {kwh or 0:.2f} kWh · {cost or 0:.2f} €")
+                try:
+                    from notification_manager import fire_event as _fire_event
+                    _fire_event("charging_stopped", {
+                        "vehicle_id": vehicle_id, "session_id": session_id,
+                        "location": location, "kwh": kwh or 0, "cost_eur": cost or 0,
+                        "soc_end": soc, "kwh_source": kwh_source,
+                    }, load_config(), db_path=DB_PATH)
+                except Exception: pass
                 session_id=None; peak_power=None
             con.close()
 
@@ -1318,7 +1375,7 @@ def check_auth():
         # Ensure CSRF token is set
         if "csrf_token" not in session:
             session["csrf_token"] = secrets.token_hex(32)
-        return
+        return _check_csrf()
     if request.path.startswith("/api/"):
         return jsonify({"error": "Nicht eingeloggt", "login_required": True}), 401
     return redirect(url_for("login_page", next=request.path))
@@ -2617,6 +2674,66 @@ def api_delete_vehicle(vid):
     _stop_vehicle_tracker(vid)
     return jsonify({"ok": True})
 
+
+# ── Vehicle Images ─────────────────────────────────────────────────────────────
+
+_VEH_IMG_DIR = DATA_DIR / "vehicles"
+_VEH_IMG_MAX_BYTES = 3 * 1024 * 1024  # 3 MB
+_VEH_IMG_ALLOWED_MIME = {"image/png", "image/jpeg", "image/webp"}
+
+@app.route("/api/vehicles/<vid>/image")
+@require_login
+def api_vehicle_image_meta(vid):
+    img_path = _VEH_IMG_DIR / vid / "car.webp"
+    return jsonify({"exists": img_path.exists(), "vehicle_id": vid,
+                    "url": f"/api/vehicles/{vid}/image/file" if img_path.exists() else None})
+
+@app.route("/api/vehicles/<vid>/image/file")
+@require_login
+def api_vehicle_image_file(vid):
+    img_path = _VEH_IMG_DIR / vid / "car.webp"
+    if not img_path.exists():
+        return jsonify({"error": "Kein Bild vorhanden"}), 404
+    return send_file(str(img_path), mimetype="image/webp")
+
+@app.route("/api/vehicles/<vid>/image/upload", methods=["POST"])
+@require_login
+def api_vehicle_image_upload(vid):
+    if not has_permission(_current_user(), "vehicles:image_manage"):
+        return jsonify({"error": "Keine Berechtigung: vehicles:image_manage"}), 403
+    if "file" not in request.files:
+        return jsonify({"ok": False, "error": "Keine Datei"}), 400
+    f = request.files["file"]
+    # Read content for size + type check
+    raw = f.read(_VEH_IMG_MAX_BYTES + 1)
+    if len(raw) > _VEH_IMG_MAX_BYTES:
+        return jsonify({"ok": False, "error": "Datei zu groß (max. 3 MB)"}), 400
+    try:
+        from PIL import Image as _PilImage
+        import io
+        img = _PilImage.open(io.BytesIO(raw))
+        img.verify()
+        img = _PilImage.open(io.BytesIO(raw))
+        img_dir = _VEH_IMG_DIR / vid
+        img_dir.mkdir(parents=True, exist_ok=True)
+        img.save(str(img_dir / "car.webp"), "WEBP", quality=85)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Ungültiges Bild: {e}"}), 400
+    _audit("vehicle_image_uploaded", f"vehicle_id={vid}", ip=request.remote_addr)
+    return jsonify({"ok": True, "url": f"/api/vehicles/{vid}/image/file"})
+
+@app.route("/api/vehicles/<vid>/image", methods=["DELETE"])
+@require_login
+def api_vehicle_image_delete(vid):
+    if not has_permission(_current_user(), "vehicles:image_manage"):
+        return jsonify({"error": "Keine Berechtigung: vehicles:image_manage"}), 403
+    img_path = _VEH_IMG_DIR / vid / "car.webp"
+    if img_path.exists():
+        img_path.unlink()
+        _audit("vehicle_image_deleted", f"vehicle_id={vid}", ip=request.remote_addr)
+    return jsonify({"ok": True})
+
+
 @app.route("/api/sessions")
 @require_login
 def api_sessions():
@@ -3382,11 +3499,56 @@ def create_backup(label="manual"):
     while len(all_backups)>10: all_backups.pop(0).unlink()
     return out
 
+_RESTORE_ALLOWED_FILES = {
+    "config.json", "sessions.db", "template.xlsx", "update_history.json",
+}
+_RESTORE_ALLOWED_DIRS = {
+    "templates/", "signatures/", "vehicles/", "uploads/",
+}
+
 def restore_backup(zip_path):
-    with zipfile.ZipFile(zip_path,"r") as zf:
-        for member in zf.namelist():
-            if member.startswith("backups/"): continue
-            zf.extract(member,DATA_DIR)
+    """Zip-Slip-safe restore: validate all paths, then extract only allowed files."""
+    # Create a safety backup before overwriting anything
+    try:
+        create_backup("pre_restore")
+    except Exception as e:
+        log.warning("Sicherheits-Backup vor Restore fehlgeschlagen: %s", e)
+
+    data_dir_resolved = DATA_DIR.resolve()
+
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        members = zf.namelist()
+
+        # Phase 1: validate every entry before extracting anything
+        for member in members:
+            if member.endswith("/"):
+                continue
+            # Reject absolute paths and path-traversal components
+            parts = member.replace("\\", "/").split("/")
+            if any(p in ("", "..") for p in parts):
+                raise ValueError(f"Unsicherer ZIP-Eintrag: {member!r}")
+            dest = (DATA_DIR / member).resolve()
+            if not str(dest).startswith(str(data_dir_resolved)):
+                raise ValueError(f"Pfad außerhalb DATA_DIR: {member!r}")
+
+        # Phase 2: extract only allowed paths, skip everything else
+        for member in members:
+            if member.endswith("/"):
+                continue
+            if member.startswith("backups/"):
+                continue
+            top = member.split("/")[0]
+            is_allowed = (
+                member in _RESTORE_ALLOWED_FILES or
+                any(member.startswith(d) for d in _RESTORE_ALLOWED_DIRS)
+            )
+            if not is_allowed:
+                log.debug("Restore: übersprungen %r (nicht in Allowlist)", member)
+                continue
+            dest = DATA_DIR / member
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(member) as src, open(dest, "wb") as dst:
+                dst.write(src.read())
 
 def parse_cron_next(cron_expr):
     now=datetime.now(); expr=cron_expr.strip().lower()
@@ -3414,14 +3576,29 @@ def schedule_backup():
     secs=parse_cron_next(cron)
     if not secs or secs<=0: return
     def run():
-        try: create_backup("auto"); log.info("Auto-Backup OK")
-        except Exception as e: log.warning("Auto-Backup Fehler: %s",e)
+        cfg = load_config()
+        try:
+            out = create_backup("auto")
+            log.info("Auto-Backup OK: %s", out.name)
+            try:
+                from notification_manager import fire_event as _fe
+                _fe("backup_success", {"file": out.name, "size": out.stat().st_size}, cfg, db_path=DB_PATH)
+            except Exception: pass
+        except Exception as e:
+            log.warning("Auto-Backup Fehler: %s", e)
+            try:
+                from notification_manager import fire_event as _fe
+                _fe("backup_failed", {"error": str(e)}, cfg, db_path=DB_PATH)
+            except Exception: pass
         schedule_backup()
     _backup_timer=Timer(secs,run); _backup_timer.daemon=True; _backup_timer.start()
     log.info("Nächstes Backup: %s",(datetime.now()+timedelta(seconds=secs)).strftime("%d.%m.%Y %H:%M"))
 
 @app.route("/api/backup/list")
+@require_login
 def api_backup_list():
+    if not has_permission(_current_user(), "backup:view"):
+        return jsonify({"error": "Keine Berechtigung: backup:view"}), 403
     BACKUP_DIR.mkdir(parents=True,exist_ok=True)
     backups=[{"name":f.name,"size":f.stat().st_size,
               "modified":datetime.fromtimestamp(f.stat().st_mtime).isoformat(timespec="seconds")}
@@ -3434,12 +3611,18 @@ def api_backup_list():
     return jsonify({"backups":backups,"next_backup":next_backup,"cron":cron})
 
 @app.route("/api/backup/create",methods=["POST"])
+@require_login
 def api_backup_create():
+    if not has_permission(_current_user(), "backup:create"):
+        return jsonify({"error": "Keine Berechtigung: backup:create"}), 403
     try: out=create_backup("manual"); return jsonify({"ok":True,"name":out.name,"size":out.stat().st_size})
     except Exception as e: return jsonify({"ok":False,"error":str(e)})
 
 @app.route("/api/backup/download/<filename>")
+@require_login
 def api_backup_download(filename):
+    if not has_permission(_current_user(), "backup:download"):
+        return jsonify({"error": "Keine Berechtigung: backup:download"}), 403
     if ".." in filename or "/" in filename: return jsonify({"error":"ungültig"}),400
     path=BACKUP_DIR/filename
     if not path.exists(): return jsonify({"error":"nicht gefunden"}),404
@@ -3458,17 +3641,28 @@ def api_backup_restore():
     except Exception as e: return jsonify({"ok":False,"error":str(e)})
 
 @app.route("/api/backup/upload",methods=["POST"])
+@require_login
 def api_backup_upload():
+    if not has_permission(_current_user(), "backup:restore"):
+        return jsonify({"error": "Keine Berechtigung: backup:restore"}), 403
     if "file" not in request.files: return jsonify({"ok":False,"error":"Keine Datei"}),400
     f=request.files["file"]
     if not f.filename.endswith(".zip"): return jsonify({"ok":False,"error":"Nur .zip"}),400
     BACKUP_DIR.mkdir(parents=True,exist_ok=True)
     tmp=BACKUP_DIR/f"upload_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"; f.save(tmp)
-    try: restore_backup(tmp); return jsonify({"ok":True,"restored":tmp.name})
-    except Exception as e: tmp.unlink(missing_ok=True); return jsonify({"ok":False,"error":str(e)})
+    try:
+        restore_backup(tmp)
+        _audit("backup_restored", f"file={tmp.name}", ip=request.remote_addr)
+        return jsonify({"ok":True,"restored":tmp.name})
+    except Exception as e:
+        tmp.unlink(missing_ok=True)
+        return jsonify({"ok":False,"error":str(e)})
 
 @app.route("/api/backup/cron",methods=["POST"])
+@require_login
 def api_backup_cron():
+    if not has_permission(_current_user(), "backup:create"):
+        return jsonify({"error": "Keine Berechtigung: backup:create"}), 403
     global _backup_timer
     cron=request.json.get("cron","").strip()
     cfg=load_config(); cfg["backup_cron"]=cron; save_config(cfg)
@@ -3481,10 +3675,15 @@ def api_backup_cron():
     return jsonify({"ok":True,"next":None})
 
 @app.route("/api/backup/delete/<filename>",methods=["DELETE"])
+@require_login
 def api_backup_delete(filename):
+    if not has_permission(_current_user(), "backup:delete"):
+        return jsonify({"error": "Keine Berechtigung: backup:delete"}), 403
     if ".." in filename or "/" in filename: return jsonify({"ok":False}),400
     path=BACKUP_DIR/filename
-    if path.exists(): path.unlink()
+    if path.exists():
+        path.unlink()
+        _audit("backup_deleted", f"file={filename}", ip=request.remote_addr)
     return jsonify({"ok":True})
 
 # ── Update via Docker Hub ────────────────────────────────────────────────────
@@ -4678,7 +4877,12 @@ def _send_report_email(cfg=None, triggered_by="auto"):
     is_de       = lang != "en"
 
     periods = calculate_report_periods(stype, period_mode, datetime.now(), cfg)
-    combined_key = periods[0]["period_key"] if periods else "unknown"
+    if period_mode == "multiple_months" and len(periods) > 1:
+        combined_key = "months:" + ",".join(
+            p["period_key"].replace("monthly:", "") for p in periods
+        )
+    else:
+        combined_key = periods[0]["period_key"] if periods else "unknown"
 
     if triggered_by == "auto" and cfg.get("report_email_last_sent_key","") == combined_key:
         log.info("Report bereits gesendet für %s — übersprungen", combined_key)
@@ -5457,6 +5661,72 @@ def _require_api_token(required_scope: str):
     return token_row, None, None
 
 
+# ── Health & System Status ────────────────────────────────────────────────────
+
+@app.route("/api/health")
+def api_health():
+    """Public health check — no auth required."""
+    db_ok = True
+    try:
+        _c = sqlite3.connect(DB_PATH); _c.execute("SELECT 1"); _c.close()
+    except Exception:
+        db_ok = False
+    data_ok = DATA_DIR.exists()
+    return jsonify({
+        "ok": db_ok and data_ok,
+        "version": APP_VERSION,
+        "db": "ok" if db_ok else "error",
+        "data_dir": "ok" if data_ok else "error",
+    }), 200 if (db_ok and data_ok) else 503
+
+
+@app.route("/api/system/status")
+@require_login
+def api_system_status():
+    if not has_permission(_current_user(), "system:status"):
+        return jsonify({"error": "Keine Berechtigung: system:status"}), 403
+    try:
+        con = _get_db()
+        sessions_count  = con.execute("SELECT COUNT(*) FROM sessions WHERE end_ts IS NOT NULL").fetchone()[0]
+        vehicles_count  = len(get_all_vehicles())
+        reports_count   = con.execute("SELECT COUNT(*) FROM reports").fetchone()[0]
+        backup_files    = sorted(BACKUP_DIR.glob("*.zip"), key=lambda p: p.stat().st_mtime)
+        backup_count    = len(backup_files)
+        last_backup     = backup_files[-1].name if backup_files else None
+        db_size         = DB_PATH.stat().st_size if DB_PATH.exists() else 0
+        con.close()
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    cfg = load_config()
+    warnings = []
+    if not cfg.get("report_email_recipients"):
+        warnings.append("Keine E-Mail-Empfänger konfiguriert")
+    if not cfg.get("backup_cron"):
+        warnings.append("Kein automatisches Backup konfiguriert")
+    # Detect install type
+    install_type = "docker" if Path("/proc/1/cgroup").exists() else "direct"
+    try:
+        with open("/proc/1/cgroup") as _f:
+            if "docker" not in _f.read() and "container" not in _f.read():
+                install_type = "direct"
+    except Exception:
+        install_type = "unknown"
+    return jsonify({
+        "ok": True,
+        "version": APP_VERSION,
+        "install_type": install_type,
+        "db_size": db_size,
+        "sessions_count": sessions_count,
+        "vehicles_count": vehicles_count,
+        "reports_count": reports_count,
+        "backup_count": backup_count,
+        "last_backup": last_backup,
+        "mqtt_enabled": bool(cfg.get("mqtt_enabled")),
+        "notifications_enabled": bool(cfg.get("notifications_enabled")),
+        "warnings": warnings,
+    })
+
+
 @app.route("/api/v1/status")
 def api_v1_status():
     token_row, err_resp, code = _require_api_token("system:read")
@@ -5553,6 +5823,46 @@ def api_v1_reports():
     return jsonify([dict(r) for r in rows])
 
 
+@app.route("/api/v1/reports/create", methods=["POST"])
+def api_v1_reports_create():
+    """Create a report via API token. Requires scope 'reports:create'."""
+    token_row, err_resp, code = _require_api_token("reports:create")
+    if err_resp: return err_resp, code
+    data        = request.get_json(force=True) or {}
+    cfg         = load_config()
+    vehicle_id  = data.get("vehicle_id", "v0")
+    loc_filter  = data.get("location_filter", "all")
+    veh_filter  = data.get("vehicle_filter", "all")
+    period_mode = data.get("period_mode", cfg.get("report_email_period_mode", "previous_period"))
+    stype       = data.get("schedule_type", cfg.get("report_email_schedule_type", "monthly"))
+    lang        = data.get("lang", cfg.get("report_email_language", "de"))
+    period_info = calculate_report_period(stype, period_mode, datetime.now(), cfg)
+    if not period_info:
+        return jsonify({"ok": False, "error": "Ungültiger Zeitraum"}), 400
+    sessions    = _get_report_sessions(period_info["start"], period_info["end"], loc_filter, veh_filter)
+    excel_bytes = None
+    try:
+        from export_excel import export as _exp
+        xl, _ = _exp(year=period_info["start"].year, month=period_info["start"].month,
+                     location=loc_filter, config=cfg, lang=lang, return_warnings=True)
+        excel_bytes = xl
+    except Exception as e:
+        log.warning("API v1 report Excel fehlgeschlagen: %s", e)
+    report_id = _save_report_record(vehicle_id, period_info, loc_filter, veh_filter,
+                                    "created", token_row.get("id"),
+                                    excel_bytes=excel_bytes,
+                                    summary={"sessions": len(sessions)})
+    _audit("api_report_created", f"token={token_row.get('name')} report={report_id}",
+           ip=request.remote_addr)
+    try:
+        from notification_manager import fire_event as _fe
+        _fe("report_created", {"report_id": report_id, "via": "api_v1"}, cfg, db_path=DB_PATH)
+    except Exception: pass
+    return jsonify({"ok": True, "report_id": report_id,
+                    "period_label": period_info.get("label_de",""),
+                    "sessions_count": len(sessions)}), 201
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # MQTT CONFIGURATION & CONTROL
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -5589,10 +5899,11 @@ def api_mqtt_config_save():
         from mqtt_publisher import start_periodic_publisher, stop_periodic_publisher
         stop_periodic_publisher()
         if cfg.get("mqtt_enabled"):
-            from tracker import get_current_state
-            start_periodic_publisher(cfg, get_current_state)
-    except Exception:
-        pass
+            def _get_mqtt_vehicle_states():
+                return {vid: dict(st) for vid, st in _vehicle_states.items()}
+            start_periodic_publisher(cfg, _get_mqtt_vehicle_states)
+    except Exception as _mqtt_err:
+        log.warning("MQTT-Publisher-Start fehlgeschlagen: %s", _mqtt_err)
     _audit("mqtt_config_saved", ip=request.remote_addr)
     return jsonify({"ok": True})
 
