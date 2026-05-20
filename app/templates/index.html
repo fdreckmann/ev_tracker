@@ -2191,8 +2191,9 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <button class="btn-p" onclick="saveVehicleModal()">💾 Speichern</button>
       <button class="btn-s" onclick="closeVehicleModal()">Abbrechen</button>
-      <button class="btn-d" id="vm_delete_btn" style="display:none;margin-left:auto" onclick="deleteVehicleModal()">🗑 Löschen</button>
-      <span id="vm_info" style="font-size:.75rem;font-family:var(--mono);color:var(--mute)"></span>
+      <button class="btn-d" id="vm_archive_btn" style="display:none;margin-left:auto" onclick="archiveVehicleModal()">📦 Archivieren</button>
+      <button class="btn-d" id="vm_hard_delete_btn" style="display:none;margin-left:4px;opacity:.7;font-size:.78rem" onclick="hardDeleteVehicleModal()" title="Nur möglich wenn keine Ladevorgänge existieren">🗑 Endgültig löschen</button>
+      <span id="vm_info" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-left:8px"></span>
     </div>
   </div>
 </div>
@@ -4914,7 +4915,8 @@ async function openAddVehicleModal() {
   $('vm_home_lat').value = '';
   $('vm_home_lon').value = '';
   $('vm_provider').selectedIndex = 0;
-  $('vm_delete_btn').style.display = 'none';
+  if($('vm_archive_btn'))    $('vm_archive_btn').style.display    = 'none';
+  if($('vm_hard_delete_btn')) $('vm_hard_delete_btn').style.display = 'none';
   $('vm_info').textContent = '';
   const imgSec = $('vmImageSection'); if(imgSec) imgSec.style.display = 'none';
   await loadVehicleModalFields();
@@ -4937,7 +4939,8 @@ async function openEditVehicleModal(vid) {
   for(let i=0;i<sel.options.length;i++){
     if(sel.options[i].value===v.provider){ sel.selectedIndex=i; break; }
   }
-  $('vm_delete_btn').style.display = '';
+  if($('vm_archive_btn'))      $('vm_archive_btn').style.display      = '';
+  if($('vm_hard_delete_btn')) $('vm_hard_delete_btn').style.display  = '';
   $('vm_info').textContent = '';
   const imgSecEdit = $('vmImageSection'); if(imgSecEdit) imgSecEdit.style.display = '';
   await loadVehicleImage(vid);
@@ -4989,7 +4992,7 @@ async function saveVehicleModal() {
 
   const url  = _editingVehicleId ? `/api/vehicles/${_editingVehicleId}` : '/api/vehicles';
   const meth = _editingVehicleId ? 'PUT' : 'POST';
-  const r = await fetch(url,{method:meth,headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(x=>x.json());
+  const r = await apiFetch(url,{method:meth,headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(x=>x.json());
   if(r.ok){
     closeVehicleModal();
     toast(_editingVehicleId ? 'Fahrzeug aktualisiert' : 'Fahrzeug hinzugefügt', 'ok');
@@ -4999,14 +5002,46 @@ async function saveVehicleModal() {
   }
 }
 
-async function deleteVehicleModal() {
+async function archiveVehicleModal() {
   if(!_editingVehicleId) return;
-  if(!confirm('Fahrzeug löschen? Ladevorgänge bleiben erhalten.')) return;
-  const r = await fetch(`/api/vehicles/${_editingVehicleId}`,{method:'DELETE'}).then(x=>x.json());
+  const vname = $('vm_name').value || _editingVehicleId;
+  if(!confirm(`Fahrzeug "${vname}" archivieren?\n\nLadevorgänge und Berichte bleiben erhalten. Das Fahrzeug wird nicht mehr aktiv getrackt.`)) return;
+  const r = await apiFetch(`/api/vehicles/${_editingVehicleId}`,{method:'DELETE'}).then(x=>x.json());
   if(r.ok){
     closeVehicleModal();
-    toast('Fahrzeug gelöscht','ok');
+    toast('Fahrzeug archiviert','ok');
     loadVehicleList();
+  } else {
+    $('vm_info').innerHTML = `<span style="color:var(--danger)">❌ ${r.error||'Fehler beim Archivieren'}</span>`;
+  }
+}
+
+async function hardDeleteVehicleModal() {
+  if(!_editingVehicleId) return;
+  const vname = $('vm_name').value || _editingVehicleId;
+  // First check how many sessions/reports exist
+  let sessCount = 0, repCount = 0;
+  try {
+    const info = await apiFetch(`/api/vehicles/${_editingVehicleId}?mode=hard`,{method:'DELETE'}).then(x=>x.json());
+    if(info.ok){ closeVehicleModal(); toast('Fahrzeug endgültig gelöscht','ok'); loadVehicleList(); return; }
+    if(info.sessions !== undefined){ sessCount = info.sessions; repCount = info.reports || 0; }
+    else { $('vm_info').innerHTML = `<span style="color:var(--danger)">❌ ${info.error||'Fehler'}</span>`; return; }
+  } catch(e){ $('vm_info').innerHTML = `<span style="color:var(--danger)">❌ Netzwerkfehler</span>`; return; }
+
+  const msg = `⚠️ ACHTUNG: Fahrzeug "${vname}" ENDGÜLTIG löschen?\n\n` +
+    `Vorhandene Daten:\n• ${sessCount} Ladevorgang/Ladevorgänge\n• ${repCount} Bericht(e)\n\n` +
+    `Diese Aktion kann NICHT rückgängig gemacht werden!\n` +
+    `Alle Ladevorgänge, Berichte und das Fahrzeugbild werden dauerhaft gelöscht.\n\n` +
+    `Zum Bestätigen "LÖSCHEN" eingeben:`;
+  const input = prompt(msg);
+  if(input !== 'LÖSCHEN') { toast('Abgebrochen','info'); return; }
+  const r = await apiFetch(`/api/vehicles/${_editingVehicleId}?mode=hard&delete_sessions=true`,{method:'DELETE'}).then(x=>x.json());
+  if(r.ok){
+    closeVehicleModal();
+    toast('Fahrzeug endgültig gelöscht','ok');
+    loadVehicleList();
+  } else {
+    $('vm_info').innerHTML = `<span style="color:var(--danger)">❌ ${r.error||'Fehler beim Löschen'}</span>`;
   }
 }
 

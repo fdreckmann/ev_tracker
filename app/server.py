@@ -11,7 +11,7 @@ from meter_providers import read_meter as _read_meter_impl, MeterResult
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "2.0.7"
+APP_VERSION   = "2.0.8"
 
 CHANGELOG = [
     {"version":"2.0.0","changes":[
@@ -664,8 +664,8 @@ def _audit(action: str, details: str = "", ip: str = ""):
     except Exception:
         pass
 
-def get_all_vehicles(cfg=None) -> list[dict]:
-    """Returns primary vehicle (v0 from flat config) plus extra vehicles."""
+def get_all_vehicles(cfg=None, include_archived: bool = False) -> list[dict]:
+    """Returns primary vehicle (v0) plus extra vehicles. Archived excluded by default."""
     if cfg is None:
         cfg = load_config()
     primary = {
@@ -673,9 +673,12 @@ def get_all_vehicles(cfg=None) -> list[dict]:
         "name": cfg.get("car_name", "Mein EV"),
         "provider": cfg.get("provider", "ha"),
         "active": True,
+        "archived": False,
         **{k: cfg[k] for k in VEHICLE_SPECIFIC_KEYS if k in cfg and k not in ("provider","car_name")},
     }
     extras = cfg.get("extra_vehicles", [])
+    if not include_archived:
+        extras = [v for v in extras if not v.get("archived", False)]
     return [primary] + extras
 
 def build_vehicle_config(vehicle: dict, cfg=None) -> dict:
@@ -2681,30 +2684,39 @@ def api_status():
     return jsonify(result)
 
 @app.route("/api/vehicles", methods=["GET"])
+@require_login
 def api_get_vehicles():
-    return jsonify(get_all_vehicles())
+    if not has_permission(_current_user(), "vehicles:view"):
+        return jsonify({"error": "Keine Berechtigung: vehicles:view"}), 403
+    include_archived = request.args.get("include_archived", "false").lower() == "true"
+    return jsonify(get_all_vehicles(include_archived=include_archived))
 
 @app.route("/api/vehicles", methods=["POST"])
-@require_admin
+@require_login
 def api_add_vehicle():
+    if not has_permission(_current_user(), "vehicles:create"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: vehicles:create"}), 403
     data = request.json or {}
     cfg  = load_config()
     extras = list(cfg.get("extra_vehicles", []))
     vid = f"v{int(time.time())}"
     data["id"] = vid
     data.setdefault("active", True)
+    data.setdefault("archived", False)
     extras.append(data)
     cfg["extra_vehicles"] = extras
     save_config(cfg)
     if data.get("active", True):
         _start_vehicle_tracker(vid)
+    _audit("vehicle_created", f"vehicle_id={vid} name={data.get('name','')}", ip=request.remote_addr)
     return jsonify({"ok": True, "id": vid})
 
 @app.route("/api/vehicles/<vid>", methods=["PUT"])
-@require_admin
+@require_login
 def api_update_vehicle(vid):
+    if not has_permission(_current_user(), "vehicles:edit"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: vehicles:edit"}), 403
     if vid == "v0":
-        # Update primary vehicle = update flat config fields
         data = request.json or {}
         cfg  = load_config()
         for k, val in data.items():
@@ -2727,19 +2739,96 @@ def api_update_vehicle(vid):
             if now_active:
                 _start_vehicle_tracker(vid)
             return jsonify({"ok": True})
-    return jsonify({"error": "Fahrzeug nicht gefunden"}), 404
+    return jsonify({"ok": False, "error": "Fahrzeug nicht gefunden"}), 404
 
 @app.route("/api/vehicles/<vid>", methods=["DELETE"])
-@require_admin
+@require_login
 def api_delete_vehicle(vid):
+    """Archive (default) or hard-delete a vehicle.
+    ?mode=hard — hard delete, blocked if sessions/reports exist.
+    ?mode=hard&delete_sessions=true — hard delete including sessions (future use).
+    """
+    if not has_permission(_current_user(), "vehicles:delete"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: vehicles:delete"}), 403
+
     if vid == "v0":
-        return jsonify({"error": "Primärfahrzeug kann nicht gelöscht werden"}), 400
+        return jsonify({"ok": False, "error": "Primärfahrzeug kann nicht gelöscht werden"}), 400
+
+    if not _validate_vehicle_id(vid):
+        return jsonify({"ok": False, "error": "Ungültige Fahrzeug-ID"}), 400
+
     cfg    = load_config()
-    extras = [v for v in cfg.get("extra_vehicles", []) if v["id"] != vid]
-    cfg["extra_vehicles"] = extras
+    extras = cfg.get("extra_vehicles", [])
+    target = next((v for v in extras if v["id"] == vid), None)
+    if target is None:
+        _audit("vehicle_delete_failed", f"vehicle_id={vid} reason=not_found", ip=request.remote_addr)
+        return jsonify({"ok": False, "error": "Fahrzeug nicht gefunden"}), 404
+
+    mode   = request.args.get("mode", "archive")
+    user   = _current_user()
+    vname  = target.get("name", vid)
+
+    if mode == "hard":
+        # Block if dependent data exists (unless delete_sessions=true)
+        allow_del_sessions = request.args.get("delete_sessions", "false").lower() == "true"
+        con = _get_db()
+        sess_count   = con.execute("SELECT COUNT(*) FROM sessions WHERE vehicle_id=?", (vid,)).fetchone()[0]
+        rep_count    = con.execute("SELECT COUNT(*) FROM reports  WHERE vehicle_id=?", (vid,)).fetchone()[0]
+        billing_row  = con.execute("SELECT id FROM billing_config WHERE vehicle_id=?", (vid,)).fetchone()
+        con.close()
+        if (sess_count or rep_count or billing_row) and not allow_del_sessions:
+            return jsonify({
+                "ok": False,
+                "error": (f"Fahrzeug hat noch {sess_count} Ladevorgänge und/oder {rep_count} Reports. "
+                          "Bitte archivieren oder Löschung inkl. Daten mit delete_sessions=true bestätigen."),
+                "sessions": sess_count, "reports": rep_count,
+            }), 409
+        # Hard delete: remove from config, clean DB and image dir
+        cfg["extra_vehicles"] = [v for v in extras if v["id"] != vid]
+        save_config(cfg)
+        _stop_vehicle_tracker(vid)
+        _vehicle_states.pop(vid, None)
+        _vehicle_stops.pop(vid, None)
+        if allow_del_sessions:
+            con = _get_db()
+            con.execute("DELETE FROM session_points WHERE session_id IN "
+                        "(SELECT id FROM sessions WHERE vehicle_id=?)", (vid,))
+            con.execute("DELETE FROM sessions WHERE vehicle_id=?", (vid,))
+            con.execute("DELETE FROM reports  WHERE vehicle_id=?", (vid,))
+            con.execute("DELETE FROM billing_config WHERE vehicle_id=?", (vid,))
+            con.commit(); con.close()
+        # Remove image directory
+        try:
+            img_dir = (_VEH_IMG_DIR / vid).resolve()
+            if str(img_dir).startswith(str(_VEH_IMG_DIR.resolve())):
+                import shutil as _shutil
+                if img_dir.exists():
+                    _shutil.rmtree(str(img_dir))
+        except Exception as _ie:
+            log.warning("Fahrzeugbild-Ordner konnte nicht gelöscht werden: %s", _ie)
+        _audit("vehicle_hard_deleted",
+               f"vehicle_id={vid} name={vname} sessions_deleted={allow_del_sessions}",
+               ip=request.remote_addr)
+        return jsonify({"ok": True, "action": "deleted", "vehicle_id": vid})
+
+    # Default: archive (soft delete)
+    new_extras = []
+    for v in extras:
+        if v["id"] == vid:
+            new_extras.append({**v,
+                "active": False,
+                "archived": True,
+                "deleted_at": datetime.utcnow().isoformat(timespec="seconds"),
+            })
+        else:
+            new_extras.append(v)
+    cfg["extra_vehicles"] = new_extras
     save_config(cfg)
     _stop_vehicle_tracker(vid)
-    return jsonify({"ok": True})
+    _vehicle_states.pop(vid, None)
+    _vehicle_stops.pop(vid, None)
+    _audit("vehicle_archived", f"vehicle_id={vid} name={vname}", ip=request.remote_addr)
+    return jsonify({"ok": True, "action": "archived", "vehicle_id": vid})
 
 
 # ── Vehicle Images ─────────────────────────────────────────────────────────────
