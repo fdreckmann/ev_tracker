@@ -823,6 +823,20 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             </label>
           </div>
         </div>
+        <div style="margin-top:10px;display:grid;gap:10px;grid-template-columns:1fr 1fr">
+          <div>
+            <label>Wallbox-Leistung zuhause</label>
+            <select id="c_home_charger_power_kw_preset" onchange="onWallboxPresetChange()">
+              <option value="11">11 kW</option>
+              <option value="22">22 kW</option>
+              <option value="custom">Benutzerdefiniert</option>
+            </select>
+          </div>
+          <div id="wallboxCustomDiv" style="display:none">
+            <label>Leistung (kW)</label>
+            <input type="number" id="c_home_charger_power_kw" placeholder="11" min="1" max="150" step="0.1">
+          </div>
+        </div>
         <div style="margin-top:6px">
           <button class="btn-s" style="font-size:.72rem;padding:4px 10px" onclick="toggleMeterAdvanced()">⚙ Erweitert</button>
         </div>
@@ -2144,6 +2158,25 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       </div>
     </div>
 
+    <div id="vmImageSection" style="margin-top:14px;display:none">
+      <div class="fg full"><label>Fahrzeugbild</label>
+        <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+          <img id="vmImagePreview" src="" alt="Fahrzeugbild"
+               style="width:120px;height:75px;object-fit:cover;border-radius:8px;border:1px solid var(--brd);display:none">
+          <div id="vmImagePlaceholder"
+               style="width:120px;height:75px;border-radius:8px;border:1px solid var(--brd);display:flex;align-items:center;justify-content:center;font-size:2rem;color:var(--mute)">🚗</div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <label class="btn-s" style="cursor:pointer;font-size:.75rem">
+              📷 Bild hochladen
+              <input type="file" id="vmImageFile" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="uploadVehicleImage()">
+            </label>
+            <button class="btn-s" style="font-size:.75rem;color:var(--danger)" onclick="deleteVehicleImage()">🗑 Entfernen</button>
+            <span style="font-size:.65rem;color:var(--mute)">Max. 3 MB · PNG/JPG/WebP</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <button class="btn-p" onclick="saveVehicleModal()">💾 Speichern</button>
       <button class="btn-s" onclick="closeVehicleModal()">Abbrechen</button>
@@ -2349,6 +2382,38 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <button class="btn-s" onclick="runTemplateAnalysis()" id="analyzeBtn">🔍 Automatisch analysieren</button>
       <button class="btn-s" onclick="closeMappingModal()">Abbrechen</button>
       <div id="mappingModalInfo" style="font-size:.75rem;font-family:var(--mono);color:var(--mute)"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Session Edit Modal ── -->
+<div class="modal-overlay" id="sessionEditModal" style="display:none" onclick="if(event.target===this)closeSessionEditModal()">
+  <div class="modal" style="max-width:520px;width:96vw;padding:28px 28px 20px">
+    <button class="modal-close" onclick="closeSessionEditModal()">✕</button>
+    <h2 style="margin-bottom:16px">Session bearbeiten</h2>
+    <input type="hidden" id="se_id">
+    <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr;margin-bottom:12px">
+      <div>
+        <label class="lbl">Geladene kWh</label>
+        <input class="inp" type="number" id="se_kwh_charged" step="0.01" min="0" placeholder="0.00">
+      </div>
+      <div>
+        <label class="lbl">Wallbox-Leistung (kW)</label>
+        <input class="inp" type="number" id="se_charger_power_kw" step="0.1" min="0" max="350" placeholder="11.0">
+      </div>
+      <div>
+        <label class="lbl">Preis pro kWh (€)</label>
+        <input class="inp" type="number" id="se_price_per_kwh" step="0.0001" min="0" placeholder="0.3000">
+      </div>
+      <div>
+        <label class="lbl">Gesamtkosten (€)</label>
+        <input class="inp" type="number" id="se_cost_eur" step="0.01" min="0" placeholder="0.00">
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="btn-p" onclick="saveSessionEdit()">💾 Speichern</button>
+      <button class="btn-s" onclick="closeSessionEditModal()">Abbrechen</button>
+      <span id="se_info" style="font-size:.75rem;font-family:var(--mono);color:var(--mute)"></span>
     </div>
   </div>
 </div>
@@ -2884,6 +2949,17 @@ async function loadConfig(){
     if($('c_meter_device_scheme'))  $('c_meter_device_scheme').value = c.meter_device_scheme||'http';
     if($('c_meter_device_port'))    $('c_meter_device_port').value   = c.meter_device_port||'';
     if($('c_meter_prefer_delta'))   $('c_meter_prefer_delta').checked = !!c.meter_prefer_meter_delta;
+  }
+  if($('c_home_charger_power_kw')) {
+    const hp = c.home_charger_power_kw || 11;
+    const sel = $('c_home_charger_power_kw_preset');
+    const inp = $('c_home_charger_power_kw');
+    if (inp) inp.value = hp;
+    if (sel) {
+      if (hp == 11) sel.value = '11';
+      else if (hp == 22) sel.value = '22';
+      else { sel.value = 'custom'; const cd = $('wallboxCustomDiv'); if(cd) cd.style.display=''; }
+    }
   }
   if($('expLang')) $('expLang').value = c.export_language || 'de';
   const m = {c_car:'car_name',c_notify:'notify_service',
@@ -4166,6 +4242,7 @@ async function saveMeterSource(){
     meter_evcc_lp:        parseInt($('c_meter_evcc_lp')?.value)||0,
     meter_alfen_pass:     g('c_meter_alfen_pass'),
     meter_prefer_meter_delta: gb('c_meter_prefer_delta'),
+    home_charger_power_kw: parseFloat($('c_home_charger_power_kw')?.value || '11') || 11,
   });
   const r=await apiFetch('/api/config',{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
@@ -4795,6 +4872,12 @@ async function loadVehicleList() {
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:12px 14px';
     row.innerHTML = `
+      <div style="flex-shrink:0">
+        <img src="/api/vehicles/${v.id}/image/file" alt=""
+             style="width:48px;height:30px;object-fit:cover;border-radius:6px;border:1px solid var(--brd)"
+             onerror="this.style.display='none';this.nextElementSibling.style.display=''">
+        <span style="display:none;font-size:1.4rem">🚗</span>
+      </div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:700;font-size:.85rem;color:#fff">${v.name}</div>
         <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-top:3px">${v.provider||'ha'} · ID: ${v.id}${isV0?' · Primär':''}</div>
@@ -4819,6 +4902,7 @@ async function openAddVehicleModal() {
   $('vm_provider').selectedIndex = 0;
   $('vm_delete_btn').style.display = 'none';
   $('vm_info').textContent = '';
+  const imgSec = $('vmImageSection'); if(imgSec) imgSec.style.display = 'none';
   await loadVehicleModalFields();
   $('vehicleModal').style.display = 'flex';
 }
@@ -4841,6 +4925,8 @@ async function openEditVehicleModal(vid) {
   }
   $('vm_delete_btn').style.display = '';
   $('vm_info').textContent = '';
+  const imgSecEdit = $('vmImageSection'); if(imgSecEdit) imgSecEdit.style.display = '';
+  await loadVehicleImage(vid);
   await loadVehicleModalFields(v);
   $('vehicleModal').style.display = 'flex';
 }
@@ -6111,6 +6197,98 @@ async function testNotifRule(id){
   alert(r.ok ? '✅ '+r.message : '❌ '+r.message);
 }
 
+// ── Vehicle Image ─────────────────────────────────────────────────────────────
+async function loadVehicleImage(vid) {
+  if (!vid) return;
+  const r = await apiFetch(`/api/vehicles/${encodeURIComponent(vid)}/image`).then(r=>r.json()).catch(()=>null);
+  const preview = $('vmImagePreview');
+  const placeholder = $('vmImagePlaceholder');
+  if (!r || !r.exists) {
+    if (preview) { preview.style.display='none'; preview.src=''; }
+    if (placeholder) placeholder.style.display='';
+  } else {
+    if (preview) { preview.src = r.url + '?t=' + Date.now(); preview.style.display=''; }
+    if (placeholder) placeholder.style.display='none';
+  }
+}
+
+async function uploadVehicleImage() {
+  const file = $('vmImageFile')?.files[0];
+  if (!file || !_editingVehicleId) return;
+  const fd = new FormData(); fd.append('file', file);
+  const r = await fetch(`/api/vehicles/${encodeURIComponent(_editingVehicleId)}/image/upload`, {
+    method: 'POST', body: fd,
+    headers: {'X-CSRF-Token': csrfToken}
+  }).then(r=>r.json()).catch(e=>({ok:false,error:e.message}));
+  if (r.ok) { toast('Bild hochgeladen'); loadVehicleImage(_editingVehicleId); }
+  else toast('Fehler: ' + (r.error||'unbekannt'), 'err');
+}
+
+async function deleteVehicleImage() {
+  if (!_editingVehicleId || !confirm('Fahrzeugbild löschen?')) return;
+  const r = await apiFetch(`/api/vehicles/${encodeURIComponent(_editingVehicleId)}/image`, {method:'DELETE'}).then(r=>r.json()).catch(()=>({ok:false}));
+  if (r.ok) { toast('Bild gelöscht'); loadVehicleImage(_editingVehicleId); }
+  else toast('Fehler beim Löschen','err');
+}
+
+// ── Wallbox Power ─────────────────────────────────────────────────────────────
+function onWallboxPresetChange() {
+  const sel = $('c_home_charger_power_kw_preset');
+  const custom = $('wallboxCustomDiv');
+  const inp = $('c_home_charger_power_kw');
+  if (!sel) return;
+  const v = sel.value;
+  if (v === 'custom') {
+    if (custom) custom.style.display = '';
+  } else {
+    if (custom) custom.style.display = 'none';
+    if (inp) inp.value = v;
+  }
+}
+
+// ── Session Edit Modal ────────────────────────────────────────────────────────
+function openSessionEditModal(id, kwhCharged, pricePerKwh, costEur, chargerPowerKw) {
+  $('se_id').value = id || '';
+  $('se_kwh_charged').value = kwhCharged != null ? kwhCharged : '';
+  $('se_price_per_kwh').value = pricePerKwh != null ? Number(pricePerKwh).toFixed(4) : '';
+  $('se_cost_eur').value = costEur != null ? Number(costEur).toFixed(2) : '';
+  $('se_charger_power_kw').value = chargerPowerKw != null ? chargerPowerKw : '';
+  $('se_info').textContent = '';
+  $('sessionEditModal').style.display = 'flex';
+}
+
+function closeSessionEditModal() {
+  $('sessionEditModal').style.display = 'none';
+}
+
+async function saveSessionEdit() {
+  const id = $('se_id').value;
+  if (!id) return;
+  const body = {};
+  const kwh = parseFloat($('se_kwh_charged')?.value);
+  const price = parseFloat($('se_price_per_kwh')?.value);
+  const cost = parseFloat($('se_cost_eur')?.value);
+  const chargerKw = parseFloat($('se_charger_power_kw')?.value);
+  if (!isNaN(kwh))      body.kwh_charged        = kwh;
+  if (!isNaN(price))    body.price_per_kwh       = price;
+  if (!isNaN(cost))     body.cost_eur            = cost;
+  if (!isNaN(chargerKw)) body.charger_power_kw   = chargerKw;
+  $('se_info').textContent = 'Speichere…';
+  const r = await apiFetch(`/api/sessions/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)
+  }).then(r=>r.json()).catch(e=>({ok:false,error:e.message}));
+  if (r.ok || r.id) {
+    toast('Session aktualisiert');
+    closeSessionEditModal();
+    if (typeof loadSessions === 'function') loadSessions();
+  } else {
+    $('se_info').textContent = 'Fehler: ' + (r.error || 'unbekannt');
+    toast('Fehler beim Speichern', 'err');
+  }
+}
+
 function cfgSection(id, btn){
   document.querySelectorAll('.cfg-section').forEach(s=>s.style.display='none');
   const sec = $('cfgsec-'+id);
@@ -6654,7 +6832,7 @@ async function doMobileExportPreview() {
   try {
     const r = await fetch('/api/export/preview', {
       method: 'POST',
-      headers: {'Content-Type':'application/json','X-CSRFToken':window._csrfToken||''},
+      headers: {'Content-Type':'application/json','X-CSRF-Token':csrfToken},
       body: JSON.stringify({month: monthVal, year, month_num: month, language: _mobileExportLang, include_signature: incSig})
     }).then(x => x.json());
 
@@ -7057,7 +7235,7 @@ async function saveRoleEdit() {
 
     const r = await fetch(url, {
       method,
-      headers: {'Content-Type':'application/json','X-CSRFToken':window._csrfToken||''},
+      headers: {'Content-Type':'application/json','X-CSRF-Token':csrfToken},
       body: JSON.stringify(body)
     }).then(x => x.json());
 
@@ -7079,7 +7257,7 @@ async function deleteRole(roleId, roleName) {
   try {
     const r = await fetch('/api/admin/roles/' + roleId, {
       method: 'DELETE',
-      headers: {'X-CSRFToken':window._csrfToken||''}
+      headers: {'X-CSRF-Token':csrfToken}
     }).then(x => x.json());
     if (r.ok) {
       await loadAllRoles();
@@ -7134,7 +7312,7 @@ async function saveUserRoles() {
   try {
     const r = await fetch('/api/admin/users/'+_userRolesTargetId+'/roles', {
       method: 'PUT',
-      headers: {'Content-Type':'application/json','X-CSRFToken':window._csrfToken||''},
+      headers: {'Content-Type':'application/json','X-CSRF-Token':csrfToken},
       body: JSON.stringify({role_ids: roleIds})
     }).then(x => x.json());
     if (r.ok) {
