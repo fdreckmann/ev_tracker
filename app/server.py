@@ -11,7 +11,7 @@ from meter_providers import read_meter as _read_meter_impl, MeterResult
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "2.0.6"
+APP_VERSION   = "2.0.7"
 
 CHANGELOG = [
     {"version":"2.0.0","changes":[
@@ -2761,6 +2761,29 @@ def _safe_veh_img_path(vid: str) -> "Path":
     """Return resolved car.webp path; raises ValueError for unsafe IDs or traversal."""
     if not _validate_vehicle_id(vid):
         raise ValueError(f"Ungültige vehicle_id: {vid!r}")
+
+def _update_vehicle_image_meta(vid: str, mode: str, path: str,
+                                source: str = "", attribution: str = "",
+                                default_image_key: str = "") -> None:
+    """Persist image metadata for v0 (top-level config keys) or extra_vehicles entry."""
+    cfg = load_config()
+    meta = {"image_mode": mode, "image_path": path,
+            "image_source": source, "image_attribution": attribution,
+            "default_image_key": default_image_key}
+    if vid == "v0":
+        cfg["vehicle_image_mode"]        = mode
+        cfg["vehicle_image_path"]        = path
+        cfg["vehicle_image_source"]      = source
+        cfg["vehicle_image_attribution"] = attribution
+        cfg["vehicle_default_image_key"] = default_image_key
+    else:
+        extras = cfg.get("extra_vehicles", [])
+        for v in extras:
+            if v.get("id") == vid:
+                v.update(meta)
+                break
+        cfg["extra_vehicles"] = extras
+    save_config(cfg)
     base = _VEH_IMG_DIR.resolve()
     target = (base / vid / "car.webp").resolve()
     if not str(target).startswith(str(base) + "/"):
@@ -2770,6 +2793,8 @@ def _safe_veh_img_path(vid: str) -> "Path":
 @app.route("/api/vehicles/<vid>/image")
 @require_login
 def api_vehicle_image_meta(vid):
+    if not has_permission(_current_user(), "vehicles:view"):
+        return jsonify({"error": "Keine Berechtigung: vehicles:view"}), 403
     try:
         img_path = _safe_veh_img_path(vid)
     except ValueError as e:
@@ -2780,12 +2805,17 @@ def api_vehicle_image_meta(vid):
 @app.route("/api/vehicles/<vid>/image/file")
 @require_login
 def api_vehicle_image_file(vid):
+    if not has_permission(_current_user(), "vehicles:view"):
+        # Return placeholder instead of 403 so <img> tags degrade gracefully
+        ph = Path(__file__).parent / "static" / "vehicle_images" / "placeholder_car.svg"
+        if ph.exists():
+            return send_file(str(ph), mimetype="image/svg+xml")
+        return jsonify({"error": "Keine Berechtigung: vehicles:view"}), 403
     try:
         img_path = _safe_veh_img_path(vid)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     if not img_path.exists():
-        # Serve placeholder SVG from static dir
         ph = Path(__file__).parent / "static" / "vehicle_images" / "placeholder_car.svg"
         if ph.exists():
             return send_file(str(ph), mimetype="image/svg+xml")
@@ -2817,12 +2847,9 @@ def api_vehicle_image_upload(vid):
         _img.save(str(img_path), "WEBP", quality=85)
     except Exception as e:
         return jsonify({"ok": False, "error": f"Ungültiges Bild: {e}"}), 400
-    # Update image_mode in config if this is the primary vehicle
-    if vid == "v0":
-        cfg = load_config()
-        cfg["vehicle_image_mode"] = "upload"
-        cfg["vehicle_image_path"] = f"/api/vehicles/{vid}/image/file"
-        save_config(cfg)
+    # Persist image_mode: v0 in top-level config, extra_vehicles by id
+    _update_vehicle_image_meta(vid, mode="upload",
+                               path=f"/api/vehicles/{vid}/image/file")
     _audit("vehicle_image_uploaded", f"vehicle_id={vid}", ip=request.remote_addr)
     return jsonify({"ok": True, "url": f"/api/vehicles/{vid}/image/file"})
 
@@ -2838,17 +2865,15 @@ def api_vehicle_image_delete(vid):
     if img_path.exists():
         img_path.unlink()
         _audit("vehicle_image_deleted", f"vehicle_id={vid}", ip=request.remote_addr)
-    if vid == "v0":
-        cfg = load_config()
-        cfg["vehicle_image_mode"] = "none"
-        cfg["vehicle_image_path"] = ""
-        save_config(cfg)
+    _update_vehicle_image_meta(vid, mode="none", path="")
     return jsonify({"ok": True})
 
 
 @app.route("/api/sessions")
 @require_login
 def api_sessions():
+    if not has_permission(_current_user(), "sessions:view"):
+        return jsonify({"error": "Keine Berechtigung: sessions:view"}), 403
     return jsonify(get_sessions(
         request.args.get("year",type=int),
         request.args.get("month",type=int),
@@ -2857,7 +2882,10 @@ def api_sessions():
     ))
 
 @app.route("/api/sessions/<int:sid>", methods=["DELETE"])
+@require_login
 def api_delete_session(sid):
+    if not has_permission(_current_user(), "sessions:delete"):
+        return jsonify({"error": "Keine Berechtigung: sessions:delete"}), 403
     con=sqlite3.connect(DB_PATH)
     con.execute("DELETE FROM sessions WHERE id=?",(sid,))
     con.execute("DELETE FROM session_points WHERE session_id=?",(sid,))
@@ -2865,13 +2893,19 @@ def api_delete_session(sid):
     return jsonify({"ok":True})
 
 @app.route("/api/sessions/<int:sid>/points")
+@require_login
 def api_session_points(sid):
+    if not has_permission(_current_user(), "sessions:view"):
+        return jsonify({"error": "Keine Berechtigung: sessions:view"}), 403
     con=sqlite3.connect(DB_PATH); con.row_factory=sqlite3.Row
     rows=con.execute("SELECT ts,soc,power_kw FROM session_points WHERE session_id=? ORDER BY ts",(sid,)).fetchall()
     con.close(); return jsonify([dict(r) for r in rows])
 
 @app.route("/api/sessions/<int:sid>/location", methods=["POST"])
+@require_login
 def api_update_location(sid):
+    if not has_permission(_current_user(), "sessions:edit"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: sessions:edit"}), 403
     loc = request.json.get("location","unknown")
     if loc not in ("home","extern","unknown"):
         return jsonify({"ok":False,"error":"Ungültiger Standort"}), 400
@@ -2882,7 +2916,10 @@ def api_update_location(sid):
     return jsonify({"ok":True})
 
 @app.route("/api/sessions/<int:sid>/cost", methods=["POST"])
+@require_login
 def api_update_cost(sid):
+    if not has_permission(_current_user(), "sessions:edit"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: sessions:edit"}), 403
     data=request.json; cost=float(data["cost_eur"]); price_kwh=data.get("price_per_kwh")
     con=sqlite3.connect(DB_PATH); cur=con.cursor()
     if price_kwh is not None:
@@ -2893,6 +2930,30 @@ def api_update_cost(sid):
         cur.execute("UPDATE sessions SET cost_eur=?,cost_manual=1 WHERE id=?",(cost,sid))
     con.commit(); con.close()
     return jsonify({"ok":True,"cost_eur":cost})
+
+@app.route("/api/sessions/<int:sid>", methods=["PATCH"])
+@require_login
+def api_patch_session(sid):
+    """Edit session fields: kwh_charged, price_per_kwh, cost_eur, charger_power_kw."""
+    if not has_permission(_current_user(), "sessions:edit"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: sessions:edit"}), 403
+    data = request.get_json(force=True) or {}
+    allowed = {"kwh_charged", "price_per_kwh", "cost_eur", "charger_power_kw"}
+    fields = {k: v for k, v in data.items() if k in allowed and v is not None}
+    if not fields:
+        return jsonify({"ok": False, "error": "Keine gültigen Felder"}), 400
+    # Recalculate cost if kWh + price provided together and cost not explicit
+    if "kwh_charged" in fields and "price_per_kwh" in fields and "cost_eur" not in fields:
+        fields["cost_eur"] = round(float(fields["kwh_charged"]) * float(fields["price_per_kwh"]), 2)
+    # Mark cost as manual if cost or price was explicitly set
+    if "cost_eur" in fields or "price_per_kwh" in fields:
+        fields["cost_manual"] = 1
+    set_clause = ", ".join(f"{k}=?" for k in fields)
+    values = list(fields.values()) + [sid]
+    con = _get_db()
+    con.execute(f"UPDATE sessions SET {set_clause} WHERE id=?", values)
+    con.commit(); con.close()
+    return jsonify({"ok": True, "id": sid})
 
 @app.route("/api/stats/monthly")
 def api_monthly_stats(): return jsonify(get_monthly_stats())
@@ -5438,7 +5499,8 @@ def api_reports_create():
     if pmode == "multiple_months" and len(periods) > 1:
         combined_key = "months:" + ",".join(
             p["period_key"].replace("monthly:", "") for p in periods)
-        period_label = f"{len(periods)} Monate"
+        month_labels = [p.get("label_de") or p["period_key"].replace("monthly:","") for p in periods]
+        period_label = ", ".join(month_labels)
     else:
         combined_key = periods[0]["period_key"]
         period_label = periods[0].get("label_de", combined_key)
@@ -5677,9 +5739,17 @@ def api_export_pdf():
         return jsonify({"error": str(e)}), 500
     import secrets as _sec
     token = _sec.token_urlsafe(32)
-    _pdf_tokens[token] = {"bytes": pdf_bytes, "expires": datetime.utcnow().timestamp() + 1800}
-    label = (period_info.get("label_de") or "Report").replace(" ", "_")
-    return jsonify({"ok": True, "token": token, "filename": f"EV_Report_{label}.pdf",
+    _pdf_tokens[token] = {"bytes": pdf_bytes, "expires": datetime.utcnow().timestamp() + 1800,
+                          "filename": "EV_Report.pdf"}  # updated below
+    if len(periods) > 1:
+        # Build a compact label from all selected months, e.g. "2026-01_2026-03_2026-05"
+        month_keys = [p.get("period_key","").replace("monthly:","") for p in periods]
+        label = "_".join(month_keys) if month_keys else f"{len(periods)}_Monate"
+    else:
+        label = (period_info.get("label_de") or "Report").replace(" ", "_")
+    filename = f"EV_Report_{label}.pdf"
+    _pdf_tokens[token]["filename"] = filename
+    return jsonify({"ok": True, "token": token, "filename": filename,
                     "size_bytes": len(pdf_bytes)})
 
 
@@ -5689,8 +5759,9 @@ def api_export_pdf_download(token):
     if not entry or datetime.utcnow().timestamp() > entry["expires"]:
         _pdf_tokens.pop(token, None)
         return jsonify({"error": "Token abgelaufen oder ungültig"}), 404
+    fname = entry.get("filename", "EV_Report.pdf")
     return Response(entry["bytes"], mimetype="application/pdf",
-                    headers={"Content-Disposition": 'attachment; filename="EV_Report.pdf"'})
+                    headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

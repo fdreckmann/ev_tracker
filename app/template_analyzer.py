@@ -13,7 +13,7 @@ except ImportError:
     openpyxl = None
     MergedCell = None
 
-from template_fields import TABLE_FIELDS, HEADER_FIELDS
+from template_fields import TABLE_FIELDS, HEADER_FIELDS, CHARGER_POWER_PRIORITY_KEYWORDS
 
 MAX_ROWS = 80
 MAX_COLS = 40
@@ -87,6 +87,14 @@ def _match_table_field(text):
                     reason = f"Teilweise Übereinstimmung '{syn}'"
                     if conf > best_conf:
                         best_field, best_conf, best_reason = field, conf, reason
+
+    # Tiebreaker: if both charge_power_kw and charger_power_kw match with equal confidence,
+    # and the header contains a priority keyword (kw/stunde, wallbox, 11kw …) → charger_power_kw wins.
+    if best_field == "charge_power_kw" and best_conf < 1.0:
+        norm_lower = norm
+        if any(kw in norm_lower for kw in CHARGER_POWER_PRIORITY_KEYWORDS):
+            best_field = "charger_power_kw"
+            best_reason += " [priority: charger]"
 
     return best_field, best_conf, best_reason
 
