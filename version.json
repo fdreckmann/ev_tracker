@@ -1,6 +1,26 @@
 {
-  "version": "2.0.4",
+  "version": "2.0.5",
   "changelog": [
+    {
+      "version": "2.0.5",
+      "date": "2026-05-20",
+      "changes": [
+        "Sicherheit: /api/v1/* umgeht Session-Auth vollständig — nur Bearer-Token-Validierung",
+        "Sicherheit: /api/health ist öffentlich (AUTH_EXEMPT) — kein Login erforderlich",
+        "Sicherheit: Backup-Upload mit 200 MB Größenlimit und Symlink-Ablehnung (Zip-Slip-Härtung)",
+        "Bugfix: API-Token last_used_at wird nach erfolgreicher Validierung aktualisiert",
+        "Bugfix: Multi-Monats-Berichte in /api/reports/create verwenden korrekten kombinierten period_key",
+        "Bugfix: /api/v1/reports/create unterstützt single_month/multiple_months und aktualisiert last_used",
+        "Neu: Dynamische Tarifpreisberechnung am Ende jeder Heimladesession (nicht-fixed Provider)",
+        "Neu: charger_power_kw wird beim Session-Start für Heimladen aus home_charger_power_kw gesetzt",
+        "Neu: Fahrzeugbild-UI im Fahrzeug-Modal (Vorschau, Upload, Löschen)",
+        "Neu: Wallbox-Leistung-Konfiguration mit 11 kW / 22 kW / Benutzerdefiniert Voreinstellungen",
+        "Neu: Session-Bearbeitungs-Modal mit kwh_charged, charger_power_kw, price_per_kwh, cost_eur",
+        "Neu: Benachrichtigungsereignisse: report_created, report_sent, report_failed, meter_read_failed",
+        "Frontend: X-CSRFToken → X-CSRF-Token in allen fetch-Aufrufen vereinheitlicht",
+        "Architektur: app/routes/ und app/services/ Module für Modularisierung angelegt"
+      ]
+    },
     {
       "version": "2.0.4",
       "date": "2026-05-20",

@@ -34,7 +34,8 @@ EXPORT_LABELS = {
         "end": "Ende",
         "duration": "Dauer",
         "duration_hours": "Ladedauer (h)",
-        "charge_power_kw": "Ladeleistung (kW)",
+        "charge_power_kw": "Ø Ladeleistung berech. (kW)",
+        "charger_power_kw": "Ladepunkt-/Wallbox-Leistung (kW)",
         "kwh": "kWh",
         "cost": "Kosten",
         "location": "Standort",
@@ -78,7 +79,8 @@ EXPORT_LABELS = {
         "end": "End",
         "duration": "Duration",
         "duration_hours": "Charging duration (h)",
-        "charge_power_kw": "Charging power (kW)",
+        "charge_power_kw": "Avg. charging power calc. (kW)",
+        "charger_power_kw": "Charger/Wallbox power (kW)",
         "kwh": "kWh",
         "cost": "Cost",
         "location": "Location",
@@ -286,7 +288,8 @@ def to_row(s, idx, lang="de"):
         "end_time":     dt_e.time() if dt_e else None,
         "duration":     duration,
         "duration_hours": duration_hours,
-        "charge_power_kw": None,  # calculated below
+        "charge_power_kw":   None,  # calculated below
+        "charger_power_kw":  s.get("charger_power_kw"),  # installed wallbox power
         "odo_start":    s.get("odo_start"),
         "odo_end":      s.get("odo_end"),
         "soc_start":    s.get("soc_start"),

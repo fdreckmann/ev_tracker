@@ -11,7 +11,7 @@ from meter_providers import read_meter as _read_meter_impl, MeterResult
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "2.0.4"
+APP_VERSION   = "2.0.5"
 
 CHANGELOG = [
     {"version":"2.0.0","changes":[
@@ -1217,17 +1217,28 @@ def tracker_loop(vehicle_id: str = "v0"):
                 soc_start = soc; odo_start = odo; peak_power = power_kw or 0
                 _meter_start_res = _read_meter_impl(cfg)
                 meter_start_val = _meter_start_res.value
+                if meter_start_val is None and cfg.get("meter_source","none") != "none":
+                    log.warning("[%s] Zählerstand-Lesefehler beim Session-Start: %s",
+                                vehicle_id, getattr(_meter_start_res, "error", "unknown"))
+                    try:
+                        from notification_manager import fire_event as _fe
+                        _fe("meter_read_failed", {"vehicle_id": vehicle_id,
+                            "phase": "start", "source": cfg.get("meter_source")},
+                            cfg, db_path=DB_PATH)
+                    except Exception: pass
                 spot = fetch_entsoe_spot(cfg.get("entsoe_api_key","")) if location=="extern" else None
                 st["entsoe_spot"] = spot
                 price_kwh = (cfg["price_per_kwh_home"] if location=="home"
                              else calc_extern_price(cfg, charger_type, spot))
+                # Set wallbox power for home sessions
+                sess_charger_kw = (cfg.get("home_charger_power_kw") or None) if location=="home" else None
                 cur.execute("""INSERT INTO sessions
                     (start_ts,odo_start,soc_start,location,charger_type,
-                     max_power_kw,price_per_kwh,entsoe_spot,provider,meter_old,vehicle_id)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                     max_power_kw,price_per_kwh,entsoe_spot,provider,meter_old,vehicle_id,charger_power_kw)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (datetime.now().isoformat(timespec="seconds"),
                      odo_start,soc_start,location,charger_type,power_kw,price_kwh,spot,
-                     provider_id,meter_start_val,vehicle_id))
+                     provider_id,meter_start_val,vehicle_id,sess_charger_kw))
                 con.commit(); session_id=cur.lastrowid; session_active=True
                 st["session_id"]=session_id
                 try:
@@ -1284,13 +1295,49 @@ def tracker_loop(vehicle_id: str = "v0"):
                         if not cost_manual:
                             cost = round(kwh * (db_price or cfg["price_per_kwh_home"]), 2)
                         kwh_source = "meter"
+                # Dynamic tariff price (only for home sessions with non-fixed provider)
+                effective_price = db_price or cfg.get("price_per_kwh_home", 0.30)
+                tariff_prov_name = cfg.get("tariff_provider", "fixed")
+                tariff_price_src = "config"
+                if not cost_manual and location == "home" and tariff_prov_name not in ("fixed", "", None):
+                    try:
+                        from tariff_providers import get_tariff_provider
+                        _tp = get_tariff_provider(cfg)
+                        _sess_start = cur.execute(
+                            "SELECT start_ts FROM sessions WHERE id=?", (session_id,)).fetchone()
+                        if _sess_start and _sess_start[0]:
+                            from datetime import datetime as _dt
+                            _s = _dt.fromisoformat(_sess_start[0])
+                            _e = datetime.now()
+                            _avg = _tp.get_average_price(_s, _e)
+                            if _avg is not None and _avg > 0:
+                                effective_price = round(_avg, 5)
+                                tariff_price_src = tariff_prov_name
+                                log.info("[%s] Tarifpreis %.4f €/kWh via %s",
+                                         vehicle_id, effective_price, tariff_prov_name)
+                    except Exception as _tp_err:
+                        log.warning("[%s] Tarifprovider-Fehler, nutze Config-Preis: %s",
+                                    vehicle_id, _tp_err)
+                        tariff_price_src = "fallback"
+                        try:
+                            from notification_manager import fire_event as _fe
+                            _fe("provider_error", {"vehicle_id": vehicle_id,
+                                "provider": tariff_prov_name, "error": str(_tp_err)},
+                                cfg, db_path=DB_PATH)
+                        except Exception: pass
+                if kwh is not None and not cost_manual:
+                    cost = round(kwh * effective_price, 2)
+                end_ts_str = datetime.now().isoformat(timespec="seconds")
                 cur.execute("""UPDATE sessions
                     SET end_ts=?,odo_end=?,soc_end=?,kwh_charged=?,
                     cost_eur=CASE WHEN cost_manual=1 THEN cost_eur ELSE ? END,
+                    price_per_kwh=CASE WHEN cost_manual=1 THEN price_per_kwh ELSE ? END,
+                    tariff_provider=?,tariff_price_source=?,
                     max_power_kw=?,meter_new=?,kwh_source=?,
                     meter_delta_kwh=CASE WHEN ? IS NOT NULL AND ? IS NOT NULL THEN ?-? ELSE NULL END
                     WHERE id=?""",
-                    (datetime.now().isoformat(timespec="seconds"),odo,soc,kwh,cost,peak_power,
+                    (end_ts_str,odo,soc,kwh,cost,effective_price,
+                     tariff_prov_name,tariff_price_src,peak_power,
                      meter_end_val,kwh_source,
                      meter_start_val, meter_end_val, meter_end_val, meter_start_val,
                      session_id))
@@ -1349,10 +1396,12 @@ _AUTH_EXEMPT = {"/login", "/logout", "/setup",
                 "/auth/google", "/auth/google/callback",
                 "/auth/microsoft", "/auth/microsoft/callback",
                 "/forgot-password",
+                "/api/health",
                 "/api/auth/passkey/login/begin",
                 "/api/auth/passkey/login/complete"}
 
 _AUTH_EXEMPT_PREFIXES = ("/reset-password", "/invite")
+_API_V1_PREFIX = "/api/v1/"
 
 @app.before_request
 def check_auth():
@@ -1364,6 +1413,9 @@ def check_auth():
             return redirect(url_for("index"))
         return
     if any(request.path.startswith(p) for p in _AUTH_EXEMPT_PREFIXES):
+        return
+    # /api/v1/* uses Bearer token auth — bypass session check entirely
+    if request.path.startswith(_API_V1_PREFIX):
         return
     # If no users exist, everything redirects to setup
     if not _has_users():
@@ -1384,10 +1436,10 @@ def _check_csrf():
     """Verify CSRF token for state-changing requests. Returns error response or None."""
     if request.method in ("GET", "HEAD", "OPTIONS"):
         return None
-    _csrf_exempt_paths = {"/login", "/setup", "/forgot-password",
+    _csrf_exempt_paths = {"/login", "/setup", "/forgot-password", "/api/health",
                           "/api/auth/passkey/login/begin",
                           "/api/auth/passkey/login/complete"}
-    _csrf_exempt_prefixes = ("/reset-password", "/invite", "/auth/")
+    _csrf_exempt_prefixes = ("/reset-password", "/invite", "/auth/", "/api/v1/")
     if request.path in _csrf_exempt_paths:
         return None
     if any(request.path.startswith(p) for p in _csrf_exempt_prefixes):
@@ -3505,9 +3557,14 @@ _RESTORE_ALLOWED_FILES = {
 _RESTORE_ALLOWED_DIRS = {
     "templates/", "signatures/", "vehicles/", "uploads/",
 }
+_BACKUP_MAX_UPLOAD_BYTES = 200 * 1024 * 1024  # 200 MB
 
 def restore_backup(zip_path):
-    """Zip-Slip-safe restore: validate all paths, then extract only allowed files."""
+    """Zip-Slip-safe restore: validate all paths + symlinks, then extract allowed files."""
+    # Reject oversized files
+    if Path(zip_path).stat().st_size > _BACKUP_MAX_UPLOAD_BYTES:
+        raise ValueError(f"ZIP zu groß (max. {_BACKUP_MAX_UPLOAD_BYTES//1024//1024} MB)")
+
     # Create a safety backup before overwriting anything
     try:
         create_backup("pre_restore")
@@ -3517,27 +3574,32 @@ def restore_backup(zip_path):
     data_dir_resolved = DATA_DIR.resolve()
 
     with zipfile.ZipFile(zip_path, "r") as zf:
-        members = zf.namelist()
+        members = zf.infolist()
 
         # Phase 1: validate every entry before extracting anything
-        for member in members:
+        for info in members:
+            member = info.filename
             if member.endswith("/"):
                 continue
+            # Reject symlinks (external_attr bit 0xA0000000 on Unix)
+            if (info.external_attr >> 16) & 0xFFFF == 0xA1ED:
+                raise ValueError(f"Symlink im ZIP nicht erlaubt: {member!r}")
             # Reject absolute paths and path-traversal components
             parts = member.replace("\\", "/").split("/")
             if any(p in ("", "..") for p in parts):
                 raise ValueError(f"Unsicherer ZIP-Eintrag: {member!r}")
             dest = (DATA_DIR / member).resolve()
-            if not str(dest).startswith(str(data_dir_resolved)):
+            if not str(dest).startswith(str(data_dir_resolved) + "/") and \
+               str(dest) != str(data_dir_resolved):
                 raise ValueError(f"Pfad außerhalb DATA_DIR: {member!r}")
 
         # Phase 2: extract only allowed paths, skip everything else
-        for member in members:
+        for info in members:
+            member = info.filename
             if member.endswith("/"):
                 continue
             if member.startswith("backups/"):
                 continue
-            top = member.split("/")[0]
             is_allowed = (
                 member in _RESTORE_ALLOWED_FILES or
                 any(member.startswith(d) for d in _RESTORE_ALLOWED_DIRS)
@@ -3547,7 +3609,7 @@ def restore_backup(zip_path):
                 continue
             dest = DATA_DIR / member
             dest.parent.mkdir(parents=True, exist_ok=True)
-            with zf.open(member) as src, open(dest, "wb") as dst:
+            with zf.open(info) as src, open(dest, "wb") as dst:
                 dst.write(src.read())
 
 def parse_cron_next(cron_expr):
@@ -3649,7 +3711,16 @@ def api_backup_upload():
     f=request.files["file"]
     if not f.filename.endswith(".zip"): return jsonify({"ok":False,"error":"Nur .zip"}),400
     BACKUP_DIR.mkdir(parents=True,exist_ok=True)
-    tmp=BACKUP_DIR/f"upload_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"; f.save(tmp)
+    tmp=BACKUP_DIR/f"upload_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    # Stream-save with size limit
+    total = 0
+    with open(tmp, "wb") as out_f:
+        for chunk in f.stream:
+            total += len(chunk)
+            if total > _BACKUP_MAX_UPLOAD_BYTES:
+                out_f.close(); tmp.unlink(missing_ok=True)
+                return jsonify({"ok":False,"error":f"Datei zu groß (max. {_BACKUP_MAX_UPLOAD_BYTES//1024//1024} MB)"}),413
+            out_f.write(chunk)
     try:
         restore_backup(tmp)
         _audit("backup_restored", f"file={tmp.name}", ip=request.remote_addr)
@@ -5289,48 +5360,104 @@ def api_reports_create():
     stype      = cfg.get("report_email_schedule_type", "monthly")
     pmode      = cfg.get("report_email_period_mode", "previous_period")
     periods    = calculate_report_periods(stype, pmode, datetime.now(), cfg)
-    period_info = periods[0]
     loc_filter = cfg.get("report_email_location_filter","all")
     veh_filter = cfg.get("report_email_vehicle_filter","all")
     lang       = data.get("lang", cfg.get("report_email_language","de"))
     if lang == "auto": lang = "de"
-    sessions   = _get_report_sessions(period_info["start"], period_info["end"], loc_filter, veh_filter)
-    summary    = {
-        "n": len(sessions),
-        "total_kwh": round(sum(s.get("kwh_charged") or 0 for s in sessions), 3),
-        "total_cost": round(sum(s.get("cost_eur") or 0 for s in sessions), 2),
-    }
     user = _current_user()
+
+    # Build combined period_key for multi-month
+    if pmode == "multiple_months" and len(periods) > 1:
+        combined_key = "months:" + ",".join(
+            p["period_key"].replace("monthly:", "") for p in periods)
+        period_label = f"{len(periods)} Monate"
+    else:
+        combined_key = periods[0]["period_key"]
+        period_label = periods[0].get("label_de", combined_key)
+
+    # Collect sessions across all periods
+    all_sessions = []
+    months_summary = []
+    for p in periods:
+        ss = _get_report_sessions(p["start"], p["end"], loc_filter, veh_filter)
+        all_sessions.extend(ss)
+        months_summary.append({
+            "period_key": p["period_key"],
+            "label": p.get("label_de",""),
+            "n": len(ss),
+            "total_kwh": round(sum(s.get("kwh_charged") or 0 for s in ss), 3),
+            "total_cost": round(sum(s.get("cost_eur") or 0 for s in ss), 2),
+        })
+    summary = {
+        "n": len(all_sessions),
+        "total_kwh": round(sum(s.get("kwh_charged") or 0 for s in all_sessions), 3),
+        "total_cost": round(sum(s.get("cost_eur") or 0 for s in all_sessions), 2),
+        "months": months_summary,
+        "period_key": combined_key,
+        "period_label": period_label,
+    }
+
+    # Build a representative period_info for the archive record
+    period_info = dict(periods[0])
+    if len(periods) > 1:
+        period_info["period_key"] = combined_key
+        period_info["label_de"]   = period_label
+        period_info["end"]        = periods[-1]["end"]
+
     # Excel
     excel_bytes = None
-    if data.get("include_excel", True) and sessions:
+    if data.get("include_excel", True) and all_sessions:
         try:
-            from export_excel import export as _export_func
-            xl_loc = "extern" if loc_filter == "external" else loc_filter
-            excel_bytes, _ = _export_func(
-                year=period_info["start"].year, month=period_info["start"].month,
-                location=xl_loc, config=cfg, lang=lang, return_warnings=True)
+            if len(periods) > 1:
+                from export_excel import export_multi_month_bytes as _emm
+                periods_sessions = [
+                    (p, _get_report_sessions(p["start"], p["end"], loc_filter, veh_filter))
+                    for p in periods
+                ]
+                excel_bytes, _ = _emm(periods_sessions=periods_sessions,
+                                       loc_filter=loc_filter, config=cfg, lang=lang)
+            else:
+                from export_excel import export as _export_func
+                xl_loc = "extern" if loc_filter == "external" else loc_filter
+                excel_bytes, _ = _export_func(
+                    year=period_info["start"].year, month=period_info["start"].month,
+                    location=xl_loc, config=cfg, lang=lang, return_warnings=True)
         except Exception as e:
             log.warning("reports/create Excel: %s", e)
+
     # PDF
     pdf_bytes = None
-    if data.get("include_pdf", False) and sessions:
+    if data.get("include_pdf", False) and all_sessions:
         try:
             from pdf_export import generate_report_pdf
             bc_con = _get_db()
             bc_row = bc_con.execute("SELECT * FROM billing_config WHERE vehicle_id=?",
                                     (veh_filter,)).fetchone()
             bc_con.close()
-            pdf_bytes = generate_report_pdf(
-                sessions, period_info, cfg, lang=lang,
-                include_signature=data.get("include_signature", False),
-                billing_config=dict(bc_row) if bc_row else None)
+            if len(periods) > 1:
+                # Multi-month PDF: generate per first period with a note
+                pdf_bytes = generate_report_pdf(
+                    all_sessions, period_info, cfg, lang=lang,
+                    include_signature=data.get("include_signature", False),
+                    billing_config=dict(bc_row) if bc_row else None,
+                    report_id=None)
+            else:
+                pdf_bytes = generate_report_pdf(
+                    all_sessions, period_info, cfg, lang=lang,
+                    include_signature=data.get("include_signature", False),
+                    billing_config=dict(bc_row) if bc_row else None)
         except Exception as e:
             log.warning("reports/create PDF: %s", e)
+
     report_id = _save_report_record(
         veh_filter, period_info, loc_filter, veh_filter, "generated",
         user["id"] if user else None, excel_bytes, pdf_bytes, summary)
-    _audit("report_created", f"id={report_id} period={period_info.get('period_key')}", ip=request.remote_addr)
+    _audit("report_created", f"id={report_id} period={combined_key}", ip=request.remote_addr)
+    try:
+        from notification_manager import fire_event as _fe
+        _fe("report_created", {"report_id": report_id, "period": combined_key,
+                                "sessions": len(all_sessions)}, cfg, db_path=DB_PATH)
+    except Exception: pass
     return jsonify({"ok": True, "report_id": report_id, "summary": summary,
                     "has_excel": excel_bytes is not None, "has_pdf": pdf_bytes is not None})
 
@@ -5386,6 +5513,11 @@ def api_report_send(report_id):
         ok, err = _send_email_with_attachments(to, subject, html, attachments)
         if not ok: errors.append(f"{to}: {err}")
     if errors:
+        try:
+            from notification_manager import fire_event as _fe
+            _fe("report_failed", {"report_id": report_id, "error": "; ".join(errors)},
+                load_config(), db_path=DB_PATH)
+        except Exception: pass
         return jsonify({"ok": False, "error": "; ".join(errors)})
     now_iso = datetime.utcnow().isoformat()
     _con = _get_db()
@@ -5393,6 +5525,11 @@ def api_report_send(report_id):
                  (now_iso, json.dumps(recipients), report_id))
     _con.commit(); _con.close()
     _audit("report_sent", f"id={report_id}", ip=request.remote_addr)
+    try:
+        from notification_manager import fire_event as _fe
+        _fe("report_sent", {"report_id": report_id, "recipients": recipients},
+            load_config(), db_path=DB_PATH)
+    except Exception: pass
     return jsonify({"ok": True})
 
 
@@ -5658,6 +5795,13 @@ def _require_api_token(required_scope: str):
     scopes = json.loads(token_row.get("scopes") or "[]")
     if required_scope and required_scope not in scopes:
         return None, jsonify({"error": f"Scope '{required_scope}' fehlt"}), 403
+    # Update last_used_at
+    try:
+        _uc = _get_db()
+        _uc.execute("UPDATE api_tokens SET last_used_at=? WHERE id=?",
+                    (datetime.utcnow().isoformat(), token_row["id"]))
+        _uc.commit(); _uc.close()
+    except Exception: pass
     return token_row, None, None
 
 
@@ -5825,42 +5969,81 @@ def api_v1_reports():
 
 @app.route("/api/v1/reports/create", methods=["POST"])
 def api_v1_reports_create():
-    """Create a report via API token. Requires scope 'reports:create'."""
+    """Create a report via API token. Requires scope 'reports:create'.
+    Supports period_mode: previous_period, current_period, single_month, multiple_months.
+    """
     token_row, err_resp, code = _require_api_token("reports:create")
     if err_resp: return err_resp, code
     data        = request.get_json(force=True) or {}
     cfg         = load_config()
+    # Allow request to override period config temporarily
+    for k in ["report_email_single_month", "report_email_months"]:
+        if k in data: cfg[k] = data[k]
     vehicle_id  = data.get("vehicle_id", "v0")
     loc_filter  = data.get("location_filter", "all")
-    veh_filter  = data.get("vehicle_filter", "all")
+    veh_filter  = data.get("vehicle_filter", vehicle_id)
     period_mode = data.get("period_mode", cfg.get("report_email_period_mode", "previous_period"))
     stype       = data.get("schedule_type", cfg.get("report_email_schedule_type", "monthly"))
     lang        = data.get("lang", cfg.get("report_email_language", "de"))
-    period_info = calculate_report_period(stype, period_mode, datetime.now(), cfg)
-    if not period_info:
+    if lang == "auto": lang = "de"
+
+    periods = calculate_report_periods(stype, period_mode, datetime.now(), cfg)
+    if not periods:
         return jsonify({"ok": False, "error": "Ungültiger Zeitraum"}), 400
-    sessions    = _get_report_sessions(period_info["start"], period_info["end"], loc_filter, veh_filter)
+
+    if period_mode == "multiple_months" and len(periods) > 1:
+        combined_key = "months:" + ",".join(
+            p["period_key"].replace("monthly:", "") for p in periods)
+        period_label = f"{len(periods)} Monate"
+    else:
+        combined_key = periods[0]["period_key"]
+        period_label = periods[0].get("label_de", combined_key)
+
+    all_sessions = []
+    for p in periods:
+        all_sessions.extend(_get_report_sessions(p["start"], p["end"], loc_filter, veh_filter))
+
+    period_info = dict(periods[0])
+    if len(periods) > 1:
+        period_info["period_key"] = combined_key
+        period_info["label_de"]   = period_label
+        period_info["end"]        = periods[-1]["end"]
+
     excel_bytes = None
     try:
-        from export_excel import export as _exp
-        xl, _ = _exp(year=period_info["start"].year, month=period_info["start"].month,
-                     location=loc_filter, config=cfg, lang=lang, return_warnings=True)
-        excel_bytes = xl
+        if len(periods) > 1:
+            from export_excel import export_multi_month_bytes as _emm
+            ps_list = [(p, _get_report_sessions(p["start"], p["end"], loc_filter, veh_filter))
+                       for p in periods]
+            excel_bytes, _ = _emm(periods_sessions=ps_list, loc_filter=loc_filter,
+                                   config=cfg, lang=lang)
+        else:
+            from export_excel import export as _exp
+            xl_loc = "extern" if loc_filter == "external" else loc_filter
+            excel_bytes, _ = _exp(year=period_info["start"].year,
+                                   month=period_info["start"].month,
+                                   location=xl_loc, config=cfg, lang=lang, return_warnings=True)
     except Exception as e:
         log.warning("API v1 report Excel fehlgeschlagen: %s", e)
+
+    summary = {
+        "sessions": len(all_sessions),
+        "total_kwh": round(sum(s.get("kwh_charged") or 0 for s in all_sessions), 3),
+        "total_cost": round(sum(s.get("cost_eur") or 0 for s in all_sessions), 2),
+        "period_key": combined_key, "period_label": period_label,
+    }
     report_id = _save_report_record(vehicle_id, period_info, loc_filter, veh_filter,
                                     "created", token_row.get("id"),
-                                    excel_bytes=excel_bytes,
-                                    summary={"sessions": len(sessions)})
-    _audit("api_report_created", f"token={token_row.get('name')} report={report_id}",
+                                    excel_bytes=excel_bytes, summary=summary)
+    _audit("api_report_created",
+           f"token={token_row.get('name')} report={report_id} period={combined_key}",
            ip=request.remote_addr)
     try:
         from notification_manager import fire_event as _fe
-        _fe("report_created", {"report_id": report_id, "via": "api_v1"}, cfg, db_path=DB_PATH)
+        _fe("report_created", {"report_id": report_id, "via": "api_v1",
+                                "period": combined_key}, cfg, db_path=DB_PATH)
     except Exception: pass
-    return jsonify({"ok": True, "report_id": report_id,
-                    "period_label": period_info.get("label_de",""),
-                    "sessions_count": len(sessions)}), 201
+    return jsonify({"ok": True, "report_id": report_id, "summary": summary}), 201
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -6,10 +6,18 @@ TABLE_FIELDS = {
     "end_time":      {"label": "Endzeit",           "type": "time",     "synonyms": ["ende", "end", "bis", "endzeit", "ladeende"]},
     "duration":      {"label": "Ladedauer",         "type": "duration", "synonyms": ["dauer", "ladedauer", "ladezeit", "duration", "zeitdauer"]},
     "duration_hours":   {"label": "Ladedauer (h)",       "type": "number",   "synonyms": ["dauer h", "dauer stunden", "ladezeit h", "stunden"]},
-    "charge_power_kw":  {"label": "Ladeleistung / Ladegeschwindigkeit (kW)", "type": "number", "help": "Berechnung: geladene kWh geteilt durch Ladedauer in Stunden.", "synonyms": [
+    "charge_power_kw":  {"label": "Ø Ladeleistung berech. (kW)", "type": "number", "help": "Berechnung: geladene kWh geteilt durch Ladedauer in Stunden.", "synonyms": [
         "ladeleistung", "ladeleistung kw", "leistung", "durchschnittsleistung",
-        "ladegeschwindigkeit", "ladegeschwindigkeit kw", "ladegeschwindigkeit kw/stunde", "ladegeschwindigkeit kwh/h",
+        "ladegeschwindigkeit", "ladegeschwindigkeit kw", "ladegeschwindigkeit kwh/h",
         "charging speed", "charging power", "power kw", "kwh per hour", "kwh/h",
+    ]},
+    "charger_power_kw": {"label": "Ladepunkt-/Wallbox-Leistung (kW)", "type": "number",
+                         "help": "Installierte Wallbox-/Ladepunkt-Leistung (z. B. 11 oder 22 kW).",
+                         "synonyms": [
+        "wallbox leistung", "wallbox-leistung", "ladepunkt leistung", "ladepunkt-leistung",
+        "anschlussleistung", "ladegeschwindigkeit kw/stunde", "ladegeschwindigkeit kw/h",
+        "11kw", "22kw", "11 kw", "22 kw", "charger power", "charge point power",
+        "wallbox power", "rated power", "nennleistung wallbox",
     ]},
     "odo_start":     {"label": "KM-Stand Start",    "type": "number",   "synonyms": ["km start", "km-start", "start km", "kilometerstand start", "km anfang", "odometer start", "tachostand start"]},
     "odo_end":       {"label": "KM-Stand Ende",     "type": "number",   "synonyms": ["km ende", "km-ende", "end km", "kilometerstand", "kilometerstand ende", "km end", "tachostand"]},
