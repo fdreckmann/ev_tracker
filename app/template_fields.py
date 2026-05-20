@@ -6,19 +6,32 @@ TABLE_FIELDS = {
     "end_time":      {"label": "Endzeit",           "type": "time",     "synonyms": ["ende", "end", "bis", "endzeit", "ladeende"]},
     "duration":      {"label": "Ladedauer",         "type": "duration", "synonyms": ["dauer", "ladedauer", "ladezeit", "duration", "zeitdauer"]},
     "duration_hours":   {"label": "Ladedauer (h)",       "type": "number",   "synonyms": ["dauer h", "dauer stunden", "ladezeit h", "stunden"]},
-    "charge_power_kw":  {"label": "Ø Ladeleistung berech. (kW)", "type": "number", "help": "Berechnung: geladene kWh geteilt durch Ladedauer in Stunden.", "synonyms": [
-        "ladeleistung", "ladeleistung kw", "leistung", "durchschnittsleistung",
-        "ladegeschwindigkeit", "ladegeschwindigkeit kw", "ladegeschwindigkeit kwh/h",
-        "charging speed", "charging power", "power kw", "kwh per hour", "kwh/h",
+
+    # Calculated average charging power (kWh ÷ hours). Distinct from installed charger rating.
+    "charge_power_kw":  {"label": "Ø Ladeleistung berech. (kW)", "type": "number",
+                         "help": "Berechnung: geladene kWh geteilt durch Ladedauer in Stunden.",
+                         "synonyms": [
+        "berechnete ladeleistung", "durchschnittliche ladeleistung", "ø ladeleistung",
+        "ladeleistung berechnet", "durchschnittsleistung",
+        "avg charging power", "average charging power", "average charging speed",
+        "kwh per hour", "kwh/h", "kwh pro stunde",
+        "charging power", "charging speed",
     ]},
+
+    # Installed wallbox/charge-point rating (fixed kW, e.g. 11 or 22 kW).
+    # Keywords with kW/Stunde, kW/h, Wallbox, Ladepunkt → prefer this field.
     "charger_power_kw": {"label": "Ladepunkt-/Wallbox-Leistung (kW)", "type": "number",
                          "help": "Installierte Wallbox-/Ladepunkt-Leistung (z. B. 11 oder 22 kW).",
                          "synonyms": [
         "wallbox leistung", "wallbox-leistung", "ladepunkt leistung", "ladepunkt-leistung",
-        "anschlussleistung", "ladegeschwindigkeit kw/stunde", "ladegeschwindigkeit kw/h",
-        "11kw", "22kw", "11 kw", "22 kw", "charger power", "charge point power",
-        "wallbox power", "rated power", "nennleistung wallbox",
+        "ladegeschwindigkeit kw/stunde", "ladegeschwindigkeit kw/h",
+        "ladegeschwindigkeit kwh/stunde", "ladegeschwindigkeit kw",
+        "ladegeschwindigkeit", "ladeleistung kw", "leistung kw", "ladepunkt kw",
+        "anschlussleistung", "nennleistung", "nennleistung wallbox",
+        "11kw", "22kw", "11 kw", "22 kw",
+        "charger power", "charge point power", "wallbox power", "rated power",
     ]},
+
     "odo_start":     {"label": "KM-Stand Start",    "type": "number",   "synonyms": ["km start", "km-start", "start km", "kilometerstand start", "km anfang", "odometer start", "tachostand start"]},
     "odo_end":       {"label": "KM-Stand Ende",     "type": "number",   "synonyms": ["km ende", "km-ende", "end km", "kilometerstand", "kilometerstand ende", "km end", "tachostand"]},
     "soc_start":     {"label": "SOC Start (%)",     "type": "percent",  "synonyms": ["soc start", "soc anfang", "akku start", "ladezustand start", "batterie start", "soc von", "ladestand start"]},
@@ -30,6 +43,13 @@ TABLE_FIELDS = {
     "meter_new":     {"label": "Zählerstand Neu",   "type": "number",   "synonyms": ["zähler neu", "zählerstand neu", "zähler ende", "counter end", "meter end", "zählerstand nachher", "zähler bis"]},
     "location":      {"label": "Standort",          "type": "text",     "synonyms": ["standort", "ort", "location", "ladeort", "ladepunkt", "ladestation", "adresse"]},
     "charger_type":  {"label": "Ladeart",           "type": "text",     "synonyms": ["ladeart", "ladetyp", "ac/dc", "charger type", "lademodus", "typ"]},
+}
+
+# Synonym priority rules: when a header matches both charge_power_kw and charger_power_kw,
+# these keywords force charger_power_kw (installed rating, not calculated average).
+CHARGER_POWER_PRIORITY_KEYWORDS = {
+    "kw/stunde", "kwh/stunde", "kw/h", "wallbox", "ladepunkt", "anschluss",
+    "nennleistung", "11kw", "22kw", "11 kw", "22 kw", "rated", "charge point",
 }
 
 # HEADER_FIELDS: single-cell values (header/footer area)
@@ -54,7 +74,9 @@ HEADER_FIELDS = {
     "month_name":               {"label": "Monatsname",              "synonyms": ["monatsname", "month name", "monat text"]},
     "export_period":            {"label": "Abrechnungszeitraum",     "synonyms": ["zeitraum", "abrechnungszeitraum", "period", "laufzeit"]},
     "total_charging_hours":     {"label": "Ladezeit gesamt (h)",     "synonyms": ["ladezeit gesamt", "total ladezeit", "ladestunden gesamt", "charging hours"]},
-    "avg_charge_power_kw":      {"label": "Ø Ladeleistung / Ladegeschwindigkeit (kW)", "help": "Berechnung: geladene kWh geteilt durch Ladedauer in Stunden.", "synonyms": [
+    "avg_charge_power_kw":      {"label": "Ø Ladeleistung / Ladegeschwindigkeit (kW)",
+                                 "help": "Berechnung: geladene kWh geteilt durch Ladedauer in Stunden.",
+                                 "synonyms": [
         "durchschnittliche ladeleistung", "ø ladeleistung", "avg power", "mittlere ladeleistung",
         "durchschnittliche ladegeschwindigkeit", "ø ladegeschwindigkeit",
         "avg charging speed", "average charging power",

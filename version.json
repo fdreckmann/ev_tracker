@@ -1,6 +1,27 @@
 {
-  "version": "2.0.5",
+  "version": "2.0.6",
   "changelog": [
+    {
+      "version": "2.0.6",
+      "date": "2026-05-20",
+      "changes": [
+        "Sicherheit: vehicle_id-Validierung für alle /api/vehicles/<vid>/image Routen (Regex + Traversal-Check)",
+        "Sicherheit: Security Headers nach jedem Response: X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy",
+        "Sicherheit: Backup-Restore blockiert WAL/SHM-Sidefiles (sessions.db-wal/shm) explizit",
+        "Bugfix: Fahrzeugbild-Routen lehnen unsichere vehicle_id mit 400 ab statt blindem Path-Join",
+        "Bugfix: Pfad-Traversal in _safe_veh_img_path() verhindert durch resolve()-Vergleich",
+        "Bugfix: /api/vehicles/<vid>/image/file gibt Placeholder-SVG zurück wenn kein Bild vorhanden",
+        "Bugfix: Multi-Month PDF nutzt generate_multi_month_report_pdf() statt erstem Monat",
+        "Bugfix: /api/export/pdf wählt Funktion basierend auf len(periods) > 1",
+        "Neu: generate_multi_month_report_pdf() — Deck-Zusammenfassung, Monatsübersicht-Tabelle, Abschnitt je Monat",
+        "Neu: Dashboard zeigt Fahrzeugbild mit Placeholder-SVG (car.svg aus static/vehicle_images/)",
+        "Neu: vehicle_image_mode/vehicle_image_path in DEFAULT_CONFIG für Primärfahrzeug",
+        "Neu: loadDashboardVehicleImage() lädt Fahrzeugbild beim Initialisieren des Dashboards",
+        "Analyse: charger_power_kw vs. charge_power_kw Synonyme klar getrennt",
+        "Analyse: CHARGER_POWER_PRIORITY_KEYWORDS für prioritätsbasierte Zuordnung",
+        "Analyse: 'ladegeschwindigkeit kw/stunde' gehört eindeutig zu charger_power_kw"
+      ]
+    },
     {
       "version": "2.0.5",
       "date": "2026-05-20",
