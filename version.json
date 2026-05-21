@@ -1,6 +1,21 @@
 {
-  "version": "2.0.9",
+  "version": "2.0.10",
   "changelog": [
+    {
+      "version": "2.0.10",
+      "date": "2026-05-21",
+      "changes": [
+        "Mobile: loadSessions() speichert Daten in window._allSessions — Mobile Dashboard zeigt echte Daten",
+        "Mobile: refreshMobileDashboard() nutzt /api/state statt fragiles DOM-Scraping",
+        "Mobile: buildSessionCard() zeigt Fahrzeug-ID, SOC, Ladeleistung",
+        "Mobile: 'Analyse'-Tab durch 'Fahrzeuge'-Tab ersetzt — loadMobileVehicleCards() mit SOC/Status",
+        "Mobile: Floating Action Button (FAB) mit Ladevorgang/Export/Fahrzeug-Aktionen",
+        "Mobile: PWA-Manifest (manifest.json) + Apple/Theme Meta-Tags — App installierbar",
+        "Mobile: Bottom Sheet Animation für Modals (slideUpSheet, 16px top radius)",
+        "Mobile: Skeleton Loader CSS (@keyframes shimmer)",
+        "Mobile: window._mobileCurrentSection vereinheitlicht"
+      ]
+    },
     {
       "version": "2.0.9",
       "date": "2026-05-21",

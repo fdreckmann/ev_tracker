@@ -3,6 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#3ddc97">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="EV Tracker">
+<link rel="manifest" href="/static/manifest.json">
 <title>EV Tracker – {{ cfg.car_name }}</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -275,14 +280,22 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     min-height: 44px;
   }
 
-  /* Modals fullscreen auf Mobile */
+  /* Bottom Sheet für Modals auf Mobile */
+  .modal-overlay {
+    align-items: flex-end !important;
+  }
   .modal-box, .modal-content {
     width: 100vw !important;
     max-width: 100vw !important;
     margin: 0 !important;
-    border-radius: 0 !important;
-    min-height: 100vh;
+    border-radius: 16px 16px 0 0 !important;
+    max-height: 90vh !important;
     overflow-y: auto;
+    animation: slideUpSheet .25s ease-out;
+  }
+  @keyframes slideUpSheet {
+    from { transform: translateY(40px); opacity: .6; }
+    to   { transform: translateY(0);    opacity: 1;  }
   }
 
   /* Tabellen horizontal scrollbar statt overflow */
@@ -461,6 +474,81 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   #mobileExportFlow { display: none !important; }
   .mobile-only { display: none !important; }
 }
+
+/* ── Floating Action Button ── */
+#fab {
+  position: fixed;
+  bottom: 80px;
+  right: 16px;
+  z-index: 999;
+  display: none;
+}
+@media (max-width: 768px) {
+  #fab { display: block; }
+}
+.fab-main {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--acc);
+  color: #000;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(61,220,151,.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform .2s, box-shadow .2s;
+}
+.fab-main:active { transform: scale(.92); }
+.fab-menu {
+  position: absolute;
+  bottom: 60px;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s, transform .2s;
+  transform: translateY(8px);
+}
+.fab-menu.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.fab-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #1e2230;
+  border: 1px solid #2d3147;
+  border-radius: 24px;
+  padding: 8px 14px 8px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #e6f1ff;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+.fab-item:active { background: #2d3147; }
+
+/* ── Skeleton Loaders ── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #1e2230 25%, #2d3147 50%, #1e2230 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
+  color: transparent !important;
+}
+.skeleton * { visibility: hidden; }
 </style>
 </head>
 <body>
@@ -2714,7 +2802,11 @@ async function loadSessions(){
   const params = new URLSearchParams({location:loc});
   if(vid && vid!=='all') params.set('vehicle_id',vid);
   const rows = await fetch(`/api/sessions?${params}`).then(r=>r.json());
+  window._allSessions = rows;
   renderTbl($('allTbl'), rows, true);
+  // Update mobile view if open
+  if (window._mobileCurrentSection === 'sessions') renderMobileSessionCards();
+  if (window._mobileCurrentSection === 'home') refreshMobileDashboard();
 }
 
 async function editLocation(id, current){
@@ -6745,10 +6837,10 @@ let _mobileCurrentSection = 'home';
 let _mobileLang = 'de';
 
 function mobileNavTo(section) {
-  _mobileCurrentSection = section;
+  window._mobileCurrentSection = section;
 
   // Alle Mobile-Sections ausblenden
-  const sections = ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore'];
+  const sections = ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore','mobileVehicles'];
   sections.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
@@ -6768,16 +6860,11 @@ function mobileNavTo(section) {
     if (el) el.style.display = 'block';
     document.getElementById('mbnSessions')?.classList.add('active');
     renderMobileSessionCards();
-  } else if (section === 'analysis') {
-    // Auf Desktop-Analyse-Bereich scrollen oder cfgSection aufrufen
-    document.getElementById('mbnAnalysis')?.classList.add('active');
-    // Falls ein Analyse-Bereich existiert, dorthin scrollen
-    const analysisEl = document.querySelector('[data-section="analysis"]') || document.getElementById('analysisSection');
-    if (analysisEl) analysisEl.scrollIntoView({behavior:'smooth'});
-    else {
-      // Fallback: Desktop-Settings öffnen
-      switchToDesktopSettings();
-    }
+  } else if (section === 'vehicles') {
+    const el = document.getElementById('mobileVehicles');
+    if (el) el.style.display = 'block';
+    document.getElementById('mbnVehicles')?.classList.add('active');
+    loadMobileVehicleCards();
   } else if (section === 'export') {
     const el = document.getElementById('mobileExportFlow');
     if (el) el.style.display = 'block';
@@ -6793,8 +6880,8 @@ function mobileNavTo(section) {
   // Auf Mobile: Desktop-Hauptcontent ausblenden wenn wir eigene Section zeigen
   if (window.innerWidth <= 768) {
     const mainContent = document.getElementById('mainContent') || document.querySelector('.main-content') || document.querySelector('main');
-    if (mainContent && section !== 'analysis') {
-      mainContent.style.display = (section === 'home' || section === 'sessions' || section === 'export' || section === 'more') ? 'none' : 'block';
+    if (mainContent) {
+      mainContent.style.display = (section === 'home' || section === 'sessions' || section === 'export' || section === 'more' || section === 'vehicles') ? 'none' : 'block';
     }
   }
 }
@@ -6804,7 +6891,7 @@ function switchToDesktopSettings() {
   const mainContent = document.getElementById('mainContent') || document.querySelector('.main-content') || document.querySelector('main');
   if (mainContent) mainContent.style.display = '';
   // Blende Mobile-Sections aus
-  ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore'].forEach(id => {
+  ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore','mobileVehicles'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
@@ -6815,54 +6902,55 @@ function switchToDesktopSettings() {
 // =========================================================
 
 async function refreshMobileDashboard() {
-  // Fahrzeugdaten aus dem vorhandenen State lesen
-  // (nutzt dieselben Daten wie Desktop, kein doppelter API-Call)
   try {
-    // Fahrzeugname/Kennzeichen
-    const cfg = window._currentConfig || {};
-    const vehicleName = document.getElementById('vehicleNameDisplay')?.textContent
-      || cfg.vehicle_name || cfg.vehicle_model || '—';
-    const plate = cfg.kennzeichen || cfg.vehicle_plate || '—';
-    const elName = document.getElementById('mobileVehicleName');
-    const elPlate = document.getElementById('mobileVehiclePlate');
-    if (elName) elName.textContent = vehicleName;
-    if (elPlate) elPlate.textContent = plate;
+    // Get state + config from API (single call to /api/state which already exists)
+    const state = await fetch('/api/state').then(r=>r.json()).catch(()=>null);
+    if (state) {
+      const name = state.vehicle_name || state.car_name || document.getElementById('carName')?.textContent || '—';
+      const soc  = state.soc_current != null ? state.soc_current : state.soc;
+      const loc  = state.location_status || state.location || '—';
+      const charging = state.charging || state.session_active;
+      const locLabel = loc === 'home' ? '🏠 Zuhause' : loc === 'extern' || loc === 'external' ? '📍 Extern' : loc === 'unknown' ? '❓ Unbekannt' : loc;
 
-    // SOC aus bestehendem State
-    const socEl = document.querySelector('[data-soc]') || document.getElementById('socValue');
-    const soc = socEl ? parseInt(socEl.textContent) : null;
-    if (soc != null && !isNaN(soc)) {
-      const bar = document.getElementById('mobileSocBar');
-      const pct = document.getElementById('mobileSocPct');
-      if (bar) bar.style.width = soc + '%';
-      if (pct) pct.textContent = soc + '%';
-      if (bar) {
-        bar.style.background = soc > 60 ? '#64ffda' : soc > 20 ? '#ffd740' : '#ff5252';
+      const elName = document.getElementById('mobileVehicleName');
+      const elLoc  = document.getElementById('mobileVehicleLocation');
+      if (elName) elName.textContent = name;
+      if (elLoc)  elLoc.textContent  = locLabel + (charging ? '  ⚡ Lädt' : '');
+
+      if (soc != null && !isNaN(soc)) {
+        const bar = document.getElementById('mobileSocBar');
+        const pct = document.getElementById('mobileSocPct');
+        if (bar) { bar.style.width = soc + '%'; bar.style.background = soc > 60 ? '#64ffda' : soc > 20 ? '#ffd740' : '#ff5252'; }
+        if (pct) pct.textContent = soc + '%';
+      }
+
+      // Update charging badge color
+      const vehicleCard = document.getElementById('mobileVehicleCard');
+      if (vehicleCard) {
+        vehicleCard.style.borderLeft = charging ? '3px solid #64ffda' : '3px solid transparent';
       }
     }
 
-    // Monatsstatistik aus bestehendem State lesen
-    const sessions = window._allSessions || window._sessions || [];
+    // Month stats from cached sessions or fetch fresh
+    const sessions = window._allSessions || await fetch('/api/sessions').then(r=>r.json()).catch(()=>[]);
+    if (!window._allSessions) window._allSessions = sessions;
     const now = new Date();
     const monthSessions = sessions.filter(s => {
-      const d = new Date(s.start_time || s.date || '');
+      const d = new Date(s.start_ts || s.start_time || s.date || '');
       return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
     });
-    const totalKwh = monthSessions.reduce((a,s) => a + (parseFloat(s.kwh_charged)||0), 0);
+    const totalKwh  = monthSessions.reduce((a,s) => a + (parseFloat(s.kwh_charged)||0), 0);
     const totalCost = monthSessions.reduce((a,s) => a + (parseFloat(s.cost_eur)||0), 0);
-    const avgPrice = totalKwh > 0 ? totalCost/totalKwh : 0;
+    const avgPrice  = totalKwh > 0 ? totalCost/totalKwh : 0;
 
-    const kwh = document.getElementById('mobileMonthKwh');
-    const cost = document.getElementById('mobileMonthCost');
-    const cnt = document.getElementById('mobileMonthSessions');
-    const avg = document.getElementById('mobileMonthAvgPrice');
-    if (kwh) kwh.textContent = totalKwh.toFixed(1) + ' kWh';
-    if (cost) cost.textContent = totalCost.toFixed(2) + ' €';
-    if (cnt) cnt.textContent = monthSessions.length;
-    if (avg) avg.textContent = avgPrice > 0 ? avgPrice.toFixed(3) + ' €' : '—';
+    const setEl = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
+    setEl('mobileMonthKwh',      totalKwh.toFixed(1) + ' kWh');
+    setEl('mobileMonthCost',     totalCost.toFixed(2) + ' €');
+    setEl('mobileMonthSessions', monthSessions.length);
+    setEl('mobileMonthAvgPrice', avgPrice > 0 ? avgPrice.toFixed(3) + ' €' : '—');
 
-    // Letzte 3 Ladevorgänge
-    renderMobileRecentSessions(sessions.slice(-3).reverse());
+    // Recent sessions (last 3, newest first)
+    renderMobileRecentSessions([...sessions].reverse().slice(0, 3));
   } catch(e) {
     console.warn('Mobile dashboard refresh error:', e);
   }
@@ -6894,26 +6982,85 @@ function renderMobileSessionCards() {
 }
 
 function buildSessionCard(s, compact) {
-  const date = s.date || (s.start_time ? s.start_time.split('T')[0] : '—');
-  const kwh = parseFloat(s.kwh_charged || 0).toFixed(1);
-  const cost = parseFloat(s.cost_eur || 0).toFixed(2);
-  const loc = s.location || '';
-  const isHome = loc.toLowerCase().includes('home') || loc.toLowerCase().includes('zuhause') || loc === '';
-  const cls = isHome ? 'home' : 'extern';
-  const dur = s.duration || '';
-  const start = s.start_time ? s.start_time.slice(11,16) : '';
+  const date    = s.start_ts ? s.start_ts.split('T')[0] : (s.date || '—');
+  const timeStr = s.start_ts ? s.start_ts.slice(11,16) : '';
+  const kwh     = parseFloat(s.kwh_charged || 0).toFixed(1);
+  const cost    = s.cost_eur != null ? parseFloat(s.cost_eur).toFixed(2) + ' €' : '—';
+  const loc     = (s.location || '').toLowerCase();
+  const isHome  = loc.includes('home') || loc.includes('zuhause') || loc === '';
+  const locLabel = isHome ? '🏠 Zuhause' : loc === 'extern' || loc === 'external' ? '⚡ Extern' : (s.location || '');
+  const cls     = isHome ? 'home' : 'extern';
+  const power   = s.charger_power_kw || s.max_power_kw;
+  const powerStr = power ? (parseFloat(power).toFixed(0) + ' kW') : null;
+  const soc     = (s.soc_start != null && s.soc_end != null)
+    ? `${s.soc_start}% → ${s.soc_end}%` : null;
+  const vidLabel = s.vehicle_id && s.vehicle_id !== 'v0'
+    ? `<span style="font-size:10px;background:#1a3d6e;color:#64ffda;border-radius:4px;padding:1px 5px;margin-left:4px">${s.vehicle_id}</span>` : '';
 
-  return `<div class="session-card ${cls}" onclick="mobileSessionDetail(${s.id||0})">
+  return `<div class="session-card ${cls}" onclick="mobileSessionDetail(${s.id||0})" style="active:scale(.98)">
     <div class="session-card-header">
-      <span class="session-card-date">${date}${start ? ' · '+start : ''}</span>
-      <span class="session-card-cost">${cost} €</span>
+      <span class="session-card-date">${date}${timeStr ? ' · '+timeStr : ''}${vidLabel}</span>
+      <span class="session-card-cost">${cost}</span>
     </div>
     <div class="session-card-details">
       <span>⚡ ${kwh} kWh</span>
-      ${dur ? '<span>⏱ '+dur+'</span>' : ''}
-      ${loc ? '<span>📍 '+loc+'</span>' : ''}
+      ${powerStr ? `<span>🔌 ${powerStr}</span>` : ''}
+      ${soc      ? `<span>🔋 ${soc}</span>` : ''}
+      ${!compact  ? `<span>${locLabel}</span>` : ''}
     </div>
   </div>`;
+}
+
+async function loadMobileVehicleCards() {
+  const el = document.getElementById('mobileVehicleCardList');
+  if (!el) return;
+  el.innerHTML = '<p style="color:#8892b0;font-size:13px">Lade Fahrzeuge…</p>';
+  try {
+    const [vehicles, stateData] = await Promise.all([
+      fetch('/api/vehicles').then(r=>r.json()).catch(()=>[]),
+      fetch('/api/state').then(r=>r.json()).catch(()=>({}))
+    ]);
+    if (!vehicles.length) {
+      el.innerHTML = '<p style="color:#8892b0">Keine Fahrzeuge konfiguriert.</p>';
+      return;
+    }
+    el.innerHTML = vehicles.map(v => {
+      const isActive = v.active !== false && !v.archived;
+      const soc = (stateData.vehicle_id === v.id || v.id === 'v0') ? stateData.soc_current : null;
+      const charging = (stateData.vehicle_id === v.id || v.id === 'v0') ? stateData.charging : false;
+      const loc = (stateData.vehicle_id === v.id || v.id === 'v0') ? stateData.location : null;
+      const locLabel = loc === 'home' ? '🏠 Zuhause' : loc === 'extern' ? '📍 Extern' : '';
+      const socBar = soc != null ? `
+        <div style="margin-top:8px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+            <span style="font-size:11px;color:#8892b0">SOC</span>
+            <span style="font-size:12px;font-weight:700;color:${soc>60?'#64ffda':soc>20?'#ffd740':'#ff5252'}">${soc}%</span>
+          </div>
+          <div style="height:6px;background:#2d3147;border-radius:3px">
+            <div style="height:100%;width:${soc}%;background:${soc>60?'#64ffda':soc>20?'#ffd740':'#ff5252'};border-radius:3px;transition:width .5s"></div>
+          </div>
+        </div>` : '';
+      const badges = [
+        isActive && charging ? '<span style="background:#64ffda22;color:#64ffda;border:1px solid #64ffda44;border-radius:4px;padding:2px 6px;font-size:10px">⚡ Lädt</span>' : '',
+        isActive && !charging && locLabel ? `<span style="background:#1e2a3a;color:#8892b0;border-radius:4px;padding:2px 6px;font-size:10px">${locLabel}</span>` : '',
+        !isActive ? '<span style="background:#2d1f1f;color:#ef4444;border-radius:4px;padding:2px 6px;font-size:10px">Inaktiv</span>' : '',
+      ].filter(Boolean).join(' ');
+      return `<div class="mobile-card" onclick="openEditVehicleModal('${v.id}')" style="cursor:pointer;border:1px solid #2d3147;position:relative">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <div style="font-size:15px;font-weight:600;color:#e6f1ff">${v.name || v.id}</div>
+            <div style="font-size:12px;color:#8892b0;margin-top:2px">${v.provider || '—'}</div>
+          </div>
+          <div style="text-align:right">${badges}</div>
+        </div>
+        ${socBar}
+        <div style="margin-top:8px;font-size:11px;color:#4a5c72">ID: ${v.id}</div>
+      </div>`;
+    }).join('');
+    window._allVehicles = vehicles;
+  } catch(e) {
+    el.innerHTML = '<p style="color:#ef4444;font-size:13px">Fehler beim Laden der Fahrzeuge.</p>';
+  }
 }
 
 function mobileSessionDetail(sessionId) {
@@ -7138,11 +7285,33 @@ if (document.readyState === 'loading') {
   initMobileView();
 }
 
+let _fabOpen = false;
+function toggleFab() {
+  _fabOpen = !_fabOpen;
+  const menu = document.getElementById('fabMenu');
+  const btn  = document.getElementById('fabBtn');
+  if (menu) menu.classList.toggle('open', _fabOpen);
+  if (btn)  btn.style.transform = _fabOpen ? 'rotate(45deg)' : '';
+  if (_fabOpen) {
+    setTimeout(() => document.addEventListener('click', _fabOutsideClick, {once:true}), 10);
+  }
+}
+function closeFab() {
+  _fabOpen = false;
+  const menu = document.getElementById('fabMenu');
+  const btn  = document.getElementById('fabBtn');
+  if (menu) menu.classList.remove('open');
+  if (btn)  btn.style.transform = '';
+}
+function _fabOutsideClick(e) {
+  if (!document.getElementById('fab')?.contains(e.target)) closeFab();
+}
+
 // Beim Resize zwischen Mobile und Desktop umschalten
 window.addEventListener('resize', function() {
   if (window.innerWidth > 768) {
     // Desktop: alle Mobile-Sections ausblenden, Main-Content zeigen
-    ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore'].forEach(function(id) {
+    ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore','mobileVehicles'].forEach(function(id) {
       const el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
@@ -7516,9 +7685,9 @@ async function saveUserRoles() {
     <span class="mobile-nav-icon">⚡</span>
     <span class="mobile-nav-label">Laden</span>
   </button>
-  <button class="mobile-nav-btn" id="mbnAnalysis" onclick="mobileNavTo('analysis')" aria-label="Analyse">
-    <span class="mobile-nav-icon">📊</span>
-    <span class="mobile-nav-label">Analyse</span>
+  <button class="mobile-nav-btn" id="mbnVehicles" onclick="mobileNavTo('vehicles')" aria-label="Fahrzeuge">
+    <span class="mobile-nav-icon">🚗</span>
+    <span class="mobile-nav-label">Fahrzeuge</span>
   </button>
   <button class="mobile-nav-btn" id="mbnExport" onclick="mobileNavTo('export')" aria-label="Export">
     <span class="mobile-nav-icon">📥</span>
@@ -7647,6 +7816,17 @@ async function saveUserRoles() {
   <div id="mobileExportResult" style="margin-top:12px"></div>
 </div>
 
+<!-- ========= MOBILE VEHICLES ========= -->
+<div id="mobileVehicles" style="display:none;padding:12px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <h2 style="margin:0;font-size:18px">🚗 Fahrzeuge</h2>
+    <button onclick="openAddVehicleModal()" style="padding:8px 14px;border-radius:6px;background:#3d5afe;border:none;color:#fff;font-size:13px;cursor:pointer">+ Hinzufügen</button>
+  </div>
+  <div id="mobileVehicleCardList">
+    <p style="color:#8892b0;font-size:13px">Lade Fahrzeuge…</p>
+  </div>
+</div>
+
 <!-- ========= MOBILE MORE / SETTINGS ========= -->
 <div id="mobileMore" style="display:none;padding:12px">
   <h2 style="margin:0 0 16px 0;font-size:18px">☰ Mehr</h2>
@@ -7693,6 +7873,16 @@ async function saveUserRoles() {
       🖥️ Vollständige Einstellungen öffnen
     </button>
   </div>
+</div>
+
+<!-- ========= FLOATING ACTION BUTTON ========= -->
+<div id="fab">
+  <div class="fab-menu" id="fabMenu">
+    <div class="fab-item" onclick="closeFab();mobileNavTo('sessions');mobileQuickAddSession()">➕ Ladevorgang</div>
+    <div class="fab-item" onclick="closeFab();mobileNavTo('export');initMobileExport()">📥 Export erstellen</div>
+    <div class="fab-item" onclick="closeFab();mobileNavTo('vehicles');setTimeout(openAddVehicleModal,200)">🚗 Fahrzeug hinzufügen</div>
+  </div>
+  <button class="fab-main" id="fabBtn" onclick="toggleFab()" aria-label="Aktionen">＋</button>
 </div>
 </body>
 </html>
