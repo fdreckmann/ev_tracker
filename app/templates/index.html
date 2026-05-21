@@ -1277,23 +1277,26 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <div class="card">
           <div class="card-title">📁 Report-Archiv</div>
           <!-- Create report strip -->
-          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:18px;padding:14px;background:#1e2030;border-radius:8px">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:18px;padding:14px;background:#1e2030;border-radius:8px">
             <div><label class="cfg-lbl" style="margin-bottom:4px">Zeitraum-Modus</label>
-              <select id="arc_period_mode" style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:7px;color:var(--txt);font-size:.82rem">
+              <select id="arc_period_mode" onchange="onArcPeriodModeChange()" style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:7px;color:var(--txt);font-size:.82rem">
                 <option value="previous_period">Vorheriger Monat</option>
                 <option value="current_period">Aktueller Monat</option>
                 <option value="single_month">Fester Monat</option>
-                <option value="custom_range">Benutzerdefiniert</option>
               </select></div>
+            <div id="arc_month_wrap" style="display:none"><label class="cfg-lbl" style="margin-bottom:4px">Monat</label>
+              <input type="month" id="arc_single_month" style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:7px;color:var(--txt);font-size:.82rem"
+                value="${new Date().toISOString().slice(0,7)}">
+            </div>
             <div><label class="cfg-lbl" style="margin-bottom:4px">Ladeort</label>
               <select id="arc_loc_filter" style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:7px;color:var(--txt);font-size:.82rem">
                 <option value="all">Alle</option><option value="home">Zuhause</option><option value="external">Extern</option>
               </select></div>
-            <div style="display:flex;gap:8px;margin-top:18px">
+            <div style="display:flex;gap:8px;align-self:flex-end;padding-bottom:2px">
               <label style="display:flex;align-items:center;gap:5px;font-size:.78rem"><input type="checkbox" id="arc_inc_excel" checked> Excel</label>
               <label style="display:flex;align-items:center;gap:5px;font-size:.78rem"><input type="checkbox" id="arc_inc_pdf"> PDF</label>
             </div>
-            <button class="btn-p" onclick="createReport()" style="margin-top:18px">📊 Report erstellen</button>
+            <button class="btn-p" onclick="createReport()" style="align-self:flex-end">📊 Report erstellen</button>
           </div>
           <!-- Archive table -->
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -6229,16 +6232,28 @@ async function loadReportArchive(){
   }catch(e){body.textContent='❌ '+e.message;}
 }
 
+function onArcPeriodModeChange(){
+  const mode = $('arc_period_mode')?.value;
+  const wrap = $('arc_month_wrap');
+  if(wrap) wrap.style.display = mode === 'single_month' ? '' : 'none';
+}
+
 async function createReport(){
-  const st = $('archive_table_body');
+  const st   = $('archive_table_body');
+  const mode = $('arc_period_mode')?.value || 'previous_period';
   const payload = {
-    report_email_period_mode: $('arc_period_mode')?.value||'previous_period',
-    report_email_schedule_type: 'monthly',
-    report_email_location_filter: $('arc_loc_filter')?.value||'all',
-    lang: 'de',
-    include_excel: $('arc_inc_excel')?.checked!==false,
-    include_pdf:   $('arc_inc_pdf')?.checked||false,
+    report_email_period_mode:      mode,
+    report_email_schedule_type:    'monthly',
+    report_email_location_filter:  $('arc_loc_filter')?.value || 'all',
+    lang:          'de',
+    include_excel: $('arc_inc_excel')?.checked !== false,
+    include_pdf:   $('arc_inc_pdf')?.checked   || false,
   };
+  if(mode === 'single_month'){
+    const mv = $('arc_single_month')?.value;
+    if(!mv){ toast('Bitte einen Monat auswählen','err'); return; }
+    payload.report_email_single_month = mv;  // YYYY-MM
+  }
   if(st) st.textContent='⏳ Erstelle Report…';
   try{
     const r = await apiFetch('/api/reports/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());
