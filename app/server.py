@@ -6185,17 +6185,17 @@ def api_reports_archive():
     limit = int(request.args.get("limit", 100))
     vehicle_id = request.args.get("vehicle_id")
     con = _get_db()
+    _cols = ("id,created_at,vehicle_id,period_start,period_end,period_label,period_mode,"
+             "location_filter,vehicle_filter,status,created_by,sent_at,recipients,approval_status,"
+             "(CASE WHEN excel_bytes IS NOT NULL THEN 1 ELSE 0 END) as has_excel,"
+             "(CASE WHEN pdf_bytes   IS NOT NULL THEN 1 ELSE 0 END) as has_pdf")
     if vehicle_id:
         rows = con.execute(
-            "SELECT id,created_at,vehicle_id,period_start,period_end,period_label,period_mode,"
-            "location_filter,vehicle_filter,status,created_by,sent_at,recipients,approval_status"
-            " FROM reports WHERE vehicle_id=? ORDER BY id DESC LIMIT ?",
+            f"SELECT {_cols} FROM reports WHERE vehicle_id=? ORDER BY id DESC LIMIT ?",
             (vehicle_id, limit)).fetchall()
     else:
         rows = con.execute(
-            "SELECT id,created_at,vehicle_id,period_start,period_end,period_label,period_mode,"
-            "location_filter,vehicle_filter,status,created_by,sent_at,recipients,approval_status"
-            " FROM reports ORDER BY id DESC LIMIT ?",
+            f"SELECT {_cols} FROM reports ORDER BY id DESC LIMIT ?",
             (limit,)).fetchall()
     close_db_if_owned(con)
     result = []
@@ -6212,19 +6212,41 @@ def api_reports_archive():
 def api_reports_create():
     if not has_permission(_current_user(), "reports:send"):
         return jsonify({"error": "Keine Berechtigung"}), 403
-    data     = request.get_json(force=True) or {}
-    cfg      = load_config()
-    for k in ["report_email_period_mode","report_email_schedule_type",
-              "report_email_location_filter","report_email_vehicle_filter",
-              "report_email_language","report_email_single_month","report_email_months"]:
-        if k in data: cfg[k] = data[k]
-    stype      = cfg.get("report_email_schedule_type", "monthly")
-    pmode      = cfg.get("report_email_period_mode", "previous_period")
-    periods    = calculate_report_periods(stype, pmode, datetime.now(), cfg)
-    loc_filter = cfg.get("report_email_location_filter","all")
-    veh_filter = cfg.get("report_email_vehicle_filter","all")
+    data = request.get_json(force=True) or {}
+    cfg  = load_config()
+
+    # Direct parameters (manual archive creation) — no email config keys involved
+    loc_filter = data.get("location_filter",  data.get("report_email_location_filter",  cfg.get("report_email_location_filter","all")))
+    veh_filter = data.get("vehicle_filter",   data.get("report_email_vehicle_filter",   cfg.get("report_email_vehicle_filter","all")))
     lang       = data.get("lang", cfg.get("report_email_language","de"))
     if lang == "auto": lang = "de"
+
+    # Period resolution: prefer explicit year+month, then single_month string, then mode
+    if data.get("year") and data.get("month"):
+        from calendar import monthrange
+        y, m = int(data["year"]), int(data["month"])
+        period_info = _month_period(f"{y:04d}-{m:02d}")
+        periods = [period_info] if period_info else []
+    elif data.get("single_month"):                          # YYYY-MM from month picker
+        period_info = _month_period(data["single_month"])
+        periods = [period_info] if period_info else []
+    else:
+        # Fallback: use period_mode (previous/current) — no email config written
+        pmode = data.get("period_mode", data.get("report_email_period_mode", "previous_period"))
+        stype = data.get("schedule_type", "monthly")
+        # Build a throw-away cfg copy so original config is never mutated
+        tmp_cfg = dict(cfg)
+        tmp_cfg["report_email_period_mode"]   = pmode
+        tmp_cfg["report_email_schedule_type"] = stype
+        if data.get("report_email_single_month"):
+            tmp_cfg["report_email_single_month"] = data["report_email_single_month"]
+        if data.get("report_email_months"):
+            tmp_cfg["report_email_months"] = data["report_email_months"]
+        periods = calculate_report_periods(stype, pmode, datetime.now(), tmp_cfg)
+
+    if not periods:
+        return jsonify({"error": "Ungültiger Zeitraum"}), 400
+
     user = _current_user()
 
     # Build combined period_key for multi-month
@@ -6268,7 +6290,7 @@ def api_reports_create():
 
     # Excel
     excel_bytes = None
-    if data.get("include_excel", True) and all_sessions:
+    if data.get("include_excel", True):
         try:
             if len(periods) > 1:
                 from export_excel import export_multi_month_bytes as _emm
