@@ -1,6 +1,17 @@
 {
-  "version": "2.0.13",
+  "version": "2.0.14",
   "changelog": [
+    {
+      "version": "2.0.14",
+      "date": "2026-05-21",
+      "changes": [
+        "UX: Dashboard-Kachel 'Ladertyp' durch kontextsensitive 'Ladevorgang'-Kachel ersetzt",
+        "Aktive Session: Kachel zeigt 'Lädt gerade ⚡' + Standort · Typ · Leistung (z.B. '🏠 Zuhause · AC · 11 kW')",
+        "Keine aktive Session: Kachel zeigt 'Letzte Ladung' + letzten Standort/Typ + relative Zeit (z.B. 'vor 3 Std.')",
+        "Standort (Zuhause/Extern) und Ladetyp (AC/DC) klar getrennt und kombiniert dargestellt",
+        "Sessions-Fetch in refreshStatus() nach vorne verschoben — nur ein API-Aufruf statt zwei"
+      ]
+    },
     {
       "version": "2.0.13",
       "date": "2026-05-21",

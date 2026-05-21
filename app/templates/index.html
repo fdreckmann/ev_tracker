@@ -689,7 +689,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     <div class="stat"><div class="sl">SOC</div><div class="sv g" id="dSoc">—</div><div class="su">Prozent</div></div>
     <div class="stat"><div class="sl">Kilometerstand</div><div class="sv b" id="dOdo">—</div><div class="su">km</div></div>
     <div class="stat" id="dMeterTile" style="display:none"><div class="sl">Zählerstand</div><div class="sv" id="dMeter" style="color:#a78bfa">—</div><div class="su">kWh</div></div>
-    <div class="stat"><div class="sl">Ladertyp</div><div class="sv" id="dType">—</div><div class="su" id="dPwr">— kW</div></div>
+    <div class="stat" id="dChargeTile"><div class="sl" id="dChargeLabel">Ladevorgang</div><div class="sv" id="dType">—</div><div class="su" id="dPwr">—</div></div>
     <div class="stat"><div class="sl">ENTSO-E Spot</div><div class="sv" id="dSpot" style="font-size:1rem">—</div><div class="su">aktueller Preis</div></div>
     <div class="stat"><div class="sl">Datenquelle</div><div class="sv" id="dProviderName" style="font-size:.85rem">—</div><div class="su">Provider</div></div>
     <div class="stat"><div class="sl">Letztes Update</div><div class="sv" id="dPoll" style="font-size:1rem">—</div><div class="su">HA Polling</div></div>
@@ -2743,13 +2743,32 @@ async function refreshStatus(){
     if(s.location==='home'){locEl.textContent=' Heim';locEl.className='sv g';}
     else if(s.location==='extern'){locEl.textContent=' Extern';locEl.className='sv w';}
     else{locEl.textContent='—';locEl.className='sv';}
-    // Charger type
-    const typeEl=$('dType');
-    if(typeEl){
-      if(s.charger_type==='dc'){typeEl.textContent='⚡ DC';typeEl.className='sv w';}
-      else if(s.charger_type==='ac'){typeEl.textContent='🔌 AC';typeEl.className='sv b';}
-      else{typeEl.textContent='—';typeEl.className='sv';}
-      if($('dPwr') && s.power_kw!=null) $('dPwr').textContent=Number(s.power_kw).toFixed(1)+' kW';
+    // Context-aware charge tile — fetch sessions first so we have last-session data
+    const rows = await fetch('/api/sessions').then(r=>r.json()).catch(()=>[]);
+    const typeEl=$('dType'), pwrEl=$('dPwr'), chargeLabel=$('dChargeLabel');
+    if(typeEl && chargeLabel){
+      if(s.charging){
+        chargeLabel.textContent = 'Lädt gerade ⚡';
+        const locPart = s.location==='home'?'🏠 Zuhause':s.location==='extern'?'🔌 Extern':'';
+        const typePart = s.charger_type==='dc'?'DC':s.charger_type==='ac'?'AC':'';
+        typeEl.textContent = [locPart, typePart].filter(Boolean).join(' · ') || '⚡';
+        typeEl.className = 'sv w';
+        if(pwrEl) pwrEl.textContent = s.power_kw!=null ? Number(s.power_kw).toFixed(1)+' kW' : '—';
+      } else {
+        const lastSess = rows.find(r=>r.end_ts && (r.charger_type||r.location));
+        if(lastSess){
+          chargeLabel.textContent = 'Letzte Ladung';
+          const locPart = lastSess.location==='home'?'🏠 Zuhause':lastSess.location==='extern'?'🔌 Extern':'';
+          const typePart = lastSess.charger_type==='dc'?'DC':lastSess.charger_type==='ac'?'AC':'';
+          typeEl.textContent = [locPart, typePart].filter(Boolean).join(' · ') || '—';
+          typeEl.className = 'sv';
+          if(pwrEl) pwrEl.textContent = lastSess.end_ts ? _timeAgo(lastSess.end_ts) : '—';
+        } else {
+          chargeLabel.textContent = 'Ladevorgang';
+          typeEl.textContent = '—'; typeEl.className = 'sv';
+          if(pwrEl) pwrEl.textContent = '—';
+        }
+      }
     }
     // ENTSO-E spot
     const spotEl=$('dSpot');
@@ -2778,7 +2797,6 @@ async function refreshStatus(){
     }
 
     // Recent
-    const rows = await fetch('/api/sessions').then(r=>r.json());
     renderTbl($('recentTbl'), rows.slice(0,5), false);
 
     // Zählerstand: last meter_new from most recent session
