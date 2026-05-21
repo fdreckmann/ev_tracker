@@ -1,6 +1,27 @@
 {
-  "version": "2.0.15",
+  "version": "2.0.16",
   "changelog": [
+    {
+      "version": "2.0.16",
+      "date": "2026-05-21",
+      "changes": [
+        "Bugfix: /api/state als Kompatibilitäts-Alias für /api/status ergänzt (Mobile Dashboard)",
+        "Bugfix: Mobile Signatur-Upload auf /api/signature/upload korrigiert",
+        "Sicherheit: 5 fehlende CSRF-Token in fetch()-Aufrufen ergänzt (DELETE sessions/template/backup, PUT/DELETE export-templates)",
+        "Sicherheit: Sensible Konfigurationsfelder in /api/config maskiert (ha_token, entsoe_api_key, octopus_api_key, tibber_token, mqtt_password etc.)",
+        "Sicherheit: Template-Upload Größenlimit 10 MB ergänzt",
+        "Sicherheit: threading.Lock für _vehicle_states-Zugriffe ergänzt",
+        "Performance: load_config() mit 30-Sekunden-TTL-Cache — reduziert Disk-Reads im Tracker",
+        "Performance: has_permission() cacht Berechtigungen in flask.g — ein DB-Query pro Request statt mehrerer",
+        "Performance: Index idx_session_points_session und idx_session_points_ts in init_db() ergänzt",
+        "Stabilität: vehicle_id=NULL Backfill-Migration → 'v0'",
+        "Stabilität: Cleanup-Job für abgelaufene Export/PDF-Tokens und _update_log (alle 5 Min.)",
+        "Stabilität: DB-Verbindungslecks mit try/finally abgesichert",
+        "Stabilität: Bare except-Klauseln durch except Exception ersetzt",
+        "Berechtigungen: @require_admin durch granulare Permissions ersetzt für: updates:start, users:view/create/edit/delete, audit:view, settings:edit (SMTP)",
+        "Neu: GET /api/mobile/summary — ein Aggregations-Endpunkt für Mobile Dashboard (vehicles, state, sessions, monthly stats, permissions)"
+      ]
+    },
     {
       "version": "2.0.15",
       "date": "2026-05-21",
