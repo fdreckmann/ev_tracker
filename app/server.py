@@ -11,7 +11,7 @@ from meter_providers import read_meter as _read_meter_impl, MeterResult
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "2.0.11"
+APP_VERSION   = "2.0.12"
 
 CHANGELOG = [
     {"version":"2.0.0","changes":[
@@ -486,6 +486,7 @@ DEFAULT_CONFIG = {
     "meter_timeout_seconds": 8,     # request timeout
     "meter_verify_ssl":  True,      # verify SSL certificate
     "meter_prefer_meter_delta": False,  # use meter delta instead of SoC for kwh_charged
+    "meter_scope":       "home_only",  # home_only|all|disabled — when to use local meter
     "home_charger_power_kw":    11.0,   # installed wallbox power at home (kW)
 
     # Auth — password + TOTP
@@ -762,6 +763,8 @@ def init_db():
         ("charger_power_kw",   "REAL"),
         ("tariff_provider",    "TEXT"),
         ("tariff_price_source","TEXT DEFAULT 'config'"),
+        ("meter_skipped_reason", "TEXT"),
+        ("meter_used",           "INTEGER DEFAULT 0"),
     ]:
         try:
             con.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
@@ -1209,7 +1212,7 @@ def tracker_loop(vehicle_id: str = "v0"):
     stop = _vehicle_stops[vehicle_id]
     st["running"] = True
     session_active = False; session_id = None
-    soc_start = odo_start = peak_power = None
+    soc_start = odo_start = peak_power = meter_start_val = None
 
     log.info("Tracker gestartet: %s", vehicle_id)
     while not stop.is_set():
@@ -1267,17 +1270,25 @@ def tracker_loop(vehicle_id: str = "v0"):
 
             if charging and not session_active:
                 soc_start = soc; odo_start = odo; peak_power = power_kw or 0
-                _meter_start_res = _read_meter_impl(cfg)
-                meter_start_val = _meter_start_res.value
-                if meter_start_val is None and cfg.get("meter_source","none") != "none":
-                    log.warning("[%s] Zählerstand-Lesefehler beim Session-Start: %s",
-                                vehicle_id, getattr(_meter_start_res, "error", "unknown"))
-                    try:
-                        from notification_manager import fire_event as _fe
-                        _fe("meter_read_failed", {"vehicle_id": vehicle_id,
-                            "phase": "start", "source": cfg.get("meter_source")},
-                            cfg, db_path=DB_PATH)
-                    except Exception: pass
+                _meter_scope = cfg.get("meter_scope", "home_only")
+                meter_start_val = None
+                if _meter_scope == "disabled":
+                    log.debug("[%s] Meter skipped at session start (scope=disabled)", vehicle_id)
+                elif _meter_scope == "home_only" and location != "home":
+                    log.info("[%s] Meter skipped at session start (scope=home_only, location=%s)",
+                             vehicle_id, location)
+                else:
+                    _meter_start_res = _read_meter_impl(cfg)
+                    meter_start_val = _meter_start_res.value
+                    if meter_start_val is None and cfg.get("meter_source","none") != "none":
+                        log.warning("[%s] Zählerstand-Lesefehler beim Session-Start: %s",
+                                    vehicle_id, getattr(_meter_start_res, "error", "unknown"))
+                        try:
+                            from notification_manager import fire_event as _fe
+                            _fe("meter_read_failed", {"vehicle_id": vehicle_id,
+                                "phase": "start", "source": cfg.get("meter_source")},
+                                cfg, db_path=DB_PATH)
+                        except Exception: pass
                 spot = fetch_entsoe_spot(cfg.get("entsoe_api_key","")) if location=="extern" else None
                 st["entsoe_spot"] = spot
                 price_kwh = (cfg["price_per_kwh_home"] if location=="home"
@@ -1334,8 +1345,19 @@ def tracker_loop(vehicle_id: str = "v0"):
                     kwh  = round(max(0.0,soc-soc_start)/100.0*vcfg["battery_capacity_kwh"],2)
                     if not cost_manual:
                         cost = round(kwh*(db_price or cfg["price_per_kwh_home"]),2)
-                _meter_end_res = _read_meter_impl(cfg)
-                meter_end_val = _meter_end_res.value
+                _meter_scope = cfg.get("meter_scope", "home_only")
+                meter_end_val = None
+                meter_skipped_reason = None
+                meter_used = 0
+                if _meter_scope == "disabled":
+                    meter_skipped_reason = "disabled"
+                elif _meter_scope == "home_only" and location != "home":
+                    meter_skipped_reason = "external_charging" if location == "extern" else "unknown_location"
+                    log.info("[%s] Meter skipped at session end (scope=home_only, location=%s)",
+                             vehicle_id, location)
+                else:
+                    _meter_end_res = _read_meter_impl(cfg)
+                    meter_end_val = _meter_end_res.value
                 prefer_delta = cfg.get("meter_prefer_meter_delta", False)
                 kwh_source = "soc"
                 if (prefer_delta and meter_start_val is not None and meter_end_val is not None
@@ -1347,6 +1369,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                         if not cost_manual:
                             cost = round(kwh * (db_price or cfg["price_per_kwh_home"]), 2)
                         kwh_source = "meter"
+                        meter_used = 1
                 # Dynamic tariff price (only for home sessions with non-fixed provider)
                 effective_price = db_price or cfg.get("price_per_kwh_home", 0.30)
                 tariff_prov_name = cfg.get("tariff_provider", "fixed")
@@ -1386,12 +1409,14 @@ def tracker_loop(vehicle_id: str = "v0"):
                     price_per_kwh=CASE WHEN cost_manual=1 THEN price_per_kwh ELSE ? END,
                     tariff_provider=?,tariff_price_source=?,
                     max_power_kw=?,meter_new=?,kwh_source=?,
-                    meter_delta_kwh=CASE WHEN ? IS NOT NULL AND ? IS NOT NULL THEN ?-? ELSE NULL END
+                    meter_delta_kwh=CASE WHEN ? IS NOT NULL AND ? IS NOT NULL THEN ?-? ELSE NULL END,
+                    meter_skipped_reason=?,meter_used=?
                     WHERE id=?""",
                     (end_ts_str,odo,soc,kwh,cost,effective_price,
                      tariff_prov_name,tariff_price_src,peak_power,
                      meter_end_val,kwh_source,
                      meter_start_val, meter_end_val, meter_end_val, meter_start_val,
+                     meter_skipped_reason, meter_used,
                      session_id))
                 con.commit(); session_active=False
                 st.update(session_active=False,session_id=None)

@@ -994,6 +994,14 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
               <input type="checkbox" id="c_meter_prefer_delta"> Zähler-Delta für kWh verwenden (statt SoC-Schätzung)
             </label>
           </div>
+          <div style="margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <label style="font-size:.82rem;color:var(--mute);white-space:nowrap">Zähler gilt für</label>
+            <select id="c_meter_scope" style="min-width:180px">
+              <option value="home_only">Nur Zuhause-Laden</option>
+              <option value="all">Alle Ladevorgänge</option>
+              <option value="disabled">Deaktiviert</option>
+            </select>
+          </div>
         </div>
         <div style="margin-top:10px;display:grid;gap:10px;grid-template-columns:1fr 1fr">
           <div>
@@ -3165,6 +3173,7 @@ async function loadConfig(){
     if($('c_meter_device_scheme'))  $('c_meter_device_scheme').value = c.meter_device_scheme||'http';
     if($('c_meter_device_port'))    $('c_meter_device_port').value   = c.meter_device_port||'';
     if($('c_meter_prefer_delta'))   $('c_meter_prefer_delta').checked = !!c.meter_prefer_meter_delta;
+    if($('c_meter_scope'))          $('c_meter_scope').value = c.meter_scope || 'home_only';
   }
   if($('c_home_charger_power_kw')) {
     const hp = c.home_charger_power_kw || 11;
@@ -4461,6 +4470,7 @@ async function saveMeterSource(){
     meter_evcc_lp:        parseInt($('c_meter_evcc_lp')?.value)||0,
     meter_alfen_pass:     g('c_meter_alfen_pass'),
     meter_prefer_meter_delta: gb('c_meter_prefer_delta'),
+    meter_scope: g('c_meter_scope') || 'home_only',
     home_charger_power_kw: parseFloat($('c_home_charger_power_kw')?.value || '11') || 11,
   });
   const r=await apiFetch('/api/config',{method:'POST',

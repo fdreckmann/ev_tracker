@@ -1,6 +1,22 @@
 {
-  "version": "2.0.11",
+  "version": "2.0.12",
   "changelog": [
+    {
+      "version": "2.0.12",
+      "date": "2026-05-21",
+      "changes": [
+        "Neu: meter_scope Konfiguration — 'home_only' (Standard), 'all', 'disabled'",
+        "Zählerstand wird bei Scope 'home_only' nur für Zuhause-Ladevorgänge gelesen",
+        "Session-Start: Meter-Lesing wird bei externem/unbekanntem Standort übersprungen wenn scope=home_only",
+        "Session-Ende: Meter-Delta-Berechnung wird bei externem/unbekanntem Standort übersprungen wenn scope=home_only",
+        "Neue DB-Spalten: meter_skipped_reason (TEXT), meter_used (INTEGER DEFAULT 0)",
+        "meter_skipped_reason: 'external_charging', 'unknown_location', 'disabled' — gespeichert pro Session",
+        "meter_used=1 nur wenn Meter-Delta tatsächlich für kwh_charged verwendet wurde",
+        "Bugfix: meter_start_val wird in tracker_loop korrekt mit None initialisiert",
+        "UI: 'Zähler gilt für' Select (home_only/all/disabled) im Zählerstand-Konfigurationsbereich",
+        "UI: meter_scope wird in loadConfig() und saveMeterSource() korrekt geladen und gespeichert"
+      ]
+    },
     {
       "version": "2.0.11",
       "date": "2026-05-21",
