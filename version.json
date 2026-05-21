@@ -1,6 +1,21 @@
 {
-  "version": "2.0.12",
+  "version": "2.0.13",
   "changelog": [
+    {
+      "version": "2.0.13",
+      "date": "2026-05-21",
+      "changes": [
+        "Zählerstände (meter_old/meter_new) werden in UI ohne Nachkommastellen angezeigt (ganze kWh)",
+        "Excel-Export: meter_old/meter_new als ganze kWh (NUM_FMT '0', to_row() rundet auf int)",
+        "Template-Platzhalter {{meter_start_value}} und {{meter_end_value}} als ganze kWh",
+        "Dashboard: Letzter Zählerstand ohne Nachkommastellen",
+        "Sessionliste: Zähler Alt → Zähler Neu ohne Nachkommastellen",
+        "Session-Detail-Modal: Zähler Alt/Neu ohne Nachkommastellen",
+        "meter_delta_kwh und kwh_charged bleiben mit Nachkommastellen (exakte Rohwerte)",
+        "Neu: format_meter_value_kwh() Helper in export_excel.py",
+        "UI: Hinweis 'Zählerstände werden ohne Nachkommastellen angezeigt' im Zählerbereich"
+      ]
+    },
     {
       "version": "2.0.12",
       "date": "2026-05-21",

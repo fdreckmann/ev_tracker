@@ -1002,6 +1002,9 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
               <option value="disabled">Deaktiviert</option>
             </select>
           </div>
+          <div style="margin-top:6px;font-size:.72rem;color:var(--mute);line-height:1.4">
+            Zählerstände werden ohne Nachkommastellen angezeigt. Die Berechnung der geladenen kWh erfolgt intern mit dem exakten Wert.
+          </div>
         </div>
         <div style="margin-top:10px;display:grid;gap:10px;grid-template-columns:1fr 1fr">
           <div>
@@ -2782,7 +2785,7 @@ async function refreshStatus(){
     const lastMeter = rows.find(r=>r.meter_new!=null);
     const meterTile = $('dMeterTile');
     if(lastMeter && meterTile){
-      $('dMeter').textContent = Number(lastMeter.meter_new).toLocaleString('de',{minimumFractionDigits:3,maximumFractionDigits:3})+' kWh';
+      $('dMeter').textContent = Math.round(Number(lastMeter.meter_new)).toLocaleString('de')+' kWh';
       meterTile.style.display='';
     }
 
@@ -2809,7 +2812,7 @@ function renderTbl(el, rows, showDel=true){
   if(!rows.length){el.innerHTML='<div class="empty">Keine Ladevorgänge</div>';return;}
   const hasMeter   = rows.some(r=>r.meter_old!=null||r.meter_new!=null);
   const hasVehicle = rows.some(r=>r.vehicle_id && r.vehicle_id!=='v0') || new Set(rows.map(r=>r.vehicle_id)).size>1;
-  const fmtMeter   = v => v!=null ? Number(v).toLocaleString('de',{minimumFractionDigits:3,maximumFractionDigits:3}) : '—';
+  const fmtMeter   = v => v!=null ? Math.round(Number(v)).toLocaleString('de') : '—';
   el.innerHTML=`<table>
     <thead><tr>
       <th>#</th><th>Datum</th><th>Start→Ende</th>
@@ -4813,7 +4816,7 @@ async function showSessionDetail(id){
   $('modalTitle').textContent = `Session #${s.id} — ${new Date(s.start_ts).toLocaleDateString('de-DE')}`;
   $('modalMeta').innerHTML = `${dt(s.start_ts)} → ${s.end_ts?dt(s.end_ts):'läuft noch'} &nbsp;·&nbsp; ${locBadge(s.location)} &nbsp;·&nbsp; ${typeBadge(s.charger_type,s.max_power_kw)}`;
 
-  const fmtMeterVal = v => v!=null ? Number(v).toLocaleString('de',{minimumFractionDigits:3,maximumFractionDigits:3})+' kWh' : null;
+  const fmtMeterVal = v => v!=null ? Math.round(Number(v)).toLocaleString('de')+' kWh' : null;
   const stats = [
     {l:'SOC Start',      v:fmt(s.soc_start,0)+'%'},
     {l:'SOC Ende',       v:fmt(s.soc_end,0)+'%'},

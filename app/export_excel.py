@@ -12,6 +12,16 @@ except ImportError:
     TABLE_FIELDS = {}
     HEADER_FIELDS = {}
 
+
+def format_meter_value_kwh(value):
+    """Round meter reading to whole kWh for display/export. Returns int or None."""
+    if value is None:
+        return None
+    try:
+        return int(round(float(value)))
+    except (ValueError, TypeError):
+        return None
+
 # ── Localization ──────────────────────────────────────────────────────────────
 MONTH_NAMES = {
     "de": {1:"Januar",2:"Februar",3:"März",4:"April",5:"Mai",6:"Juni",
@@ -204,8 +214,8 @@ NUM_FMT = {
     "duration":         '[h]:MM',
     "duration_hours":   '0.00 "h"',
     "charge_power_kw":  '0.00 "kW"',
-    "meter_old":   '0.000',
-    "meter_new":   '0.000',
+    "meter_old":   '0',
+    "meter_new":   '0',
     "row_num":     "0",
 }
 
@@ -297,8 +307,8 @@ def to_row(s, idx, lang="de"):
         "kwh_charged":  s.get("kwh_charged"),
         "cost_eur":     s.get("cost_eur"),
         "price_per_kwh": s.get("price_per_kwh"),
-        "meter_old":    s.get("meter_old"),
-        "meter_new":    s.get("meter_new"),
+        "meter_old":    format_meter_value_kwh(s.get("meter_old")),
+        "meter_new":    format_meter_value_kwh(s.get("meter_new")),
         "location":     LOCATION_LABELS.get(s.get("location", "unknown"), s.get("location", "—")),
         "charger_type": charger_type,
     }
@@ -447,8 +457,8 @@ def compute_header_values(sessions, year, month, header_info=None, lang="de"):
         "total_external_cost":      ext_cost,
         "total_km":                 total_km,
         "avg_consumption_kwh_100km": avg_cons,
-        "meter_start_value":        sessions[0].get("meter_old") if n else None,
-        "meter_end_value":          sessions[-1].get("meter_new") if n else None,
+        "meter_start_value":        format_meter_value_kwh(sessions[0].get("meter_old")) if n else None,
+        "meter_end_value":          format_meter_value_kwh(sessions[-1].get("meter_new")) if n else None,
         "price_per_kwh":            header_info.get("price_per_kwh") or None,
         "total_charging_hours":     total_charging_hours,
         "avg_charge_power_kw":      avg_charge_power_kw,
@@ -474,7 +484,8 @@ def _fill_placeholders(wb, header_vals, include_signature=False, sig_img=None):
         "total_kwh", "total_cost", "total_home_kwh", "total_external_kwh",
         "total_home_cost", "total_external_cost", "total_charging_hours",
         "avg_charge_power_kw", "avg_consumption_kwh_100km",
-        "price_per_kwh", "meter_start_value", "meter_end_value",
+        "price_per_kwh",
+        # meter_start_value / meter_end_value excluded — already rounded to int
     }
 
     sig_cell_ref = None  # Will be set if {{signature}} placeholder is found
