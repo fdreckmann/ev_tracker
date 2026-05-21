@@ -1,4 +1,4 @@
-import os, sys, sqlite3, shutil, json
+import os, sys, sqlite3, shutil, json, re
 from datetime import datetime
 from pathlib import Path
 import openpyxl
@@ -11,6 +11,9 @@ try:
 except ImportError:
     TABLE_FIELDS = {}
     HEADER_FIELDS = {}
+
+_PH_PATTERN   = re.compile(r'\{\{(\w+)\}\}')
+_COL_ADDR_RE  = re.compile(r'^([A-Za-z]+)(\d+)$')
 
 
 def format_meter_value_kwh(value):
@@ -476,8 +479,7 @@ def _fill_placeholders(wb, header_vals, include_signature=False, sig_img=None):
     {{avg_charge_power_kw}}, {{avg_consumption_kwh_100km}}, {{meter_start_value}},
     {{meter_end_value}}, {{signature}}
     """
-    import re as _re
-    ph_pattern = _re.compile(r'\{\{(\w+)\}\}')
+    ph_pattern = _PH_PATTERN
 
     # Fields that should be formatted as 2-decimal floats
     FLOAT2_FIELDS = {
@@ -659,12 +661,11 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
     fill_header_section(ws, ds, header_data)
 
     # Replace {{placeholder}} in any cell text
-    import re as _re
     _ph_sig_cell = _fill_placeholders(wb, hv, include_signature=include_signature, sig_img=None)
 
     # Write cell_mapping: { "B4": "kennzeichen" or {"field": "kennzeichen", ...} }
     if cell_mapping and isinstance(cell_mapping, dict):
-        col_letter_re = _re.compile(r'^([A-Za-z]+)(\d+)$')
+        col_letter_re = _COL_ADDR_RE
         for addr, field_info in cell_mapping.items():
             field = field_info if isinstance(field_info, str) else field_info.get("field")
             if not field or field not in hv:

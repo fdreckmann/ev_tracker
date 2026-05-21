@@ -4,14 +4,14 @@ import smtplib, email
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from flask import Flask, render_template, request, jsonify, send_file, make_response, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, send_file, make_response, session, redirect, url_for, g
 from providers import get_provider, get_all_capabilities, get_config_fields, PROVIDERS
 from meter_providers import read_meter as _read_meter_impl, MeterResult
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "2.0.16"
+APP_VERSION   = "2.0.17"
 
 CHANGELOG = [
     {"version":"2.0.0","changes":[
@@ -145,6 +145,12 @@ SIGNATURE_PATH = SIGNATURE_DIR / "default_signature.png"
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 
+@app.teardown_appcontext
+def _close_db(exc):
+    db = g.pop("_db", None)
+    if db is not None:
+        db.close()
+
 # ── Auth helpers ─────────────────────────────────────────────────────────────
 
 def _get_secret_key():
@@ -169,9 +175,31 @@ def _password_ok(pw: str) -> "str | None":
 
 # ── User DB helpers ───────────────────────────────────────────────────────────
 def _get_db():
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    return con
+    """Return a DB connection.
+    Inside a request context: reuses a single connection stored in flask.g;
+    teardown_appcontext closes it automatically after each request.
+    Outside request context (background threads): returns a new connection
+    that the caller must close."""
+    try:
+        db = g.get("_db")
+        if db is None:
+            db = sqlite3.connect(DB_PATH)
+            db.row_factory = sqlite3.Row
+            g._db = db
+        else:
+            # Detect if connection was closed by a previous caller in this request
+            try:
+                db.execute("SELECT 1")
+            except Exception:
+                db = sqlite3.connect(DB_PATH)
+                db.row_factory = sqlite3.Row
+                g._db = db
+        return db
+    except RuntimeError:
+        # Outside request context (background threads) — caller owns the connection
+        con = sqlite3.connect(DB_PATH)
+        con.row_factory = sqlite3.Row
+        return con
 
 def _has_users() -> bool:
     try:
@@ -3124,8 +3152,9 @@ def api_delete_vehicle(vid):
         cfg["extra_vehicles"] = [v for v in extras if v["id"] != vid]
         save_config(cfg)
         _stop_vehicle_tracker(vid)
-        _vehicle_states.pop(vid, None)
-        _vehicle_stops.pop(vid, None)
+        with _vehicle_states_lock:
+            _vehicle_states.pop(vid, None)
+            _vehicle_stops.pop(vid, None)
         if allow_del_sessions:
             con = _get_db()
             con.execute("DELETE FROM session_points WHERE session_id IN "
@@ -3162,8 +3191,9 @@ def api_delete_vehicle(vid):
     cfg["extra_vehicles"] = new_extras
     save_config(cfg)
     _stop_vehicle_tracker(vid)
-    _vehicle_states.pop(vid, None)
-    _vehicle_stops.pop(vid, None)
+    with _vehicle_states_lock:
+        _vehicle_states.pop(vid, None)
+        _vehicle_stops.pop(vid, None)
     _audit("vehicle_archived", f"vehicle_id={vid} name={vname}", ip=request.remote_addr)
     return jsonify({"ok": True, "action": "archived", "vehicle_id": vid})
 

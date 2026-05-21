@@ -1,6 +1,16 @@
 {
-  "version": "2.0.16",
+  "version": "2.0.17",
   "changelog": [
+    {
+      "version": "2.0.17",
+      "date": "2026-05-21",
+      "changes": [
+        "Performance: _get_db() nutzt flask.g für Request-Scoped DB-Connection — ein sqlite3.connect() pro Request statt mehrerer",
+        "Performance: teardown_appcontext schließt g-Connection automatisch nach jedem Request",
+        "Performance: re.compile() in export_excel.py auf Modul-Ebene verschoben (_PH_PATTERN, _COL_ADDR_RE)",
+        "Thread-Safety: _vehicle_states.pop() in Archive/Delete mit _vehicle_states_lock abgesichert"
+      ]
+    },
     {
       "version": "2.0.16",
       "date": "2026-05-21",
