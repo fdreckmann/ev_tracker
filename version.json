@@ -1,6 +1,40 @@
 {
-  "version": "2.0.8",
+  "version": "2.0.9",
   "changelog": [
+    {
+      "version": "2.0.9",
+      "date": "2026-05-21",
+      "changes": [
+        "Bugfix: _safe_veh_img_path() enthält jetzt korrekt die Pfadberechnung und Traversal-Prüfung",
+        "Neu: GET /api/vehicles/<vid>/delete-check — prüft Sessions/Berichte/Billing vor Hard-Delete (nie zerstörend)",
+        "Frontend: hardDeleteVehicleModal() ruft zuerst delete-check auf, zeigt immer Bestätigungsdialog mit Datenzählen",
+        "Frontend: hardDeleteVehicleModal() führt DELETE nie als erste Aktion aus",
+        "Neu: Fahrzeug-Standort-Feature — Permissions vehicles:location_view/exact_view/configure/history_view",
+        "Neu: DEFAULT_CONFIG location_enabled, location_mode, location_source, home_detection_mode, location_ha_entities etc.",
+        "Neu: DB-Tabelle vehicle_location_history mit Index idx_vlh_vehicle_ts",
+        "Neu: _haversine_m() — Distanz in Metern zwischen zwei GPS-Koordinaten",
+        "Neu: _detect_location_status() — kombiniert Provider + HA device_tracker Entities zu home/external/unknown",
+        "Neu: _make_state() enthält location_lat, location_lon, location_accuracy, location_timestamp, location_status, location_source",
+        "Neu: tracker_loop() aktualisiert Standortstatus nach jedem Poll",
+        "Neu: GET /api/vehicles/<vid>/location — Standortstatus abfragen",
+        "Neu: POST /api/vehicles/<vid>/location/config — Standortkonfiguration speichern",
+        "Neu: POST /api/vehicles/<vid>/location/test — Standorterkennung live testen",
+        "Neu: GET /api/vehicles/<vid>/location/history — Standort-Historie (lat/lon nur mit exact_view-Permission)",
+        "Frontend: Standort-Badge im Fahrzeug-Listenitem (loadVehicleLocationBadge)",
+        "Frontend: _timeAgo() Hilfsfunktion für relative Zeitanzeige",
+        "Frontend: Standort-Konfigurationsbereich im Fahrzeug-Modal (📍 Standort-Konfiguration)",
+        "Frontend: testVehicleLocation() — Standorttest per Klick im Modal",
+        "Frontend: openEditVehicleModal() befüllt Standortfelder aus Fahrzeugkonfig",
+        "Frontend: saveVehicleModal() speichert Standortkonfig via POST /location/config",
+        "Sicherheit: POST /api/template erfordert @require_login + templates:upload",
+        "Sicherheit: DELETE /api/template erfordert @require_login + templates:delete",
+        "Sicherheit: POST /api/template/gallery/<id>/use wechselt von @require_admin zu @require_login + templates:gallery_use",
+        "Sicherheit: POST /api/template/mapping erfordert templates:edit_mapping",
+        "Sicherheit: POST /api/test-connection erfordert @require_login + providers:test",
+        "Sicherheit: POST /api/meter/test erfordert @require_login + meter:test",
+        "Sicherheit: POST /api/entsoe/test erfordert @require_login + tariffs:test"
+      ]
+    },
     {
       "version": "2.0.8",
       "date": "2026-05-20",

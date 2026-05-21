@@ -11,7 +11,7 @@ from meter_providers import read_meter as _read_meter_impl, MeterResult
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "2.0.8"
+APP_VERSION   = "2.0.9"
 
 CHANGELOG = [
     {"version":"2.0.0","changes":[
@@ -248,6 +248,10 @@ ALL_PERMISSIONS = {
     "vehicles:delete":          {"label": "Fahrzeug löschen",               "group": "Fahrzeuge"},
     "vehicles:switch":          {"label": "Fahrzeug wechseln",              "group": "Fahrzeuge"},
     "vehicles:image_manage":    {"label": "Fahrzeugbild verwalten",         "group": "Fahrzeuge"},
+    "vehicles:location_view":         {"label": "Fahrzeug-Standort anzeigen",         "group": "Fahrzeuge"},
+    "vehicles:location_exact_view":   {"label": "Genaue Fahrzeug-Koordinaten sehen",  "group": "Fahrzeuge"},
+    "vehicles:location_configure":    {"label": "Fahrzeug-Standort konfigurieren",     "group": "Fahrzeuge"},
+    "vehicles:location_history_view": {"label": "Fahrzeug-Standort-Historie anzeigen","group": "Fahrzeuge"},
     "vehicles:provider_configure": {"label": "Provider konfigurieren",     "group": "Fahrzeuge"},
     # Ladevorgänge
     "sessions:view":            {"label": "Ladevorgänge ansehen",           "group": "Ladevorgänge"},
@@ -353,7 +357,7 @@ ALL_PERMISSIONS = {
 DEFAULT_ROLE_PERMISSIONS = {
     "admin": ["admin:all"],
     "user": [
-        "dashboard:view", "vehicles:view", "vehicles:switch",
+        "dashboard:view", "vehicles:view", "vehicles:switch", "vehicles:location_view",
         "sessions:view", "sessions:create", "sessions:edit", "sessions:manual_add",
         "analytics:view",
         "export:view", "export:create", "export:preview", "export:download", "export:pdf",
@@ -424,6 +428,16 @@ DEFAULT_CONFIG = {
     "home_lat":             "",
     "home_lon":             "",
     "home_radius_m":        200,
+
+    # Location feature
+    "location_enabled":              False,
+    "location_mode":                 "home_external",  # home_external | exact | disabled
+    "location_source":               "combined",       # provider | ha | combined | manual
+    "home_detection_mode":           "any",            # any | all | provider_only | ha_only | manual
+    "location_history_enabled":      False,
+    "location_history_precision":    "status_only",    # status_only | rounded | exact
+    "location_history_retention_days": 30,
+    "location_ha_entities":          [],               # list of HA device_tracker entity IDs
 
     # Pricing
     "battery_capacity_kwh": 77.0,
@@ -947,6 +961,18 @@ def init_db():
         UNIQUE(provider, ts)
     )""")
 
+    con.execute("""CREATE TABLE IF NOT EXISTS vehicle_location_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        vehicle_id TEXT NOT NULL,
+        timestamp TEXT NOT NULL,
+        location_status TEXT,
+        source TEXT,
+        latitude REAL,
+        longitude REAL,
+        accuracy_m REAL
+    )""")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_vlh_vehicle_ts ON vehicle_location_history(vehicle_id, timestamp)""")
+
     # Seed default roles
     now_iso = datetime.utcnow().isoformat()
     default_roles = [
@@ -1156,6 +1182,9 @@ def _make_state(vehicle_id="v0", provider_id="ha"):
         "charger_type": "unknown", "power_kw": None, "entsoe_spot": None,
         "provider": provider_id,
         "provider_name": PROVIDERS.get(provider_id, PROVIDERS["ha"]).PROVIDER_NAME,
+        "location_lat": None, "location_lon": None,
+        "location_accuracy": None, "location_timestamp": None,
+        "location_status": "unknown", "location_source": "none",
     }
 
 _vehicle_states: dict[str, dict] = {"v0": _make_state("v0")}
@@ -1220,6 +1249,19 @@ def tracker_loop(vehicle_id: str = "v0"):
                 last_error=None, provider=provider_id,
                 provider_name=PROVIDERS.get(provider_id, PROVIDERS["ha"]).PROVIDER_NAME,
             )
+
+            # Update location status
+            try:
+                if getattr(state, 'lat', None) is not None:
+                    st["location_lat"] = state.lat
+                    st["location_lon"] = getattr(state, 'lon', None)
+                    st["location_accuracy"] = getattr(state, 'accuracy', None)
+                    st["location_timestamp"] = datetime.now().isoformat(timespec="seconds")
+                loc_result = _detect_location_status(vehicle_id, vcfg, st)
+                st["location_status"] = loc_result["status"]
+                st["location_source"] = loc_result["source"]
+            except Exception as _le:
+                log.debug("Location detection error: %s", _le)
 
             con = sqlite3.connect(DB_PATH); cur = con.cursor()
 
@@ -2741,6 +2783,144 @@ def api_update_vehicle(vid):
             return jsonify({"ok": True})
     return jsonify({"ok": False, "error": "Fahrzeug nicht gefunden"}), 404
 
+@app.route("/api/vehicles/<vid>/delete-check")
+@require_login
+def api_vehicle_delete_check(vid):
+    if not has_permission(_current_user(), "vehicles:delete"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: vehicles:delete"}), 403
+    if not _validate_vehicle_id(vid):
+        return jsonify({"ok": False, "error": "Ungültige Fahrzeug-ID"}), 400
+    if vid == "v0":
+        return jsonify({"ok": False, "error": "Primärfahrzeug kann nicht gelöscht werden"}), 400
+    con = _get_db()
+    sess_count    = con.execute("SELECT COUNT(*) FROM sessions WHERE vehicle_id=?", (vid,)).fetchone()[0]
+    rep_count     = con.execute("SELECT COUNT(*) FROM reports  WHERE vehicle_id=?", (vid,)).fetchone()[0]
+    billing_count = con.execute("SELECT COUNT(*) FROM billing_config WHERE vehicle_id=?", (vid,)).fetchone()[0]
+    con.close()
+    return jsonify({
+        "ok": True,
+        "vehicle_id": vid,
+        "sessions": sess_count,
+        "reports": rep_count,
+        "billing_configs": billing_count,
+        "can_hard_delete": True,
+    })
+
+
+@app.route("/api/vehicles/<vid>/location")
+@require_login
+def api_vehicle_location(vid):
+    if not has_permission(_current_user(), "vehicles:location_view"):
+        return jsonify({"error": "Keine Berechtigung: vehicles:location_view"}), 403
+    if not _validate_vehicle_id(vid):
+        return jsonify({"error": "Ungültige Fahrzeug-ID"}), 400
+    cfg  = load_config()
+    vcfg = cfg if vid == "v0" else build_vehicle_config(
+        next((v for v in cfg.get("extra_vehicles",[]) if v["id"]==vid), {}), cfg)
+    st   = _vehicle_states.get(vid, {})
+    loc  = _detect_location_status(vid, vcfg, st)
+    has_exact = has_permission(_current_user(), "vehicles:location_exact_view")
+    resp = {
+        "ok": True, "vehicle_id": vid,
+        "status": loc["status"], "source": loc["source"],
+        "source_detail": loc["source_detail"],
+        "last_update": st.get("location_timestamp"),
+        "has_exact_location": bool(loc.get("latitude")),
+        "location_enabled": vcfg.get("location_enabled", False),
+        "location_mode": vcfg.get("location_mode", "home_external"),
+    }
+    if has_exact and loc.get("latitude") is not None:
+        resp["latitude"]   = loc["latitude"]
+        resp["longitude"]  = loc["longitude"]
+        resp["accuracy_m"] = loc.get("accuracy_m")
+    return jsonify(resp)
+
+
+@app.route("/api/vehicles/<vid>/location/config", methods=["POST"])
+@require_login
+def api_vehicle_location_config(vid):
+    if not has_permission(_current_user(), "vehicles:location_configure"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: vehicles:location_configure"}), 403
+    if not _validate_vehicle_id(vid):
+        return jsonify({"ok": False, "error": "Ungültige Fahrzeug-ID"}), 400
+    body = request.get_json(force=True) or {}
+    allowed = {"location_enabled", "location_mode", "location_source",
+               "home_detection_mode", "home_radius_m", "location_ha_entities",
+               "location_history_enabled", "location_history_precision",
+               "location_history_retention_days"}
+    cfg = load_config()
+    if vid == "v0":
+        for k in allowed:
+            if k in body:
+                cfg[k] = body[k]
+    else:
+        extras = cfg.get("extra_vehicles", [])
+        found  = False
+        for v in extras:
+            if v.get("id") == vid:
+                for k in allowed:
+                    if k in body:
+                        v[k] = body[k]
+                found = True
+                break
+        if not found:
+            return jsonify({"ok": False, "error": "Fahrzeug nicht gefunden"}), 404
+        cfg["extra_vehicles"] = extras
+    save_config(cfg)
+    _audit("vehicle_location_config_updated", f"vehicle_id={vid}", ip=request.remote_addr)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/vehicles/<vid>/location/test", methods=["POST"])
+@require_login
+def api_vehicle_location_test(vid):
+    if not has_permission(_current_user(), "vehicles:location_configure"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: vehicles:location_configure"}), 403
+    if not _validate_vehicle_id(vid):
+        return jsonify({"ok": False, "error": "Ungültige Fahrzeug-ID"}), 400
+    cfg  = load_config()
+    vcfg = cfg if vid == "v0" else build_vehicle_config(
+        next((v for v in cfg.get("extra_vehicles",[]) if v["id"]==vid), {}), cfg)
+    st   = _vehicle_states.get(vid, {})
+    try:
+        loc = _detect_location_status(vid, vcfg, st)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+    _audit("vehicle_location_tested", f"vehicle_id={vid} status={loc['status']}", ip=request.remote_addr)
+    has_exact = has_permission(_current_user(), "vehicles:location_exact_view")
+    resp = {"ok": True, "status": loc["status"], "source": loc["source"],
+            "source_detail": loc["source_detail"]}
+    if has_exact and loc.get("latitude") is not None:
+        resp["latitude"]  = loc["latitude"]
+        resp["longitude"] = loc["longitude"]
+    return jsonify(resp)
+
+
+@app.route("/api/vehicles/<vid>/location/history")
+@require_login
+def api_vehicle_location_history(vid):
+    if not has_permission(_current_user(), "vehicles:location_history_view"):
+        return jsonify({"error": "Keine Berechtigung: vehicles:location_history_view"}), 403
+    if not _validate_vehicle_id(vid):
+        return jsonify({"error": "Ungültige Fahrzeug-ID"}), 400
+    limit = min(int(request.args.get("limit", 100)), 500)
+    con = _get_db()
+    rows = con.execute(
+        "SELECT timestamp, location_status, source, accuracy_m FROM vehicle_location_history "
+        "WHERE vehicle_id=? ORDER BY timestamp DESC LIMIT ?", (vid, limit)
+    ).fetchall()
+    con.close()
+    has_exact = has_permission(_current_user(), "vehicles:location_exact_view")
+    items = []
+    for row in rows:
+        item = dict(row)
+        if not has_exact:
+            item.pop("latitude", None)
+            item.pop("longitude", None)
+        items.append(item)
+    return jsonify({"ok": True, "vehicle_id": vid, "history": items})
+
+
 @app.route("/api/vehicles/<vid>", methods=["DELETE"])
 @require_login
 def api_delete_vehicle(vid):
@@ -2850,6 +3030,11 @@ def _safe_veh_img_path(vid: str) -> "Path":
     """Return resolved car.webp path; raises ValueError for unsafe IDs or traversal."""
     if not _validate_vehicle_id(vid):
         raise ValueError(f"Ungültige vehicle_id: {vid!r}")
+    base = _VEH_IMG_DIR.resolve()
+    target = (base / vid / "car.webp").resolve()
+    if not str(target).startswith(str(base) + "/"):
+        raise ValueError(f"Pfad-Traversal verhindert für vehicle_id: {vid!r}")
+    return target
 
 def _update_vehicle_image_meta(vid: str, mode: str, path: str,
                                 source: str = "", attribution: str = "",
@@ -2873,11 +3058,136 @@ def _update_vehicle_image_meta(vid: str, mode: str, path: str,
                 break
         cfg["extra_vehicles"] = extras
     save_config(cfg)
-    base = _VEH_IMG_DIR.resolve()
-    target = (base / vid / "car.webp").resolve()
-    if not str(target).startswith(str(base) + "/"):
-        raise ValueError(f"Pfad-Traversal verhindert für vehicle_id: {vid!r}")
-    return target
+
+
+# ── Location Helpers ────────────────────────────────────────────────────────────
+
+import math as _math
+
+def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Return distance in metres between two GPS coordinates."""
+    R = 6_371_000
+    phi1, phi2 = _math.radians(lat1), _math.radians(lat2)
+    dphi  = _math.radians(lat2 - lat1)
+    dlam  = _math.radians(lon2 - lon1)
+    a = _math.sin(dphi/2)**2 + _math.cos(phi1)*_math.cos(phi2)*_math.sin(dlam/2)**2
+    return R * 2 * _math.atan2(_math.sqrt(a), _math.sqrt(1-a))
+
+def _detect_location_status(vid: str, cfg: dict, vehicle_state: dict) -> dict:
+    """
+    Combine provider location and HA device_tracker entities to determine
+    home/external/unknown status. Returns dict with status, source, lat, lon, accuracy_m.
+    """
+    location_mode   = cfg.get("location_mode", "home_external")
+    detect_mode     = cfg.get("home_detection_mode", "any")
+    ha_entities     = cfg.get("location_ha_entities") or []
+    home_lat        = cfg.get("home_lat", "")
+    home_lon        = cfg.get("home_lon", "")
+    home_radius_m   = float(cfg.get("home_radius_m") or 200)
+
+    result = {"status": "unknown", "source": "none", "latitude": None,
+              "longitude": None, "accuracy_m": None, "source_detail": ""}
+
+    if location_mode == "disabled" or not cfg.get("location_enabled"):
+        result["status"] = "disabled"
+        return result
+
+    sources_home = []
+    sources_external = []
+
+    # --- Provider location check ---
+    prov_lat = vehicle_state.get("location_lat")
+    prov_lon = vehicle_state.get("location_lon")
+    prov_status = "unknown"
+    if prov_lat is not None and prov_lon is not None:
+        result["latitude"]  = prov_lat
+        result["longitude"] = prov_lon
+        result["accuracy_m"] = vehicle_state.get("location_accuracy")
+        if home_lat and home_lon:
+            try:
+                dist = _haversine_m(float(home_lat), float(home_lon), prov_lat, prov_lon)
+                prov_status = "home" if dist <= home_radius_m else "external"
+            except (ValueError, TypeError):
+                prov_status = "unknown"
+    elif vehicle_state.get("location") in ("home", "zuhause"):
+        prov_status = "home"
+    elif vehicle_state.get("location") in ("extern", "external"):
+        prov_status = "external"
+
+    if prov_status == "home":
+        sources_home.append("provider")
+    elif prov_status == "external":
+        sources_external.append("provider")
+
+    # --- Home Assistant entity check ---
+    ha_url   = cfg.get("ha_url", "").rstrip("/")
+    ha_token = cfg.get("ha_token", "")
+    ha_home_count = 0
+    ha_ext_count  = 0
+
+    if ha_entities and ha_url and ha_token and detect_mode not in ("provider_only",):
+        import urllib.request as _ur, json as _json
+        for entity_id in ha_entities:
+            try:
+                req = _ur.Request(
+                    f"{ha_url}/api/states/{entity_id}",
+                    headers={"Authorization": f"Bearer {ha_token}",
+                             "Content-Type": "application/json"},
+                )
+                with _ur.urlopen(req, timeout=5) as resp:
+                    data = _json.loads(resp.read())
+                state_val = data.get("state", "").lower()
+                if state_val in ("home", "zuhause"):
+                    ha_home_count += 1
+                    sources_home.append(f"ha:{entity_id}")
+                    # Try to get exact coords from attributes
+                    attrs = data.get("attributes", {})
+                    if (attrs.get("latitude") and attrs.get("longitude")
+                            and location_mode == "exact"):
+                        result["latitude"]  = float(attrs["latitude"])
+                        result["longitude"] = float(attrs["longitude"])
+                        result["accuracy_m"] = attrs.get("gps_accuracy")
+                elif state_val not in ("", "unavailable", "unknown"):
+                    ha_ext_count += 1
+                    sources_external.append(f"ha:{entity_id}")
+            except Exception as _ha_e:
+                log.debug("HA entity %s: %s", entity_id, _ha_e)
+
+    # --- Combine results ---
+    final_status = "unknown"
+    source_desc  = "none"
+
+    if detect_mode == "provider_only":
+        final_status = prov_status
+        source_desc  = "provider"
+    elif detect_mode == "ha_only":
+        if ha_home_count > 0:     final_status = "home"
+        elif ha_ext_count > 0:    final_status = "external"
+        else:                     final_status = "unknown"
+        source_desc = "ha"
+    elif detect_mode == "all":
+        all_sources = sources_home + sources_external
+        if all_sources and all(s in sources_home for s in all_sources):
+            final_status = "home"
+        elif sources_external:
+            final_status = "external"
+        else:
+            final_status = "unknown"
+        source_desc = "combined"
+    elif detect_mode == "manual":
+        final_status = cfg.get("location_status_manual", "unknown")
+        source_desc  = "manual"
+    else:  # any (default)
+        if sources_home:       final_status = "home"
+        elif sources_external: final_status = "external"
+        else:                  final_status = "unknown"
+        source_desc = "combined" if (sources_home or sources_external) else "none"
+
+    result["status"]        = final_status
+    result["source"]        = source_desc
+    result["source_detail"] = ", ".join((sources_home + sources_external)[:3])
+    return result
+
 
 @app.route("/api/vehicles/<vid>/image")
 @require_login
@@ -3048,7 +3358,10 @@ def api_patch_session(sid):
 def api_monthly_stats(): return jsonify(get_monthly_stats())
 
 @app.route("/api/test-connection", methods=["POST"])
+@require_login
 def api_test():
+    if not has_permission(_current_user(), "providers:test"):
+        return jsonify({"ok": False, "message": "Keine Berechtigung: providers:test"}), 403
     data=request.json; cfg=load_config()
     # merge submitted fields into config for test
     test_cfg={**cfg,**data}
@@ -3070,7 +3383,10 @@ def _sanitize_url(url):
     return _re_sanitize_url.sub(r'://([^@]+)@', '://', url)
 
 @app.route("/api/meter/test", methods=["POST"])
+@require_login
 def api_meter_test():
+    if not has_permission(_current_user(), "meter:test"):
+        return jsonify({"ok": False, "message": "Keine Berechtigung: meter:test"}), 403
     # Load saved config as base
     cfg = load_config()
     # Body-first: merge body values with priority over stored config (without saving)
@@ -3099,7 +3415,10 @@ def api_meter_test():
     })
 
 @app.route("/api/entsoe/test", methods=["POST"])
+@require_login
 def api_entsoe_test():
+    if not has_permission(_current_user(), "tariffs:test"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: tariffs:test"}), 403
     key=request.json.get("entsoe_api_key","").strip()
     if not key: return jsonify({"ok":False,"error":"Kein API Key"})
     _entsoe_cache["price"]=None
@@ -3108,7 +3427,10 @@ def api_entsoe_test():
     return jsonify({"ok":False,"error":"Kein Preis erhalten"})
 
 @app.route("/api/template", methods=["POST"])
+@require_login
 def api_upload_template():
+    if not has_permission(_current_user(), "templates:upload"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: templates:upload"}), 403
     if "file" not in request.files: return jsonify({"ok":False,"error":"Keine Datei"}),400
     f=request.files["file"]
     if not f.filename.endswith(".xlsx"): return jsonify({"ok":False,"error":"Nur .xlsx"}),400
@@ -3119,7 +3441,10 @@ def api_upload_template():
     return jsonify({"ok":True,"filename":f.filename,"size":TEMPLATE_PATH.stat().st_size})
 
 @app.route("/api/template", methods=["DELETE"])
+@require_login
 def api_delete_template():
+    if not has_permission(_current_user(), "templates:delete"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: templates:delete"}), 403
     if TEMPLATE_PATH.exists(): TEMPLATE_PATH.unlink()
     cfg = load_config()
     cfg["active_template"] = {"source": None, "template_id": None, "name": None}
@@ -3183,8 +3508,10 @@ def api_template_gallery_preview(template_id):
     return send_file(str(svg_path), mimetype="image/svg+xml")
 
 @app.route("/api/template/gallery/<template_id>/use", methods=["POST"])
-@require_admin
+@require_login
 def api_template_gallery_use(template_id):
+    if not has_permission(_current_user(), "templates:gallery_use"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: templates:gallery_use"}), 403
     import json as _json, re
     from pathlib import Path as _Path
     if not re.match(r'^[a-z0-9_]+$', template_id):
@@ -3388,6 +3715,8 @@ def api_template_analyze():
 def api_template_mapping():
     cfg = load_config()
     if request.method == "POST":
+        if not has_permission(_current_user(), "templates:edit_mapping"):
+            return jsonify({"ok": False, "error": "Keine Berechtigung: templates:edit_mapping"}), 403
         body = request.get_json(force=True)
         # backward compat: "mapping" → column_mapping
         cfg["template_column_mapping"] = body.get("column_mapping") or body.get("mapping") or {}

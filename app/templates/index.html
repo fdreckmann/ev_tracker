@@ -2188,7 +2188,46 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       </div>
     </div>
 
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <details id="vm_location_section" style="margin-top:1rem">
+      <summary style="cursor:pointer;font-weight:600;font-size:.9rem">📍 Standort-Konfiguration</summary>
+      <div style="margin-top:.75rem;display:flex;flex-direction:column;gap:.5rem">
+        <label class="lbl">
+          <input type="checkbox" id="vm_loc_enabled"> Standortanzeige aktivieren
+        </label>
+        <label class="lbl">Modus</label>
+        <select class="inp" id="vm_loc_mode">
+          <option value="home_external">Nur Zuhause/Extern</option>
+          <option value="exact">Genaue Position</option>
+          <option value="disabled">Deaktiviert</option>
+        </select>
+        <label class="lbl">Erkennungsquelle</label>
+        <select class="inp" id="vm_loc_source">
+          <option value="combined">Kombiniert (Provider + HA)</option>
+          <option value="provider">Nur Provider</option>
+          <option value="ha">Nur Home Assistant</option>
+          <option value="manual">Manuell</option>
+        </select>
+        <label class="lbl">Kombinationsmodus</label>
+        <select class="inp" id="vm_loc_detect_mode">
+          <option value="any">any — Zuhause wenn eine Quelle home meldet</option>
+          <option value="all">all — Zuhause nur wenn alle Quellen home melden</option>
+          <option value="provider_only">Nur Provider-Position</option>
+          <option value="ha_only">Nur HA-Entities</option>
+          <option value="manual">Manuell</option>
+        </select>
+        <label class="lbl">Home-Radius (Meter)</label>
+        <input class="inp" type="number" id="vm_loc_radius" value="150" min="50" max="5000">
+        <label class="lbl">HA/UniFi Device-Tracker Entities (eine pro Zeile)</label>
+        <textarea class="inp" id="vm_loc_ha_entities" rows="3" placeholder="device_tracker.mein_auto&#10;device_tracker.unifi_..."></textarea>
+        <label class="lbl">
+          <input type="checkbox" id="vm_loc_history_enabled"> Standort-Historie speichern
+        </label>
+        <div id="vm_loc_test_result" style="font-size:.82rem;color:var(--mute)"></div>
+        <button class="btn-s" style="align-self:flex-start" onclick="testVehicleLocation()">🧪 Standort testen</button>
+      </div>
+    </details>
+
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:1rem">
       <button class="btn-p" onclick="saveVehicleModal()">💾 Speichern</button>
       <button class="btn-s" onclick="closeVehicleModal()">Abbrechen</button>
       <button class="btn-d" id="vm_archive_btn" style="display:none;margin-left:auto" onclick="archiveVehicleModal()">📦 Archivieren</button>
@@ -4896,6 +4935,7 @@ async function loadVehicleList() {
       <div style="flex:1;min-width:0">
         <div style="font-weight:700;font-size:.85rem;color:#fff">${v.name}</div>
         <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-top:3px">${v.provider||'ha'} · ID: ${v.id}${isV0?' · Primär':''}</div>
+        <div id="veh_loc_${v.id}" style="display:none;margin-top:2px"></div>
       </div>
       <div style="font-size:.72rem;font-family:var(--mono);color:${active?'var(--acc)':'var(--mute)'}">
         ${active?'● Aktiv':'○ Inaktiv'}
@@ -4903,7 +4943,37 @@ async function loadVehicleList() {
       ${isV0 ? '' : `<button class="btn-s" style="font-size:.72rem;padding:5px 12px" onclick="openEditVehicleModal('${v.id}')">✏ Bearbeiten</button>`}
     `;
     el.appendChild(row);
+    loadVehicleLocationBadge(v.id);
   });
+}
+
+function _timeAgo(isoTs) {
+  if(!isoTs) return '';
+  const diff = Math.floor((Date.now() - new Date(isoTs).getTime()) / 1000);
+  if(diff < 60)    return `vor ${diff} Sek.`;
+  if(diff < 3600)  return `vor ${Math.floor(diff/60)} Min.`;
+  if(diff < 86400) return `vor ${Math.floor(diff/3600)} Std.`;
+  return `vor ${Math.floor(diff/86400)} Tagen`;
+}
+
+async function loadVehicleLocationBadge(vid) {
+  const el = $('veh_loc_' + vid);
+  if(!el) return;
+  try {
+    const loc = await apiFetch(`/api/vehicles/${vid}/location`).then(r=>r.json());
+    if(!loc.ok || loc.location_mode === 'disabled' || !loc.location_enabled) {
+      el.style.display = 'none'; return;
+    }
+    const icons = { home: '🏠', external: '📍', unknown: '❓', disabled: '' };
+    const labels = { home: 'Zuhause', external: 'Extern', unknown: 'Unbekannt', disabled: '' };
+    const srcLabels = { provider: 'Provider', ha: 'Home Assistant', combined: 'Kombiniert', manual: 'Manuell', none: '' };
+    const icon  = icons[loc.status]  || '❓';
+    const label = labels[loc.status] || 'Unbekannt';
+    const src   = srcLabels[loc.source] || loc.source || '';
+    const ago   = loc.last_update ? _timeAgo(loc.last_update) : '';
+    el.innerHTML = `<span title="${src}${ago ? ' · ' + ago : ''}" style="font-size:.8rem;color:var(--mute)">${icon} ${label}${src ? ' · ' + src : ''}${ago ? ' · ' + ago : ''}</span>`;
+    el.style.display = '';
+  } catch(e) { el.style.display = 'none'; }
 }
 
 async function openAddVehicleModal() {
@@ -4945,6 +5015,15 @@ async function openEditVehicleModal(vid) {
   const imgSecEdit = $('vmImageSection'); if(imgSecEdit) imgSecEdit.style.display = '';
   await loadVehicleImage(vid);
   await loadVehicleModalFields(v);
+  // Load location config into modal fields
+  if($('vm_loc_enabled'))       $('vm_loc_enabled').checked        = v.location_enabled || false;
+  if($('vm_loc_mode'))          { const sel=$('vm_loc_mode'); for(let i=0;i<sel.options.length;i++) if(sel.options[i].value===(v.location_mode||'home_external')){sel.selectedIndex=i;break;} }
+  if($('vm_loc_source'))        { const sel=$('vm_loc_source'); for(let i=0;i<sel.options.length;i++) if(sel.options[i].value===(v.location_source||'combined')){sel.selectedIndex=i;break;} }
+  if($('vm_loc_detect_mode'))   { const sel=$('vm_loc_detect_mode'); for(let i=0;i<sel.options.length;i++) if(sel.options[i].value===(v.home_detection_mode||'any')){sel.selectedIndex=i;break;} }
+  if($('vm_loc_radius'))        $('vm_loc_radius').value           = v.home_radius_m || 150;
+  if($('vm_loc_ha_entities'))   $('vm_loc_ha_entities').value      = (v.location_ha_entities||[]).join('\n');
+  if($('vm_loc_history_enabled')) $('vm_loc_history_enabled').checked = v.location_history_enabled || false;
+  if($('vm_loc_test_result'))   $('vm_loc_test_result').textContent = '';
   $('vehicleModal').style.display = 'flex';
 }
 
@@ -4994,6 +5073,20 @@ async function saveVehicleModal() {
   const meth = _editingVehicleId ? 'PUT' : 'POST';
   const r = await apiFetch(url,{method:meth,headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(x=>x.json());
   if(r.ok){
+    // Also save location config if editing an existing vehicle
+    if(_editingVehicleId) {
+      const haEntitiesRaw = ($('vm_loc_ha_entities')?.value||'').trim();
+      const locData = {
+        location_enabled:           $('vm_loc_enabled')?.checked || false,
+        location_mode:              $('vm_loc_mode')?.value || 'home_external',
+        location_source:            $('vm_loc_source')?.value || 'combined',
+        home_detection_mode:        $('vm_loc_detect_mode')?.value || 'any',
+        home_radius_m:              parseInt($('vm_loc_radius')?.value||'150')||150,
+        location_ha_entities:       haEntitiesRaw ? haEntitiesRaw.split('\n').map(s=>s.trim()).filter(Boolean) : [],
+        location_history_enabled:   $('vm_loc_history_enabled')?.checked || false,
+      };
+      apiFetch(`/api/vehicles/${_editingVehicleId}/location/config`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(locData)}).catch(()=>null);
+    }
     closeVehicleModal();
     toast(_editingVehicleId ? 'Fahrzeug aktualisiert' : 'Fahrzeug hinzugefügt', 'ok');
     loadVehicleList();
@@ -5019,22 +5112,31 @@ async function archiveVehicleModal() {
 async function hardDeleteVehicleModal() {
   if(!_editingVehicleId) return;
   const vname = $('vm_name').value || _editingVehicleId;
-  // First check how many sessions/reports exist
-  let sessCount = 0, repCount = 0;
-  try {
-    const info = await apiFetch(`/api/vehicles/${_editingVehicleId}?mode=hard`,{method:'DELETE'}).then(x=>x.json());
-    if(info.ok){ closeVehicleModal(); toast('Fahrzeug endgültig gelöscht','ok'); loadVehicleList(); return; }
-    if(info.sessions !== undefined){ sessCount = info.sessions; repCount = info.reports || 0; }
-    else { $('vm_info').innerHTML = `<span style="color:var(--danger)">❌ ${info.error||'Fehler'}</span>`; return; }
-  } catch(e){ $('vm_info').innerHTML = `<span style="color:var(--danger)">❌ Netzwerkfehler</span>`; return; }
 
-  const msg = `⚠️ ACHTUNG: Fahrzeug "${vname}" ENDGÜLTIG löschen?\n\n` +
-    `Vorhandene Daten:\n• ${sessCount} Ladevorgang/Ladevorgänge\n• ${repCount} Bericht(e)\n\n` +
-    `Diese Aktion kann NICHT rückgängig gemacht werden!\n` +
-    `Alle Ladevorgänge, Berichte und das Fahrzeugbild werden dauerhaft gelöscht.\n\n` +
-    `Zum Bestätigen "LÖSCHEN" eingeben:`;
+  // Step 1: check what data exists (never delete on first action)
+  let checkData;
+  try {
+    checkData = await apiFetch(`/api/vehicles/${_editingVehicleId}/delete-check`).then(x=>x.json());
+  } catch(e) {
+    $('vm_info').innerHTML = `<span style="color:var(--danger)">❌ Netzwerkfehler beim Prüfen</span>`;
+    return;
+  }
+  if(!checkData.ok) {
+    $('vm_info').innerHTML = `<span style="color:var(--danger)">❌ ${checkData.error||'Prüfung fehlgeschlagen'}</span>`;
+    return;
+  }
+
+  // Step 2: always require explicit text confirmation
+  const { sessions: sessCount = 0, reports: repCount = 0, billing_configs: billingCount = 0 } = checkData;
+  const dataInfo = sessCount > 0 || repCount > 0 || billingCount > 0
+    ? `\n\nVorhandene Daten:\n• ${sessCount} Ladevorgang/Ladevorgänge\n• ${repCount} Bericht(e)\n• ${billingCount} Abrechnungs-Konfiguration(en)\n\nAlle Daten werden unwiederbringlich gelöscht!`
+    : '\n\nDas Fahrzeug hat keine Ladevorgänge oder Berichte.';
+
+  const msg = `⚠️ ACHTUNG: Fahrzeug "${vname}" ENDGÜLTIG löschen?${dataInfo}\n\nDiese Aktion kann NICHT rückgängig gemacht werden!\nFahrzeugbild wird ebenfalls gelöscht.\n\nZum Bestätigen "LÖSCHEN" eingeben:`;
   const input = prompt(msg);
   if(input !== 'LÖSCHEN') { toast('Abgebrochen','info'); return; }
+
+  // Step 3: execute hard delete (with delete_sessions=true to handle any existing data)
   const r = await apiFetch(`/api/vehicles/${_editingVehicleId}?mode=hard&delete_sessions=true`,{method:'DELETE'}).then(x=>x.json());
   if(r.ok){
     closeVehicleModal();
@@ -5043,6 +5145,16 @@ async function hardDeleteVehicleModal() {
   } else {
     $('vm_info').innerHTML = `<span style="color:var(--danger)">❌ ${r.error||'Fehler beim Löschen'}</span>`;
   }
+}
+
+async function testVehicleLocation() {
+  if(!_editingVehicleId) return;
+  $('vm_loc_test_result').textContent = 'Teste...';
+  const r = await apiFetch(`/api/vehicles/${_editingVehicleId}/location/test`, {method:'POST'}).then(x=>x.json()).catch(()=>null);
+  if(!r) { $('vm_loc_test_result').textContent = '❌ Netzwerkfehler'; return; }
+  if(!r.ok) { $('vm_loc_test_result').textContent = `❌ ${r.error}`; return; }
+  const icons = {home:'🏠', external:'📍', unknown:'❓'};
+  $('vm_loc_test_result').textContent = `${icons[r.status]||'❓'} ${r.status} · ${r.source}${r.source_detail ? ' (' + r.source_detail + ')' : ''}`;
 }
 
 // ── Auth / Login ─────────────────────────────────────────────────────────────
