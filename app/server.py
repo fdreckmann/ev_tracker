@@ -5913,7 +5913,7 @@ def api_report_config_get():
 
 
 @app.route("/api/report/config", methods=["POST"])
-@require_admin
+@require_login
 def api_report_config_save():
     if not has_permission(_current_user(), "reports:configure"):
         return jsonify({"error": "Keine Berechtigung"}), 403
@@ -6433,7 +6433,7 @@ def api_tariff_config_get():
 
 
 @app.route("/api/tariff/config", methods=["POST"])
-@require_admin
+@require_login
 def api_tariff_config_save():
     if not has_permission(_current_user(), "tariffs:configure"):
         return jsonify({"error": "Keine Berechtigung"}), 403
@@ -6924,7 +6924,7 @@ def api_mqtt_config_get():
 
 
 @app.route("/api/mqtt/config", methods=["POST"])
-@require_admin
+@require_login
 def api_mqtt_config_save():
     if not has_permission(_current_user(), "mqtt:configure"):
         return jsonify({"error": "Keine Berechtigung"}), 403
@@ -6979,7 +6979,7 @@ def api_mqtt_publish():
 
 
 @app.route("/api/mqtt/ha-discovery", methods=["POST"])
-@require_admin
+@require_login
 def api_mqtt_ha_discovery():
     if not has_permission(_current_user(), "mqtt:configure"):
         return jsonify({"error": "Keine Berechtigung"}), 403
