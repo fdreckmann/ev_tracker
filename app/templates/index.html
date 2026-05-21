@@ -6242,9 +6242,8 @@ async function createReport(){
   const st   = $('archive_table_body');
   const mode = $('arc_period_mode')?.value || 'previous_period';
   const payload = {
-    report_email_period_mode:      mode,
-    report_email_schedule_type:    'monthly',
-    report_email_location_filter:  $('arc_loc_filter')?.value || 'all',
+    period_mode:      mode,
+    location_filter:  $('arc_loc_filter')?.value || 'all',
     lang:          'de',
     include_excel: $('arc_inc_excel')?.checked !== false,
     include_pdf:   $('arc_inc_pdf')?.checked   || false,
@@ -6252,7 +6251,7 @@ async function createReport(){
   if(mode === 'single_month'){
     const mv = $('arc_single_month')?.value;
     if(!mv){ toast('Bitte einen Monat auswählen','err'); return; }
-    payload.report_email_single_month = mv;  // YYYY-MM
+    payload.single_month = mv;  // YYYY-MM — direkt, kein email-Config-Key
   }
   if(st) st.textContent='⏳ Erstelle Report…';
   try{
