@@ -11,7 +11,7 @@ from meter_providers import read_meter as _read_meter_impl, MeterResult
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "2.0.18"
+APP_VERSION   = "2.0.19"
 
 CHANGELOG = [
     {"version":"2.0.0","changes":[
@@ -211,9 +211,15 @@ def close_db_if_owned(con):
     except RuntimeError:
         pass  # outside request context — always close
     try:
-        close_db_if_owned(con)
+        con.close()
     except Exception:
         pass
+
+def _safe_next(next_url: str | None) -> str:
+    """Return next_url only if it is a relative path on this app (no open redirect)."""
+    if next_url and next_url.startswith("/") and not next_url.startswith("//"):
+        return next_url
+    return url_for("index")
 
 def _has_users() -> bool:
     try:
@@ -728,7 +734,7 @@ def save_config(cfg):
 def _audit(action: str, details: str = "", ip: str = ""):
     uid = session.get("user_id") if session else None
     try:
-        con = sqlite3.connect(DB_PATH)
+        con = _get_db()
         con.execute(
             "INSERT INTO audit_log (ts, action, details, ip, user_id) VALUES (?,?,?,?,?)",
             (datetime.utcnow().isoformat(), action, details.strip(), ip, uid))
@@ -1164,12 +1170,12 @@ def get_sessions(year=None, month=None, location=None, vehicle_id=None, limit=50
         where.append("vehicle_id = ?"); params.append(vehicle_id)
     sql = f"SELECT * FROM sessions WHERE {' AND '.join(where)} ORDER BY start_ts DESC"
     if not (year and month): sql += f" LIMIT {limit}"
-    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    con = _get_db()
     rows = con.execute(sql, params).fetchall(); close_db_if_owned(con)
     return [dict(r) for r in rows]
 
 def get_monthly_stats():
-    con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
+    con = _get_db()
     rows = con.execute("""
         SELECT strftime('%Y-%m', start_ts) AS month,
                COUNT(*) AS sessions,
@@ -1718,7 +1724,7 @@ def login_page():
                     session["csrf_token"] = secrets.token_hex(32)
                     session.permanent     = True
                     _audit("login", f"email={email} role={user['role']}", ip=request.remote_addr)
-                    return redirect(request.args.get("next") or url_for("index"))
+                    return redirect(_safe_next(request.args.get("next")))
     cfg = load_config()
     return render_template("login.html", error=error,
                            totp_enabled=False,  # TOTP check done server-side now
@@ -2653,7 +2659,7 @@ def _oauth_finish(email: str):
     con.execute("UPDATE users SET last_login_at=? WHERE id=?", (now, user["id"]))
     con.commit(); close_db_if_owned(con)
     _audit("login_oauth", f"email={email} role={user['role']}", ip=request.remote_addr)
-    return redirect(request.args.get("next") or url_for("index"))
+    return redirect(_safe_next(request.args.get("next")))
 
 # ── Google OAuth2 ─────────────────────────────────────────────────────────────
 
@@ -3129,7 +3135,8 @@ def api_vehicle_location_history(vid):
         return jsonify({"error": "Keine Berechtigung: vehicles:location_history_view"}), 403
     if not _validate_vehicle_id(vid):
         return jsonify({"error": "Ungültige Fahrzeug-ID"}), 400
-    limit = min(int(request.args.get("limit", 100)), 500)
+    try: limit = min(int(request.args.get("limit", 100)), 500)
+    except (ValueError, TypeError): limit = 100
     con = _get_db()
     rows = con.execute(
         "SELECT timestamp, location_status, source, latitude, longitude, accuracy_m FROM vehicle_location_history "
@@ -3594,7 +3601,10 @@ def api_manual_session_create():
 def api_update_cost(sid):
     if not has_permission(_current_user(), "sessions:edit"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: sessions:edit"}), 403
-    data=request.json; cost=float(data["cost_eur"]); price_kwh=data.get("price_per_kwh")
+    data = request.get_json(force=True) or {}
+    if "cost_eur" not in data:
+        return jsonify({"ok": False, "error": "cost_eur fehlt"}), 400
+    cost = float(data["cost_eur"]); price_kwh = data.get("price_per_kwh")
     con=sqlite3.connect(DB_PATH); cur=con.cursor()
     if price_kwh is not None:
         row=cur.execute("SELECT kwh_charged FROM sessions WHERE id=?",(sid,)).fetchone()
@@ -5459,7 +5469,8 @@ def api_admin_dashboard():
 def get_audit_log():
     if not has_permission(_current_user(), "audit:view"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: audit:view"}), 403
-    limit = int(request.args.get("limit", 200))
+    try: limit = int(request.args.get("limit", 200))
+    except (ValueError, TypeError): limit = 200
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     rows = con.execute("""
@@ -6039,7 +6050,8 @@ def api_report_send_now():
 def api_report_history():
     if not has_permission(_current_user(), "reports:history"):
         return jsonify({"error": "Keine Berechtigung"}), 403
-    limit = int(request.args.get("limit", 50))
+    try: limit = int(request.args.get("limit", 50))
+    except (ValueError, TypeError): limit = 50
     con = _get_db()
     rows = con.execute(
         "SELECT * FROM email_report_history ORDER BY id DESC LIMIT ?", (limit,)
@@ -6182,7 +6194,8 @@ def _save_report_record(vehicle_id, period_info, loc_filter, veh_filter, status,
 def api_reports_archive():
     if not has_permission(_current_user(), "reports:archive"):
         return jsonify({"error": "Keine Berechtigung"}), 403
-    limit = int(request.args.get("limit", 100))
+    try: limit = int(request.args.get("limit", 100))
+    except (ValueError, TypeError): limit = 100
     vehicle_id = request.args.get("vehicle_id")
     con = _get_db()
     _cols = ("id,created_at,vehicle_id,period_start,period_end,period_label,period_mode,"
@@ -6858,8 +6871,10 @@ def api_v1_vehicles():
 def api_v1_sessions():
     token_row, err_resp, code = _require_api_token("sessions:read")
     if err_resp: return err_resp, code
-    limit  = min(int(request.args.get("limit", 50)), 500)
-    offset = int(request.args.get("offset", 0))
+    try: limit = min(int(request.args.get("limit", 50)), 500)
+    except (ValueError, TypeError): limit = 50
+    try: offset = int(request.args.get("offset", 0))
+    except (ValueError, TypeError): offset = 0
     vid    = request.args.get("vehicle_id")
     con    = _get_db()
     if vid:
@@ -6912,6 +6927,8 @@ def api_v1_session_update(session_id):
     if not updates:
         return jsonify({"error": "Keine gültigen Felder"}), 400
     con = _get_db()
+    if not con.execute("SELECT 1 FROM sessions WHERE id=?", (session_id,)).fetchone():
+        close_db_if_owned(con); return jsonify({"error": "Session nicht gefunden"}), 404
     sets = ", ".join(f"{k}=?" for k in updates)
     con.execute(f"UPDATE sessions SET {sets} WHERE id=?",
                 list(updates.values()) + [session_id])
@@ -6923,7 +6940,8 @@ def api_v1_session_update(session_id):
 def api_v1_reports():
     token_row, err_resp, code = _require_api_token("reports:read")
     if err_resp: return err_resp, code
-    limit = min(int(request.args.get("limit", 50)), 200)
+    try: limit = min(int(request.args.get("limit", 50)), 200)
+    except (ValueError, TypeError): limit = 50
     con   = _get_db()
     rows  = con.execute(
         "SELECT id,created_at,vehicle_id,period_label,status,sent_at FROM reports ORDER BY id DESC LIMIT ?",
@@ -7157,6 +7175,8 @@ def api_notif_rules_update(rule_id):
     updates = {k: v for k, v in data.items() if k in allowed}
     updates["updated_at"] = now_iso
     con = _get_db()
+    if not con.execute("SELECT 1 FROM notification_rules WHERE id=?", (rule_id,)).fetchone():
+        close_db_if_owned(con); return jsonify({"error": "Regel nicht gefunden"}), 404
     sets = ", ".join(f"{k}=?" for k in updates)
     con.execute(f"UPDATE notification_rules SET {sets} WHERE id=?",
                 list(updates.values()) + [rule_id])
