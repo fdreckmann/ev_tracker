@@ -475,6 +475,79 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   .mobile-only { display: none !important; }
 }
 
+/* ── Mobile Bottom Sheet ── */
+.m-sheet-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.65);
+  z-index: 3000;
+  align-items: flex-end;
+}
+.m-sheet-overlay.open { display: flex; }
+.m-sheet {
+  width: 100%;
+  background: #1a1d2e;
+  border-radius: 16px 16px 0 0;
+  padding: 8px 16px 40px;
+  max-height: 88vh;
+  overflow-y: auto;
+  animation: slideUpSheet .22s ease-out;
+}
+.m-handle {
+  width: 36px; height: 4px;
+  background: #3d4166;
+  border-radius: 2px;
+  margin: 8px auto 16px;
+}
+.m-sheet-title {
+  font-size: 17px; font-weight: 700;
+  margin-bottom: 16px; color: #e6f1ff;
+}
+.m-field { margin-bottom: 12px; }
+.m-field label {
+  display: block; font-size: 11px; color: #8892b0;
+  margin-bottom: 4px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .4px;
+}
+.m-field input, .m-field select, .m-field textarea {
+  width: 100%; padding: 10px 12px;
+  background: #0e1319; border: 1px solid #2d3147;
+  border-radius: 8px; color: #e6f1ff;
+  font-size: 14px; font-family: var(--sans);
+}
+.m-field input:focus, .m-field select:focus {
+  outline: none; border-color: #64ffda;
+}
+.m-btn-row { display: flex; gap: 8px; margin-top: 16px; }
+.m-btn-p {
+  flex: 1; padding: 13px;
+  background: #3d5afe; border: none;
+  border-radius: 8px; color: #fff;
+  font-size: 15px; font-weight: 600; cursor: pointer;
+}
+.m-btn-p:active { opacity: .85; }
+.m-btn-s {
+  padding: 13px 20px;
+  background: transparent; border: 1px solid #2d3147;
+  border-radius: 8px; color: #8892b0;
+  font-size: 15px; cursor: pointer;
+}
+.m-info-block {
+  background: #0e1319; border: 1px solid #2d3147;
+  border-radius: 8px; padding: 4px 12px;
+  margin-bottom: 12px;
+}
+.m-info-row {
+  display: flex; justify-content: space-between;
+  padding: 8px 0; border-bottom: 1px solid #1c2430;
+  font-size: 13px;
+}
+.m-info-row:last-child { border-bottom: none; }
+.m-info-label { color: #8892b0; }
+.m-info-value { color: #e6f1ff; font-weight: 600; max-width: 60%; text-align: right; word-break: break-word; }
+.m-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
 /* ── Floating Action Button ── */
 #fab {
   position: fixed;
@@ -7045,7 +7118,7 @@ async function loadMobileVehicleCards() {
         isActive && !charging && locLabel ? `<span style="background:#1e2a3a;color:#8892b0;border-radius:4px;padding:2px 6px;font-size:10px">${locLabel}</span>` : '',
         !isActive ? '<span style="background:#2d1f1f;color:#ef4444;border-radius:4px;padding:2px 6px;font-size:10px">Inaktiv</span>' : '',
       ].filter(Boolean).join(' ');
-      return `<div class="mobile-card" onclick="openEditVehicleModal('${v.id}')" style="cursor:pointer;border:1px solid #2d3147;position:relative">
+      return `<div class="mobile-card" onclick="openMobileVehicleDetail('${v.id}')" style="cursor:pointer;border:1px solid #2d3147;position:relative">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
           <div>
             <div style="font-size:15px;font-weight:600;color:#e6f1ff">${v.name || v.id}</div>
@@ -7073,13 +7146,7 @@ function mobileSessionDetail(sessionId) {
 }
 
 function mobileQuickAddSession() {
-  // Vorhandene Funktion zum Hinzufügen nutzen
-  if (typeof openAddSessionModal === 'function') openAddSessionModal();
-  else if (typeof addSession === 'function') addSession();
-  else {
-    // Fallback: Desktop-Ansicht zeigen
-    switchToDesktopSettings();
-  }
+  openMobileSessionCreate();
 }
 
 // =========================================================
@@ -7095,6 +7162,21 @@ function initMobileExport() {
   if (monthInput && !monthInput.value) {
     monthInput.value = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
   }
+  // Populate vehicle selector
+  const vSel = document.getElementById('mobileExportVehicle');
+  if (vSel && vSel.options.length <= 1) {
+    const vehicles = window._allVehicles || [];
+    vehicles.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v.id; opt.textContent = v.name || v.id;
+      vSel.appendChild(opt);
+    });
+    if (!vehicles.length) {
+      fetch('/api/vehicles').then(r=>r.json()).then(vs=>{
+        vs.forEach(v=>{ const o=document.createElement('option'); o.value=v.id; o.textContent=v.name||v.id; vSel.appendChild(o); });
+      });
+    }
+  }
 }
 
 function setMobileLang(lang) {
@@ -7103,6 +7185,16 @@ function setMobileLang(lang) {
   document.getElementById('mobileLangDe').style.color = lang === 'de' ? '#fff' : '#8892b0';
   document.getElementById('mobileLangEn').style.background = lang === 'en' ? '#3d5afe' : '#2d3147';
   document.getElementById('mobileLangEn').style.color = lang === 'en' ? '#fff' : '#8892b0';
+}
+
+let _mobileExportFilter = 'all';
+function setMobileExportFilter(filter, btn) {
+  _mobileExportFilter = filter;
+  ['mfAll','mfHome','mfExtern'].forEach(id => {
+    const b = document.getElementById(id);
+    if (b) { b.style.background = '#2d3147'; b.style.color = '#8892b0'; }
+  });
+  if (btn) { btn.style.background = '#3d5afe'; btn.style.color = '#fff'; }
 }
 
 async function doMobileExport() {
@@ -7126,7 +7218,7 @@ async function doMobileExport() {
       const r = await fetch('/api/export', {
         method: 'POST',
         headers: {'Content-Type':'application/json','X-CSRF-Token': csrfToken},
-        body: JSON.stringify({month: monthVal, language: _mobileExportLang, include_signature: incSig})
+        body: JSON.stringify({month: monthVal, language: _mobileExportLang, include_signature: incSig, location: _mobileExportFilter !== 'all' ? _mobileExportFilter : undefined, vehicle_id: document.getElementById('mobileExportVehicle')?.value || 'all'})
       });
       if (r.ok) {
         const blob = await r.blob();
@@ -7156,7 +7248,7 @@ async function doMobileExportPreview() {
     const r = await fetch('/api/export/preview', {
       method: 'POST',
       headers: {'Content-Type':'application/json','X-CSRF-Token':csrfToken},
-      body: JSON.stringify({month: monthVal, year, month_num: month, language: _mobileExportLang, include_signature: incSig})
+      body: JSON.stringify({month: monthVal, year, month_num: month, language: _mobileExportLang, include_signature: incSig, location: _mobileExportFilter !== 'all' ? _mobileExportFilter : undefined, vehicle_id: document.getElementById('mobileExportVehicle')?.value || 'all'})
     }).then(x => x.json());
 
     if (!r.ok) {
@@ -7219,42 +7311,50 @@ function toggleSettingsGroup(header) {
 }
 
 function initMobileMore() {
-  // Einfache Links zu den jeweiligen Desktop-Einstellungs-Bereichen
   const groups = {
     mobileGrpVehicles: [
-      {label: '🚗 Fahrzeuge verwalten', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('fahrzeuge'); }},
+      {label:'🚗 Fahrzeugliste',         fn: ()=>mobileNavTo('vehicles')},
+      {label:'➕ Fahrzeug hinzufügen',    fn: ()=>{ mobileNavTo('vehicles'); setTimeout(()=>typeof openAddVehicleModal==='function'&&openAddVehicleModal(),200); }},
     ],
     mobileGrpProvider: [
-      {label: '🔌 Provider konfigurieren', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('verbindung'); }},
-      {label: '📊 Zählerstand testen', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('zaehler'); }},
+      {label:'🔌 Verbindung testen',      fn: ()=>openMobileConnectionTest()},
+      {label:'⚡ Zählerstand testen',     fn: ()=>openMobileMeterTest()},
+      {label:'⚙️ Provider konfigurieren', fn: ()=>{ toast('Bitte am Desktop konfigurieren','info'); switchToDesktopSettings(); cfgSection&&cfgSection('verbindung'); }},
     ],
     mobileGrpExport: [
-      {label: '📥 Export-Einstellungen', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('export-tpl'); }},
+      {label:'📥 Export erstellen',       fn: ()=>mobileNavTo('export')},
+      {label:'✍️ Signatur verwalten',     fn: ()=>openMobileSignatureSheet()},
+      {label:'📋 Template-Mapping',       fn: ()=>toast('Template-Mapping bitte am Desktop konfigurieren ⚡','info')},
     ],
     mobileGrpSignature: [
-      {label: '✍️ Unterschrift hochladen', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('auth'); }},
+      {label:'✍️ Signatur hochladen',     fn: ()=>openMobileSignatureSheet()},
     ],
     mobileGrpSecurity: [
-      {label: '👤 Benutzer & Sicherheit', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('auth'); }},
+      {label:'👤 Mein Profil',            fn: ()=>{ switchToDesktopSettings(); cfgSection&&cfgSection('profil'); }},
+      {label:'🔐 Passwort & 2FA',         fn: ()=>{ switchToDesktopSettings(); cfgSection&&cfgSection('auth'); }},
+      {label:'👥 Benutzerverwaltung',     fn: ()=>{ switchToDesktopSettings(); cfgSection&&cfgSection('benutzer'); }},
     ],
     mobileGrpSystem: [
-      {label: '⚙️ Allgemeine Einstellungen', action: function(){ switchToDesktopSettings(); }},
-      {label: '🔄 Updates & Version', action: function(){ switchToDesktopSettings(); document.getElementById('updateSection')?.scrollIntoView({behavior:'smooth'}); }},
+      {label:'⚙️ System-Status',          fn: ()=>openMobileSystemStatus()},
+      {label:'🔄 Update prüfen',          fn: ()=>openMobileUpdateCheck()},
     ],
     mobileGrpBackup: [
-      {label: '💾 Backup & Restore', action: function(){ switchToDesktopSettings(); tab('backup', document.querySelector('nav button:nth-child(5)')); }},
+      {label:'💾 Backup erstellen',       fn: ()=>openMobileBackupCreate()},
+      {label:'📦 Backup-Verwaltung',      fn: ()=>{ switchToDesktopSettings(); tab('backup',document.querySelector('nav button:nth-child(5)')); }},
     ],
   };
-
-  Object.entries(groups).forEach(function([id, items]) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.innerHTML = items.map(function(item) {
-      return `<button onclick="(${item.action.toString()})()"
-        style="display:block;width:100%;text-align:left;padding:12px;margin-bottom:4px;border-radius:6px;background:transparent;border:1px solid #2d3147;color:#e6f1ff;font-size:14px;cursor:pointer">
-        ${item.label}
-      </button>`;
-    }).join('');
+  Object.entries(groups).forEach(([id, items]) => {
+    const el = document.getElementById(id); if(!el) return;
+    el.innerHTML = items.map(item => `
+      <button onclick="(${item.fn.toString()})()"
+        style="display:flex;align-items:center;width:100%;text-align:left;
+               padding:13px 16px;margin-bottom:4px;border-radius:8px;
+               background:transparent;border:1px solid #2d3147;
+               color:#e6f1ff;font-size:14px;cursor:pointer;gap:8px"
+        ontouchstart="this.style.background='#2d3147'"
+        ontouchend="this.style.background='transparent'">
+        ${item.label}<span style="margin-left:auto;color:#3d4166">›</span>
+      </button>`).join('');
   });
 }
 
@@ -7283,6 +7383,310 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initMobileView);
 } else {
   initMobileView();
+}
+
+// =========================================================
+// MOBILE BOTTOM SHEET
+// =========================================================
+
+function openMobileSheet(html) {
+  const el = document.getElementById('mobileSheetContent');
+  const overlay = document.getElementById('mobileSheet');
+  if (!el || !overlay) return;
+  el.innerHTML = html;
+  overlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeMobileSheet() {
+  const overlay = document.getElementById('mobileSheet');
+  if (overlay) overlay.classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+// ─── Session manuell hinzufügen ──────────────────────────
+
+async function openMobileSessionCreate() {
+  const vehicles = window._allVehicles || await fetch('/api/vehicles').then(r=>r.json()).catch(()=>[]);
+  window._allVehicles = vehicles;
+  const now = new Date();
+  const iso = d => new Date(d - d.getTimezoneOffset()*60000).toISOString().slice(0,16);
+  const vOpts = vehicles.map(v=>`<option value="${v.id}">${v.name||v.id}</option>`).join('');
+  openMobileSheet(`
+    <div class="m-sheet-title">➕ Ladevorgang hinzufügen</div>
+    <div class="m-field"><label>Fahrzeug</label>
+      <select id="msVehicle">${vOpts}</select></div>
+    <div class="m-field"><label>Start</label>
+      <input type="datetime-local" id="msStart" value="${iso(now)}"></div>
+    <div class="m-field"><label>Ende (optional)</label>
+      <input type="datetime-local" id="msEnd"></div>
+    <div class="m-grid-2">
+      <div class="m-field"><label>kWh geladen</label>
+        <input type="number" id="msKwh" step="0.1" min="0" placeholder="30.5"></div>
+      <div class="m-field"><label>Kosten (€)</label>
+        <input type="number" id="msCost" step="0.01" min="0" placeholder="9.15"></div>
+    </div>
+    <div class="m-grid-2">
+      <div class="m-field"><label>Standort</label>
+        <select id="msLoc">
+          <option value="home">🏠 Zuhause</option>
+          <option value="extern">⚡ Extern</option>
+          <option value="unknown">— Unbekannt</option>
+        </select></div>
+      <div class="m-field"><label>Wallbox (kW)</label>
+        <input type="number" id="msPower" step="0.1" min="0" placeholder="11"></div>
+    </div>
+    <div class="m-btn-row">
+      <button class="m-btn-s" onclick="closeMobileSheet()">Abbrechen</button>
+      <button class="m-btn-p" onclick="submitMobileSession()">💾 Speichern</button>
+    </div>
+    <div id="msResult" style="margin-top:10px"></div>
+  `);
+}
+
+async function submitMobileSession() {
+  const start_ts = document.getElementById('msStart')?.value;
+  const end_ts   = document.getElementById('msEnd')?.value || null;
+  const kwh      = parseFloat(document.getElementById('msKwh')?.value) || null;
+  const cost_eur = parseFloat(document.getElementById('msCost')?.value) || null;
+  const location = document.getElementById('msLoc')?.value || 'home';
+  const vehicle_id = document.getElementById('msVehicle')?.value || 'v0';
+  const charger_power_kw = parseFloat(document.getElementById('msPower')?.value) || null;
+  const res = document.getElementById('msResult');
+  if (!start_ts) { if(res) res.innerHTML='<p style="color:#ef4444">⚠️ Startzeit erforderlich</p>'; return; }
+  if (res) res.innerHTML='<p style="color:#8892b0">⏳ Speichere…</p>';
+  const r = await apiFetch('/api/sessions/manual',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({start_ts,end_ts,kwh_charged:kwh,cost_eur,location,vehicle_id,charger_power_kw})
+  }).then(x=>x.json()).catch(e=>({ok:false,error:e.message}));
+  if (r.ok) {
+    closeMobileSheet();
+    toast('Ladevorgang #'+r.id+' gespeichert','ok');
+    window._allSessions = null;
+    if (window._mobileCurrentSection==='sessions') renderMobileSessionCards();
+    if (window._mobileCurrentSection==='home') refreshMobileDashboard();
+  } else {
+    if (res) res.innerHTML=`<p style="color:#ef4444">❌ ${r.error||'Fehler'}</p>`;
+  }
+}
+
+// ─── Zählerstand testen ──────────────────────────────────
+
+function openMobileMeterTest() {
+  openMobileSheet(`
+    <div class="m-sheet-title">⚡ Zählerstand testen</div>
+    <div id="msMeterResult" class="m-info-block" style="min-height:60px">
+      <div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value">⏳ Teste…</span></div>
+    </div>
+    <button class="m-btn-p" style="width:100%;margin-bottom:8px" onclick="runMobileMeterTest()">🔄 Erneut testen</button>
+    <button class="m-btn-s" style="width:100%" onclick="closeMobileSheet()">Schließen</button>
+  `);
+  runMobileMeterTest();
+}
+
+async function runMobileMeterTest() {
+  const el = document.getElementById('msMeterResult');
+  if (el) el.innerHTML='<div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value">⏳ Teste…</span></div>';
+  const r = await apiFetch('/api/meter/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})}).then(x=>x.json()).catch(e=>({ok:false,message:e.message}));
+  if (!el) return;
+  if (r.ok) {
+    el.innerHTML=`
+      <div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:#64ffda">✅ OK</span></div>
+      <div class="m-info-row"><span class="m-info-label">Zählerstand</span><span class="m-info-value">${r.value_kwh!=null?r.value_kwh.toFixed(3)+' kWh':'—'}</span></div>
+      <div class="m-info-row"><span class="m-info-label">Provider</span><span class="m-info-value">${r.provider||'—'}</span></div>
+      ${r.endpoint?`<div class="m-info-row"><span class="m-info-label">Endpoint</span><span class="m-info-value" style="font-size:11px">${r.endpoint}</span></div>`:''}`;
+  } else {
+    el.innerHTML=`
+      <div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:#ef4444">❌ Fehler</span></div>
+      <div class="m-info-row"><span class="m-info-label">Nachricht</span><span class="m-info-value">${r.message||r.error||'Fehler'}</span></div>`;
+  }
+}
+
+// ─── Provider-Verbindung testen ──────────────────────────
+
+function openMobileConnectionTest() {
+  openMobileSheet(`
+    <div class="m-sheet-title">🔌 Verbindung testen</div>
+    <div id="msConnResult" class="m-info-block" style="min-height:60px">
+      <div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value">⏳ Teste…</span></div>
+    </div>
+    <button class="m-btn-p" style="width:100%;margin-bottom:8px" onclick="runMobileConnectionTest()">🔄 Erneut testen</button>
+    <button class="m-btn-s" style="width:100%" onclick="closeMobileSheet()">Schließen</button>
+  `);
+  runMobileConnectionTest();
+}
+
+async function runMobileConnectionTest() {
+  const el = document.getElementById('msConnResult');
+  const r = await apiFetch('/api/test-connection',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})}).then(x=>x.json()).catch(e=>({ok:false,message:e.message}));
+  if (!el) return;
+  const ok = r.ok||r.status==='ok'||r.success;
+  el.innerHTML=`
+    <div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:${ok?'#64ffda':'#ef4444'}">${ok?'✅ Verbunden':'❌ Fehler'}</span></div>
+    ${r.message?`<div class="m-info-row"><span class="m-info-label">Nachricht</span><span class="m-info-value">${r.message}</span></div>`:''}
+    ${r.provider?`<div class="m-info-row"><span class="m-info-label">Provider</span><span class="m-info-value">${r.provider}</span></div>`:''}
+    ${r.soc!=null?`<div class="m-info-row"><span class="m-info-label">SOC</span><span class="m-info-value">${r.soc}%</span></div>`:''}`;
+}
+
+// ─── Signatur verwalten ──────────────────────────────────
+
+function openMobileSignatureSheet() {
+  openMobileSheet(`
+    <div class="m-sheet-title">✍️ Signatur verwalten</div>
+    <div id="msSigStatus" class="m-info-block">
+      <div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value">⏳ Prüfe…</span></div>
+    </div>
+    <label style="display:block;width:100%;padding:13px;border-radius:8px;background:#3d5afe;color:#fff;font-size:15px;font-weight:600;cursor:pointer;text-align:center;margin-bottom:8px">
+      📎 Bild hochladen
+      <input type="file" accept="image/*" style="display:none" onchange="uploadMobileSignature(this)">
+    </label>
+    <button class="m-btn-s" style="width:100%;margin-bottom:8px" onclick="closeMobileSheet();switchToDesktopSettings();tab('export',document.querySelector('nav button:nth-child(4)'));cfgSection('export-tpl')">🖥 Am Desktop zeichnen / verwalten</button>
+    <button class="m-btn-s" style="width:100%" onclick="closeMobileSheet()">Schließen</button>
+  `);
+  fetch('/api/template/info').then(r=>r.json()).then(info=>{
+    const el=document.getElementById('msSigStatus'); if(!el) return;
+    el.innerHTML=info.has_signature
+      ?'<div class="m-info-row"><span class="m-info-label">Signatur</span><span class="m-info-value" style="color:#64ffda">✅ Vorhanden</span></div>'
+      :'<div class="m-info-row"><span class="m-info-label">Signatur</span><span class="m-info-value" style="color:#8892b0">— Nicht gesetzt</span></div>';
+  }).catch(()=>{});
+}
+
+async function uploadMobileSignature(input) {
+  if (!input.files[0]) return;
+  const fd = new FormData(); fd.append('file', input.files[0]);
+  const r = await fetch('/api/signature',{method:'POST',headers:{'X-CSRF-Token':csrfToken},body:fd}).then(x=>x.json()).catch(e=>({ok:false,error:e.message}));
+  if (r.ok) { toast('Signatur gespeichert','ok'); closeMobileSheet(); }
+  else toast('Fehler: '+(r.error||'Upload fehlgeschlagen'),'err');
+}
+
+// ─── System-Status ───────────────────────────────────────
+
+async function openMobileSystemStatus() {
+  openMobileSheet(`
+    <div class="m-sheet-title">⚙️ System-Status</div>
+    <div id="msSysResult" class="m-info-block">
+      <div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value">⏳ Lade…</span></div>
+    </div>
+    <button class="m-btn-s" style="width:100%" onclick="closeMobileSheet()">Schließen</button>
+  `);
+  try {
+    const [status, health] = await Promise.all([
+      fetch('/api/system/status').then(r=>r.json()).catch(()=>null),
+      fetch('/api/health').then(r=>r.json()).catch(()=>null)
+    ]);
+    const el = document.getElementById('msSysResult'); if(!el) return;
+    const rows = [];
+    if(health) rows.push(`<div class="m-info-row"><span class="m-info-label">Health</span><span class="m-info-value" style="color:#64ffda">✅ OK</span></div>`);
+    if(status?.app_version) rows.push(`<div class="m-info-row"><span class="m-info-label">Version</span><span class="m-info-value">${status.app_version}</span></div>`);
+    if(status?.db_size_mb!=null) rows.push(`<div class="m-info-row"><span class="m-info-label">DB-Größe</span><span class="m-info-value">${status.db_size_mb} MB</span></div>`);
+    if(status?.backup_count!=null) rows.push(`<div class="m-info-row"><span class="m-info-label">Backups</span><span class="m-info-value">${status.backup_count}</span></div>`);
+    if(status?.session_count!=null) rows.push(`<div class="m-info-row"><span class="m-info-label">Sessions</span><span class="m-info-value">${status.session_count}</span></div>`);
+    el.innerHTML = rows.length ? rows.join('') : '<div class="m-info-row"><span class="m-info-label">Info</span><span class="m-info-value">Keine Daten verfügbar</span></div>';
+  } catch(e) {
+    const el=document.getElementById('msSysResult');
+    if(el) el.innerHTML=`<div class="m-info-row"><span class="m-info-label">Fehler</span><span class="m-info-value" style="color:#ef4444">${e.message}</span></div>`;
+  }
+}
+
+// ─── Update prüfen ───────────────────────────────────────
+
+async function openMobileUpdateCheck() {
+  openMobileSheet(`
+    <div class="m-sheet-title">🔄 Update</div>
+    <div id="msUpdateResult" class="m-info-block">
+      <div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value">⏳ Prüfe…</span></div>
+    </div>
+    <div id="msUpdateActions"></div>
+    <button class="m-btn-s" style="width:100%;margin-top:8px" onclick="closeMobileSheet()">Schließen</button>
+  `);
+  try {
+    const r = await fetch('/api/update/check').then(x=>x.json()).catch(e=>({error:e.message}));
+    const el=document.getElementById('msUpdateResult');
+    const acts=document.getElementById('msUpdateActions');
+    if(!el) return;
+    if(r.update_available) {
+      el.innerHTML=`
+        <div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:#ffd740">⬆ Update verfügbar</span></div>
+        <div class="m-info-row"><span class="m-info-label">Aktuell</span><span class="m-info-value">${r.current_version||'—'}</span></div>
+        <div class="m-info-row"><span class="m-info-label">Neu</span><span class="m-info-value" style="color:#64ffda">${r.latest_version||'—'}</span></div>`;
+      if(acts) acts.innerHTML=`<button class="m-btn-p" style="width:100%;margin-top:8px" onclick="closeMobileSheet();tab('update',document.getElementById('navUpdate'))">⬆ Zum Update</button>`;
+    } else {
+      el.innerHTML=`<div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:#64ffda">✅ Aktuell (${r.current_version||'—'})</span></div>`;
+    }
+  } catch(e) {
+    const el=document.getElementById('msUpdateResult');
+    if(el) el.innerHTML=`<div class="m-info-row"><span class="m-info-label">Fehler</span><span class="m-info-value" style="color:#ef4444">${e.message}</span></div>`;
+  }
+}
+
+// ─── Backup erstellen ────────────────────────────────────
+
+function openMobileBackupCreate() {
+  openMobileSheet(`
+    <div class="m-sheet-title">💾 Backup erstellen</div>
+    <div class="m-info-block">
+      <div class="m-info-row"><span class="m-info-label">Inhalt</span><span class="m-info-value">Sessions, Konfiguration, Berichte</span></div>
+    </div>
+    <div id="msBackupResult"></div>
+    <button class="m-btn-p" style="width:100%;margin-bottom:8px" id="msBackupBtn" onclick="runMobileBackupCreate(this)">💾 Backup jetzt erstellen</button>
+    <button class="m-btn-s" style="width:100%" onclick="closeMobileSheet()">Abbrechen</button>
+  `);
+}
+
+async function runMobileBackupCreate(btn) {
+  if(btn) btn.disabled=true;
+  const el=document.getElementById('msBackupResult');
+  if(el) el.innerHTML='<p style="color:#8892b0;font-size:13px;margin-bottom:8px">⏳ Erstelle Backup…</p>';
+  const r=await apiFetch('/api/backup/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})}).then(x=>x.json()).catch(e=>({ok:false,error:e.message}));
+  if(r.ok) {
+    if(el) el.innerHTML=`<div class="m-info-block"><div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:#64ffda">✅ Erstellt</span></div>${r.filename?`<div class="m-info-row"><span class="m-info-label">Datei</span><span class="m-info-value" style="font-size:11px">${r.filename}</span></div>`:''}</div>`;
+    toast('Backup erstellt','ok');
+  } else {
+    if(el) el.innerHTML=`<p style="color:#ef4444;margin-bottom:8px">❌ ${r.error||'Fehler'}</p>`;
+    if(btn) btn.disabled=false;
+  }
+}
+
+// ─── Fahrzeug-Detail Bottom Sheet ────────────────────────
+
+async function openMobileVehicleDetail(vid) {
+  const vehicles = window._allVehicles || await fetch('/api/vehicles').then(r=>r.json()).catch(()=>[]);
+  const v = vehicles.find(x=>x.id===vid);
+  if(!v) { toast('Fahrzeug nicht gefunden','err'); return; }
+  const state = await fetch('/api/state').then(r=>r.json()).catch(()=>({}));
+  const isThis = state.vehicle_id===vid || vid==='v0';
+  const soc = isThis ? state.soc_current : null;
+  const charging = isThis ? (state.charging||state.session_active) : false;
+  const loc = isThis ? state.location : null;
+  const locLabel = loc==='home'?'🏠 Zuhause':loc==='extern'?'📍 Extern':loc==='unknown'?'❓ Unbekannt':(loc||'—');
+  const lastPoll = isThis ? state.last_poll : null;
+  const socHtml = soc!=null?`
+    <div style="margin:12px 0 16px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span style="font-size:12px;color:#8892b0">Ladezustand</span>
+        <span style="font-weight:700;color:${soc>60?'#64ffda':soc>20?'#ffd740':'#ef4444'}">${soc}%</span>
+      </div>
+      <div style="height:8px;background:#2d3147;border-radius:4px">
+        <div style="height:100%;width:${soc}%;background:${soc>60?'#64ffda':soc>20?'#ffd740':'#ef4444'};border-radius:4px"></div>
+      </div>
+    </div>`:'';
+  openMobileSheet(`
+    <div class="m-sheet-title">🚗 ${v.name||v.id}</div>
+    ${socHtml}
+    <div class="m-info-block">
+      <div class="m-info-row"><span class="m-info-label">Provider</span><span class="m-info-value">${v.provider||'—'}</span></div>
+      <div class="m-info-row"><span class="m-info-label">Standort</span><span class="m-info-value">${locLabel}</span></div>
+      ${charging?'<div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:#64ffda">⚡ Lädt</span></div>':''}
+      ${lastPoll?`<div class="m-info-row"><span class="m-info-label">Letzter Poll</span><span class="m-info-value" style="font-size:12px">${typeof _timeAgo==='function'?_timeAgo(lastPoll):lastPoll}</span></div>`:''}
+      <div class="m-info-row"><span class="m-info-label">ID</span><span class="m-info-value" style="font-size:11px;font-family:var(--mono)">${v.id}</span></div>
+    </div>
+    <div class="m-grid-2" style="margin-top:4px">
+      <button class="m-btn-p" onclick="closeMobileSheet();openEditVehicleModal('${vid}')">✏ Bearbeiten</button>
+      <button class="m-btn-s" onclick="closeMobileSheet();mobileNavTo('sessions')">📋 Sessions</button>
+    </div>
+    <button style="width:100%;margin-top:8px;padding:13px;border:1px solid #2d3147;border-radius:8px;background:transparent;color:#8892b0;cursor:pointer" onclick="closeMobileSheet()">Schließen</button>
+  `);
 }
 
 let _fabOpen = false;
@@ -7791,24 +8195,36 @@ async function saveUserRoles() {
 <!-- ========= MOBILE EXPORT FLOW ========= -->
 <div id="mobileExportFlow" style="display:none;padding:12px">
   <h2 style="margin:0 0 16px 0;font-size:18px">📥 Export erstellen</h2>
+
   <div class="mobile-card">
-    <h3>Schritt 1: Monat wählen</h3>
+    <h3>Schritt 1: Fahrzeug & Monat</h3>
+    <label style="display:block;font-size:12px;color:#8892b0;margin-bottom:4px;font-weight:600;text-transform:uppercase">Fahrzeug</label>
+    <select id="mobileExportVehicle" style="width:100%;padding:10px;border-radius:6px;background:#2d3147;border:1px solid #3d4166;color:#e6f1ff;font-size:14px;margin-bottom:10px">
+      <option value="all">Alle Fahrzeuge</option>
+    </select>
+    <label style="display:block;font-size:12px;color:#8892b0;margin-bottom:4px;font-weight:600;text-transform:uppercase">Monat</label>
     <input type="month" id="mobileExportMonth" style="width:100%;padding:10px;border-radius:6px;background:#2d3147;border:1px solid #3d4166;color:#e6f1ff;font-size:15px">
   </div>
+
   <div class="mobile-card">
-    <h3>Schritt 2: Sprache</h3>
-    <div style="display:flex;gap:8px">
+    <h3>Schritt 2: Filter & Format</h3>
+    <label style="display:block;font-size:12px;color:#8892b0;margin-bottom:4px;font-weight:600;text-transform:uppercase">Ladeort</label>
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <button id="mfAll" onclick="setMobileExportFilter('all',this)" style="flex:1;padding:8px;border-radius:6px;background:#3d5afe;border:none;color:#fff;font-size:13px;cursor:pointer">Alle</button>
+      <button id="mfHome" onclick="setMobileExportFilter('home',this)" style="flex:1;padding:8px;border-radius:6px;background:#2d3147;border:none;color:#8892b0;font-size:13px;cursor:pointer">🏠 Zuhause</button>
+      <button id="mfExtern" onclick="setMobileExportFilter('extern',this)" style="flex:1;padding:8px;border-radius:6px;background:#2d3147;border:none;color:#8892b0;font-size:13px;cursor:pointer">⚡ Extern</button>
+    </div>
+    <label style="display:block;font-size:12px;color:#8892b0;margin-bottom:4px;font-weight:600;text-transform:uppercase">Sprache</label>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
       <button id="mobileLangDe" onclick="setMobileLang('de')" style="flex:1;padding:10px;border-radius:6px;background:#3d5afe;border:none;color:#fff;font-size:14px;cursor:pointer">🇩🇪 Deutsch</button>
       <button id="mobileLangEn" onclick="setMobileLang('en')" style="flex:1;padding:10px;border-radius:6px;background:#2d3147;border:none;color:#8892b0;font-size:14px;cursor:pointer">🇬🇧 English</button>
     </div>
-  </div>
-  <div class="mobile-card">
-    <h3>Schritt 3: Optionen</h3>
-    <label style="display:flex;align-items:center;gap:10px;margin-bottom:10px;cursor:pointer">
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
       <input type="checkbox" id="mobileIncludeSignature" style="width:20px;height:20px">
       <span style="font-size:14px">Unterschrift einschließen</span>
     </label>
   </div>
+
   <div style="display:flex;gap:8px">
     <button onclick="doMobileExportPreview()" style="flex:1;padding:14px;border-radius:8px;background:#1a3d6e;border:none;color:#64ffda;font-size:14px;font-weight:600;cursor:pointer">👁 Vorschau</button>
     <button onclick="doMobileExport()" style="flex:1;padding:14px;border-radius:8px;background:#3d5afe;border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer">📥 Herunterladen</button>
@@ -7872,6 +8288,14 @@ async function saveUserRoles() {
     <button onclick="switchToDesktopSettings()" style="width:100%;padding:12px;border-radius:6px;background:transparent;border:1px solid #2d3147;color:#8892b0;font-size:13px;cursor:pointer">
       🖥️ Vollständige Einstellungen öffnen
     </button>
+  </div>
+</div>
+
+<!-- ========= MOBILE SHEET CONTAINER ========= -->
+<div class="m-sheet-overlay" id="mobileSheet" onclick="if(event.target===this)closeMobileSheet()">
+  <div class="m-sheet">
+    <div class="m-handle"></div>
+    <div id="mobileSheetContent"></div>
   </div>
 </div>
 

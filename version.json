@@ -1,6 +1,27 @@
 {
-  "version": "2.0.10",
+  "version": "2.0.11",
   "changelog": [
+    {
+      "version": "2.0.11",
+      "date": "2026-05-21",
+      "changes": [
+        "Backend: POST /api/sessions/manual — Ladevorgang manuell hinzufügen (erfordert sessions:manual_add)",
+        "Mobile: Neues Bottom-Sheet-System (openMobileSheet/closeMobileSheet) für alle mobilen Aktionen",
+        "Mobile: openMobileSessionCreate() — echtes Formular zum manuellen Hinzufügen von Ladevorgängen",
+        "Mobile: openMobileMeterTest() — Zählerstand live testen mit Ergebnisanzeige",
+        "Mobile: openMobileConnectionTest() — Provider-Verbindung testen mit Statusanzeige",
+        "Mobile: openMobileSignatureSheet() — Signatur hochladen, Status anzeigen",
+        "Mobile: openMobileSystemStatus() — System-Status per Bottom Sheet",
+        "Mobile: openMobileUpdateCheck() — Update prüfen mit direktem Link zum Update-Tab",
+        "Mobile: openMobileBackupCreate() — Backup per Klick erstellen mit Ergebnis",
+        "Mobile: openMobileVehicleDetail(vid) — Fahrzeugdetails als Bottom Sheet mit SOC, Standort, Aktionen",
+        "Mobile: initMobileMore() rewritten — alle Buttons führen echte mobile Aktionen aus statt switchToDesktopSettings",
+        "Mobile: mobileQuickAddSession() öffnet openMobileSessionCreate()",
+        "Mobile: loadMobileVehicleCards() — Klick öffnet openMobileVehicleDetail statt Desktop-Modal",
+        "Mobile: Export-Flow mit Fahrzeugauswahl, Ladeort-Filter (alle/Zuhause/Extern)",
+        "Bugfix: Unterschrift öffnet korrektes Sheet statt cfgSection('auth')"
+      ]
+    },
     {
       "version": "2.0.10",
       "date": "2026-05-21",

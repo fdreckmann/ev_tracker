@@ -11,7 +11,7 @@ from meter_providers import read_meter as _read_meter_impl, MeterResult
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "2.0.10"
+APP_VERSION   = "2.0.11"
 
 CHANGELOG = [
     {"version":"2.0.0","changes":[
@@ -3313,6 +3313,35 @@ def api_update_location(sid):
     con.commit(); con.close()
     log.info("Session #%d Standort → %s", sid, loc)
     return jsonify({"ok":True})
+
+@app.route("/api/sessions/manual", methods=["POST"])
+@require_login
+def api_manual_session_create():
+    if not has_permission(_current_user(), "sessions:manual_add"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: sessions:manual_add"}), 403
+    data = request.get_json(force=True) or {}
+    start_ts = data.get("start_ts")
+    if not start_ts:
+        return jsonify({"ok": False, "error": "start_ts erforderlich"}), 400
+    kwh      = data.get("kwh_charged")
+    cost_eur = data.get("cost_eur")
+    price_kwh= data.get("price_per_kwh")
+    end_ts   = data.get("end_ts") or None
+    location = data.get("location", "home")
+    vehicle_id = data.get("vehicle_id", "v0")
+    charger_power_kw = data.get("charger_power_kw")
+    con = _get_db()
+    cur = con.execute("""INSERT INTO sessions
+        (start_ts, end_ts, kwh_charged, cost_eur, price_per_kwh, location,
+         vehicle_id, provider, charger_power_kw)
+        VALUES (?,?,?,?,?,?,?,?,?)""",
+        (start_ts, end_ts, kwh, cost_eur, price_kwh, location,
+         vehicle_id, "manual", charger_power_kw))
+    sid = cur.lastrowid
+    con.commit(); con.close()
+    _audit("session_manual_created", f"session_id={sid} vehicle_id={vehicle_id}",
+           ip=request.remote_addr)
+    return jsonify({"ok": True, "id": sid}), 201
 
 @app.route("/api/sessions/<int:sid>/cost", methods=["POST"])
 @require_login
