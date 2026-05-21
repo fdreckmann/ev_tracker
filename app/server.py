@@ -11,7 +11,7 @@ from meter_providers import read_meter as _read_meter_impl, MeterResult
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "2.0.17"
+APP_VERSION   = "2.0.18"
 
 CHANGELOG = [
     {"version":"2.0.0","changes":[
@@ -201,11 +201,25 @@ def _get_db():
         con.row_factory = sqlite3.Row
         return con
 
+def close_db_if_owned(con):
+    """Close a DB connection only if it is NOT the flask.g-managed request connection.
+    Call instead of close_db_if_owned(con) in all request-context code — background threads may
+    still call close_db_if_owned(con) directly since they use sqlite3.connect() themselves."""
+    try:
+        if g.get("_db") is con:
+            return  # teardown_appcontext closes this after the request
+    except RuntimeError:
+        pass  # outside request context — always close
+    try:
+        close_db_if_owned(con)
+    except Exception:
+        pass
+
 def _has_users() -> bool:
     try:
         con = _get_db()
         count = con.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-        con.close()
+        close_db_if_owned(con)
         return count > 0
     except Exception:
         return False
@@ -214,7 +228,7 @@ def _get_user_by_email(email: str):
     try:
         con = _get_db()
         row = con.execute("SELECT * FROM users WHERE email=?", (email.strip().lower(),)).fetchone()
-        con.close()
+        close_db_if_owned(con)
         return dict(row) if row else None
     except Exception:
         return None
@@ -223,7 +237,7 @@ def _get_user_by_id(uid):
     try:
         con = _get_db()
         row = con.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
-        con.close()
+        close_db_if_owned(con)
         return dict(row) if row else None
     except Exception:
         return None
@@ -718,7 +732,7 @@ def _audit(action: str, details: str = "", ip: str = ""):
         con.execute(
             "INSERT INTO audit_log (ts, action, details, ip, user_id) VALUES (?,?,?,?,?)",
             (datetime.utcnow().isoformat(), action, details.strip(), ip, uid))
-        con.commit(); con.close()
+        con.commit(); close_db_if_owned(con)
     except Exception:
         pass
 
@@ -1095,7 +1109,7 @@ def init_db():
         except Exception:
             pass
     con.commit()
-    con.close()
+    close_db_if_owned(con)
 
 # ── Permission checking ───────────────────────────────────────────────────────
 
@@ -1108,7 +1122,7 @@ def _get_user_permissions(user_id: int) -> set:
         JOIN role_permissions rp ON ur.role_id = rp.role_id
         WHERE ur.user_id = ?
     """, (user_id,)).fetchall()
-    con.close()
+    close_db_if_owned(con)
     return {r["permission_key"] for r in rows}
 
 def has_permission(user, permission_key: str) -> bool:
@@ -1151,7 +1165,7 @@ def get_sessions(year=None, month=None, location=None, vehicle_id=None, limit=50
     sql = f"SELECT * FROM sessions WHERE {' AND '.join(where)} ORDER BY start_ts DESC"
     if not (year and month): sql += f" LIMIT {limit}"
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
-    rows = con.execute(sql, params).fetchall(); con.close()
+    rows = con.execute(sql, params).fetchall(); close_db_if_owned(con)
     return [dict(r) for r in rows]
 
 def get_monthly_stats():
@@ -1169,7 +1183,7 @@ def get_monthly_stats():
         FROM sessions WHERE end_ts IS NOT NULL
         GROUP BY month ORDER BY month DESC LIMIT 12
     """).fetchall()
-    con.close(); return [dict(r) for r in rows]
+    close_db_if_owned(con); return [dict(r) for r in rows]
 
 # ── ENTSO-E ───────────────────────────────────────────────────────────────────
 _entsoe_cache = {"price": None, "ts": 0}
@@ -1321,6 +1335,31 @@ def tracker_loop(vehicle_id: str = "v0"):
                 log.debug("Location detection error: %s", _le)
 
             con = sqlite3.connect(DB_PATH); cur = con.cursor()
+
+            # Standort-Historie befüllen wenn aktiviert
+            if vcfg.get("location_history_enabled") and st.get("location_status"):
+                try:
+                    precision = vcfg.get("location_history_precision", "status_only")
+                    retention = int(vcfg.get("location_history_retention_days", 30))
+                    lat = st.get("location_lat") if precision in ("rounded", "exact") else None
+                    lon = st.get("location_lon") if precision in ("rounded", "exact") else None
+                    acc = st.get("location_accuracy") if precision == "exact" else None
+                    if precision == "rounded" and lat is not None:
+                        lat = round(lat, 3); lon = round(lon, 3) if lon else lon
+                    now_ts = datetime.utcnow().isoformat(timespec="seconds")
+                    cur.execute(
+                        "INSERT INTO vehicle_location_history "
+                        "(vehicle_id, timestamp, location_status, source, latitude, longitude, accuracy_m) "
+                        "VALUES (?,?,?,?,?,?,?)",
+                        (vehicle_id, now_ts, st["location_status"],
+                         st.get("location_source",""), lat, lon, acc))
+                    # Cleanup old entries beyond retention period
+                    cutoff = (datetime.utcnow() - timedelta(days=retention)).isoformat(timespec="seconds")
+                    cur.execute("DELETE FROM vehicle_location_history WHERE vehicle_id=? AND timestamp<?",
+                                (vehicle_id, cutoff))
+                    con.commit()
+                except Exception as _lhe:
+                    log.debug("Location history write error: %s", _lhe)
 
             if charging and not session_active:
                 soc_start = soc; odo_start = odo; peak_power = power_kw or 0
@@ -1486,7 +1525,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                     }, load_config(), db_path=DB_PATH)
                 except Exception: pass
                 session_id=None; peak_power=None
-            con.close()
+            close_db_if_owned(con)
 
         except Exception as e:
             log.warning("Tracker error [%s]: %s", vehicle_id, e); st["last_error"]=str(e)
@@ -1622,7 +1661,7 @@ def login_page():
                     new_locked = (now_dt + timedelta(minutes=15)).isoformat()
                 con.execute("UPDATE users SET failed_attempts=?,locked_until=? WHERE id=?",
                             (new_attempts, new_locked, user["id"]))
-                con.commit(); con.close()
+                con.commit(); close_db_if_owned(con)
                 error = "Anmeldung fehlgeschlagen"
                 _audit("login_failed", f"email={email} attempts={new_attempts}", ip=request.remote_addr)
                 if new_locked:
@@ -1660,10 +1699,10 @@ def login_page():
                         if backup:
                             con.execute("UPDATE totp_backup_codes SET used_at=? WHERE id=?",
                                         (now_dt.isoformat(), backup["id"]))
-                            con.commit(); con.close()
+                            con.commit(); close_db_if_owned(con)
                             totp_ok = True
                         else:
-                            con.close()
+                            close_db_if_owned(con)
                     if not totp_ok:
                         error = "Ungültiger 2FA-Code"
                 if not error:
@@ -1671,7 +1710,7 @@ def login_page():
                     con = _get_db()
                     con.execute("UPDATE users SET failed_attempts=0,locked_until=NULL,last_login_at=? WHERE id=?",
                                 (now_dt.isoformat(), user["id"]))
-                    con.commit(); con.close()
+                    con.commit(); close_db_if_owned(con)
                     session["user_id"]    = user["id"]
                     session["user_email"] = user["email"]
                     session["user_role"]  = user["role"]
@@ -1720,7 +1759,7 @@ def setup_page():
             except sqlite3.IntegrityError:
                 error = "E-Mail-Adresse bereits vorhanden"
             finally:
-                con.close()
+                close_db_if_owned(con)
             if not error:
                 # Clear old single-user auth from config
                 cfg["auth_password_hash"] = ""
@@ -1759,7 +1798,7 @@ def forgot_password_page():
                     (now_dt.isoformat(), user["id"]))
         con.execute("INSERT INTO password_reset_tokens (user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?)",
                     (user["id"], token_hash, expires, now_dt.isoformat()))
-        con.commit(); con.close()
+        con.commit(); close_db_if_owned(con)
         reset_url = request.host_url.rstrip("/") + url_for("reset_password_page", token=token)
         body_html = _email_html(
             "Passwort zurücksetzen",
@@ -1781,28 +1820,28 @@ def reset_password_page(token):
         "SELECT * FROM password_reset_tokens WHERE token_hash=? AND used_at IS NULL AND expires_at > ?",
         (token_hash, now_iso)).fetchone()
     if not row:
-        con.close()
+        close_db_if_owned(con)
         return render_template("reset_password.html", token=token, invalid=True)
     row = dict(row)
     if request.method == "GET":
-        con.close()
+        close_db_if_owned(con)
         return render_template("reset_password.html", token=token, invalid=False)
     pw  = request.form.get("password","")
     pw2 = request.form.get("password2","")
     pw_err = _password_ok(pw)
     if pw_err:
-        con.close()
+        close_db_if_owned(con)
         return render_template("reset_password.html", token=token, invalid=False,
                                error=pw_err)
     if pw != pw2:
-        con.close()
+        close_db_if_owned(con)
         return render_template("reset_password.html", token=token, invalid=False,
                                error="Passwörter stimmen nicht überein")
     now_iso2 = datetime.utcnow().isoformat()
     con.execute("UPDATE users SET password_hash=?,updated_at=?,failed_attempts=0,locked_until=NULL WHERE id=?",
                 (_hash_password(pw), now_iso2, row["user_id"]))
     con.execute("UPDATE password_reset_tokens SET used_at=? WHERE id=?", (now_iso2, row["id"]))
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     _audit("password_reset_done", f"uid={row['user_id']}", ip=request.remote_addr)
     return redirect(url_for("login_page"))
 
@@ -1817,27 +1856,27 @@ def accept_invite_page(token):
         "SELECT * FROM invite_tokens WHERE token_hash=? AND used_at IS NULL AND expires_at > ?",
         (token_hash, now_iso)).fetchone()
     if not row:
-        con.close()
+        close_db_if_owned(con)
         return render_template("accept_invite.html", token=token, invalid=True)
     row = dict(row)
     user = _get_user_by_id(row["user_id"])
     if not user:
-        con.close()
+        close_db_if_owned(con)
         return render_template("accept_invite.html", token=token, invalid=True)
     if request.method == "GET":
-        con.close()
+        close_db_if_owned(con)
         return render_template("accept_invite.html", token=token, invalid=False,
                                user_name=user.get("name",""))
     pw  = request.form.get("password","")
     pw2 = request.form.get("password2","")
     pw_err = _password_ok(pw)
     if pw_err:
-        con.close()
+        close_db_if_owned(con)
         return render_template("accept_invite.html", token=token, invalid=False,
                                user_name=user.get("name",""),
                                error=pw_err)
     if pw != pw2:
-        con.close()
+        close_db_if_owned(con)
         return render_template("accept_invite.html", token=token, invalid=False,
                                user_name=user.get("name",""),
                                error="Passwörter stimmen nicht überein")
@@ -1846,7 +1885,7 @@ def accept_invite_page(token):
     con.execute("UPDATE users SET password_hash=?,status=?,updated_at=? WHERE id=?",
                 (_hash_password(pw), new_status, now_iso2, user["id"]))
     con.execute("UPDATE invite_tokens SET used_at=? WHERE id=?", (now_iso2, row["id"]))
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     _audit("invite_accepted", f"uid={user['id']}", ip=request.remote_addr)
     return redirect(url_for("login_page"))
 
@@ -2130,7 +2169,7 @@ def api_passkey_register_begin():
         "SELECT credential_id FROM webauthn_credentials WHERE user_id=?",
         (user["id"],)
     ).fetchall()
-    con.close()
+    close_db_if_owned(con)
 
     from webauthn.helpers.structs import PublicKeyCredentialDescriptor
     from webauthn.helpers import base64url_to_bytes
@@ -2203,7 +2242,7 @@ def api_passkey_register_complete():
             "INSERT INTO webauthn_credentials (user_id, credential_id, public_key, sign_count, name, created_at) VALUES (?,?,?,?,?,?)",
             (user["id"], cred_id, pub_key, verification.sign_count, cred_name, now)
         )
-        con.commit(); con.close()
+        con.commit(); close_db_if_owned(con)
         _audit("passkey_registered", f"user={user['email']} name={cred_name}", ip=request.remote_addr)
         return jsonify({"ok": True, "message": f"Passkey '{cred_name}' erfolgreich registriert"})
     except Exception as e:
@@ -2222,7 +2261,7 @@ def api_passkey_credentials():
         "SELECT id, name, created_at, last_used_at FROM webauthn_credentials WHERE user_id=? ORDER BY created_at DESC",
         (user["id"],)
     ).fetchall()
-    con.close()
+    close_db_if_owned(con)
     return jsonify({"ok": True, "credentials": [dict(r) for r in rows]})
 
 
@@ -2234,7 +2273,7 @@ def api_passkey_credential_delete(cred_db_id):
         return jsonify({"ok": False, "error": "Nicht angemeldet"}), 401
     con = _get_db()
     con.execute("DELETE FROM webauthn_credentials WHERE id=? AND user_id=?", (cred_db_id, user["id"]))
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     _audit("passkey_deleted", f"cred_id={cred_db_id}", ip=request.remote_addr)
     return jsonify({"ok": True})
 
@@ -2256,7 +2295,7 @@ def api_passkey_login_begin():
                 "SELECT credential_id FROM webauthn_credentials WHERE user_id=?",
                 (user["id"],)
             ).fetchall()
-            con.close()
+            close_db_if_owned(con)
             from webauthn.helpers.structs import PublicKeyCredentialDescriptor
             from webauthn.helpers import base64url_to_bytes
             for row in rows:
@@ -2311,12 +2350,12 @@ def api_passkey_login_complete():
         ).fetchone()
 
         if not row:
-            con.close()
+            close_db_if_owned(con)
             return jsonify({"ok": False, "error": "Passkey nicht registriert. Bitte mit Passwort einloggen und den Passkey unter Einstellungen → Sicherheit neu hinzufügen."}), 400
 
         row = dict(row)
         if row.get("status") == "disabled":
-            con.close()
+            close_db_if_owned(con)
             return jsonify({"ok": False, "error": "Konto deaktiviert"}), 403
 
         verification = webauthn.verify_authentication_response(
@@ -2338,7 +2377,7 @@ def api_passkey_login_complete():
             "UPDATE users SET last_login_at=?, failed_attempts=0, locked_until=NULL WHERE id=?",
             (now, row["user_id"])
         )
-        con.commit(); con.close()
+        con.commit(); close_db_if_owned(con)
 
         session["user_id"]    = row["user_id"]
         session["user_email"] = row["email"]
@@ -2366,7 +2405,7 @@ def api_me_permissions():
         SELECT r.name FROM user_roles ur JOIN roles r ON ur.role_id = r.id
         WHERE ur.user_id = ?
     """, (user["id"],)).fetchall()
-    con.close()
+    close_db_if_owned(con)
     perms = _get_user_permissions(user["id"])
     # Wenn admin:all → alle Permissions zurückgeben
     if "admin:all" in perms:
@@ -2413,7 +2452,7 @@ def api_admin_roles_list():
         user_count = con.execute("SELECT COUNT(*) as c FROM user_roles WHERE role_id=?",
                                   (role["id"],)).fetchone()["c"]
         role["user_count"] = user_count
-    con.close()
+    close_db_if_owned(con)
     return jsonify({"ok": True, "roles": roles})
 
 
@@ -2448,7 +2487,7 @@ def api_admin_roles_create():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 400
     finally:
-        con.close()
+        close_db_if_owned(con)
 
 
 @app.route("/api/admin/roles/<int:role_id>", methods=["PUT"])
@@ -2461,7 +2500,7 @@ def api_admin_roles_update(role_id):
     con = _get_db()
     role = con.execute("SELECT * FROM roles WHERE id=?", (role_id,)).fetchone()
     if not role:
-        con.close()
+        close_db_if_owned(con)
         return jsonify({"ok": False, "error": "Rolle nicht gefunden"}), 404
     role = dict(role)
     name = (body.get("name") or role["name"]).strip()
@@ -2481,7 +2520,7 @@ def api_admin_roles_update(role_id):
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 400
     finally:
-        con.close()
+        close_db_if_owned(con)
 
 
 @app.route("/api/admin/roles/<int:role_id>", methods=["DELETE"])
@@ -2493,11 +2532,11 @@ def api_admin_roles_delete(role_id):
     con = _get_db()
     role = con.execute("SELECT * FROM roles WHERE id=?", (role_id,)).fetchone()
     if not role:
-        con.close()
+        close_db_if_owned(con)
         return jsonify({"ok": False, "error": "Rolle nicht gefunden"}), 404
     role = dict(role)
     if role["is_system"]:
-        con.close()
+        close_db_if_owned(con)
         return jsonify({"ok": False, "error": "Systemrolle kann nicht gelöscht werden"}), 400
     # Sicherheit: mindestens ein User mit admin:all muss bleiben
     admin_role = con.execute("SELECT id FROM roles WHERE name='admin'").fetchone()
@@ -2508,13 +2547,13 @@ def api_admin_roles_delete(role_id):
             WHERE rp.permission_key = 'admin:all' AND ur.role_id != ?
         """, (role_id,)).fetchone()["c"]
         if remaining_admins == 0 and role.get("name") == "admin":
-            con.close()
+            close_db_if_owned(con)
             return jsonify({"ok": False, "error": "Mindestens eine Admin-Rolle muss erhalten bleiben"}), 400
     con.execute("DELETE FROM role_permissions WHERE role_id=?", (role_id,))
     con.execute("DELETE FROM user_roles WHERE role_id=?", (role_id,))
     con.execute("DELETE FROM roles WHERE id=?", (role_id,))
     con.commit()
-    con.close()
+    close_db_if_owned(con)
     _audit("role_deleted", f"id={role_id} name={role['name']}", ip=request.remote_addr)
     return jsonify({"ok": True})
 
@@ -2530,7 +2569,7 @@ def api_admin_user_roles_get(target_user_id):
     con = _get_db()
     roles = [r["role_id"] for r in
         con.execute("SELECT role_id FROM user_roles WHERE user_id=?", (target_user_id,)).fetchall()]
-    con.close()
+    close_db_if_owned(con)
     return jsonify({"ok": True, "role_ids": roles})
 
 
@@ -2559,7 +2598,7 @@ def api_admin_user_roles_set(target_user_id):
                 WHERE rp.permission_key = 'admin:all' AND ur.user_id != ?
             """, (target_user_id,)).fetchone()["c"]
             if other_admins == 0:
-                con.close()
+                close_db_if_owned(con)
                 return jsonify({"ok": False, "error": "Mindestens ein Admin muss admin:all behalten"}), 400
     # Validate role_ids
     valid_ids = {r["id"] for r in con.execute("SELECT id FROM roles").fetchall()}
@@ -2574,7 +2613,7 @@ def api_admin_user_roles_set(target_user_id):
         if first_role:
             con.execute("UPDATE users SET role=? WHERE id=?", (first_role["name"], target_user_id))
             con.commit()
-    con.close()
+    close_db_if_owned(con)
     _audit("user_roles_changed", f"user_id={target_user_id} roles={role_ids}", ip=request.remote_addr)
     return jsonify({"ok": True})
 
@@ -2612,7 +2651,7 @@ def _oauth_finish(email: str):
     now = datetime.utcnow().isoformat()
     con = _get_db()
     con.execute("UPDATE users SET last_login_at=? WHERE id=?", (now, user["id"]))
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     _audit("login_oauth", f"email={email} role={user['role']}", ip=request.remote_addr)
     return redirect(request.args.get("next") or url_for("index"))
 
@@ -2767,8 +2806,10 @@ def api_get_config():
     return jsonify(cfg)
 
 @app.route("/api/config", methods=["POST"])
-@require_admin
+@require_login
 def api_save_config():
+    if not has_permission(_current_user(), "settings:edit"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: settings:edit"}), 403
     data=request.json; cfg=load_config()
     floats={"battery_capacity_kwh","price_per_kwh_home","price_per_kwh_ac","price_per_kwh_dc",
             "dc_threshold_kw","entsoe_ac_markup","entsoe_dc_markup","home_radius_m"}
@@ -2877,7 +2918,7 @@ def api_mobile_summary():
             if sess_row:
                 active_session = dict(sess_row)
     finally:
-        con.close()
+        close_db_if_owned(con)
 
     # Permissions summary for mobile UI gating
     perms = _get_user_permissions(user["id"]) if user else set()
@@ -2981,7 +3022,7 @@ def api_vehicle_delete_check(vid):
     sess_count    = con.execute("SELECT COUNT(*) FROM sessions WHERE vehicle_id=?", (vid,)).fetchone()[0]
     rep_count     = con.execute("SELECT COUNT(*) FROM reports  WHERE vehicle_id=?", (vid,)).fetchone()[0]
     billing_count = con.execute("SELECT COUNT(*) FROM billing_config WHERE vehicle_id=?", (vid,)).fetchone()[0]
-    con.close()
+    close_db_if_owned(con)
     return jsonify({
         "ok": True,
         "vehicle_id": vid,
@@ -3091,10 +3132,10 @@ def api_vehicle_location_history(vid):
     limit = min(int(request.args.get("limit", 100)), 500)
     con = _get_db()
     rows = con.execute(
-        "SELECT timestamp, location_status, source, accuracy_m FROM vehicle_location_history "
+        "SELECT timestamp, location_status, source, latitude, longitude, accuracy_m FROM vehicle_location_history "
         "WHERE vehicle_id=? ORDER BY timestamp DESC LIMIT ?", (vid, limit)
     ).fetchall()
-    con.close()
+    close_db_if_owned(con)
     has_exact = has_permission(_current_user(), "vehicles:location_exact_view")
     items = []
     for row in rows:
@@ -3140,7 +3181,7 @@ def api_delete_vehicle(vid):
         sess_count   = con.execute("SELECT COUNT(*) FROM sessions WHERE vehicle_id=?", (vid,)).fetchone()[0]
         rep_count    = con.execute("SELECT COUNT(*) FROM reports  WHERE vehicle_id=?", (vid,)).fetchone()[0]
         billing_row  = con.execute("SELECT id FROM billing_config WHERE vehicle_id=?", (vid,)).fetchone()
-        con.close()
+        close_db_if_owned(con)
         if (sess_count or rep_count or billing_row) and not allow_del_sessions:
             return jsonify({
                 "ok": False,
@@ -3162,7 +3203,7 @@ def api_delete_vehicle(vid):
             con.execute("DELETE FROM sessions WHERE vehicle_id=?", (vid,))
             con.execute("DELETE FROM reports  WHERE vehicle_id=?", (vid,))
             con.execute("DELETE FROM billing_config WHERE vehicle_id=?", (vid,))
-            con.commit(); con.close()
+            con.commit(); close_db_if_owned(con)
         # Remove image directory
         try:
             img_dir = (_VEH_IMG_DIR / vid).resolve()
@@ -3212,6 +3253,13 @@ def _validate_vehicle_id(vid: str) -> bool:
     if ".." in vid or "/" in vid or "\\" in vid:
         return False
     return True
+
+def _vehicle_exists(vid: str) -> bool:
+    """Return True if vid is the primary vehicle or a configured extra vehicle."""
+    if vid == "v0":
+        return True
+    cfg = load_config()
+    return any(v.get("id") == vid for v in cfg.get("extra_vehicles", []))
 
 def _safe_veh_img_path(vid: str) -> "Path":
     """Return resolved car.webp path; raises ValueError for unsafe IDs or traversal."""
@@ -3379,6 +3427,8 @@ def _detect_location_status(vid: str, cfg: dict, vehicle_state: dict) -> dict:
 @app.route("/api/vehicles/<vid>/image")
 @require_login
 def api_vehicle_image_meta(vid):
+    if not _vehicle_exists(vid):
+        return jsonify({"error": "Fahrzeug nicht gefunden"}), 404
     if not has_permission(_current_user(), "vehicles:view"):
         return jsonify({"error": "Keine Berechtigung: vehicles:view"}), 403
     try:
@@ -3391,9 +3441,13 @@ def api_vehicle_image_meta(vid):
 @app.route("/api/vehicles/<vid>/image/file")
 @require_login
 def api_vehicle_image_file(vid):
+    ph = Path(__file__).parent / "static" / "vehicle_images" / "placeholder_car.svg"
+    if not _vehicle_exists(vid):
+        if ph.exists():
+            return send_file(str(ph), mimetype="image/svg+xml")
+        return jsonify({"error": "Fahrzeug nicht gefunden"}), 404
     if not has_permission(_current_user(), "vehicles:view"):
         # Return placeholder instead of 403 so <img> tags degrade gracefully
-        ph = Path(__file__).parent / "static" / "vehicle_images" / "placeholder_car.svg"
         if ph.exists():
             return send_file(str(ph), mimetype="image/svg+xml")
         return jsonify({"error": "Keine Berechtigung: vehicles:view"}), 403
@@ -3402,7 +3456,6 @@ def api_vehicle_image_file(vid):
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     if not img_path.exists():
-        ph = Path(__file__).parent / "static" / "vehicle_images" / "placeholder_car.svg"
         if ph.exists():
             return send_file(str(ph), mimetype="image/svg+xml")
         return jsonify({"error": "Kein Bild vorhanden"}), 404
@@ -3411,6 +3464,8 @@ def api_vehicle_image_file(vid):
 @app.route("/api/vehicles/<vid>/image/upload", methods=["POST"])
 @require_login
 def api_vehicle_image_upload(vid):
+    if not _vehicle_exists(vid):
+        return jsonify({"ok": False, "error": "Fahrzeug nicht gefunden"}), 404
     if not has_permission(_current_user(), "vehicles:image_manage"):
         return jsonify({"error": "Keine Berechtigung: vehicles:image_manage"}), 403
     try:
@@ -3433,7 +3488,6 @@ def api_vehicle_image_upload(vid):
         _img.save(str(img_path), "WEBP", quality=85)
     except Exception as e:
         return jsonify({"ok": False, "error": f"Ungültiges Bild: {e}"}), 400
-    # Persist image_mode: v0 in top-level config, extra_vehicles by id
     _update_vehicle_image_meta(vid, mode="upload",
                                path=f"/api/vehicles/{vid}/image/file")
     _audit("vehicle_image_uploaded", f"vehicle_id={vid}", ip=request.remote_addr)
@@ -3442,6 +3496,8 @@ def api_vehicle_image_upload(vid):
 @app.route("/api/vehicles/<vid>/image", methods=["DELETE"])
 @require_login
 def api_vehicle_image_delete(vid):
+    if not _vehicle_exists(vid):
+        return jsonify({"error": "Fahrzeug nicht gefunden"}), 404
     if not has_permission(_current_user(), "vehicles:image_manage"):
         return jsonify({"error": "Keine Berechtigung: vehicles:image_manage"}), 403
     try:
@@ -3475,7 +3531,7 @@ def api_delete_session(sid):
     con=sqlite3.connect(DB_PATH)
     con.execute("DELETE FROM sessions WHERE id=?",(sid,))
     con.execute("DELETE FROM session_points WHERE session_id=?",(sid,))
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     return jsonify({"ok":True})
 
 @app.route("/api/sessions/<int:sid>/points")
@@ -3485,7 +3541,7 @@ def api_session_points(sid):
         return jsonify({"error": "Keine Berechtigung: sessions:view"}), 403
     con=sqlite3.connect(DB_PATH); con.row_factory=sqlite3.Row
     rows=con.execute("SELECT ts,soc,power_kw FROM session_points WHERE session_id=? ORDER BY ts",(sid,)).fetchall()
-    con.close(); return jsonify([dict(r) for r in rows])
+    close_db_if_owned(con); return jsonify([dict(r) for r in rows])
 
 @app.route("/api/sessions/<int:sid>/location", methods=["POST"])
 @require_login
@@ -3500,7 +3556,7 @@ def api_update_location(sid):
         con.execute("UPDATE sessions SET location=? WHERE id=?", (loc, sid))
         con.commit()
     finally:
-        con.close()
+        close_db_if_owned(con)
     log.info("Session #%d Standort → %s", sid, loc)
     return jsonify({"ok":True})
 
@@ -3528,7 +3584,7 @@ def api_manual_session_create():
         (start_ts, end_ts, kwh, cost_eur, price_kwh, location,
          vehicle_id, "manual", charger_power_kw))
     sid = cur.lastrowid
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     _audit("session_manual_created", f"session_id={sid} vehicle_id={vehicle_id}",
            ip=request.remote_addr)
     return jsonify({"ok": True, "id": sid}), 201
@@ -3546,7 +3602,7 @@ def api_update_cost(sid):
         cur.execute("UPDATE sessions SET cost_eur=?,price_per_kwh=?,cost_manual=1 WHERE id=?",(cost,float(price_kwh),sid))
     else:
         cur.execute("UPDATE sessions SET cost_eur=?,cost_manual=1 WHERE id=?",(cost,sid))
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     return jsonify({"ok":True,"cost_eur":cost})
 
 @app.route("/api/sessions/<int:sid>", methods=["PATCH"])
@@ -3570,7 +3626,7 @@ def api_patch_session(sid):
     values = list(fields.values()) + [sid]
     con = _get_db()
     con.execute(f"UPDATE sessions SET {set_clause} WHERE id=?", values)
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     return jsonify({"ok": True, "id": sid})
 
 @app.route("/api/stats/monthly")
@@ -3916,7 +3972,7 @@ def api_sessions_sample():
         row = con.execute(
             "SELECT * FROM sessions WHERE end_ts IS NOT NULL ORDER BY start_ts DESC LIMIT 1"
         ).fetchone()
-        con.close()
+        close_db_if_owned(con)
         return jsonify(dict(row) if row else {})
     except Exception:
         return jsonify({})
@@ -4886,7 +4942,7 @@ def api_get_users():
     rows = con.execute(
         "SELECT id,name,email,role,status,totp_enabled,created_at,updated_at,last_login_at FROM users ORDER BY id"
     ).fetchall()
-    con.close()
+    close_db_if_owned(con)
     return jsonify([dict(r) for r in rows])
 
 @app.route("/api/users", methods=["POST"])
@@ -4916,7 +4972,7 @@ def api_create_user():
             con.execute(
                 "INSERT INTO users (name,email,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
                 (name, email, _hash_password(pw), role, "active", now, now))
-        con.commit(); con.close()
+        con.commit(); close_db_if_owned(con)
     except sqlite3.IntegrityError:
         return jsonify({"ok": False, "error": "E-Mail bereits vorhanden"})
     _audit("user_created", f"email={email} role={role} invited={invite_mode}", ip=request.remote_addr)
@@ -4939,7 +4995,7 @@ def api_update_user(uid):
     if data.get("password") and len(data["password"]) >= 8:
         con.execute("UPDATE users SET password_hash=?,updated_at=? WHERE id=?",
                     (_hash_password(data["password"]), now, uid))
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     _audit("user_updated", f"uid={uid}", ip=request.remote_addr)
     return jsonify({"ok": True})
 
@@ -4952,7 +5008,7 @@ def api_delete_user(uid):
         return jsonify({"ok": False, "error": "Eigenen Account nicht löschbar"})
     con = _get_db()
     con.execute("DELETE FROM users WHERE id=?", (uid,))
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     _audit("user_deleted", f"uid={uid}", ip=request.remote_addr)
     return jsonify({"ok": True})
 
@@ -4962,7 +5018,7 @@ def api_admin_reset_2fa(uid):
     now = datetime.utcnow().isoformat()
     con = _get_db()
     con.execute("UPDATE users SET totp_secret='',totp_enabled=0,updated_at=? WHERE id=?", (now, uid))
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     _audit("totp_reset", f"uid={uid}", ip=request.remote_addr)
     return jsonify({"ok": True})
 
@@ -4982,7 +5038,7 @@ def api_invite_user(uid):
                 (now_dt.isoformat(), uid))
     con.execute("INSERT INTO invite_tokens (user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?)",
                 (uid, token_hash, expires, now_dt.isoformat()))
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     invite_url = request.host_url.rstrip("/") + url_for("accept_invite_page", token=token)
     body_html = _email_html(
         "Einladung zu EV Tracker",
@@ -5028,7 +5084,7 @@ def api_change_password():
     con = _get_db()
     con.execute("UPDATE users SET password_hash=?,updated_at=? WHERE id=?",
                 (_hash_password(new_pw), now, user["id"]))
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     _audit("password_changed", f"uid={user['id']}", ip=request.remote_addr)
     return jsonify({"ok": True})
 
@@ -5057,7 +5113,7 @@ def api_my_totp_confirm():
     con = _get_db()
     con.execute("UPDATE users SET totp_secret=?,totp_enabled=1,updated_at=? WHERE id=?",
                 (secret, now, user["id"]))
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     session.pop("pending_totp", None)
     _audit("totp_enabled", f"uid={user['id']}", ip=request.remote_addr)
     return jsonify({"ok": True})
@@ -5071,7 +5127,7 @@ def api_my_totp_disable():
     con = _get_db()
     con.execute("UPDATE users SET totp_secret='',totp_enabled=0,updated_at=? WHERE id=?",
                 (now, user["id"]))
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     _audit("totp_disabled", f"uid={user['id']}", ip=request.remote_addr)
     return jsonify({"ok": True})
 
@@ -5090,7 +5146,7 @@ def api_generate_backup_codes():
         code_hash = hashlib.sha256(code.encode()).hexdigest()
         con.execute("INSERT INTO totp_backup_codes (user_id, code_hash) VALUES (?,?)",
                     (user["id"], code_hash))
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     _audit("backup_codes_generated", f"uid={user['id']}", ip=request.remote_addr)
     return jsonify({"ok": True, "codes": formatted})
 
@@ -5104,7 +5160,7 @@ def api_backup_codes_count():
     count = con.execute(
         "SELECT COUNT(*) FROM totp_backup_codes WHERE user_id=? AND used_at IS NULL",
         (user["id"],)).fetchone()[0]
-    con.close()
+    close_db_if_owned(con)
     return jsonify({"count": count})
 
 @app.route("/api/csrf-token", methods=["GET"])
@@ -5387,7 +5443,7 @@ def api_admin_dashboard():
         "SELECT COUNT(*) FROM audit_log WHERE action='login_failed' AND ts > ?", (since24,)).fetchone()[0]
     lockouts = con.execute(
         "SELECT COUNT(*) FROM audit_log WHERE action='account_locked' AND ts > ?", (since24,)).fetchone()[0]
-    con.close()
+    close_db_if_owned(con)
     return jsonify({
         "total_users":    total,
         "active_users":   active,
@@ -5412,7 +5468,7 @@ def get_audit_log():
         LEFT JOIN users u ON a.user_id = u.id
         ORDER BY a.id DESC LIMIT ?
     """, (limit,)).fetchall()
-    con.close()
+    close_db_if_owned(con)
     return jsonify([dict(r) for r in rows])
 
 # ── Email Reports ─────────────────────────────────────────────────────────────
@@ -5556,7 +5612,7 @@ def _get_report_sessions(start_date, end_date, location_filter="all", vehicle_fi
         where.append("vehicle_id = ?"); params.append(vehicle_filter)
     sql = f"SELECT * FROM sessions WHERE {' AND '.join(where)} ORDER BY start_ts ASC"
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
-    rows = con.execute(sql, params).fetchall(); con.close()
+    rows = con.execute(sql, params).fetchall(); close_db_if_owned(con)
     return [dict(r) for r in rows]
 
 
@@ -5730,7 +5786,7 @@ def _log_report_history(period_info, cfg, status, error, triggered_by):
              status, error, triggered_by,
              period_label,
              cfg.get("report_email_period_mode","previous_period")))
-        con.commit(); con.close()
+        con.commit(); close_db_if_owned(con)
     except Exception as e:
         log.warning("Report-History-Log fehlgeschlagen: %s", e)
 
@@ -5988,7 +6044,7 @@ def api_report_history():
     rows = con.execute(
         "SELECT * FROM email_report_history ORDER BY id DESC LIMIT ?", (limit,)
     ).fetchall()
-    con.close()
+    close_db_if_owned(con)
     return jsonify([dict(r) for r in rows])
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -6002,7 +6058,7 @@ def api_billing_config_get(vehicle_id):
         return jsonify({"error": "Keine Berechtigung"}), 403
     con = _get_db()
     row = con.execute("SELECT * FROM billing_config WHERE vehicle_id=?", (vehicle_id,)).fetchone()
-    con.close()
+    close_db_if_owned(con)
     if row:
         d = dict(row)
         d["recipients"] = json.loads(d.get("recipients") or "[]")
@@ -6049,7 +6105,7 @@ def api_billing_config_save(vehicle_id):
         fields["created_at"] = now_iso
         keys = list(fields.keys()); vals = [fields[k] for k in keys]
         con.execute(f"INSERT INTO billing_config ({','.join(keys)}) VALUES ({','.join(['?']*len(keys))})", vals)
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     _audit("billing_config_saved", f"vehicle={vehicle_id}", ip=request.remote_addr)
     return jsonify({"ok": True})
 
@@ -6068,14 +6124,14 @@ def api_billing_summary():
         (first.isoformat(),)
     ).fetchall()
     rows = [dict(r) for r in sessions]
-    con.close()
+    close_db_if_owned(con)
     total_kwh  = sum(r.get("kwh_charged") or 0 for r in rows)
     total_cost = sum(r.get("cost_eur") or 0 for r in rows)
     # reimbursement via billing config for first vehicle
     cfg  = load_config()
     bc_con = _get_db()
     bc_row = bc_con.execute("SELECT * FROM billing_config WHERE enabled=1 LIMIT 1").fetchone()
-    bc_con.close()
+    bc_close_db_if_owned(con)
     bc = dict(bc_row) if bc_row else {}
     reimb_rate  = float(bc.get("reimbursement_price_per_kwh") or 0)
     lf = bc.get("location_filter", "all")
@@ -6117,7 +6173,7 @@ def _save_report_record(vehicle_id, period_info, loc_filter, veh_filter, status,
          excel_bytes, pdf_bytes,
          json.dumps(summary or {})))
     report_id = cur.lastrowid
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     return report_id
 
 
@@ -6141,7 +6197,7 @@ def api_reports_archive():
             "location_filter,vehicle_filter,status,created_by,sent_at,recipients,approval_status"
             " FROM reports ORDER BY id DESC LIMIT ?",
             (limit,)).fetchall()
-    con.close()
+    close_db_if_owned(con)
     result = []
     for r in rows:
         d = dict(r)
@@ -6239,7 +6295,7 @@ def api_reports_create():
             bc_con = _get_db()
             bc_row = bc_con.execute("SELECT * FROM billing_config WHERE vehicle_id=?",
                                     (veh_filter,)).fetchone()
-            bc_con.close()
+            bc_close_db_if_owned(con)
             if len(periods) > 1:
                 from pdf_export import generate_multi_month_report_pdf as _gmm
                 _periods_sessions = [
@@ -6280,7 +6336,7 @@ def api_report_download(report_id, fmt):
         return jsonify({"error": "Ungültiges Format"}), 400
     con = _get_db()
     row = con.execute("SELECT * FROM reports WHERE id=?", (report_id,)).fetchone()
-    con.close()
+    close_db_if_owned(con)
     if not row:
         return jsonify({"error": "Report nicht gefunden"}), 404
     col  = "excel_bytes" if fmt == "excel" else "pdf_bytes"
@@ -6304,7 +6360,7 @@ def api_report_send(report_id):
     recipients = data.get("recipients", [])
     con = _get_db()
     row = con.execute("SELECT * FROM reports WHERE id=?", (report_id,)).fetchone()
-    con.close()
+    close_db_if_owned(con)
     if not row:
         return jsonify({"error": "Report nicht gefunden"}), 404
     cfg = load_config()
@@ -6332,7 +6388,7 @@ def api_report_send(report_id):
     _con = _get_db()
     _con.execute("UPDATE reports SET status='sent', sent_at=?, recipients=? WHERE id=?",
                  (now_iso, json.dumps(recipients), report_id))
-    _con.commit(); _con.close()
+    _con.commit(); _close_db_if_owned(con)
     _audit("report_sent", f"id={report_id}", ip=request.remote_addr)
     try:
         from notification_manager import fire_event as _fe
@@ -6350,7 +6406,7 @@ def api_report_approve(report_id):
     con = _get_db()
     con.execute("UPDATE reports SET approval_status='approved', status='approved' WHERE id=?",
                 (report_id,))
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     _audit("report_approved", f"id={report_id}", ip=request.remote_addr)
     return jsonify({"ok": True})
 
@@ -6388,7 +6444,7 @@ def api_export_pdf():
     period_info = periods[0]
     bc_con = _get_db()
     bc_row = bc_con.execute("SELECT * FROM billing_config WHERE vehicle_id=?", (veh_filter,)).fetchone()
-    bc_con.close()
+    bc_close_db_if_owned(con)
     include_sig = bool(data.get("include_signature", cfg.get("report_pdf_include_signature")))
     sig_path    = str(SIGNATURE_PATH) if SIGNATURE_PATH.exists() and include_sig else None
     bc_dict     = dict(bc_row) if bc_row else None
@@ -6576,7 +6632,7 @@ def api_tariff_recalculate():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
     finally:
-        con.close()
+        close_db_if_owned(con)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -6601,11 +6657,11 @@ def _check_api_token(raw: str):
     if row:
         expires = row["expires_at"]
         if expires and datetime.utcnow().isoformat() > expires:
-            con.close(); return None
+            close_db_if_owned(con); return None
         con.execute("UPDATE api_tokens SET last_used_at=? WHERE id=?",
                     (datetime.utcnow().isoformat(), row["id"]))
         con.commit()
-    con.close()
+    close_db_if_owned(con)
     return dict(row) if row else None
 
 
@@ -6618,7 +6674,7 @@ def api_tokens_list():
     rows = con.execute(
         "SELECT id,name,token_prefix,scopes,expires_at,last_used_at,created_at,is_active,created_by"
         " FROM api_tokens ORDER BY id DESC").fetchall()
-    con.close()
+    close_db_if_owned(con)
     result = []
     for r in rows:
         d = dict(r)
@@ -6650,7 +6706,7 @@ def api_tokens_create():
         (name, _hash_token(raw), prefix, json.dumps(scopes),
          expires_at, user["id"] if user else None, datetime.utcnow().isoformat()))
     token_id = cur.lastrowid
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     _audit("api_token_created", f"id={token_id} name={name}", ip=request.remote_addr)
     return jsonify({"ok": True, "id": token_id, "token": raw,
                     "note": "Token wird nur einmalig angezeigt. Bitte sicher aufbewahren."})
@@ -6663,7 +6719,7 @@ def api_tokens_delete(token_id):
         return jsonify({"error": "Keine Berechtigung"}), 403
     con = _get_db()
     con.execute("UPDATE api_tokens SET is_active=0 WHERE id=?", (token_id,))
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     _audit("api_token_revoked", f"id={token_id}", ip=request.remote_addr)
     return jsonify({"ok": True})
 
@@ -6725,7 +6781,7 @@ def api_system_status():
         backup_count    = len(backup_files)
         last_backup     = backup_files[-1].name if backup_files else None
         db_size         = DB_PATH.stat().st_size if DB_PATH.exists() else 0
-        con.close()
+        close_db_if_owned(con)
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
     cfg = load_config()
@@ -6792,7 +6848,7 @@ def api_v1_sessions():
         rows = con.execute(
             "SELECT * FROM sessions ORDER BY start_ts DESC LIMIT ? OFFSET ?",
             (limit, offset)).fetchall()
-    con.close()
+    close_db_if_owned(con)
     return jsonify([dict(r) for r in rows])
 
 
@@ -6802,7 +6858,7 @@ def api_v1_session_get(session_id):
     if err_resp: return err_resp, code
     con = _get_db()
     row = con.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()
-    con.close()
+    close_db_if_owned(con)
     if not row: return jsonify({"error": "Session nicht gefunden"}), 404
     return jsonify(dict(row))
 
@@ -6820,7 +6876,7 @@ def api_v1_session_create():
          data.get("kwh_charged"), data.get("cost_eur"),
          data.get("location","unknown"), data.get("vehicle_id","v0"), "api"))
     sid = cur.lastrowid
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     return jsonify({"ok": True, "id": sid}), 201
 
 
@@ -6837,7 +6893,7 @@ def api_v1_session_update(session_id):
     sets = ", ".join(f"{k}=?" for k in updates)
     con.execute(f"UPDATE sessions SET {sets} WHERE id=?",
                 list(updates.values()) + [session_id])
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     return jsonify({"ok": True})
 
 
@@ -6850,7 +6906,7 @@ def api_v1_reports():
     rows  = con.execute(
         "SELECT id,created_at,vehicle_id,period_label,status,sent_at FROM reports ORDER BY id DESC LIMIT ?",
         (limit,)).fetchall()
-    con.close()
+    close_db_if_owned(con)
     return jsonify([dict(r) for r in rows])
 
 
@@ -7033,7 +7089,7 @@ def api_notif_rules_list():
         return jsonify({"error": "Keine Berechtigung"}), 403
     con  = _get_db()
     rows = con.execute("SELECT * FROM notification_rules ORDER BY id DESC").fetchall()
-    con.close()
+    close_db_if_owned(con)
     return jsonify([dict(r) for r in rows])
 
 
@@ -7062,7 +7118,7 @@ def api_notif_rules_create():
          data.get("quiet_hours_end","07:00"),
          now_iso, now_iso))
     rule_id = cur.lastrowid
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     _audit("notification_rule_created", f"id={rule_id}", ip=request.remote_addr)
     return jsonify({"ok": True, "id": rule_id})
 
@@ -7082,7 +7138,7 @@ def api_notif_rules_update(rule_id):
     sets = ", ".join(f"{k}=?" for k in updates)
     con.execute(f"UPDATE notification_rules SET {sets} WHERE id=?",
                 list(updates.values()) + [rule_id])
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     return jsonify({"ok": True})
 
 
@@ -7093,7 +7149,7 @@ def api_notif_rules_delete(rule_id):
         return jsonify({"error": "Keine Berechtigung"}), 403
     con = _get_db()
     con.execute("DELETE FROM notification_rules WHERE id=?", (rule_id,))
-    con.commit(); con.close()
+    con.commit(); close_db_if_owned(con)
     return jsonify({"ok": True})
 
 
@@ -7104,7 +7160,7 @@ def api_notif_test(rule_id):
         return jsonify({"error": "Keine Berechtigung"}), 403
     con = _get_db()
     row = con.execute("SELECT * FROM notification_rules WHERE id=?", (rule_id,)).fetchone()
-    con.close()
+    close_db_if_owned(con)
     if not row:
         return jsonify({"error": "Regel nicht gefunden"}), 404
     cfg = load_config()

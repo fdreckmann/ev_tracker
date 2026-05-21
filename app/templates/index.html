@@ -2937,8 +2937,8 @@ Oder leer lassen um Gesamtbetrag direkt einzugeben:`,
     body={price_per_kwh:parseFloat(newPrice),cost_eur:0};
   }
 
-  const r=await fetch(`/api/sessions/${id}/cost`,{method:'POST',
-    headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify(body)}).then(r=>r.json());
+  const r=await apiFetch(`/api/sessions/${id}/cost`,{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
   if(r.ok){ toast(`Session #${id} Kosten aktualisiert: ${fmt(r.cost_eur,2)} €`); loadSessions(); }
   else toast('Fehler','err');
 }
@@ -2965,8 +2965,8 @@ async function editLocation(id, current){
   const map={'1':'home','2':'extern','3':'unknown'};
   const loc=map[choice.trim()];
   if(!loc){toast('Ungültige Eingabe — 1, 2 oder 3','err');return;}
-  const r=await fetch(`/api/sessions/${id}/location`,{method:'POST',
-    headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},
+  const r=await apiFetch(`/api/sessions/${id}/location`,{method:'POST',
+    headers:{'Content-Type':'application/json'},
     body:JSON.stringify({location:loc})}).then(r=>r.json());
   if(r.ok){toast(`Session #${id} → ${labels[loc]}`);loadSessions();}
   else toast('Fehler','err');
@@ -3107,8 +3107,8 @@ async function saveConfig(){
     entsoe_dc_markup:     parseFloat($('c_dc_markup').value),
     poll_interval:        parseInt($('c_poll').value),
   };
-  const r = await fetch('/api/config',{method:'POST',
-    headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify(cfg)});
+  const r = await apiFetch('/api/config',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
   if(r.ok){ toast('Konfiguration gespeichert'); $('carName').textContent=cfg.car_name; }
   else toast('Fehler beim Speichern','err');
 }
@@ -3118,8 +3118,8 @@ async function testEntsoe(){
   let key=$('c_entsoe_key').value.trim();
   if(!key){ const c=await fetch('/api/config').then(r=>r.json()); key=c.entsoe_api_key||''; }
   if(!key){ res.textContent='⚠ Kein API Key eingetragen'; return; }
-  const r=await fetch('/api/entsoe/test',{method:'POST',
-    headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},
+  const r=await apiFetch('/api/entsoe/test',{method:'POST',
+    headers:{'Content-Type':'application/json'},
     body:JSON.stringify({entsoe_api_key:key})}).then(r=>r.json());
   if(r.ok) res.innerHTML=`<span style="color:var(--acc)">✅ ${r.price_kwh.toFixed(4)} €/kWh (${r.price_mwh} €/MWh) — DE Spotpreis</span>`;
   else res.innerHTML=`<span style="color:var(--danger)">❌ ${r.error}</span>`;
@@ -3132,8 +3132,8 @@ async function testConn(){
   document.querySelectorAll('[id^="pf_"]').forEach(el=>{ body[el.id.replace('pf_','')]=el.value; });
   const saved=await fetch('/api/config').then(r=>r.json()).catch(()=>({}));
   if(!body.ha_token) body.ha_token=saved.ha_token||'';
-  const r=await fetch('/api/test-connection',{method:'POST',
-    headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify(body)}).then(r=>r.json());
+  const r=await apiFetch('/api/test-connection',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
   if(r.ok){ res.className='conn-res ok'; res.textContent=r.message; }
   else{ res.className='conn-res err'; res.textContent='❌ '+(r.message||r.error||'Fehler'); }
 }
@@ -3317,8 +3317,8 @@ async function saveConfig(){
     entsoe_dc_markup:     parseFloat($('c_dc_markup').value),
     poll_interval:        parseInt($('c_poll').value),
   };
-  const r = await fetch('/api/config',{method:'POST',
-    headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify(cfg)});
+  const r = await apiFetch('/api/config',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
   if(r.ok){ toast('Konfiguration gespeichert'); $('carName').textContent=cfg.car_name; }
   else toast('Fehler beim Speichern','err');
 }
@@ -3328,8 +3328,8 @@ async function testEntsoe(){
   let key=$('c_entsoe_key').value.trim();
   if(!key){ const c=await fetch('/api/config').then(r=>r.json()); key=c.entsoe_api_key||''; }
   if(!key){ res.textContent='⚠ Kein API Key eingetragen'; return; }
-  const r=await fetch('/api/entsoe/test',{method:'POST',
-    headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},
+  const r=await apiFetch('/api/entsoe/test',{method:'POST',
+    headers:{'Content-Type':'application/json'},
     body:JSON.stringify({entsoe_api_key:key})}).then(r=>r.json());
   if(r.ok) res.innerHTML=`<span style="color:var(--acc)">✅ ${r.price_kwh.toFixed(4)} €/kWh (${r.price_mwh} €/MWh) — DE Spotpreis</span>`;
   else res.innerHTML=`<span style="color:var(--danger)">❌ ${r.error}</span>`;
@@ -4591,8 +4591,8 @@ async function saveTplHeaderFields(){
     template_kostenstelle:  $('c_template_kostenstelle').value.trim(),
     template_meter_start:   parseFloat($('c_template_meter_start').value)||0,
   };
-  const r=await fetch('/api/config',{method:'POST',
-    headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify(cfg)});
+  const r=await apiFetch('/api/config',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
   const info=$('tplHeaderSaveInfo');
   if(r.ok){ info.textContent='✓ Gespeichert'; setTimeout(()=>info.textContent='',2500); }
   else { info.textContent='Fehler'; }
@@ -4984,7 +4984,7 @@ function setChannel(ch){
   });
   $('channelInfo').textContent = CHANNEL_INFO[ch]||'';
   // save to config
-  fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},
+  apiFetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({update_channel:ch})});
   $('updateInfo').textContent='—';
   $('updateBtn').style.display='none';
@@ -5438,7 +5438,7 @@ async function saveOAuthConfig(){
     oauth_microsoft_client_secret:$('oauth_microsoft_client_secret').value.trim(),
     oauth_microsoft_tenant:       $('oauth_microsoft_tenant').value.trim()||'common',
   };
-  const r = await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify(data)}).then(x=>x.json());
+  const r = await apiFetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(x=>x.json());
   const info = $('oauthSaveInfo');
   if(r.ok){
     info.innerHTML='<span style="color:var(--acc)">✅ Gespeichert</span>';
@@ -5633,8 +5633,8 @@ async function restoreBackup(name){
   if(!confirm(`Backup "${name}" wiederherstellen?
 
 Aktuelle Daten werden überschrieben!`)) return;
-  const r=await fetch('/api/backup/restore',{method:'POST',
-    headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},
+  const r=await apiFetch('/api/backup/restore',{method:'POST',
+    headers:{'Content-Type':'application/json'},
     body:JSON.stringify({name})}).then(r=>r.json());
   if(r.ok){ toast('Restore erfolgreich — Seite wird neu geladen…'); setTimeout(()=>location.reload(),2000); }
   else toast('Restore fehlgeschlagen: '+r.error,'err');
@@ -5662,8 +5662,8 @@ function setCron(val){ $('backupCron').value=val; saveCron(); }
 
 async function saveCron(){
   const cron=$('backupCron').value.trim();
-  const r=await fetch('/api/backup/cron',{method:'POST',
-    headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},
+  const r=await apiFetch('/api/backup/cron',{method:'POST',
+    headers:{'Content-Type':'application/json'},
     body:JSON.stringify({cron})}).then(r=>r.json());
   if(r.ok){
     toast(cron?`Auto-Backup: ${r.next}`:'Auto-Backup deaktiviert');
@@ -6879,7 +6879,7 @@ async function saveSmtpConfig(){
   if(gsec) data.smtp_google_client_secret = gsec;
   const msec = $('smtp_ms_client_secret').value;
   if(msec) data.smtp_ms_client_secret = msec;
-  const r=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify(data)}).then(r=>r.json());
+  const r=await apiFetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());
   if(r.ok){ toast('SMTP gespeichert','ok'); updateSmtpStatus(data); }
   else toast('Fehler beim Speichern','err');
 }
@@ -6949,8 +6949,8 @@ async function saveCurrentAsTemplate(){
   const name=prompt('Name für diese Vorlage:','Meine Vorlage');
   if(!name) return;
   const saved=await fetch('/api/template/mapping').then(r=>r.json()).catch(()=>({}));
-  const r=await fetch('/api/export/templates',{method:'POST',
-    headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},
+  const r=await apiFetch('/api/export/templates',{method:'POST',
+    headers:{'Content-Type':'application/json'},
     body:JSON.stringify({name,mapping:saved.mapping||{},start_row:saved.start_row})
   }).then(r=>r.json());
   if(r.ok){ toast('Vorlage gespeichert','ok'); loadExportTemplates(); }
@@ -7083,19 +7083,30 @@ function switchToDesktopSettings() {
 
 async function refreshMobileDashboard() {
   try {
-    // Get state + config from API (single call to /api/state which already exists)
-    const state = await fetch('/api/state').then(r=>r.json()).catch(()=>null);
-    if (state) {
-      const name = state.vehicle_name || state.car_name || document.getElementById('carName')?.textContent || '—';
-      const soc  = state.soc_current != null ? state.soc_current : state.soc;
-      const loc  = state.location_status || state.location || '—';
-      const charging = state.charging || state.session_active;
+    // Primary: single aggregated call
+    const summary = await apiFetch('/api/mobile/summary').then(r=>r.json()).catch(()=>null);
+
+    if (summary && summary.ok) {
+      // Vehicle name + image
+      const pv = summary.primary_vehicle || {};
+      const name = pv.name || document.getElementById('carName')?.textContent || '—';
+      const st   = summary.state || {};
+      const soc  = st.soc != null ? st.soc : pv.soc;
+      const loc  = st.location || pv.location || '—';
+      const charging = summary.charging || false;
       const locLabel = loc === 'home' ? '🏠 Zuhause' : loc === 'extern' || loc === 'external' ? '📍 Extern' : loc === 'unknown' ? '❓ Unbekannt' : loc;
 
       const elName = document.getElementById('mobileVehicleName');
       const elLoc  = document.getElementById('mobileVehicleLocation');
       if (elName) elName.textContent = name;
       if (elLoc)  elLoc.textContent  = locLabel + (charging ? '  ⚡ Lädt' : '');
+
+      // Vehicle image
+      const imgEl = document.getElementById('mobileVehicleImg');
+      if (imgEl && pv.id) {
+        imgEl.src = `/api/vehicles/${encodeURIComponent(pv.id)}/image/file`;
+        imgEl.onerror = () => { imgEl.src = '/static/vehicle_images/placeholder_car.svg'; };
+      }
 
       if (soc != null && !isNaN(soc)) {
         const bar = document.getElementById('mobileSocBar');
@@ -7104,33 +7115,69 @@ async function refreshMobileDashboard() {
         if (pct) pct.textContent = soc + '%';
       }
 
-      // Update charging badge color
       const vehicleCard = document.getElementById('mobileVehicleCard');
-      if (vehicleCard) {
-        vehicleCard.style.borderLeft = charging ? '3px solid #64ffda' : '3px solid transparent';
+      if (vehicleCard) vehicleCard.style.borderLeft = charging ? '3px solid #64ffda' : '3px solid transparent';
+
+      // Monthly stats from summary
+      const m = summary.monthly || {};
+      const setEl = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
+      const avgPrice = m.kwh > 0 ? m.cost / m.kwh : 0;
+      setEl('mobileMonthKwh',      (m.kwh || 0).toFixed(1) + ' kWh');
+      setEl('mobileMonthCost',     (m.cost || 0).toFixed(2) + ' €');
+      setEl('mobileMonthSessions', m.sessions || 0);
+      setEl('mobileMonthAvgPrice', avgPrice > 0 ? avgPrice.toFixed(3) + ' €' : '—');
+
+      // Cache vehicles + sessions for other functions
+      if (summary.vehicles) window._allVehicles = summary.vehicles;
+      if (summary.recent_sessions) {
+        if (!window._allSessions) window._allSessions = summary.recent_sessions;
+        renderMobileRecentSessions(summary.recent_sessions.slice(0, 3));
       }
+      return;
     }
 
-    // Month stats from cached sessions or fetch fresh
-    const sessions = window._allSessions || await fetch('/api/sessions').then(r=>r.json()).catch(()=>[]);
-    if (!window._allSessions) window._allSessions = sessions;
+    // Fallback: individual endpoints
+    const [state, sessions] = await Promise.all([
+      fetch('/api/state').then(r=>r.json()).catch(()=>null),
+      window._allSessions ? Promise.resolve(window._allSessions) : fetch('/api/sessions').then(r=>r.json()).catch(()=>[]),
+    ]);
+    if (!window._allSessions && sessions) window._allSessions = sessions;
+
+    if (state) {
+      const name = state.vehicle_name || state.car_name || '—';
+      const soc  = state.soc_current != null ? state.soc_current : state.soc;
+      const loc  = state.location_status || state.location || '—';
+      const charging = state.charging || state.session_active;
+      const locLabel = loc === 'home' ? '🏠 Zuhause' : loc === 'extern' || loc === 'external' ? '📍 Extern' : '❓ Unbekannt';
+      const elName = document.getElementById('mobileVehicleName');
+      const elLoc  = document.getElementById('mobileVehicleLocation');
+      if (elName) elName.textContent = name;
+      if (elLoc)  elLoc.textContent  = locLabel + (charging ? '  ⚡ Lädt' : '');
+      if (soc != null && !isNaN(soc)) {
+        const bar = document.getElementById('mobileSocBar');
+        const pct = document.getElementById('mobileSocPct');
+        if (bar) { bar.style.width = soc + '%'; bar.style.background = soc > 60 ? '#64ffda' : soc > 20 ? '#ffd740' : '#ff5252'; }
+        if (pct) pct.textContent = soc + '%';
+      }
+      const vehicleCard = document.getElementById('mobileVehicleCard');
+      if (vehicleCard) vehicleCard.style.borderLeft = charging ? '3px solid #64ffda' : '3px solid transparent';
+    }
+
+    const allSessions = sessions || [];
     const now = new Date();
-    const monthSessions = sessions.filter(s => {
-      const d = new Date(s.start_ts || s.start_time || s.date || '');
+    const monthSessions = allSessions.filter(s => {
+      const d = new Date(s.start_ts || s.start_time || '');
       return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
     });
     const totalKwh  = monthSessions.reduce((a,s) => a + (parseFloat(s.kwh_charged)||0), 0);
     const totalCost = monthSessions.reduce((a,s) => a + (parseFloat(s.cost_eur)||0), 0);
     const avgPrice  = totalKwh > 0 ? totalCost/totalKwh : 0;
-
     const setEl = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
     setEl('mobileMonthKwh',      totalKwh.toFixed(1) + ' kWh');
     setEl('mobileMonthCost',     totalCost.toFixed(2) + ' €');
     setEl('mobileMonthSessions', monthSessions.length);
     setEl('mobileMonthAvgPrice', avgPrice > 0 ? avgPrice.toFixed(3) + ' €' : '—');
-
-    // Recent sessions (last 3, newest first)
-    renderMobileRecentSessions([...sessions].reverse().slice(0, 3));
+    renderMobileRecentSessions([...allSessions].reverse().slice(0, 3));
   } catch(e) {
     console.warn('Mobile dashboard refresh error:', e);
   }
@@ -7196,28 +7243,36 @@ async function loadMobileVehicleCards() {
   if (!el) return;
   el.innerHTML = '<p style="color:#8892b0;font-size:13px">Lade Fahrzeuge…</p>';
   try {
-    const [vehicles, stateData] = await Promise.all([
-      fetch('/api/vehicles').then(r=>r.json()).catch(()=>[]),
-      fetch('/api/state').then(r=>r.json()).catch(()=>({}))
-    ]);
-    if (!vehicles.length) {
+    // Use cached summary vehicles if already loaded by refreshMobileDashboard
+    let vehicles = window._allVehicles;
+    if (!vehicles) {
+      const summary = await apiFetch('/api/mobile/summary').then(r=>r.json()).catch(()=>null);
+      if (summary && summary.ok && summary.vehicles) {
+        vehicles = summary.vehicles;
+        window._allVehicles = vehicles;
+      } else {
+        vehicles = await fetch('/api/vehicles').then(r=>r.json()).catch(()=>[]);
+      }
+    }
+    if (!vehicles || !vehicles.length) {
       el.innerHTML = '<p style="color:#8892b0">Keine Fahrzeuge konfiguriert.</p>';
       return;
     }
-    el.innerHTML = vehicles.map(v => {
+    const _buildVehicleCard = v => {
       const isActive = v.active !== false && !v.archived;
-      const soc = (stateData.vehicle_id === v.id || v.id === 'v0') ? stateData.soc_current : null;
-      const charging = (stateData.vehicle_id === v.id || v.id === 'v0') ? stateData.charging : false;
-      const loc = (stateData.vehicle_id === v.id || v.id === 'v0') ? stateData.location : null;
-      const locLabel = loc === 'home' ? '🏠 Zuhause' : loc === 'extern' ? '📍 Extern' : '';
+      const soc = v.soc != null ? v.soc : null;
+      const charging = v.charging || false;
+      const loc = v.location || v.location_status || null;
+      const locLabel = loc === 'home' ? '🏠 Zuhause' : loc === 'extern' || loc === 'external' ? '📍 Extern' : '';
+      const socColor = soc > 60 ? '#64ffda' : soc > 20 ? '#ffd740' : '#ff5252';
       const socBar = soc != null ? `
         <div style="margin-top:8px">
           <div style="display:flex;justify-content:space-between;margin-bottom:3px">
             <span style="font-size:11px;color:#8892b0">SOC</span>
-            <span style="font-size:12px;font-weight:700;color:${soc>60?'#64ffda':soc>20?'#ffd740':'#ff5252'}">${soc}%</span>
+            <span style="font-size:12px;font-weight:700;color:${socColor}">${soc}%</span>
           </div>
           <div style="height:6px;background:#2d3147;border-radius:3px">
-            <div style="height:100%;width:${soc}%;background:${soc>60?'#64ffda':soc>20?'#ffd740':'#ff5252'};border-radius:3px;transition:width .5s"></div>
+            <div style="height:100%;width:${soc}%;background:${socColor};border-radius:3px;transition:width .5s"></div>
           </div>
         </div>` : '';
       const badges = [
@@ -7225,19 +7280,27 @@ async function loadMobileVehicleCards() {
         isActive && !charging && locLabel ? `<span style="background:#1e2a3a;color:#8892b0;border-radius:4px;padding:2px 6px;font-size:10px">${locLabel}</span>` : '',
         !isActive ? '<span style="background:#2d1f1f;color:#ef4444;border-radius:4px;padding:2px 6px;font-size:10px">Inaktiv</span>' : '',
       ].filter(Boolean).join(' ');
+      const imgId = `mvcard_img_${v.id}`;
       return `<div class="mobile-card" onclick="openMobileVehicleDetail('${v.id}')" style="cursor:pointer;border:1px solid #2d3147;position:relative">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start">
-          <div>
-            <div style="font-size:15px;font-weight:600;color:#e6f1ff">${v.name || v.id}</div>
-            <div style="font-size:12px;color:#8892b0;margin-top:2px">${v.provider || '—'}</div>
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <img id="${imgId}" src="/api/vehicles/${encodeURIComponent(v.id)}/image/file"
+            onerror="this.src='/static/vehicle_images/placeholder_car.svg'"
+            style="width:52px;height:36px;object-fit:contain;border-radius:4px;flex-shrink:0">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start">
+              <div>
+                <div style="font-size:15px;font-weight:600;color:#e6f1ff">${v.name || v.id}</div>
+                <div style="font-size:12px;color:#8892b0;margin-top:2px">${v.provider || '—'}</div>
+              </div>
+              <div style="text-align:right;flex-shrink:0">${badges}</div>
+            </div>
+            ${socBar}
           </div>
-          <div style="text-align:right">${badges}</div>
         </div>
-        ${socBar}
         <div style="margin-top:8px;font-size:11px;color:#4a5c72">ID: ${v.id}</div>
       </div>`;
-    }).join('');
-    window._allVehicles = vehicles;
+    };
+    el.innerHTML = vehicles.map(_buildVehicleCard).join('');
   } catch(e) {
     el.innerHTML = '<p style="color:#ef4444;font-size:13px">Fehler beim Laden der Fahrzeuge.</p>';
   }
