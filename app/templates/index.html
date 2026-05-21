@@ -6220,8 +6220,8 @@ async function loadReportArchive(){
           <td style="padding:5px 8px">${r.location_filter||'all'}</td>
           <td style="padding:5px 8px;color:${c};font-weight:600">${r.status||''}</td>
           <td style="padding:5px 8px;display:flex;gap:6px;flex-wrap:wrap">
-            <button onclick="downloadReport(${r.id},'excel')" class="btn-s" style="font-size:.7rem;padding:3px 8px">📥 XLSX</button>
-            <button onclick="downloadReport(${r.id},'pdf')" class="btn-s" style="font-size:.7rem;padding:3px 8px">📄 PDF</button>
+            ${r.has_excel ? `<button onclick="downloadReport(${r.id},'excel')" class="btn-s" style="font-size:.7rem;padding:3px 8px">📥 XLSX</button>` : `<button class="btn-s" disabled style="font-size:.7rem;padding:3px 8px;opacity:.4;cursor:not-allowed" title="Kein XLSX für diesen Report">📥 XLSX</button>`}
+            ${r.has_pdf   ? `<button onclick="downloadReport(${r.id},'pdf')"   class="btn-s" style="font-size:.7rem;padding:3px 8px">📄 PDF</button>`  : `<button class="btn-s" disabled style="font-size:.7rem;padding:3px 8px;opacity:.4;cursor:not-allowed" title="Kein PDF für diesen Report">📄 PDF</button>`}
             <button onclick="sendArchiveReport(${r.id})" class="btn-s" style="font-size:.7rem;padding:3px 8px">📤 Senden</button>
           </td>
         </tr>`;

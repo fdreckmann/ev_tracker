@@ -6185,17 +6185,17 @@ def api_reports_archive():
     limit = int(request.args.get("limit", 100))
     vehicle_id = request.args.get("vehicle_id")
     con = _get_db()
+    _cols = ("id,created_at,vehicle_id,period_start,period_end,period_label,period_mode,"
+             "location_filter,vehicle_filter,status,created_by,sent_at,recipients,approval_status,"
+             "(CASE WHEN excel_bytes IS NOT NULL THEN 1 ELSE 0 END) as has_excel,"
+             "(CASE WHEN pdf_bytes   IS NOT NULL THEN 1 ELSE 0 END) as has_pdf")
     if vehicle_id:
         rows = con.execute(
-            "SELECT id,created_at,vehicle_id,period_start,period_end,period_label,period_mode,"
-            "location_filter,vehicle_filter,status,created_by,sent_at,recipients,approval_status"
-            " FROM reports WHERE vehicle_id=? ORDER BY id DESC LIMIT ?",
+            f"SELECT {_cols} FROM reports WHERE vehicle_id=? ORDER BY id DESC LIMIT ?",
             (vehicle_id, limit)).fetchall()
     else:
         rows = con.execute(
-            "SELECT id,created_at,vehicle_id,period_start,period_end,period_label,period_mode,"
-            "location_filter,vehicle_filter,status,created_by,sent_at,recipients,approval_status"
-            " FROM reports ORDER BY id DESC LIMIT ?",
+            f"SELECT {_cols} FROM reports ORDER BY id DESC LIMIT ?",
             (limit,)).fetchall()
     close_db_if_owned(con)
     result = []
@@ -6268,7 +6268,7 @@ def api_reports_create():
 
     # Excel
     excel_bytes = None
-    if data.get("include_excel", True) and all_sessions:
+    if data.get("include_excel", True):
         try:
             if len(periods) > 1:
                 from export_excel import export_multi_month_bytes as _emm
