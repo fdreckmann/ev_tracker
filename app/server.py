@@ -11,7 +11,7 @@ from meter_providers import read_meter as _read_meter_impl, MeterResult
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "2.0.15"
+APP_VERSION   = "2.0.16"
 
 CHANGELOG = [
     {"version":"2.0.0","changes":[
@@ -661,16 +661,27 @@ VEHICLE_SPECIFIC_KEYS = {
     "smartcar_access_token","smartcar_vehicle_id",
 }
 
+_config_cache: dict = {"data": None, "ts": 0.0}
+_CONFIG_CACHE_TTL = 30  # seconds
+
 def load_config():
+    now = time.time()
+    if _config_cache["data"] is not None and now - _config_cache["ts"] < _CONFIG_CACHE_TTL:
+        return dict(_config_cache["data"])
     if CONFIG_FILE.exists():
         with open(CONFIG_FILE) as f:
-            return {**DEFAULT_CONFIG, **json.load(f)}
-    return DEFAULT_CONFIG.copy()
+            cfg = {**DEFAULT_CONFIG, **json.load(f)}
+    else:
+        cfg = DEFAULT_CONFIG.copy()
+    _config_cache["data"] = cfg
+    _config_cache["ts"] = now
+    return cfg
 
 def save_config(cfg):
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_FILE, "w") as f:
         json.dump(cfg, f, indent=2)
+    _config_cache["data"] = None
 
 def _audit(action: str, details: str = "", ip: str = ""):
     uid = session.get("user_id") if session else None
@@ -773,6 +784,10 @@ def init_db():
         try:
             con.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
         except sqlite3.OperationalError: pass
+    # Backfill NULL vehicle_id → 'v0'
+    try:
+        con.execute("UPDATE sessions SET vehicle_id='v0' WHERE vehicle_id IS NULL")
+    except Exception: pass
     con.execute("""CREATE TABLE IF NOT EXISTS users (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
         name          TEXT NOT NULL,
@@ -1043,6 +1058,8 @@ def init_db():
         ("idx_notif_enabled",       "notification_rules(enabled)"),
         ("idx_notif_event",         "notification_rules(event_type)"),
         ("idx_notif_channel",       "notification_rules(channel)"),
+        ("idx_session_points_session", "session_points(session_id)"),
+        ("idx_session_points_ts",      "session_points(ts)"),
     ]
     for idx_name, idx_target in _indexes:
         try:
@@ -1071,7 +1088,11 @@ def has_permission(user, permission_key: str) -> bool:
     if not user:
         return False
     user_id = user["id"] if isinstance(user, dict) else int(user)
-    perms = _get_user_permissions(user_id)
+    import flask
+    cache_key = f"_perms_{user_id}"
+    if not hasattr(flask.g, cache_key):
+        setattr(flask.g, cache_key, _get_user_permissions(user_id))
+    perms = getattr(flask.g, cache_key)
     return "admin:all" in perms or permission_key in perms
 
 def require_permission(permission_key: str):
@@ -1195,6 +1216,7 @@ def _make_state(vehicle_id="v0", provider_id="ha"):
     }
 
 _vehicle_states: dict[str, dict] = {"v0": _make_state("v0")}
+_vehicle_states_lock = threading.Lock()
 _vehicle_stops:  dict[str, threading.Event] = {"v0": threading.Event()}
 
 # Backward compat alias
@@ -1444,14 +1466,15 @@ def tracker_loop(vehicle_id: str = "v0"):
     st["running"]=False
 
 def _start_vehicle_tracker(vehicle_id: str):
-    if vehicle_id not in _vehicle_states:
-        cfg = load_config()
-        extras = cfg.get("extra_vehicles", [])
-        v = next((x for x in extras if x["id"] == vehicle_id), {})
-        _vehicle_states[vehicle_id] = _make_state(vehicle_id, v.get("provider","ha"))
-    if vehicle_id not in _vehicle_stops:
-        _vehicle_stops[vehicle_id] = threading.Event()
-    _vehicle_stops[vehicle_id].clear()
+    with _vehicle_states_lock:
+        if vehicle_id not in _vehicle_states:
+            cfg = load_config()
+            extras = cfg.get("extra_vehicles", [])
+            v = next((x for x in extras if x["id"] == vehicle_id), {})
+            _vehicle_states[vehicle_id] = _make_state(vehicle_id, v.get("provider","ha"))
+        if vehicle_id not in _vehicle_stops:
+            _vehicle_stops[vehicle_id] = threading.Event()
+        _vehicle_stops[vehicle_id].clear()
     threading.Thread(target=tracker_loop, args=(vehicle_id,), daemon=True).start()
 
 def _stop_vehicle_tracker(vehicle_id: str):
@@ -2701,6 +2724,8 @@ _SENSITIVE_CONFIG_KEYS = {
     "smtp_google_client_secret", "smtp_google_refresh_token", "smtp_google_access_token",
     "smtp_ms_client_secret", "smtp_ms_refresh_token", "smtp_ms_access_token",
     "meter_password", "meter_alfen_pass",
+    "ha_token", "entsoe_api_key", "octopus_api_key", "tibber_token", "tariff_ha_token",
+    "mqtt_password", "ntfy_token", "gotify_token",
 }
 _SECRET_MASK = "********"
 
@@ -2753,6 +2778,109 @@ def api_status():
         for k, v in _vehicle_states.items()
     ]
     return jsonify(result)
+
+@app.route("/api/state")
+@require_login
+def api_state_alias():
+    """Alias for /api/status — mobile compatibility."""
+    return api_status()
+
+@app.route("/api/mobile/summary")
+@require_login
+def api_mobile_summary():
+    """Single aggregated endpoint for mobile dashboard — reduces multiple API calls to one."""
+    user = _current_user()
+    cfg = load_config()
+
+    # Current vehicle state (v0 primary)
+    state = _vehicle_states.get("v0", {})
+    charging = state.get("charging", False)
+    session_id = state.get("session_id")
+
+    # All vehicles (for vehicle switcher)
+    all_vehicles_cfg = get_all_vehicles(include_archived=False)
+    vehicles_out = []
+    for v in all_vehicles_cfg:
+        vid = v.get("id", "v0")
+        vs = _vehicle_states.get(vid, {})
+        vehicles_out.append({
+            "id": vid,
+            "name": v.get("car_name", v.get("name", vid)),
+            "charging": vs.get("charging", False),
+            "soc": vs.get("soc_current"),
+            "location": vs.get("location"),
+            "location_status": vs.get("location_status"),
+            "power_kw": vs.get("power_kw"),
+            "session_active": vs.get("session_active", False),
+            "image_url": f"/api/vehicles/{vid}/image",
+        })
+
+    # Recent sessions (last 10)
+    con = _get_db()
+    try:
+        recent_rows = con.execute(
+            "SELECT id, start_ts, end_ts, location, charger_type, kwh_charged, cost_eur, soc_start, soc_end, max_power_kw, vehicle_id "
+            "FROM sessions ORDER BY start_ts DESC LIMIT 10"
+        ).fetchall()
+        recent_sessions = [dict(r) for r in recent_rows]
+
+        # Monthly stats (current month)
+        from datetime import date
+        today = date.today()
+        month_prefix = today.strftime("%Y-%m")
+        stats_row = con.execute(
+            "SELECT COUNT(*) as cnt, SUM(kwh_charged) as kwh, SUM(cost_eur) as cost "
+            "FROM sessions WHERE start_ts LIKE ? AND end_ts IS NOT NULL",
+            (f"{month_prefix}%",)
+        ).fetchone()
+        monthly = {
+            "sessions": stats_row["cnt"] or 0,
+            "kwh": round(stats_row["kwh"] or 0, 2),
+            "cost": round(stats_row["cost"] or 0, 2),
+        }
+
+        # Active session details
+        active_session = None
+        if session_id:
+            sess_row = con.execute(
+                "SELECT id, start_ts, soc_start, location, charger_type, meter_old FROM sessions WHERE id=?",
+                (session_id,)
+            ).fetchone()
+            if sess_row:
+                active_session = dict(sess_row)
+    finally:
+        con.close()
+
+    # Permissions summary for mobile UI gating
+    perms = _get_user_permissions(user["id"]) if user else set()
+    perm_summary = {
+        "can_add_session": "sessions:manual_add" in perms or user.get("role") == "admin",
+        "can_export": "export:download" in perms or user.get("role") == "admin",
+        "can_backup": "backup:create" in perms or user.get("role") == "admin",
+        "can_test_meter": "meter:test" in perms or user.get("role") == "admin",
+        "can_test_connection": "providers:test" in perms or user.get("role") == "admin",
+    }
+
+    return jsonify({
+        "ok": True,
+        "primary_vehicle": vehicles_out[0] if vehicles_out else None,
+        "vehicles": vehicles_out,
+        "charging": charging,
+        "active_session": active_session,
+        "recent_sessions": recent_sessions,
+        "monthly": monthly,
+        "state": {
+            "soc": state.get("soc_current"),
+            "odo": state.get("odo_current"),
+            "location": state.get("location"),
+            "location_status": state.get("location_status"),
+            "power_kw": state.get("power_kw"),
+            "last_poll": state.get("last_poll"),
+            "last_error": state.get("last_error"),
+            "running": state.get("running", False),
+        },
+        "permissions": perm_summary,
+    })
 
 @app.route("/api/vehicles", methods=["GET"])
 @require_login
@@ -3338,8 +3466,11 @@ def api_update_location(sid):
     if loc not in ("home","extern","unknown"):
         return jsonify({"ok":False,"error":"Ungültiger Standort"}), 400
     con = sqlite3.connect(DB_PATH)
-    con.execute("UPDATE sessions SET location=? WHERE id=?", (loc, sid))
-    con.commit(); con.close()
+    try:
+        con.execute("UPDATE sessions SET location=? WHERE id=?", (loc, sid))
+        con.commit()
+    finally:
+        con.close()
     log.info("Session #%d Standort → %s", sid, loc)
     return jsonify({"ok":True})
 
@@ -3492,6 +3623,10 @@ def api_upload_template():
     if "file" not in request.files: return jsonify({"ok":False,"error":"Keine Datei"}),400
     f=request.files["file"]
     if not f.filename.endswith(".xlsx"): return jsonify({"ok":False,"error":"Nur .xlsx"}),400
+    f.seek(0, 2)
+    if f.tell() > 10 * 1024 * 1024:
+        return jsonify({"ok": False, "error": "Template zu groß (max 10 MB)"}), 400
+    f.seek(0)
     DATA_DIR.mkdir(parents=True,exist_ok=True); f.save(TEMPLATE_PATH)
     cfg = load_config()
     cfg["active_template"] = {"source": "upload", "template_id": None, "name": f.filename}
@@ -4233,7 +4368,7 @@ def parse_cron_next(cron_expr):
                 nxt=now.replace(hour=int(parts[1]),minute=int(parts[0]),second=0,microsecond=0)
                 if nxt<=now: nxt+=timedelta(days=1)
             else: return None
-        except: return None
+        except Exception: return None
     return (nxt-now).total_seconds()
 
 def schedule_backup():
@@ -4432,7 +4567,7 @@ def docker_socket_request(method: str, path: str, body: dict = None) -> dict:
     header, _, body_raw = resp.partition(b"\r\n\r\n")
     status = int(header.split(b" ")[1])
     try: data = _json.loads(body_raw)
-    except: data = {}
+    except Exception: data = {}
     return {"status": status, "data": data}
 
 _update_log: list[str] = []
@@ -4443,6 +4578,27 @@ def _ulog(msg: str):
     if len(_update_log) > 200:
         _update_log.pop(0)
     log.info("Update: %s", msg)
+
+def _cleanup_expired_tokens():
+    now = time.time()
+    for d in (_export_tokens, _pdf_tokens):
+        expired = [k for k, v in list(d.items()) if isinstance(v, dict) and v.get("expires", 0) < now]
+        for k in expired:
+            d.pop(k, None)
+    # Also trim _update_log to last 500 entries
+    global _update_log
+    if len(_update_log) > 500:
+        _update_log = _update_log[-500:]
+
+_last_token_cleanup = 0.0
+
+@app.before_request
+def _before_request_cleanup():
+    global _last_token_cleanup
+    now = time.time()
+    if now - _last_token_cleanup > 300:
+        _last_token_cleanup = now
+        _cleanup_expired_tokens()
 
 def docker_pull_and_restart(tag: str):
     """Pull new image in background, then stop/remove/recreate container."""
@@ -4676,7 +4832,7 @@ def api_update_check():
     return jsonify(info)
 
 @app.route("/api/update/pull", methods=["POST"])
-@require_admin
+@require_login
 def api_update_pull():
     user = _current_user()
     if not has_permission(user, "updates:start"):
@@ -4692,8 +4848,10 @@ def api_update_log():
 
 # ── User Management ───────────────────────────────────────────────────────────
 @app.route("/api/users", methods=["GET"])
-@require_admin
+@require_login
 def api_get_users():
+    if not has_permission(_current_user(), "users:view"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: users:view"}), 403
     con = _get_db()
     rows = con.execute(
         "SELECT id,name,email,role,status,totp_enabled,created_at,updated_at,last_login_at FROM users ORDER BY id"
@@ -4702,8 +4860,10 @@ def api_get_users():
     return jsonify([dict(r) for r in rows])
 
 @app.route("/api/users", methods=["POST"])
-@require_admin
+@require_login
 def api_create_user():
+    if not has_permission(_current_user(), "users:create"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: users:create"}), 403
     data  = request.json or {}
     name  = (data.get("name") or "").strip()
     email = (data.get("email") or "").strip().lower()
@@ -4733,8 +4893,10 @@ def api_create_user():
     return jsonify({"ok": True, "invited": invite_mode})
 
 @app.route("/api/users/<int:uid>", methods=["PUT"])
-@require_admin
+@require_login
 def api_update_user(uid):
+    if not has_permission(_current_user(), "users:edit"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: users:edit"}), 403
     data = request.json or {}
     user = _get_user_by_id(uid)
     if not user:
@@ -4752,8 +4914,10 @@ def api_update_user(uid):
     return jsonify({"ok": True})
 
 @app.route("/api/users/<int:uid>", methods=["DELETE"])
-@require_admin
+@require_login
 def api_delete_user(uid):
+    if not has_permission(_current_user(), "users:delete"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: users:delete"}), 403
     if uid == session.get("user_id"):
         return jsonify({"ok": False, "error": "Eigenen Account nicht löschbar"})
     con = _get_db()
@@ -5074,8 +5238,10 @@ def api_smtp_oauth_disconnect(provider):
 
 
 @app.route("/api/smtp/test", methods=["POST"])
-@require_admin
+@require_login
 def smtp_test():
+    if not has_permission(_current_user(), "settings:edit"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: settings:edit"}), 403
     data = request.json or {}
     cfg  = load_config()
     method = data.get("smtp_auth_method") or cfg.get("smtp_auth_method", "basic")
@@ -5099,8 +5265,10 @@ def smtp_test():
                     "auth_method": method})
 
 @app.route("/api/smtp/send-test", methods=["POST"])
-@require_admin
+@require_login
 def smtp_send_test():
+    if not has_permission(_current_user(), "settings:edit"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: settings:edit"}), 403
     data = request.json or {}
     cfg = load_config()
     to  = data.get("to") or cfg.get("smtp_from_email","")
@@ -5201,8 +5369,10 @@ def api_admin_dashboard():
 
 # ── Audit Log ────────────────────────────────────────────────────────────────
 @app.route("/api/audit-log")
-@require_admin
+@require_login
 def get_audit_log():
+    if not has_permission(_current_user(), "audit:view"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: audit:view"}), 403
     limit = int(request.args.get("limit", 200))
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
@@ -5743,7 +5913,7 @@ def api_report_config_get():
 
 
 @app.route("/api/report/config", methods=["POST"])
-@require_admin
+@require_login
 def api_report_config_save():
     if not has_permission(_current_user(), "reports:configure"):
         return jsonify({"error": "Keine Berechtigung"}), 403
@@ -6263,7 +6433,7 @@ def api_tariff_config_get():
 
 
 @app.route("/api/tariff/config", methods=["POST"])
-@require_admin
+@require_login
 def api_tariff_config_save():
     if not has_permission(_current_user(), "tariffs:configure"):
         return jsonify({"error": "Keine Berechtigung"}), 403
@@ -6754,7 +6924,7 @@ def api_mqtt_config_get():
 
 
 @app.route("/api/mqtt/config", methods=["POST"])
-@require_admin
+@require_login
 def api_mqtt_config_save():
     if not has_permission(_current_user(), "mqtt:configure"):
         return jsonify({"error": "Keine Berechtigung"}), 403
@@ -6809,7 +6979,7 @@ def api_mqtt_publish():
 
 
 @app.route("/api/mqtt/ha-discovery", methods=["POST"])
-@require_admin
+@require_login
 def api_mqtt_ha_discovery():
     if not has_permission(_current_user(), "mqtt:configure"):
         return jsonify({"error": "Keine Berechtigung"}), 403

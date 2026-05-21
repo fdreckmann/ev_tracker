@@ -2974,7 +2974,7 @@ async function editLocation(id, current){
 
 async function delSession(id){
   if(!confirm('Session #'+id+' wirklich löschen?')) return;
-  await fetch('/api/sessions/'+id, {method:'DELETE'});
+  await apiFetch('/api/sessions/'+id, {method:'DELETE'});
   toast('Session #'+id+' gelöscht');
   loadSessions(); loadCharts();
 }
@@ -4479,7 +4479,7 @@ function handleDrop(e){
 }
 
 async function deleteTpl(){
-  await fetch('/api/template',{method:'DELETE'});
+  await apiFetch('/api/template',{method:'DELETE'});
   toast('Template entfernt'); refreshTplInfo();
 }
 
@@ -5654,7 +5654,7 @@ Aktuelle Daten werden überschrieben!`)) return;
 
 async function deleteBackup(name){
   if(!confirm(`Backup "${name}" löschen?`)) return;
-  await fetch('/api/backup/delete/'+encodeURIComponent(name),{method:'DELETE'});
+  await apiFetch('/api/backup/delete/'+encodeURIComponent(name),{method:'DELETE'});
   toast('Backup gelöscht'); loadBackups();
 }
 
@@ -6968,7 +6968,7 @@ async function loadExportTemplate(tid){
 }
 
 async function setDefaultTemplate(tid){
-  await fetch(`/api/export/templates/${tid}`,{method:'PUT',headers:{'Content-Type':'application/json'},
+  await apiFetch(`/api/export/templates/${tid}`,{method:'PUT',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({is_default:true})});
   toast('Als Standardvorlage gesetzt','ok');
   loadExportTemplates();
@@ -6976,7 +6976,7 @@ async function setDefaultTemplate(tid){
 
 async function deleteExportTemplate(tid){
   if(!confirm('Vorlage löschen?')) return;
-  await fetch(`/api/export/templates/${tid}`,{method:'DELETE'});
+  await apiFetch(`/api/export/templates/${tid}`,{method:'DELETE'});
   toast('Vorlage gelöscht','ok');
   loadExportTemplates();
 }
@@ -7662,7 +7662,7 @@ function openMobileSignatureSheet() {
 async function uploadMobileSignature(input) {
   if (!input.files[0]) return;
   const fd = new FormData(); fd.append('file', input.files[0]);
-  const r = await fetch('/api/signature',{method:'POST',headers:{'X-CSRF-Token':csrfToken},body:fd}).then(x=>x.json()).catch(e=>({ok:false,error:e.message}));
+  const r = await apiFetch('/api/signature/upload',{method:'POST',body:fd,headers:{}}).then(x=>x.json()).catch(e=>({ok:false,error:e.message}));
   if (r.ok) { toast('Signatur gespeichert','ok'); closeMobileSheet(); }
   else toast('Fehler: '+(r.error||'Upload fehlgeschlagen'),'err');
 }
