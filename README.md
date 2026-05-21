@@ -4,7 +4,7 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 
 ![Docker Hub](https://img.shields.io/docker/pulls/19121412/ev-tracker)
 ![GitHub Actions](https://github.com/fdreckmann/ev_tracker/actions/workflows/docker-build.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-2.0.0-blue)
+![Version](https://img.shields.io/badge/version-2.0.15-blue)
 
 ---
 
@@ -42,17 +42,19 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 | Feature | Beschreibung |
 |---------|-------------|
 | ⚡ Auto-Erkennung | Ladevorgänge werden automatisch erkannt und gespeichert |
-| 🏠 Standort | Unterscheidet Zuhause / Extern — manuell korrigierbar |
+| 🏠 Standort | Unterscheidet Zuhause / Extern — GPS + Home Assistant Entities + Geofence |
 | 🔌 AC / DC | Ladertyp-Erkennung via Leistungssensor oder HA Sensor |
-| 💰 Preismodell | Heimtarif fix · Extern via ENTSO-E Spotpreis + Aufschlag |
+| 💰 Preismodell | Heimtarif fix · dynamisch via Tibber/Octopus/HA/EVCC · Extern via ENTSO-E Spotpreis |
 | ✎ Manuelle Korrektur | Kosten und Standort pro Session überschreibbar |
-| 📊 Dashboard | Live-Status, Charts, Ladekurve pro Session |
-| 📱 Mobile App | Responsive Mobile-Ansicht mit Bottom-Navigation und Cards |
-| 🔔 Push | Benachrichtigungen via Home Assistant notify |
+| 📊 Dashboard | Live-Status, Charts, Ladekurve, kontextsensitive Ladeinfo |
+| 📱 Mobile App | PWA-fähig, Bottom-Navigation, Cards, Bottom Sheets, installierbar |
+| 🔔 Push | Benachrichtigungen via Home Assistant notify, ntfy, Gotify |
 | 💾 Backup | Manuell + automatisch per Cron-Zeitplan |
 | ⬆ Auto-Update | Update direkt im Web UI — Latest, Nightly oder Dev Kanal |
 | 👥 Multi-User | Mehrere Benutzer mit Rollen und granularen Berechtigungen |
 | 🔐 Auth | E-Mail/Passwort, TOTP 2FA, Google/Microsoft OAuth, Passkeys (FIDO2) |
+| 🚗 Mehrfahrzeuge | Beliebig viele Fahrzeuge parallel tracken |
+| 🗃 Fahrzeug-Archiv | Soft-Delete (Archivieren) oder Hard-Delete mit Bestätigung |
 
 ### Excel Export & Templates
 
@@ -65,9 +67,10 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 | 🔢 Einzelzellen-Mapping | Einzelne Zellen mit Kopfdaten befüllen (Fahrer, Kennzeichen, Monat …) |
 | ✍ Unterschrift | Bild hochladen oder im Browser zeichnen, frei positionierbar mit Ankerzelle |
 | 🌍 Mehrsprachig | Export auf Deutsch oder Englisch (Monatsnamen, Labels, Standorte) |
-| {{Platzhalter}} | 25+ Platzhalter in Templates: `{{month_year}}`, `{{total_kwh}}`, `{{signature}}` … |
+| {{Platzhalter}} | 25+ Platzhalter in Templates: `{{month_year}}`, `{{total_kwh}}`, `{{meter_start_value}}` … |
 | 👁 Vorschau | Echte XLSX-Vorschau mit befüllten Daten vor dem Download |
-| ⚠ Warnings | Export-Hinweise bei fehlenden Daten, Signatur etc. |
+| 📄 PDF-Export | reportlab-basierter PDF-Report mit Kopfband, Zusammenfassung und Signaturfeld |
+| 🔢 Zähleranzeige | meter_old/meter_new im Export als ganze kWh (exakter Rohwert intern) |
 
 ### Zählerstand-Integration
 
@@ -85,6 +88,44 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 | Generic HTTP | HTTP | Beliebige URL, JSON-Pfad, Einheit konfigurierbar |
 | Home Assistant | REST | Beliebiger HA-Sensor (Wh/kWh/MWh auto-erkannt) |
 
+**Zähler-Scope (`meter_scope`):** Der lokale Stromzähler kann auf Zuhause-Ladevorgänge beschränkt werden (`home_only`, Standard). Externe Ladevorgänge überspringen die Zählerablesung automatisch. Der Grund wird pro Session gespeichert (`meter_skipped_reason`).
+
+### Stromtarif
+
+| Quelle | Beschreibung |
+|--------|-------------|
+| Fester Preis | Separat für Zuhause, AC Extern, DC Extern |
+| Tibber | Stündliche Spotpreise via GraphQL API |
+| Octopus Energy | Halbstündliche Tarife (Agile u.a.) via REST API |
+| Home Assistant | Beliebiger HA-Sensor als Preisquelle, inkl. History-API |
+| EVCC | Netz-Tarif aus `/api/state` (tariffGrid/gridPrice) |
+| Generic HTTP | Beliebige Preis-API mit JSON-Pfad |
+| ENTSO-E | Spotpreise für externe Ladevorgänge |
+
+Preise werden **zeitgewichtet** über den Ladezeitraum gemittelt. Bestehende Home-Sessions können im UI per Knopfdruck mit dem aktuellen Tarif neu berechnet werden.
+
+### Abrechnung & Reports
+
+| Feature | Beschreibung |
+|---------|-------------|
+| 📊 Auto-Berichte | Automatischer Monats-/Mehrmonats-Report per E-Mail |
+| 📁 Report-Archiv | Reports erstellen, verwalten, herunterladen, versenden, genehmigen |
+| 💼 Billing-Wizard | Schritt-für-Schritt Abrechnung: Fahrzeug, Zeitraum, Format, Signatur |
+| 📧 E-Mail-Versand | SMTP-Konfiguration, HTML-E-Mails mit Übersichtstabelle |
+| 📄 PDF-Export | Professioneller PDF-Report mit reportlab |
+| 🔑 API-Tokens | SHA-256-gesicherte Tokens mit Scopes, einmalige Anzeige |
+| 📡 MQTT | Home Assistant Auto-Discovery, ntfy, Gotify |
+| 🔔 Regeln | DB-getriebene Benachrichtigungsregeln mit Ruhezeitfenstern |
+
+### Fahrzeug-Standorterkennung
+
+| Feature | Beschreibung |
+|---------|-------------|
+| 📍 GPS-Geofence | Haversine-Distanz zur Heimadresse, konfigurierbare Radius |
+| 🏠 HA Entities | Home Assistant `device_tracker` Entities als Standortquelle |
+| 🔀 Kombiniert | Provider-GPS + HA kombinierbar (any/all/provider_only/ha_only) |
+| 📜 Historie | Standort-Verlauf mit Zeitstempel (lat/lon nur mit `vehicles:location_exact_view`) |
+
 ### Benutzerverwaltung & Sicherheit
 
 | Feature | Beschreibung |
@@ -99,12 +140,13 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 | 🎭 Rollen | admin, user, readonly + eigene Rollen |
 | ✅ Berechtigungen | 70+ granulare Permissions, pro Rolle konfigurierbar |
 | 🛡 CSRF-Schutz | Alle POST/PUT/DELETE-Endpunkte geschützt |
+| 🔒 Security Headers | X-Frame-Options, X-Content-Type-Options, Referrer-Policy |
 
 ---
 
 ## Berechtigungssystem (RBAC)
 
-Ab v2.0.0 gibt es ein flexibles rollenbasiertes Berechtigungssystem.
+Flexibles rollenbasiertes Berechtigungssystem mit 70+ granularen Permissions.
 
 **Standardrollen:**
 
@@ -116,7 +158,7 @@ Ab v2.0.0 gibt es ein flexibles rollenbasiertes Berechtigungssystem.
 
 **Eigene Rollen:** Der Admin kann zusätzliche Rollen erstellen (z.B. Buchhaltung, Fuhrpark) und ihnen beliebige Berechtigungen zuweisen.
 
-**Berechtigungsgruppen:** Dashboard · Fahrzeuge · Ladevorgänge · Analyse · Export · Templates · Signatur · Zählerstand · Provider · Einstellungen · Benutzer · Backup · Updates · Audit · System
+**Berechtigungsgruppen:** Dashboard · Fahrzeuge · Ladevorgänge · Analyse · Export · Templates · Signatur · Zählerstand · Provider · Tarife · Einstellungen · Benutzer · Backup · Updates · Audit · System · MQTT · Benachrichtigungen
 
 ---
 
@@ -196,13 +238,15 @@ Update-Kanal wählbar im Web UI → **Backup Tab** → **Software Update**.
 ## Preismodell
 
 ```
-🏠 Zuhause  → Fixer Heimtarif (z.B. 0.30 €/kWh)
+🏠 Zuhause  → Fixer Heimtarif oder dynamisch (Tibber/Octopus/HA/EVCC)
 🔌 Extern AC → ENTSO-E Spot × AC-Faktor (Fallback: Fixpreis)
 ⚡ Extern DC → ENTSO-E Spot × DC-Faktor (Fallback: Fixpreis)
 ✎ Manuell   → Jede Session einzeln korrigierbar
 ```
 
-### ENTSO-E API Key (optional)
+Dynamische Preise werden **zeitgewichtet** über den Ladezeitraum gemittelt (z.B. 30 min zu 0,25 € + 30 min zu 0,35 € = 0,30 €/kWh). Bei API-Fehler greift automatisch der konfigurierte Fallback-Preis.
+
+### ENTSO-E API Key (optional, für externe Ladevorgänge)
 
 1. Registrieren auf [transparency.entsoe.eu](https://transparency.entsoe.eu)
 2. Email an `transparency@entsoe.eu` — Betreff: "Restful API access"
@@ -225,11 +269,26 @@ Update-Kanal wählbar im Web UI → **Backup Tab** → **Software Update**.
 
 ---
 
-## Changelog (Auszug)
+## Changelog
 
 | Version | Highlights |
 |---------|-----------|
-| **2.0.0** | Flexibles RBAC (70+ Permissions, eigene Rollen), Mobile-Responsive UI mit Bottom-Nav, vollständige Export-Lokalisierung (de/en), Export-Vorschau mit Download-Token, Zählertest ohne Speichern, Shelly EMData/EM1Data, HA Wh-Normalisierung |
+| **2.0.15** | HA + EVCC Tarifprovider, zeitgewichteter Preisdurchschnitt, `POST /api/tariffs/recalculate` für Neuberechnung bestehender Sessions |
+| **2.0.14** | Dashboard: kontextsensitive Ladetyp-Kachel — bei aktiver Session "Lädt gerade ⚡ · Zuhause · AC · 11 kW", sonst "Letzte Ladung · vor X Std." |
+| **2.0.13** | Zählerstände (meter_old/meter_new) überall als ganze kWh — UI, Excel, Template-Platzhalter; Berechnung intern weiterhin mit Rohwerten |
+| **2.0.12** | `meter_scope`: lokaler Zähler nur für Zuhause-Ladevorgänge (`home_only` Standard); `meter_skipped_reason` + `meter_used` pro Session |
+| **2.0.11** | Mobile Bottom-Sheet-System: openMobileSessionCreate, Meter-Test, Connection-Test, Signatur, System-Status, Update-Check, Backup, Fahrzeugdetails |
+| **2.0.10** | Mobile PWA (installierbar), FAB, echte Session-Cards, Fahrzeuge-Tab, Skeleton Loader |
+| **2.0.9** | Fahrzeug-Standorterkennung (GPS-Geofence + HA device_tracker, kombinierbare Modi), Standort-Historie, Berechtigungs-Härtung für Templates/Meter/Provider-Test |
+| **2.0.8** | Fahrzeug-Archivierung (soft-delete) und Hard-Delete mit "LÖSCHEN"-Bestätigung; `GET /api/vehicles/<id>/delete-check` |
+| **2.0.7** | Session-Bearbeitungs-Modal (kwh, Leistung, Preis, Kosten), PATCH /api/sessions/<id>, Fahrzeugbild-Berechtigungen |
+| **2.0.6** | Security Headers, Backup Zip-Slip-Härtung, Fahrzeugbild-Routen mit Path-Traversal-Schutz |
+| **2.0.5** | API v1/* mit Bearer-Token, dynamischer Tarifpreis pro Session, Wallbox-Leistungs-Konfiguration |
+| **2.0.4** | CSRF-Schutz global, SQLite WAL-Modus + 21 Indexe, Backup-Restore Sicherheits-Backup |
+| **2.0.3** | Billing-Wizard, Report-Archiv, PDF-Export (reportlab), dynamische Tarifprovider, API-Tokens, MQTT, Benachrichtigungsregeln |
+| **2.0.2** | Multi-Monats-Berichte: ein Tabellenblatt pro Monat, Chip-Auswahl bis 24 Monate |
+| **2.0.1** | Bugfix: init_db() Absturz beim ersten Start (row_factory fehlte) |
+| **2.0.0** | Flexibles RBAC (70+ Permissions, eigene Rollen), vollständige Export-Lokalisierung (de/en), Export-Vorschau mit Download-Token |
 | **1.9.9** | Passkey (WebAuthn/FIDO2) — Fingerabdruck, Face ID, Hardware-Key |
 | **1.9.8** | Export-Lokalisierung, charge_power_kw, Vorschau-API, Unterschrift-Ankerzelle |
 | **1.9.7** | 12 neue Fahrzeug-Provider: Stellantis, Ford, MG, Toyota, Nissan, Porsche, JLR + Aggregatoren |
@@ -274,10 +333,12 @@ docker run -d --name ev-tracker -p 8054:8080 \
 | Bereich | Technologie |
 |---------|-------------|
 | Backend | Python 3.12 + Flask |
-| Datenbank | SQLite |
-| Frontend | Vanilla JS + Chart.js (responsive, Mobile-optimiert) |
+| Datenbank | SQLite (WAL-Modus, 21+ Indexe) |
+| Frontend | Vanilla JS + Chart.js (responsive, PWA-fähig) |
 | Excel | openpyxl |
+| PDF | reportlab |
 | Authentifizierung | Flask-Session, pyotp (TOTP), py_webauthn (FIDO2), Authlib (OAuth) |
 | Fahrzeug-APIs | bimmer-connected, teslaPy, myrenaultapi, bluelinky u.v.m. |
+| Tarif-APIs | Tibber GraphQL, Octopus Energy REST, ENTSO-E, Home Assistant, EVCC |
 | CI/CD | GitHub Actions → Docker Hub |
 | Hosting | Docker (Unraid, Synology, Proxmox, bare metal …) |
