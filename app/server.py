@@ -1669,7 +1669,7 @@ def login_page():
                     try:
                         con2 = _get_db()
                         admins = con2.execute("SELECT email,name FROM users WHERE role='admin' AND status='active'").fetchall()
-                        con2.close()
+                        close_db_if_owned(con2)
                         for adm in admins:
                             body = _email_html(
                                 "⚠️ Konto gesperrt",
@@ -6131,7 +6131,7 @@ def api_billing_summary():
     cfg  = load_config()
     bc_con = _get_db()
     bc_row = bc_con.execute("SELECT * FROM billing_config WHERE enabled=1 LIMIT 1").fetchone()
-    bc_close_db_if_owned(con)
+    close_db_if_owned(bc_con)
     bc = dict(bc_row) if bc_row else {}
     reimb_rate  = float(bc.get("reimbursement_price_per_kwh") or 0)
     lf = bc.get("location_filter", "all")
@@ -6295,7 +6295,7 @@ def api_reports_create():
             bc_con = _get_db()
             bc_row = bc_con.execute("SELECT * FROM billing_config WHERE vehicle_id=?",
                                     (veh_filter,)).fetchone()
-            bc_close_db_if_owned(con)
+            close_db_if_owned(bc_con)
             if len(periods) > 1:
                 from pdf_export import generate_multi_month_report_pdf as _gmm
                 _periods_sessions = [
@@ -6388,7 +6388,7 @@ def api_report_send(report_id):
     _con = _get_db()
     _con.execute("UPDATE reports SET status='sent', sent_at=?, recipients=? WHERE id=?",
                  (now_iso, json.dumps(recipients), report_id))
-    _con.commit(); _close_db_if_owned(con)
+    _con.commit(); close_db_if_owned(_con)
     _audit("report_sent", f"id={report_id}", ip=request.remote_addr)
     try:
         from notification_manager import fire_event as _fe
@@ -6444,7 +6444,7 @@ def api_export_pdf():
     period_info = periods[0]
     bc_con = _get_db()
     bc_row = bc_con.execute("SELECT * FROM billing_config WHERE vehicle_id=?", (veh_filter,)).fetchone()
-    bc_close_db_if_owned(con)
+    close_db_if_owned(bc_con)
     include_sig = bool(data.get("include_signature", cfg.get("report_pdf_include_signature")))
     sig_path    = str(SIGNATURE_PATH) if SIGNATURE_PATH.exists() and include_sig else None
     bc_dict     = dict(bc_row) if bc_row else None
@@ -6743,7 +6743,7 @@ def _require_api_token(required_scope: str):
         _uc = _get_db()
         _uc.execute("UPDATE api_tokens SET last_used_at=? WHERE id=?",
                     (datetime.utcnow().isoformat(), token_row["id"]))
-        _uc.commit(); _uc.close()
+        _uc.commit(); close_db_if_owned(_uc)
     except Exception: pass
     return token_row, None, None
 
