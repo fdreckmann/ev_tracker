@@ -1,6 +1,21 @@
 {
-  "version": "2.0.14",
+  "version": "2.0.15",
   "changelog": [
+    {
+      "version": "2.0.15",
+      "date": "2026-05-21",
+      "changes": [
+        "Neu: HomeAssistantTariffProvider — liest Strompreis aus HA-Sensor (aktuell + History-API)",
+        "Neu: EvccTariffProvider — liest Netz-Tarif aus EVCC /api/state (tariffGrid/gridPrice)",
+        "Verbesserung: get_average_price() nutzt jetzt zeitgewichteten Durchschnitt statt einfachem Mittelwert",
+        "Neu: DEFAULT_CONFIG tariff_ha_url, tariff_ha_token, tariff_ha_entity, tariff_evcc_url",
+        "Neu: POST /api/tariffs/recalculate — Home-Sessions eines Monats mit aktuellem Tarif neu berechnen",
+        "UI: 'Home Assistant Sensor' und 'EVCC' als neue Tarifprovider-Optionen",
+        "UI: Konfigurationspanels für HA (Entity ID, URL, Token) und EVCC (URL)",
+        "UI: 'Monat neu berechnen' Button mit Fahrzeug/Monat/Standort-Filter im Tarif-Bereich",
+        "Sicherheit: tariff_ha_token wird maskiert (wie octopus_api_key/tibber_token)"
+      ]
+    },
     {
       "version": "2.0.14",
       "date": "2026-05-21",
