@@ -1,6 +1,25 @@
 {
-  "version": "2.0.17",
+  "version": "2.0.18",
   "changelog": [
+    {
+      "version": "2.0.18",
+      "date": "2026-05-21",
+      "changes": [
+        "Mobile: refreshMobileDashboard() und loadMobileVehicleCards() nutzen primär /api/mobile/summary (1 API-Call statt 3)",
+        "Mobile: Fallback auf /api/state + /api/sessions wenn /api/mobile/summary nicht verfügbar",
+        "Mobile: Fahrzeugkarten zeigen Fahrzeugbild (/api/vehicles/<id>/image/file) mit Placeholder-Fallback",
+        "Mobile: Dashboard zeigt aktives Fahrzeugbild via mobileVehicleImg-Element",
+        "Performance: close_db_if_owned() Helper — Request-Scoped g-Connection wird nicht mehr vorzeitig geschlossen",
+        "Performance: con.close() → close_db_if_owned(con) global ersetzt — teardown_appcontext schließt sauber",
+        "Sicherheit: _vehicle_exists() Check für alle 4 Fahrzeugbild-Endpoints — unbekannte IDs → 404",
+        "Sicherheit: /api/config POST nutzt @require_login + settings:edit statt @require_admin",
+        "Feature: Standort-Historie (vehicle_location_history) wird jetzt im Tracker befüllt wenn location_history_enabled=true",
+        "Feature: Präzision status_only/rounded/exact steuert welche Koordinaten gespeichert werden",
+        "Feature: Retention-Cleanup löscht alte Einträge automatisch nach location_history_retention_days",
+        "Feature: /api/vehicles/<vid>/location/history gibt latitude/longitude zurück (mit vehicles:location_exact_view)",
+        "CSRF: 12 weitere fetch()-POST/PUT-Aufrufe auf apiFetch() umgestellt (sessions/cost, sessions/location, config, entsoe/test, test-connection, backup/restore, backup/cron, export/templates)"
+      ]
+    },
     {
       "version": "2.0.17",
       "date": "2026-05-21",
