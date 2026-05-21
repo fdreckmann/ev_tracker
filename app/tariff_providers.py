@@ -38,11 +38,36 @@ class BaseTariffProvider:
                      self.config.get("price_per_kwh_home", 0.30)))
 
     def get_average_price(self, start: datetime, end: datetime) -> Optional[float]:
-        """Average price over a time range. Falls back to single point if range fails."""
+        """Time-weighted average price over a session range."""
         try:
             prices = self.get_prices_for_range(start, end)
-            if prices:
-                return sum(p["price"] for p in prices) / len(prices)
+            if not prices:
+                raise ValueError("no prices")
+            if len(prices) == 1:
+                return prices[0]["price"]
+            # Sort by timestamp for time-weighted calculation
+            sorted_prices = sorted(prices, key=lambda p: p.get("ts", ""))
+            total_weight = 0.0
+            weighted_sum = 0.0
+            for i, slot in enumerate(sorted_prices):
+                try:
+                    slot_start = datetime.fromisoformat(slot["ts"].replace("Z", "+00:00"))
+                except Exception:
+                    continue
+                slot_end = (
+                    datetime.fromisoformat(sorted_prices[i + 1]["ts"].replace("Z", "+00:00"))
+                    if i + 1 < len(sorted_prices) else end
+                )
+                eff_start = max(slot_start, start) if start else slot_start
+                eff_end   = min(slot_end,   end)   if end   else slot_end
+                if eff_end <= eff_start:
+                    continue
+                weight = (eff_end - eff_start).total_seconds()
+                weighted_sum += slot["price"] * weight
+                total_weight += weight
+            if total_weight > 0:
+                return weighted_sum / total_weight
+            return sum(p["price"] for p in prices) / len(prices)
         except Exception:
             pass
         try:
@@ -308,11 +333,166 @@ class GenericHttpTariffProvider(BaseTariffProvider):
         ]
 
 
+class HomeAssistantTariffProvider(BaseTariffProvider):
+    provider_id = "home_assistant"
+    label = "Home Assistant Sensor"
+
+    def _ha_url(self):
+        return (self.config.get("tariff_ha_url") or self.config.get("ha_url", "")).rstrip("/")
+
+    def _ha_token(self):
+        return self.config.get("tariff_ha_token") or self.config.get("ha_token", "")
+
+    def _ha_entity(self):
+        return self.config.get("tariff_ha_entity", "")
+
+    def _fetch_current(self) -> Optional[float]:
+        import requests
+        url, token, entity = self._ha_url(), self._ha_token(), self._ha_entity()
+        if not url or not token or not entity:
+            return None
+        r = requests.get(f"{url}/api/states/{entity}",
+                         headers={"Authorization": f"Bearer {token}",
+                                  "Content-Type": "application/json"}, timeout=8)
+        r.raise_for_status()
+        state = r.json().get("state")
+        if state in (None, "unavailable", "unknown", ""):
+            return None
+        return float(state)
+
+    def get_price_at(self, timestamp, location=None):
+        try:
+            v = self._fetch_current()
+            return v if v is not None else self._fallback()
+        except Exception:
+            return self._fallback()
+
+    def get_prices_for_range(self, start, end):
+        import requests
+        url, token, entity = self._ha_url(), self._ha_token(), self._ha_entity()
+        if url and token and entity:
+            try:
+                hist_url = f"{url}/api/history/period/{start.strftime('%Y-%m-%dT%H:%M:%S')}"
+                r = requests.get(hist_url, headers={"Authorization": f"Bearer {token}"},
+                                 params={"filter_entity_id": entity,
+                                         "end_time": end.strftime('%Y-%m-%dT%H:%M:%S')},
+                                 timeout=10)
+                r.raise_for_status()
+                history = r.json()
+                if history and isinstance(history, list) and history[0]:
+                    result = []
+                    for entry in history[0]:
+                        try:
+                            result.append({"ts": entry.get("last_changed", ""),
+                                           "price": float(entry["state"]), "currency": "EUR"})
+                        except (ValueError, TypeError):
+                            continue
+                    if result:
+                        return result
+            except Exception as e:
+                log.debug("HA history fetch failed: %s", e)
+        try:
+            v = self._fetch_current()
+            if v is not None:
+                return [{"ts": start.isoformat() if start else "", "price": v, "currency": "EUR"}]
+        except Exception:
+            pass
+        return []
+
+    def test_connection(self):
+        entity = self._ha_entity()
+        if not entity:
+            return {"ok": False, "message": "Kein HA-Entity konfiguriert (tariff_ha_entity)"}
+        if not self._ha_url() or not self._ha_token():
+            return {"ok": False, "message": "HA-URL oder Token nicht konfiguriert"}
+        try:
+            v = self._fetch_current()
+            if v is not None:
+                return {"ok": True, "message": f"HA Sensor '{entity}': {v:.5f} EUR/kWh", "sample_price": v}
+            return {"ok": False, "message": f"Sensor '{entity}' hat keinen gültigen Wert (unavailable?)"}
+        except Exception as e:
+            return {"ok": False, "message": str(e)}
+
+    @classmethod
+    def get_config_fields(cls):
+        return [
+            {"key": "tariff_ha_url",    "label": "HA URL (leer = aus Verbindungs-Konfig)", "type": "text",
+             "help": "z. B. http://homeassistant.local:8123"},
+            {"key": "tariff_ha_token",  "label": "Long-Lived Access Token", "type": "password"},
+            {"key": "tariff_ha_entity", "label": "Entity ID (Preis-Sensor)", "type": "text",
+             "help": "z. B. sensor.electricity_price_current"},
+            {"key": "tariff_fallback_price", "label": "Fallback-Preis (EUR/kWh)", "type": "number"},
+        ]
+
+
+class EvccTariffProvider(BaseTariffProvider):
+    provider_id = "evcc"
+    label = "EVCC"
+
+    def _fetch_grid_price(self) -> Optional[float]:
+        import requests
+        url = (self.config.get("tariff_evcc_url") or "").rstrip("/")
+        if not url:
+            return None
+        if not url.startswith("http"):
+            url = f"http://{url}"
+        r = requests.get(f"{url}/api/state", timeout=8)
+        r.raise_for_status()
+        result = r.json().get("result", r.json())
+        for field in ["tariffGrid", "gridPrice", "tariff"]:
+            try:
+                val = result
+                for key in field.split("."):
+                    val = val[key]
+                return float(val)
+            except (KeyError, TypeError, ValueError):
+                continue
+        return None
+
+    def get_price_at(self, timestamp, location=None):
+        try:
+            v = self._fetch_grid_price()
+            return v if v is not None else self._fallback()
+        except Exception:
+            return self._fallback()
+
+    def get_prices_for_range(self, start, end):
+        try:
+            v = self._fetch_grid_price()
+            if v is not None:
+                return [{"ts": start.isoformat() if start else "", "price": v, "currency": "EUR"}]
+        except Exception:
+            pass
+        return []
+
+    def test_connection(self):
+        url = self.config.get("tariff_evcc_url", "")
+        if not url:
+            return {"ok": False, "message": "Keine EVCC-URL konfiguriert (tariff_evcc_url)"}
+        try:
+            v = self._fetch_grid_price()
+            if v is not None:
+                return {"ok": True, "message": f"EVCC Netz-Tarif: {v:.5f} EUR/kWh", "sample_price": v}
+            return {"ok": False, "message": "EVCC erreichbar, aber kein Strompreis in /api/state (tariffGrid/gridPrice)"}
+        except Exception as e:
+            return {"ok": False, "message": str(e)}
+
+    @classmethod
+    def get_config_fields(cls):
+        return [
+            {"key": "tariff_evcc_url",  "label": "EVCC URL", "type": "text",
+             "help": "z. B. http://evcc.local oder http://192.168.1.100:7070"},
+            {"key": "tariff_fallback_price", "label": "Fallback-Preis (EUR/kWh)", "type": "number"},
+        ]
+
+
 TARIFF_PROVIDERS: dict = {
-    "fixed":        FixedPriceTariffProvider,
-    "octopus":      OctopusTariffProvider,
-    "tibber":       TibberTariffProvider,
-    "generic_http": GenericHttpTariffProvider,
+    "fixed":          FixedPriceTariffProvider,
+    "octopus":        OctopusTariffProvider,
+    "tibber":         TibberTariffProvider,
+    "generic_http":   GenericHttpTariffProvider,
+    "home_assistant": HomeAssistantTariffProvider,
+    "evcc":           EvccTariffProvider,
 }
 
 

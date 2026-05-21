@@ -1320,6 +1320,8 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
                 <option value="fixed">Fester Preis</option>
                 <option value="octopus">Octopus Energy</option>
                 <option value="tibber">Tibber</option>
+                <option value="home_assistant">Home Assistant Sensor</option>
+                <option value="evcc">EVCC</option>
                 <option value="generic_http">Generic HTTP</option>
               </select>
             </div>
@@ -1364,6 +1366,28 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
                 style="width:100%;max-width:400px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
               <div style="color:var(--mute);font-size:.7rem;margin-top:4px">Token aus dem Tibber Developer Portal</div>
             </div>
+            <!-- Home Assistant panel -->
+            <div id="tariff_panel_home_assistant" style="display:none">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+                <div style="grid-column:1/-1"><label class="cfg-lbl">Entity ID (Preis-Sensor)</label>
+                  <input type="text" id="tariff_ha_entity" placeholder="sensor.electricity_price_current"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+                  <div style="font-size:.7rem;color:var(--mute);margin-top:3px">HA-Sensor mit aktuellem Strompreis in EUR/kWh</div></div>
+                <div style="grid-column:1/-1"><label class="cfg-lbl">HA URL <span style="font-weight:400;color:var(--mute)">(leer = aus Verbindungs-Konfig)</span></label>
+                  <input type="text" id="tariff_ha_url" placeholder="http://homeassistant.local:8123"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+                <div style="grid-column:1/-1"><label class="cfg-lbl">Long-Lived Access Token</label>
+                  <input type="password" id="tariff_ha_token" placeholder="eyJ0eXAi…"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+              </div>
+            </div>
+            <!-- EVCC panel -->
+            <div id="tariff_panel_evcc" style="display:none">
+              <label class="cfg-lbl">EVCC URL</label>
+              <input type="text" id="tariff_evcc_url" placeholder="http://evcc.local:7070"
+                style="width:100%;max-width:400px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+              <div style="font-size:.7rem;color:var(--mute);margin-top:3px">EVCC-Instanz mit tariffGrid oder gridPrice in /api/state</div>
+            </div>
             <!-- Generic HTTP panel -->
             <div id="tariff_panel_generic_http" style="display:none">
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
@@ -1395,6 +1419,27 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
               <button class="btn-s" onclick="testTariff()" data-requires-permission="tariffs:test">🔌 Verbindung testen</button>
               <button class="btn-s" onclick="loadTariffPrices()" data-requires-permission="tariffs:view">📈 Preise heute</button>
               <span id="tariff_status" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);align-self:center"></span>
+            </div>
+            <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--brd)">
+              <div style="font-size:.78rem;font-weight:600;margin-bottom:8px;color:var(--mute)">🔄 Bestehende Sessions neu berechnen</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;max-width:640px">
+                <div><label class="cfg-lbl">Monat (leer = alle)</label>
+                  <input type="month" id="recalc_month"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+                <div><label class="cfg-lbl">Fahrzeug</label>
+                  <select id="recalc_vehicle" style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
+                    <option value="v0">Primärfahrzeug</option>
+                    {% for v in all_vehicles %}<option value="{{ v.id }}">{{ v.name }}</option>{% endfor %}
+                    <option value="all">Alle Fahrzeuge</option>
+                  </select></div>
+                <div><label class="cfg-lbl">Standort</label>
+                  <select id="recalc_location" style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
+                    <option value="home">🏠 Nur Zuhause</option>
+                    <option value="all">Alle</option>
+                  </select></div>
+                <button class="btn-s" onclick="recalculateTariff()" style="white-space:nowrap">🔄 Neu berechnen</button>
+              </div>
+              <span id="recalc_status" style="display:block;margin-top:6px;font-size:.73rem;font-family:var(--mono);color:var(--mute)"></span>
             </div>
           </div>
         </div>
@@ -6216,7 +6261,7 @@ async function sendArchiveReport(id){
 // ── TARIFF CONFIG ─────────────────────────────────────────────────────────────
 function onTariffProviderChange(){
   const p = $('tariff_provider')?.value||'fixed';
-  ['fixed','octopus','tibber','generic_http'].forEach(id=>{
+  ['fixed','octopus','tibber','home_assistant','evcc','generic_http'].forEach(id=>{
     const el = $('tariff_panel_'+id);
     if(el) el.style.display = id===p?'':'none';
   });
@@ -6241,6 +6286,10 @@ async function loadTariffConfig(){
     if(s('tariff_generic_json_path'))     s('tariff_generic_json_path').value    = r.generic_tariff_json_path||'price';
     if(s('tariff_generic_unit'))          s('tariff_generic_unit').value         = r.generic_tariff_unit||'EUR/kWh';
     if(s('tariff_generic_factor'))        s('tariff_generic_factor').value       = r.generic_tariff_factor||1.0;
+    if(s('tariff_ha_entity'))             s('tariff_ha_entity').value            = r.tariff_ha_entity||'';
+    if(s('tariff_ha_url'))                s('tariff_ha_url').value               = r.tariff_ha_url||'';
+    if(s('tariff_ha_token'))              s('tariff_ha_token').value             = r.tariff_ha_token||'';
+    if(s('tariff_evcc_url'))              s('tariff_evcc_url').value             = r.tariff_evcc_url||'';
   }catch(e){ console.warn('loadTariffConfig',e); }
 }
 
@@ -6262,6 +6311,10 @@ async function saveTariffConfig(){
     generic_tariff_json_path: g('tariff_generic_json_path')?.value||'price',
     generic_tariff_unit:      g('tariff_generic_unit')?.value||'EUR/kWh',
     generic_tariff_factor:    parseFloat(g('tariff_generic_factor')?.value||1),
+    tariff_ha_entity:         g('tariff_ha_entity')?.value||'',
+    tariff_ha_url:            g('tariff_ha_url')?.value||'',
+    tariff_ha_token:          g('tariff_ha_token')?.value||'',
+    tariff_evcc_url:          g('tariff_evcc_url')?.value||'',
   };
   if(st){st.textContent='⏳ Speichere…';st.style.color='var(--mute)';}
   try{
@@ -6295,6 +6348,29 @@ async function loadTariffPrices(){
       </tr>`).join('')}
       </table>`;
   }catch(e){body.textContent='❌ '+e.message;}
+}
+
+async function recalculateTariff(){
+  const st = $('recalc_status');
+  const month    = $('recalc_month')?.value||'';
+  const vehicle  = $('recalc_vehicle')?.value||'v0';
+  const location = $('recalc_location')?.value||'home';
+  if(st){st.textContent='⏳ Berechne…';st.style.color='var(--mute)';}
+  try{
+    const r = await apiFetch('/api/tariffs/recalculate',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({vehicle_id:vehicle, month:month||undefined, location_filter:location})
+    }).then(r=>r.json());
+    if(r.ok){
+      st.textContent=`✅ ${r.updated} Sessions aktualisiert${r.errors?', '+r.errors+' Fehler':''}`;
+      st.style.color='#6ee7b7';
+    } else {
+      st.textContent='❌ '+(r.error||'Fehler');
+      st.style.color='#f87171';
+    }
+  }catch(e){
+    if(st){st.textContent='❌ '+e.message;st.style.color='#f87171';}
+  }
 }
 
 // ── API TOKENS ────────────────────────────────────────────────────────────────

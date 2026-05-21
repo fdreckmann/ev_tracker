@@ -11,7 +11,7 @@ from meter_providers import read_meter as _read_meter_impl, MeterResult
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-APP_VERSION   = "2.0.14"
+APP_VERSION   = "2.0.15"
 
 CHANGELOG = [
     {"version":"2.0.0","changes":[
@@ -571,7 +571,7 @@ DEFAULT_CONFIG = {
     "extra_vehicles":    [],
 
     # Tariff provider
-    "tariff_provider":         "fixed",    # fixed|octopus|tibber|generic_http
+    "tariff_provider":         "fixed",    # fixed|octopus|tibber|generic_http|home_assistant|evcc
     "tariff_currency":         "EUR",
     "tariff_include_tax":      True,
     "tariff_include_grid_fees": False,
@@ -587,6 +587,10 @@ DEFAULT_CONFIG = {
     "generic_tariff_json_path": "price",
     "generic_tariff_unit":     "EUR/kWh",
     "generic_tariff_factor":   1.0,
+    "tariff_ha_url":           "",   # HA URL for tariff sensor (empty = use ha_url)
+    "tariff_ha_token":         "",   # HA long-lived access token for tariff sensor
+    "tariff_ha_entity":        "",   # HA entity_id for electricity price sensor
+    "tariff_evcc_url":         "",   # EVCC URL for grid tariff
 
     # MQTT
     "mqtt_enabled":                    False,
@@ -6249,9 +6253,10 @@ def api_tariff_config_get():
     keys = [k for k in DEFAULT_CONFIG if k.startswith("tariff_") or k in
             ("octopus_api_key","octopus_account_id","octopus_product_code","octopus_tariff_code","octopus_gbp_eur_factor",
              "tibber_token","generic_tariff_url","generic_tariff_headers","generic_tariff_json_path",
-             "generic_tariff_unit","generic_tariff_factor","price_per_kwh_home","price_per_kwh_ac","price_per_kwh_dc")]
+             "generic_tariff_unit","generic_tariff_factor","price_per_kwh_home","price_per_kwh_ac","price_per_kwh_dc",
+             "tariff_ha_url","tariff_ha_token","tariff_ha_entity","tariff_evcc_url")]
     result = {k: cfg.get(k, DEFAULT_CONFIG.get(k)) for k in keys}
-    for mask_key in ("octopus_api_key", "tibber_token"):
+    for mask_key in ("octopus_api_key", "tibber_token", "tariff_ha_token"):
         if result.get(mask_key):
             result[mask_key] = "********"
     return jsonify(result)
@@ -6315,6 +6320,63 @@ def api_tariff_prices():
         return jsonify({"ok": True, "prices": prices, "provider": cfg.get("tariff_provider","fixed")})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e), "prices": []})
+
+
+@app.route("/api/tariffs/recalculate", methods=["POST"])
+@require_login
+def api_tariff_recalculate():
+    if not has_permission(_current_user(), "tariffs:configure"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: tariffs:configure"}), 403
+    data = request.get_json(force=True) or {}
+    vehicle_id      = data.get("vehicle_id", "v0")
+    month           = data.get("month")           # "2026-05"
+    location_filter = data.get("location_filter", "home")
+    cfg = load_config()
+    try:
+        from tariff_providers import get_tariff_provider
+        provider = get_tariff_provider(cfg)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Tarifprovider-Fehler: {e}"}), 500
+    con = _get_db()
+    try:
+        q = "SELECT id, start_ts, end_ts, kwh_charged, cost_manual FROM sessions WHERE end_ts IS NOT NULL AND cost_manual=0"
+        params = []
+        if vehicle_id and vehicle_id != "all":
+            q += " AND vehicle_id=?"; params.append(vehicle_id)
+        if month:
+            q += " AND start_ts LIKE ?"; params.append(f"{month}%")
+        if location_filter and location_filter != "all":
+            q += " AND location=?"; params.append(location_filter)
+        rows = con.execute(q, params).fetchall()
+        fallback_price = float(cfg.get("tariff_fallback_price", cfg.get("price_per_kwh_home", 0.30)))
+        provider_id    = cfg.get("tariff_provider", "fixed")
+        updated = errors = 0
+        for row in rows:
+            try:
+                start = datetime.fromisoformat(row["start_ts"])
+                end   = datetime.fromisoformat(row["end_ts"])
+                kwh   = row["kwh_charged"]
+                if kwh is None:
+                    continue
+                price = provider.get_average_price(start, end)
+                price_source = provider_id if price is not None else "fallback"
+                if price is None:
+                    price = fallback_price
+                cost = round(float(kwh) * price, 2)
+                con.execute(
+                    "UPDATE sessions SET price_per_kwh=?, cost_eur=?, tariff_provider=?, tariff_price_source=? WHERE id=?",
+                    (round(price, 5), cost, provider_id, price_source, row["id"]))
+                updated += 1
+            except Exception as _re:
+                log.warning("Tariff recalculate session #%s: %s", row["id"], _re)
+                errors += 1
+        con.commit()
+        _audit("tariff_recalculated", ip=request.remote_addr)
+        return jsonify({"ok": True, "updated": updated, "errors": errors, "total": len(rows)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    finally:
+        con.close()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
