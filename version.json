@@ -1,6 +1,25 @@
 {
-  "version": "2.0.19",
+  "version": "2.0.20",
   "changelog": [
+    {
+      "version": "2.0.20",
+      "date": "2026-05-22",
+      "changes": [
+        "Architektur: server.py in core/ und routes/ Module aufgeteilt (Phase 1)",
+        "Architektur: core/db.py — _get_db(), close_db_if_owned(), DB_PATH, DATA_DIR",
+        "Architektur: core/config.py — DEFAULT_CONFIG, VEHICLE_SPECIFIC_KEYS, load_config(), save_config()",
+        "Architektur: core/security.py — ALL_PERMISSIONS, DEFAULT_ROLE_PERMISSIONS, has_permission(), require_login, _audit() u.v.m.",
+        "Architektur: core/tokens.py — _API_SCOPES, _hash_token(), _check_api_token(), _require_api_token()",
+        "Architektur: core/state.py — vehicle_states, vehicle_states_lock, vehicle_stops, pdf_tokens, update_log",
+        "Architektur: routes/health.py — Blueprint für /api/health und /api/system/status",
+        "Architektur: routes/mqtt.py — Blueprint für /api/mqtt/* (5 Endpunkte)",
+        "Architektur: routes/notifications.py — Blueprint für /api/notifications/* (6 Endpunkte)",
+        "Architektur: routes/tokens.py — Blueprint für /api/tokens (3 Endpunkte)",
+        "Architektur: routes/admin.py — Blueprint für /api/admin/* und /api/me/permissions (8 Endpunkte)",
+        "Architektur: routes/billing.py — Blueprint für /api/billing/* (3 Endpunkte)",
+        "Refactoring: server.py von 7236 auf ~5900 Zeilen reduziert — keine API-Änderungen"
+      ]
+    },
     {
       "version": "2.0.19",
       "date": "2026-05-21",
