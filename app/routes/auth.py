@@ -39,7 +39,7 @@ _forgot_pw_attempts: dict = {}  # email -> [timestamp, ...]
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login_page():
     if session.get("user_id"):
-        return redirect(url_for("index"))
+        return redirect(url_for("main_routes.index"))
     error = None
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
@@ -144,7 +144,7 @@ def logout():
 @auth_bp.route("/setup", methods=["GET", "POST"])
 def setup_page():
     if _has_users():
-        return redirect(url_for("index"))
+        return redirect(url_for("main_routes.index"))
     error = None
     cfg = load_config()
     has_old_auth = bool(cfg.get("auth_password_hash", ""))
