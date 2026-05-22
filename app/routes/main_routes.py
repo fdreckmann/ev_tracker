@@ -8,7 +8,7 @@ from flask import Blueprint, jsonify, render_template, request, make_response
 
 from core.db import _get_db, close_db_if_owned, DATA_DIR
 from core.config import load_config, save_config, DEFAULT_CONFIG
-from version import APP_VERSION
+from version import APP_VERSION, CHANGELOG
 from core.security import (
     require_login, has_permission, _current_user, _audit,
     _has_users, _get_user_permissions, ALL_PERMISSIONS,
@@ -31,7 +31,6 @@ _SECRET_MASK = "********"
 @main_routes_bp.route("/")
 @require_login
 def index():
-    from server import CHANGELOG
     from providers import get_all_capabilities, get_config_fields, PROVIDERS
     from services.vehicle_service import get_all_vehicles
     _TEMPLATE_PATH = DATA_DIR / "template.xlsx"

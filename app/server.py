@@ -15,7 +15,7 @@ if __name__ == "__main__":
 from flask import Flask, render_template, request, jsonify, send_file, make_response, session, redirect, url_for, g, Response
 from providers import get_provider, get_all_capabilities, get_config_fields, PROVIDERS
 from meter_providers import read_meter as _read_meter_impl, MeterResult
-from core.location import effective_session_location
+from core.location import effective_session_location, normalize_location
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -801,7 +801,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                         "INSERT INTO vehicle_location_history "
                         "(vehicle_id, timestamp, location_status, source, latitude, longitude, accuracy_m) "
                         "VALUES (?,?,?,?,?,?,?)",
-                        (vehicle_id, now_ts, st["location_status"],
+                        (vehicle_id, now_ts, normalize_location(st["location_status"]),
                          st.get("location_source",""), lat, lon, acc))
                     # Cleanup old entries beyond retention period
                     cutoff = (datetime.utcnow() - timedelta(days=retention)).isoformat(timespec="seconds")
@@ -1397,8 +1397,9 @@ def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 def _detect_location_status(vid: str, cfg: dict, vehicle_state: dict) -> dict:
     """
     Combine provider location and HA device_tracker entities to determine
-    home/external/unknown status. Returns dict with status, source, lat, lon, accuracy_m.
+    home/extern/unknown status. Returns dict with status, source, lat, lon, accuracy_m.
     """
+    from core.location import normalize_location
     location_mode   = cfg.get("location_mode", "home_external")
     detect_mode     = cfg.get("home_detection_mode", "any")
     ha_entities     = cfg.get("location_ha_entities") or []
@@ -1414,7 +1415,7 @@ def _detect_location_status(vid: str, cfg: dict, vehicle_state: dict) -> dict:
         return result
 
     sources_home = []
-    sources_external = []
+    sources_extern = []
 
     # --- Provider location check ---
     prov_lat = vehicle_state.get("location_lat")
@@ -1427,18 +1428,16 @@ def _detect_location_status(vid: str, cfg: dict, vehicle_state: dict) -> dict:
         if home_lat and home_lon:
             try:
                 dist = _haversine_m(float(home_lat), float(home_lon), prov_lat, prov_lon)
-                prov_status = "home" if dist <= home_radius_m else "external"
+                prov_status = "home" if dist <= home_radius_m else "extern"
             except (ValueError, TypeError):
                 prov_status = "unknown"
-    elif vehicle_state.get("location") in ("home", "zuhause"):
-        prov_status = "home"
-    elif vehicle_state.get("location") in ("extern", "external"):
-        prov_status = "external"
+    else:
+        prov_status = normalize_location(vehicle_state.get("location"))
 
     if prov_status == "home":
         sources_home.append("provider")
-    elif prov_status == "external":
-        sources_external.append("provider")
+    elif prov_status == "extern":
+        sources_extern.append("provider")
 
     # --- Home Assistant entity check ---
     ha_url   = cfg.get("ha_url", "").rstrip("/")
@@ -1458,7 +1457,8 @@ def _detect_location_status(vid: str, cfg: dict, vehicle_state: dict) -> dict:
                 with _ur.urlopen(req, timeout=5) as resp:
                     data = _json.loads(resp.read())
                 state_val = data.get("state", "").lower()
-                if state_val in ("home", "zuhause"):
+                loc = normalize_location(state_val)
+                if loc == "home":
                     ha_home_count += 1
                     sources_home.append(f"ha:{entity_id}")
                     # Try to get exact coords from attributes
@@ -1470,7 +1470,7 @@ def _detect_location_status(vid: str, cfg: dict, vehicle_state: dict) -> dict:
                         result["accuracy_m"] = attrs.get("gps_accuracy")
                 elif state_val not in ("", "unavailable", "unknown"):
                     ha_ext_count += 1
-                    sources_external.append(f"ha:{entity_id}")
+                    sources_extern.append(f"ha:{entity_id}")
             except Exception as _ha_e:
                 log.debug("HA entity %s: %s", entity_id, _ha_e)
 
@@ -1482,31 +1482,31 @@ def _detect_location_status(vid: str, cfg: dict, vehicle_state: dict) -> dict:
         final_status = prov_status
         source_desc  = "provider"
     elif detect_mode == "ha_only":
-        if ha_home_count > 0:     final_status = "home"
-        elif ha_ext_count > 0:    final_status = "external"
-        else:                     final_status = "unknown"
+        if ha_home_count > 0:    final_status = "home"
+        elif ha_ext_count > 0:   final_status = "extern"
+        else:                    final_status = "unknown"
         source_desc = "ha"
     elif detect_mode == "all":
-        all_sources = sources_home + sources_external
+        all_sources = sources_home + sources_extern
         if all_sources and all(s in sources_home for s in all_sources):
             final_status = "home"
-        elif sources_external:
-            final_status = "external"
+        elif sources_extern:
+            final_status = "extern"
         else:
             final_status = "unknown"
         source_desc = "combined"
     elif detect_mode == "manual":
-        final_status = cfg.get("location_status_manual", "unknown")
+        final_status = normalize_location(cfg.get("location_status_manual", "unknown"))
         source_desc  = "manual"
     else:  # any (default)
-        if sources_home:       final_status = "home"
-        elif sources_external: final_status = "external"
-        else:                  final_status = "unknown"
-        source_desc = "combined" if (sources_home or sources_external) else "none"
+        if sources_home:        final_status = "home"
+        elif sources_extern:    final_status = "extern"
+        else:                   final_status = "unknown"
+        source_desc = "combined" if (sources_home or sources_extern) else "none"
 
     result["status"]        = final_status
     result["source"]        = source_desc
-    result["source_detail"] = ", ".join((sources_home + sources_external)[:3])
+    result["source_detail"] = ", ".join((sources_home + sources_extern)[:3])
     return result
 
 
@@ -2181,9 +2181,10 @@ def _get_report_sessions(start_date, end_date, location_filter="all", vehicle_fi
     from datetime import timedelta
     where  = ["end_ts IS NOT NULL", "start_ts >= ?", "start_ts < ?"]
     params = [start_date.isoformat(), (end_date + timedelta(days=1)).isoformat()]
-    if location_filter == "home":
+    _loc_norm = normalize_location(location_filter) if location_filter not in ("all",) else location_filter
+    if _loc_norm == "home":
         where.append("location = 'home'")
-    elif location_filter == "external":
+    elif _loc_norm == "extern":
         where.append("location = 'extern'")
     if vehicle_filter and vehicle_filter != "all":
         where.append("vehicle_id = ?"); params.append(vehicle_filter)
@@ -2449,7 +2450,7 @@ def _send_report_email(cfg=None, triggered_by="auto"):
                 from export_excel import export as _export_func
                 sig_path = str(SIGNATURE_PATH) if SIGNATURE_PATH.exists() and cfg.get("report_email_include_signature") else None
                 sig_map  = cfg.get("signature_mapping", {}) if sig_path else {}
-                xl_loc   = "extern" if loc_filter == "external" else loc_filter
+                xl_loc   = normalize_location(loc_filter) if loc_filter not in ("all",) else loc_filter
                 xl_bytes, _ = _export_func(
                     year=period_info["start"].year, month=period_info["start"].month,
                     location=xl_loc, config=cfg, lang=lang,

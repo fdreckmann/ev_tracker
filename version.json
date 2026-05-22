@@ -1,6 +1,22 @@
 {
-  "version": "2.0.27",
+  "version": "2.0.28",
   "changelog": [
+    {
+      "version": "2.0.28",
+      "date": "2026-05-22",
+      "changes": [
+        "Bugfix KRITISCH: normalize_location() Helper — 'external' wird zu 'extern' normalisiert, alle Varianten (not_home, away, unterwegs, at_home, zuhause) erkannt",
+        "Bugfix: _detect_location_status() in server.py und routes/vehicles.py gibt jetzt canonical 'extern' statt 'external' zurück",
+        "Bugfix: location_history schreibt normalize_location(location_status) — keine 'external'-Werte mehr in DB",
+        "Bugfix: _get_report_sessions() nutzt normalize_location für location_filter — 'external' und 'extern' werden gleich behandelt",
+        "Bugfix: xl_loc in server.py, reports.py, api_v1.py nutzt normalize_location statt manuellem 'external'→'extern' Mapping",
+        "Bugfix: /api/sessions/<id>/location normalisiert eingehenden Standortwert vor DB-Speicherung",
+        "Bugfix: CHANGELOG aus version.json gelesen (version.py) — main_routes.py importiert nicht mehr aus server",
+        "UI: normalizeLocation() JS-Helper in status.js und mobile.js — 'external' wird zu 'Extern' in allen Anzeigen",
+        "UI: locBadge(), refreshStatus(), renderTbl() nutzen normalizeLocation() für konsistente Standortanzeige",
+        "JS-Modularisierung: billing.js, templates.js, settings.js ausgelagert"
+      ]
+    },
     {
       "version": "2.0.27",
       "date": "2026-05-22",

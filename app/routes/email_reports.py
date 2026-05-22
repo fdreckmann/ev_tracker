@@ -150,9 +150,11 @@ def _get_report_sessions(start_date, end_date, location_filter="all", vehicle_fi
     from core.db import DB_PATH
     where  = ["end_ts IS NOT NULL", "start_ts >= ?", "start_ts < ?"]
     params = [start_date.isoformat(), (end_date + timedelta(days=1)).isoformat()]
-    if location_filter == "home":
+    from core.location import normalize_location as _nl
+    _loc_norm = _nl(location_filter) if location_filter not in ("all",) else location_filter
+    if _loc_norm == "home":
         where.append("location = 'home'")
-    elif location_filter == "external":
+    elif _loc_norm == "extern":
         where.append("location = 'extern'")
     if vehicle_filter and vehicle_filter != "all":
         where.append("vehicle_id = ?"); params.append(vehicle_filter)
@@ -427,7 +429,8 @@ def _send_report_email(cfg=None, triggered_by="auto"):
                 from export_excel import export as _export_func
                 sig_path = str(SIGNATURE_PATH) if SIGNATURE_PATH.exists() and cfg.get("report_email_include_signature") else None
                 sig_map  = cfg.get("signature_mapping", {}) if sig_path else {}
-                xl_loc   = "extern" if loc_filter == "external" else loc_filter
+                from core.location import normalize_location as _nl
+                xl_loc   = _nl(loc_filter) if loc_filter not in ("all",) else loc_filter
                 xl_bytes, _ = _export_func(
                     year=period_info["start"].year, month=period_info["start"].month,
                     location=xl_loc, config=cfg, lang=lang,

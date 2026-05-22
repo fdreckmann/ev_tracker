@@ -96,8 +96,9 @@ def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 def _detect_location_status(vid: str, cfg: dict, vehicle_state: dict) -> dict:
     """
     Combine provider location and HA device_tracker entities to determine
-    home/external/unknown status. Returns dict with status, source, lat, lon, accuracy_m.
+    home/extern/unknown status. Returns dict with status, source, lat, lon, accuracy_m.
     """
+    from core.location import normalize_location
     location_mode   = cfg.get("location_mode", "home_external")
     detect_mode     = cfg.get("home_detection_mode", "any")
     ha_entities     = cfg.get("location_ha_entities") or []
@@ -113,7 +114,7 @@ def _detect_location_status(vid: str, cfg: dict, vehicle_state: dict) -> dict:
         return result
 
     sources_home = []
-    sources_external = []
+    sources_extern = []
 
     # --- Provider location check ---
     prov_lat = vehicle_state.get("location_lat")
@@ -126,18 +127,16 @@ def _detect_location_status(vid: str, cfg: dict, vehicle_state: dict) -> dict:
         if home_lat and home_lon:
             try:
                 dist = _haversine_m(float(home_lat), float(home_lon), prov_lat, prov_lon)
-                prov_status = "home" if dist <= home_radius_m else "external"
+                prov_status = "home" if dist <= home_radius_m else "extern"
             except (ValueError, TypeError):
                 prov_status = "unknown"
-    elif vehicle_state.get("location") in ("home", "zuhause"):
-        prov_status = "home"
-    elif vehicle_state.get("location") in ("extern", "external"):
-        prov_status = "external"
+    else:
+        prov_status = normalize_location(vehicle_state.get("location"))
 
     if prov_status == "home":
         sources_home.append("provider")
-    elif prov_status == "external":
-        sources_external.append("provider")
+    elif prov_status == "extern":
+        sources_extern.append("provider")
 
     # --- Home Assistant entity check ---
     ha_url   = cfg.get("ha_url", "").rstrip("/")
@@ -157,7 +156,8 @@ def _detect_location_status(vid: str, cfg: dict, vehicle_state: dict) -> dict:
                 with _ur.urlopen(req, timeout=5) as resp:
                     data = _json.loads(resp.read())
                 state_val = data.get("state", "").lower()
-                if state_val in ("home", "zuhause"):
+                ha_loc = normalize_location(state_val)
+                if ha_loc == "home":
                     ha_home_count += 1
                     sources_home.append(f"ha:{entity_id}")
                     # Try to get exact coords from attributes
@@ -167,9 +167,9 @@ def _detect_location_status(vid: str, cfg: dict, vehicle_state: dict) -> dict:
                         result["latitude"]  = float(attrs["latitude"])
                         result["longitude"] = float(attrs["longitude"])
                         result["accuracy_m"] = attrs.get("gps_accuracy")
-                elif state_val not in ("", "unavailable", "unknown"):
+                elif ha_loc == "extern":
                     ha_ext_count += 1
-                    sources_external.append(f"ha:{entity_id}")
+                    sources_extern.append(f"ha:{entity_id}")
             except Exception as _ha_e:
                 log.debug("HA entity %s: %s", entity_id, _ha_e)
 
@@ -181,31 +181,31 @@ def _detect_location_status(vid: str, cfg: dict, vehicle_state: dict) -> dict:
         final_status = prov_status
         source_desc  = "provider"
     elif detect_mode == "ha_only":
-        if ha_home_count > 0:     final_status = "home"
-        elif ha_ext_count > 0:    final_status = "external"
-        else:                     final_status = "unknown"
+        if ha_home_count > 0:  final_status = "home"
+        elif ha_ext_count > 0: final_status = "extern"
+        else:                  final_status = "unknown"
         source_desc = "ha"
     elif detect_mode == "all":
-        all_sources = sources_home + sources_external
+        all_sources = sources_home + sources_extern
         if all_sources and all(s in sources_home for s in all_sources):
             final_status = "home"
-        elif sources_external:
-            final_status = "external"
+        elif sources_extern:
+            final_status = "extern"
         else:
             final_status = "unknown"
         source_desc = "combined"
     elif detect_mode == "manual":
-        final_status = cfg.get("location_status_manual", "unknown")
+        final_status = normalize_location(cfg.get("location_status_manual", "unknown"))
         source_desc  = "manual"
     else:  # any (default)
-        if sources_home:       final_status = "home"
-        elif sources_external: final_status = "external"
-        else:                  final_status = "unknown"
-        source_desc = "combined" if (sources_home or sources_external) else "none"
+        if sources_home:        final_status = "home"
+        elif sources_extern:    final_status = "extern"
+        else:                   final_status = "unknown"
+        source_desc = "combined" if (sources_home or sources_extern) else "none"
 
     result["status"]        = final_status
     result["source"]        = source_desc
-    result["source_detail"] = ", ".join((sources_home + sources_external)[:3])
+    result["source_detail"] = ", ".join((sources_home + sources_extern)[:3])
     return result
 
 

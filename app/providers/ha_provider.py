@@ -115,11 +115,11 @@ class HomeAssistantProvider(BaseProvider):
     @staticmethod
     def _normalize_location(state: str) -> str:
         """Normalize location state to canonical 'home' or 'extern'."""
-        s = state.lower().strip()
-        extern_states = {"not_home", "away", "extern", "external", "unterwegs", "außer_haus"}
-        if s in extern_states:
-            return "extern"
-        return s  # caller checks against home_states list
+        from core.location import normalize_location
+        norm = normalize_location(state)
+        if norm != "unknown":
+            return norm
+        return state.lower().strip()  # caller checks against home_states list
 
     def _location(self) -> str:
         sensor = self.config.get("location_sensor","").strip()

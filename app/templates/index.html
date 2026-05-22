@@ -2714,9 +2714,14 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 <!-- Toasts -->
 <div class="toasts" id="toasts"></div>
 
+<script src="/static/js/reports.js"></script>
+<script src="/static/js/export.js"></script>
 <script src="/static/js/sessions.js"></script>
 <script src="/static/js/vehicles.js"></script>
 <script src="/static/js/mobile.js"></script>
+<script src="/static/js/billing.js"></script>
+<script src="/static/js/templates.js"></script>
+<script src="/static/js/settings.js"></script>
 <script>
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -2887,43 +2892,8 @@ function renderGallery(){
   `).join('');
 }
 
-function previewGalleryTemplate(id){
-  window.open(`/api/template/gallery/${id}/preview`, '_blank');
-}
 
-async function useGalleryTemplate(id, name){
-  if(!confirm(`Vorlage "${name}" aktivieren? Dein aktuelles Template und Mapping werden überschrieben.`)) return;
-  try {
-    const r = await apiFetch(`/api/template/gallery/${id}/use`, {method:'POST'}).then(r=>r.json());
-    if(r.ok){
-      toast(`✓ Vorlage "${name}" aktiviert`);
-      _galleryData = null; // force reload
-      await loadGallery();
-      renderGallery();
-      closeGalleryModal();
-      // Refresh template status UI
-      await refreshTplInfo();
-      loadMappingPreview();
-      updateActiveTemplateInfo(r.active_template);
-    } else {
-      toast('❌ ' + (r.error||'Fehler'), 'err');
-    }
-  } catch(e){
-    toast('❌ ' + e.message, 'err');
-  }
-}
 
-function updateActiveTemplateInfo(info){
-  const el = $('activeTemplateInfo');
-  if(!el) return;
-  if(!info || !info.source){
-    el.textContent = '';
-  } else if(info.source === 'builtin'){
-    el.innerHTML = `<span style="color:var(--acc)">✓ ${info.name}</span>`;
-  } else {
-    el.innerHTML = `<span style="color:var(--mute)">Eigene Vorlage</span>`;
-  }
-}
 
 // ── Template upload ───────────────────────────────────────────────────────────
 async function refreshTplInfo(){
@@ -3801,90 +3771,8 @@ async function loadMappingPreview(){
 }
 
 // ── Template Analysis ─────────────────────────────────────────────────────────
-async function runTemplateAnalysis(){
-  const btn = $('analyzeBtn');
-  btn.disabled = true; btn.textContent = '⏳ Analysiere…';
-  try {
-    const res = await apiFetch('/api/template/analyze').then(r=>r.json());
-    btn.disabled = false; btn.textContent = '🔍 Automatisch analysieren';
-    if(!res.ok){ toast('❌ ' + (res.error||'Analysefehler'), 'err'); return; }
-    // Store result but do NOT apply immediately (TEIL 7)
-    _lastAnalysis = res;
-    _analysisResult = res;
-    showAnalysisPanel(res);
-    // Show sig suggestion button if available
-    if(res.signature_suggestion && $('sigAnalysisSuggestBtn')){
-      $('sigAnalysisSuggestBtn').style.display = '';
-    }
-  } catch(e){
-    btn.disabled = false; btn.textContent = '🔍 Automatisch analysieren';
-    toast('❌ Analysefehler: ' + e.message, 'err');
-  }
-}
 
-function showAnalysisPanel(a){
-  const panel = $('analysisPanel');
-  panel.style.display = 'block';
 
-  // Confidence bar
-  const pct = Math.round((a.confidence||0)*100);
-  const col = pct>=80?'var(--acc)':pct>=60?'#eab308':'var(--danger)';
-  $('analysisConfidence').innerHTML =
-    `<span style="color:${col};font-weight:600">${pct}% Konfidenz</span>` +
-    (a.sheet ? `<span style="color:var(--mute);margin-left:10px">Sheet: ${a.sheet}</span>` : '') +
-    (a.start_row ? `<span style="color:var(--mute);margin-left:10px">Startzeile: ${a.start_row}</span>` : '');
-
-  // Warnings
-  const warnings = a.warnings||[];
-  $('analysisWarnings').innerHTML = warnings.length
-    ? `<div style="color:#f59e0b;font-size:.72rem;font-family:var(--mono)">${warnings.map(w=>`⚠ ${w}`).join('<br>')}</div>`
-    : '';
-
-  // Suggestions summary
-  const colCount  = Object.keys(a.column_mapping||{}).length;
-  const cellCount = Object.keys(a.cell_mapping||{}).length;
-  const phCount   = (a.placeholders||[]).length;
-  $('analysisSuggestions').innerHTML =
-    `✓ ${colCount} Spalten erkannt &nbsp;·&nbsp; ${cellCount} Einzelzellen erkannt &nbsp;·&nbsp; ${phCount} Platzhalter`;
-
-  // Highlight cells in grid
-  highlightAnalysisCells(a);
-}
-
-function highlightAnalysisCells(a){
-  // Highlight column headers
-  Object.entries(a.column_mapping||{}).forEach(([col, info])=>{
-    const th = document.querySelector(`#excelGridHead th[data-col="${col}"]`);
-    if(th){
-      const field = info.field||info;
-      const color = FIELD_COLORS[field]||'#22c55e';
-      th.style.background = color + '33';
-      th.style.color = color;
-    }
-  });
-  // Highlight cell mapping cells
-  Object.entries(a.cell_mapping||{}).forEach(([addr, info])=>{
-    const col = addr.replace(/[0-9]/g,'');
-    const row = parseInt(addr.replace(/[A-Z]/gi,''));
-    const colIdx = col.split('').reduce((acc,c)=>acc*26+c.charCodeAt(0)-64,0);
-    const td = document.getElementById(`gc_${row}_${colIdx}`);
-    if(td){
-      td.style.outline = '2px solid #f59e0b';
-      td.title = `→ ${info.field||info} (${Math.round((info.confidence||0)*100)}%)`;
-    }
-  });
-  // Highlight placeholders
-  (a.placeholders||[]).forEach(ph=>{
-    const col = ph.cell.replace(/[0-9]/g,'');
-    const row = parseInt(ph.cell.replace(/[A-Z]/gi,''));
-    const colIdx = col.split('').reduce((acc,c)=>acc*26+c.charCodeAt(0)-64,0);
-    const td = document.getElementById(`gc_${row}_${colIdx}`);
-    if(td){
-      td.style.outline = '2px solid #a855f7';
-      td.title = `Platzhalter → ${ph.field}`;
-    }
-  });
-}
 
 function applyAnalysis(){
   const a = _analysisResult || _lastAnalysis;
@@ -4121,36 +4009,8 @@ async function loadExpPreview(){
 $('expY')?.addEventListener('change',()=>{ _lastExportPreviewToken=null; loadExpPreview(); });
 $('expM')?.addEventListener('change',()=>{ _lastExportPreviewToken=null; loadExpPreview(); });
 
-async function doExport(){
-  const y=$('expY').value, m=$('expM').value, loc=$('expLoc').value;
-  const lang = $('expLang')?.value || 'de';
-  const override=getColOverride();
-  let url=`/api/export?year=${y}&month=${m}&location=${loc}&lang=${lang}`;
-  if(override) url+=`&col_override=${encodeURIComponent(JSON.stringify(override))}`;
-  const inclSig = $('expIncludeSig') && !$('expIncludeSig').disabled && $('expIncludeSig').checked;
-  if(inclSig) url += '&include_signature=true';
-  // check for error response before triggering download
-  const resp = await fetch(url);
-  if(!resp.ok){
-    try{
-      const err=await resp.json();
-      toast('Export fehlgeschlagen: '+(err.error||resp.statusText),'err');
-    } catch(_){ toast('Export fehlgeschlagen: '+resp.statusText,'err'); }
-    return;
-  }
-  const blob=await resp.blob();
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download=`EV_Ladeprotokoll_${y}-${String(m).padStart(2,'0')}.xlsx`;
-  a.click();
-}
 
-async function saveExportLang(){
-  const lang = $('expLang')?.value || 'de';
-  await apiFetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({export_language: lang})});
-}
 
-let _lastExportPreviewToken = null;
 
 function escapeHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -4166,86 +4026,7 @@ function normalizeRows(rows) {
   return rows.map((cells, i) => ({row: i+1, is_data: true, cells: cells}));
 }
 
-function doExportDownloadFromPreview() {
-  if (_lastExportPreviewToken) {
-    window.location.href = `/api/export/download/${_lastExportPreviewToken}`;
-  } else {
-    doExport();
-  }
-}
 
-async function doExportPreview(){
-  const y=$('expY').value, m=$('expM').value, loc=$('expLoc').value;
-  const lang = $('expLang')?.value || 'de';
-  const inclSig = $('expIncludeSig') && !$('expIncludeSig').disabled && $('expIncludeSig').checked;
-  _lastExportPreviewToken = null;
-  $('expPreviewArea').style.display='';
-  $('expPreviewContent').innerHTML='<div class="empty">⏳ Lade Vorschau…</div>';
-  $('expPreviewWarnings').textContent='';
-  try {
-    const r = await apiFetch('/api/export/preview', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({year:parseInt(y), month:parseInt(m), location:loc, lang, include_signature:inclSig})
-    }).then(r=>r.json());
-
-    if(!r.ok){ $('expPreviewContent').innerHTML=`<div class="empty" style="color:var(--danger)">${escapeHtml(r.error||'Vorschau fehlgeschlagen')}</div>`; return; }
-
-    if(r.download_token) {
-      _lastExportPreviewToken = r.download_token;
-    }
-
-    // Show warnings
-    let html = '';
-    if(r.warnings && r.warnings.length > 0){
-      $('expPreviewWarnings').textContent = '⚠ ' + r.warnings.join(' · ');
-      html += `<div style="background:#332;padding:8px;border-radius:4px;margin-bottom:8px"><b>⚠️ Hinweise:</b><ul style="margin:4px 0 0 16px">${r.warnings.map(w=>`<li>${escapeHtml(w)}</li>`).join('')}</ul></div>`;
-    }
-
-    // Show header values summary
-    if(r.header_values){
-      const hv = r.header_values;
-      const fields = [
-        ['Monat', hv.month_year], ['Fahrer', hv.fahrer], ['Kennzeichen', hv.kennzeichen],
-        ['Sessions', hv.total_sessions], ['Gesamt kWh', hv.total_kwh ? parseFloat(hv.total_kwh).toFixed(2)+' kWh' : null],
-        ['Gesamtkosten', hv.total_cost ? '€'+parseFloat(hv.total_cost).toFixed(2) : null],
-        ['Ladezeit', hv.total_charging_hours ? parseFloat(hv.total_charging_hours).toFixed(1)+' h' : null],
-        ['Ø Ladeleistung', hv.avg_charge_power_kw ? parseFloat(hv.avg_charge_power_kw).toFixed(2)+' kW' : null],
-      ].filter(([k,v]) => v !== null && v !== 'None' && v !== undefined);
-      html += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">`;
-      for(const [k,v] of fields){
-        html += `<div style="background:rgba(255,255,255,.06);padding:4px 10px;border-radius:4px;font-size:.72rem;font-family:var(--mono)"><span style="color:var(--mute)">${escapeHtml(String(k))}:</span> ${escapeHtml(String(v))}</div>`;
-      }
-      html += '</div>';
-    }
-
-    // Show sheet preview
-    const sheets = r.sheets || [];
-    if(sheets.length === 0){
-      html += '<p>Keine Vorschau verfügbar.</p>';
-    } else {
-      for(const sheet of sheets){
-        html += `<div style="font-size:.72rem;color:var(--mute);margin-bottom:4px">Tabellenblatt: ${escapeHtml(sheet.name)} · Datenstartzeile: ${sheet.data_start_row}</div>`;
-        html += '<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:.71rem;font-family:var(--mono);min-width:100%">';
-        const rows = normalizeRows(sheet.rows || []);
-        for(const row of rows){
-          const style = row.is_data ? 'background:rgba(255,255,255,.03)' : 'background:rgba(99,179,237,.08);font-weight:600';
-          html += `<tr style="${style}"><td style="color:var(--mute);padding:2px 6px;border-right:1px solid var(--brd)">${row.row}</td>`;
-          for(const cell of (row.cells||[])){
-            const cellStr = cell == null ? '' : String(cell);
-            html += `<td style="padding:2px 8px;border:1px solid rgba(255,255,255,.05);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${cellStr.replace(/"/g,'&quot;')}">${escapeHtml(cellStr)}</td>`;
-          }
-          html += '</tr>';
-        }
-        html += '</table></div>';
-      }
-    }
-
-    $('expPreviewContent').innerHTML = html || '<div class="empty">Keine Vorschau verfügbar</div>';
-  } catch(e) {
-    $('expPreviewContent').innerHTML = `<div class="empty" style="color:var(--danger)">Fehler: ${escapeHtml(e.message)}</div>`;
-  }
-}
 
 // ── Signature ────────────────────────────────────────────────────────────────
 async function loadSignatureStatus(){
@@ -5158,7 +4939,6 @@ function onRepScheduleTypeChange(){
   if (mmr) mmr.style.display = pmode === 'multiple_months' ? '' : 'none';
 }
 
-let _repMonths = [];
 
 function repMonthsAdd(){
   const inp = $('rep_months_add_input');
@@ -5192,251 +4972,17 @@ function repMonthsRender(){
   }).join('');
 }
 
-async function loadReportConfig(){
-  try {
-    const r = await apiFetch('/api/report/config').then(r=>r.json());
-    const s = id => $(id);
-    if (s('rep_enabled'))           s('rep_enabled').checked             = !!r.report_email_enabled;
-    if (s('rep_recipients'))        s('rep_recipients').value            = (r.report_email_recipients||[]).join('\n');
-    if (s('rep_schedule_type'))     s('rep_schedule_type').value         = r.report_email_schedule_type||'monthly';
-    if (s('rep_period_mode'))       s('rep_period_mode').value           = r.report_email_period_mode||'previous_period';
-    if (s('rep_location_filter'))   s('rep_location_filter').value       = r.report_email_location_filter||'all';
-    if (s('rep_include_excel'))     s('rep_include_excel').checked       = r.report_email_include_excel !== false;
-    if (s('rep_include_summary'))   s('rep_include_summary').checked     = r.report_email_include_summary !== false;
-    if (s('rep_include_signature')) s('rep_include_signature').checked   = !!r.report_email_include_signature;
-    if (s('rep_language'))          s('rep_language').value              = r.report_email_language||'auto';
-    onRepScheduleTypeChange();
-    // Set dynamic fields after render
-    setTimeout(() => {
-      if (s('rep_time'))         s('rep_time').value         = r.report_email_time||'08:00';
-      if (s('rep_weekday'))      s('rep_weekday').value      = r.report_email_weekday||1;
-      if (s('rep_day_of_month')) s('rep_day_of_month').value = r.report_email_day_of_month||1;
-      if (s('rep_month'))        s('rep_month').value        = r.report_email_month||1;
-      if (s('rep_custom_days'))  s('rep_custom_days').value  = r.report_email_custom_days||14;
-      if (s('rep_cron'))         s('rep_cron').value         = r.report_email_cron||'';
-      if (s('rep_custom_start')) s('rep_custom_start').value = r.report_email_custom_start_date||'';
-      if (s('rep_custom_end'))   s('rep_custom_end').value   = r.report_email_custom_end_date||'';
-      if (s('rep_single_month')) s('rep_single_month').value = r.report_email_single_month||'';
-      _repMonths = (r.report_email_months||[]).filter(m => /^\d{4}-\d{2}$/.test(m));
-      _repMonths.sort();
-      repMonthsRender();
-    }, 50);
-    // Populate vehicle filter
-    const vf = s('rep_vehicle_filter');
-    if (vf) {
-      while (vf.options.length > 1) vf.remove(1);
-      (window._allVehicles||[]).forEach(v => {
-        const o = document.createElement('option'); o.value = v.id; o.textContent = v.name||v.id;
-        vf.appendChild(o);
-      });
-      vf.value = r.report_email_vehicle_filter||'all';
-    }
-  } catch(e){ console.warn('loadReportConfig', e); }
-}
 
-async function saveReportConfig(){
-  const g = id => $(id);
-  const recipients_raw = (g('rep_recipients')?.value||'').split(/[\n,]+/).map(s=>s.trim()).filter(Boolean);
-  const payload = {
-    report_email_enabled:          g('rep_enabled')?.checked||false,
-    report_email_recipients:       recipients_raw,
-    report_email_schedule_type:    g('rep_schedule_type')?.value||'monthly',
-    report_email_period_mode:      g('rep_period_mode')?.value||'previous_period',
-    report_email_time:             g('rep_time')?.value||'08:00',
-    report_email_weekday:          parseInt(g('rep_weekday')?.value||1),
-    report_email_day_of_month:     parseInt(g('rep_day_of_month')?.value||1),
-    report_email_month:            parseInt(g('rep_month')?.value||1),
-    report_email_custom_days:      parseInt(g('rep_custom_days')?.value||14),
-    report_email_cron:             g('rep_cron')?.value||'',
-    report_email_custom_start_date: g('rep_custom_start')?.value||'',
-    report_email_custom_end_date:   g('rep_custom_end')?.value||'',
-    report_email_single_month:      g('rep_single_month')?.value||'',
-    report_email_months:            _repMonths.slice(),
-    report_email_location_filter:  g('rep_location_filter')?.value||'all',
-    report_email_vehicle_filter:   g('rep_vehicle_filter')?.value||'all',
-    report_email_include_excel:    g('rep_include_excel')?.checked!==false,
-    report_email_include_summary:  g('rep_include_summary')?.checked!==false,
-    report_email_include_signature: g('rep_include_signature')?.checked||false,
-    report_email_language:         g('rep_language')?.value||'auto',
-  };
-  const st = $('rep_status');
-  if (st) { st.textContent = '⏳ Speichere…'; st.style.color = 'var(--mute)'; }
-  try {
-    const r = await apiFetch('/api/report/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());
-    if (st) { st.textContent = r.ok ? '✅ Gespeichert' : '❌ '+(r.error||'Fehler'); st.style.color = r.ok ? '#6ee7b7' : '#f87171'; }
-  } catch(e){ if (st) { st.textContent = '❌ '+e.message; st.style.color='#f87171'; } }
-}
 
-async function sendReportNow(isTest){
-  const g = id => $(id);
-  const loc = g('rep_location_filter')?.value||'all';
-  const veh = g('rep_vehicle_filter')?.value||'all';
-  const lang = g('rep_language')?.value||'auto';
-  const recipients_raw = (g('rep_recipients')?.value||'').split(/[\n,]+/).map(s=>s.trim()).filter(Boolean);
-  const payload = {
-    report_email_location_filter: loc,
-    report_email_vehicle_filter:  veh,
-    report_email_language:        lang,
-    report_email_recipients:      isTest ? recipients_raw.slice(0,1) : recipients_raw,
-    report_email_schedule_type:   g('rep_schedule_type')?.value||'monthly',
-    report_email_period_mode:     g('rep_period_mode')?.value||'previous_period',
-    report_email_single_month:    g('rep_single_month')?.value||'',
-    report_email_months:          _repMonths.slice(),
-  };
-  const st = $('rep_status');
-  if (st) { st.textContent = '⏳ Sende…'; st.style.color = 'var(--mute)'; }
-  try {
-    const r = await apiFetch('/api/report/send-now',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());
-    if (st) { st.textContent = r.ok ? '✅ Gesendet' : '❌ '+(r.error||'Fehler'); st.style.color = r.ok ? '#6ee7b7' : '#f87171'; }
-  } catch(e){ if (st) { st.textContent = '❌ '+e.message; st.style.color='#f87171'; } }
-}
 
-async function loadReportHistory(){
-  const card = $('rep_history_card');
-  const body = $('rep_history_body');
-  if (!card||!body) return;
-  card.style.display = 'block';
-  body.textContent = '⏳ Lade…';
-  try {
-    const rows = await apiFetch('/api/report/history').then(r=>r.json());
-    if (!rows.length) { body.textContent = 'Noch keine Reports gesendet.'; return; }
-    const STATUS_COLORS = {sent:'#6ee7b7',error:'#f87171',skipped:'#f59e0b'};
-    const LOC_LABELS = {all:'Alle',home:'Zuhause',external:'Extern'};
-    body.innerHTML = `<table style="width:100%;border-collapse:collapse">
-      <thead><tr style="color:var(--mute);border-bottom:1px solid var(--brd)">
-        <th style="padding:6px 10px;text-align:left">Datum</th>
-        <th style="padding:6px 10px;text-align:left">Zeitraum / Label</th>
-        <th style="padding:6px 10px;text-align:left">Filter</th>
-        <th style="padding:6px 10px;text-align:left">Empfänger</th>
-        <th style="padding:6px 10px;text-align:left">Status</th>
-        <th style="padding:6px 10px;text-align:left">Auslöser</th>
-      </tr></thead>
-      <tbody>${rows.map(r=>{
-        const recip = (() => { try { return JSON.parse(r.recipients||'[]').join(', '); } catch { return r.recipients||''; } })();
-        const color = STATUS_COLORS[r.status]||'var(--mute)';
-        return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
-          <td style="padding:5px 10px">${(r.sent_at||'').replace('T',' ').slice(0,16)}</td>
-          <td style="padding:5px 10px">${r.period_label || ((r.period_start||'') + ' – ' + (r.period_end||''))}</td>
-          <td style="padding:5px 10px">${LOC_LABELS[r.location_filter||'all']||r.location_filter||'alle'}</td>
-          <td style="padding:5px 10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(recip)}">${escapeHtml(recip)}</td>
-          <td style="padding:5px 10px;color:${color};font-weight:600">${r.status||''}</td>
-          <td style="padding:5px 10px;color:var(--mute)">${r.triggered_by||''}</td>
-        </tr>`;
-      }).join('')}</tbody></table>`;
-  } catch(e){ body.textContent = '❌ '+e.message; }
-}
 
 // ── BILLING ───────────────────────────────────────────────────────────────────
-function billingTab(n, btn){
-  [1,2,3,4].forEach(i=>{ const el=$('billing_step_'+i); if(el) el.style.display=i===n?'':'none'; });
-  document.querySelectorAll('.billing-tab').forEach(b=>b.classList.remove('active'));
-  if(btn) btn.classList.add('active');
-}
 
-function onBillingReimbModeChange(){
-  const m = $('billing_reimb_mode')?.value||'fixed_price';
-  const fp = $('billing_fixed_price_row');
-  if(fp) fp.style.display = m==='fixed_price'?'':'none';
-}
 
-async function loadBillingConfig(){
-  const vid = $('billing_vehicle_id')?.value||'v0';
-  try{
-    const r = await apiFetch(`/api/billing/config/${vid}`).then(r=>r.json());
-    const s = id=>$(id);
-    if(s('billing_enabled'))      s('billing_enabled').checked         = !!r.enabled;
-    if(s('billing_location_filter')) s('billing_location_filter').value= r.location_filter||'all';
-    if(s('billing_reimb_mode'))   s('billing_reimb_mode').value        = r.reimbursement_mode||'fixed_price';
-    if(s('billing_reimb_price'))  s('billing_reimb_price').value       = r.reimbursement_price_per_kwh||0.30;
-    if(s('billing_driver'))       s('billing_driver').value            = r.driver_name||'';
-    if(s('billing_plate'))        s('billing_plate').value             = r.license_plate||'';
-    if(s('billing_dept'))         s('billing_dept').value              = r.department||'';
-    if(s('billing_cc'))           s('billing_cc').value                = r.cost_center||'';
-    if(s('billing_emp_id'))       s('billing_emp_id').value            = r.employee_id||'';
-    if(s('billing_employer_email')) s('billing_employer_email').value  = r.employer_email||'';
-    if(s('billing_req_signature')) s('billing_req_signature').checked  = !!r.requires_signature;
-    if(s('billing_req_approval'))  s('billing_req_approval').checked   = !!r.requires_approval;
-    if(s('billing_auto_send'))     s('billing_auto_send').checked      = !!r.auto_send;
-    if(s('billing_recipients'))    s('billing_recipients').value       = (r.recipients||[]).join('\n');
-    onBillingReimbModeChange();
-    loadBillingSummary();
-  }catch(e){ console.warn('loadBillingConfig',e); }
-}
 
-async function loadBillingSummary(){
-  const strip = $('billing_summary_strip');
-  if(!strip) return;
-  try{
-    const r = await apiFetch('/api/billing/summary').then(r=>r.json());
-    strip.innerHTML = [
-      `<span>📅 <b>${r.month||''}</b></span>`,
-      `<span>⚡ kWh gesamt: <b>${(r.total_kwh||0).toFixed(2)}</b></span>`,
-      `<span>💰 Kosten: <b>${(r.total_cost||0).toFixed(2)} €</b></span>`,
-      `<span>💼 Erstattbar: <b>${(r.reimbursable_kwh||0).toFixed(2)} kWh</b></span>`,
-      `<span style="color:#6ee7b7">✅ Erstattung: <b>${(r.reimbursement_total||0).toFixed(2)} €</b></span>`,
-    ].join('');
-  }catch(e){ if(strip) strip.innerHTML='<span style="color:var(--mute)">Keine Daten</span>'; }
-}
 
-async function saveBillingConfig(){
-  const g=id=>$(id), st=$('billing_status');
-  const vid = g('billing_vehicle_id')?.value||'v0';
-  const payload = {
-    enabled:                    g('billing_enabled')?.checked||false,
-    location_filter:            g('billing_location_filter')?.value||'all',
-    reimbursement_mode:         g('billing_reimb_mode')?.value||'fixed_price',
-    reimbursement_price_per_kwh: parseFloat(g('billing_reimb_price')?.value||0.30),
-    driver_name:                g('billing_driver')?.value||'',
-    license_plate:              g('billing_plate')?.value||'',
-    department:                 g('billing_dept')?.value||'',
-    cost_center:                g('billing_cc')?.value||'',
-    employee_id:                g('billing_emp_id')?.value||'',
-    employer_email:             g('billing_employer_email')?.value||'',
-    requires_signature:         g('billing_req_signature')?.checked||false,
-    requires_approval:          g('billing_req_approval')?.checked||false,
-    auto_send:                  g('billing_auto_send')?.checked||false,
-    recipients: (g('billing_recipients')?.value||'').split(/[\n,]+/).map(s=>s.trim()).filter(Boolean),
-  };
-  if(st){st.textContent='⏳ Speichere…';st.style.color='var(--mute)';}
-  try{
-    const r = await apiFetch(`/api/billing/config/${vid}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());
-    if(st){st.textContent=r.ok?'✅ Gespeichert':'❌ '+(r.error||'Fehler');st.style.color=r.ok?'#6ee7b7':'#f87171';}
-  }catch(e){if(st){st.textContent='❌ '+e.message;st.style.color='#f87171';}}
-}
 
 // ── REPORT ARCHIVE ────────────────────────────────────────────────────────────
-async function loadReportArchive(){
-  const body = $('archive_table_body');
-  if(!body) return;
-  body.textContent='⏳ Lade…';
-  try{
-    const rows = await apiFetch('/api/reports/archive').then(r=>r.json());
-    if(!rows.length){body.textContent='Noch keine archivierten Reports.';return;}
-    const STATUS_COLORS={generated:'#6ee7b7',sent:'#6ee7b7',approved:'#6ee7b7',failed:'#f87171',draft:'#f59e0b'};
-    body.innerHTML=`<table style="width:100%;border-collapse:collapse">
-      <thead><tr style="color:var(--mute);border-bottom:1px solid var(--brd)">
-        <th style="padding:6px 8px;text-align:left">Datum</th>
-        <th style="padding:6px 8px;text-align:left">Zeitraum</th>
-        <th style="padding:6px 8px;text-align:left">Filter</th>
-        <th style="padding:6px 8px;text-align:left">Status</th>
-        <th style="padding:6px 8px;text-align:left">Aktionen</th>
-      </tr></thead>
-      <tbody>${rows.map(r=>{
-        const c=STATUS_COLORS[r.status]||'var(--mute)';
-        return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
-          <td style="padding:5px 8px">${(r.created_at||'').slice(0,16).replace('T',' ')}</td>
-          <td style="padding:5px 8px">${escapeHtml(r.period_label||'')}</td>
-          <td style="padding:5px 8px">${r.location_filter||'all'}</td>
-          <td style="padding:5px 8px;color:${c};font-weight:600">${r.status||''}</td>
-          <td style="padding:5px 8px;display:flex;gap:6px;flex-wrap:wrap">
-            ${r.has_excel ? `<button onclick="downloadReport(${r.id},'excel')" class="btn-s" style="font-size:.7rem;padding:3px 8px">📥 XLSX</button>` : `<button class="btn-s" disabled style="font-size:.7rem;padding:3px 8px;opacity:.4;cursor:not-allowed" title="Kein XLSX für diesen Report">📥 XLSX</button>`}
-            ${r.has_pdf   ? `<button onclick="downloadReport(${r.id},'pdf')"   class="btn-s" style="font-size:.7rem;padding:3px 8px">📄 PDF</button>`  : `<button class="btn-s" disabled style="font-size:.7rem;padding:3px 8px;opacity:.4;cursor:not-allowed" title="Kein PDF für diesen Report">📄 PDF</button>`}
-            <button onclick="sendArchiveReport(${r.id})" class="btn-s" style="font-size:.7rem;padding:3px 8px">📤 Senden</button>
-          </td>
-        </tr>`;
-      }).join('')}</tbody></table>`;
-  }catch(e){body.textContent='❌ '+e.message;}
-}
 
 function onArcPeriodModeChange(){
   const mode = $('arc_period_mode')?.value;
@@ -5444,39 +4990,8 @@ function onArcPeriodModeChange(){
   if(wrap) wrap.style.display = mode === 'single_month' ? '' : 'none';
 }
 
-async function createReport(){
-  const st   = $('archive_table_body');
-  const mode = $('arc_period_mode')?.value || 'previous_period';
-  const payload = {
-    period_mode:      mode,
-    location_filter:  $('arc_loc_filter')?.value || 'all',
-    lang:          'de',
-    include_excel: $('arc_inc_excel')?.checked !== false,
-    include_pdf:   $('arc_inc_pdf')?.checked   || false,
-  };
-  if(mode === 'single_month'){
-    const mv = $('arc_single_month')?.value;
-    if(!mv){ toast('Bitte einen Monat auswählen','err'); return; }
-    payload.single_month = mv;  // YYYY-MM — direkt, kein email-Config-Key
-  }
-  if(st) st.textContent='⏳ Erstelle Report…';
-  try{
-    const r = await apiFetch('/api/reports/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());
-    if(r.ok){ if(st) st.textContent=''; loadReportArchive(); }
-    else if(st) st.textContent='❌ '+(r.error||'Fehler');
-  }catch(e){if(st) st.textContent='❌ '+e.message;}
-}
 
-function downloadReport(id, fmt){
-  window.open(`/api/reports/${id}/download/${fmt}`, '_blank');
-}
 
-async function sendArchiveReport(id){
-  const to = prompt('Empfänger E-Mail:');
-  if(!to) return;
-  const r = await apiFetch(`/api/reports/${id}/send`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({recipients:[to]})}).then(r=>r.json());
-  alert(r.ok ? '✅ Gesendet' : '❌ '+(r.error||'Fehler'));
-}
 
 // ── TARIFF CONFIG ─────────────────────────────────────────────────────────────
 function onTariffProviderChange(){
@@ -6142,65 +5657,10 @@ async function checkSmtpForTotp(){
 }
 
 // ── Export Templates ──────────────────────────────────────────────────────────
-async function loadExportTemplates(){
-  const templates=await fetch('/api/export/templates').then(r=>r.json()).catch(()=>[]);
-  const el=$('exportTemplateList');
-  if(!el) return;
-  if(!templates.length){
-    el.innerHTML='<div class="empty" style="padding:20px">Noch keine Vorlagen gespeichert</div>';
-    return;
-  }
-  el.innerHTML=templates.map(t=>`
-    <div style="display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:12px 14px">
-      <div style="flex:1">
-        <div style="font-weight:700;font-size:.85rem;color:#fff">${t.name}</div>
-        <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-top:2px">
-          ${Object.keys(t.mapping||{}).length} Spalten zugewiesen
-          ${t.is_default?'<span style="color:var(--acc);margin-left:8px">★ Standard</span>':''}
-        </div>
-      </div>
-      <button class="btn-s" style="font-size:.72rem;padding:5px 12px" onclick="loadExportTemplate('${t.id}')">📂 Laden</button>
-      <button class="btn-g" style="font-size:.72rem;padding:5px 12px" onclick="setDefaultTemplate('${t.id}')">★</button>
-      <button class="btn-d" style="font-size:.72rem;padding:5px 12px" onclick="deleteExportTemplate('${t.id}')">✕</button>
-    </div>
-  `).join('');
-}
 
-async function saveCurrentAsTemplate(){
-  const name=prompt('Name für diese Vorlage:','Meine Vorlage');
-  if(!name) return;
-  const saved=await fetch('/api/template/mapping').then(r=>r.json()).catch(()=>({}));
-  const r=await apiFetch('/api/export/templates',{method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({name,mapping:saved.mapping||{},start_row:saved.start_row})
-  }).then(r=>r.json());
-  if(r.ok){ toast('Vorlage gespeichert','ok'); loadExportTemplates(); }
-  else toast('Fehler','err');
-}
 
-async function loadExportTemplate(tid){
-  const templates=await fetch('/api/export/templates').then(r=>r.json());
-  const t=templates.find(x=>x.id===tid);
-  if(!t) return;
-  await fetch('/api/template/mapping',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},
-    body:JSON.stringify({mapping:t.mapping||{},start_row:t.start_row})});
-  toast('Vorlage "'+t.name+'" geladen','ok');
-  loadMappingPreview();
-}
 
-async function setDefaultTemplate(tid){
-  await apiFetch(`/api/export/templates/${tid}`,{method:'PUT',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({is_default:true})});
-  toast('Als Standardvorlage gesetzt','ok');
-  loadExportTemplates();
-}
 
-async function deleteExportTemplate(tid){
-  if(!confirm('Vorlage löschen?')) return;
-  await apiFetch(`/api/export/templates/${tid}`,{method:'DELETE'});
-  toast('Vorlage gelöscht','ok');
-  loadExportTemplates();
-}
 
 // ── Password Strength ─────────────────────────────────────────────────────────
 function checkPwStrength(pw, targetId){
@@ -6745,16 +6205,6 @@ function _applyExportPermissions() {
   }
 }
 
-function _applySettingsPermissions() {
-  if (!hasPermission('settings:edit')) {
-    // Settings-Speichern-Buttons deaktivieren
-    document.querySelectorAll('[onclick*="saveSettings"], [onclick*="saveCfg"]').forEach(btn => {
-      btn.disabled = true;
-      btn.title = 'Keine Berechtigung: settings:edit';
-      btn.style.opacity = '0.5';
-    });
-  }
-}
 
 function _applyUpdatePermissions() {
   if (!hasPermission('updates:start')) {

@@ -144,7 +144,8 @@ def api_reports_create():
                                        loc_filter=loc_filter, config=cfg, lang=lang)
             else:
                 from export_excel import export as _export_func
-                xl_loc = "extern" if loc_filter == "external" else loc_filter
+                from core.location import normalize_location as _nl
+                xl_loc = _nl(loc_filter) if loc_filter not in ("all",) else loc_filter
                 excel_bytes, _ = _export_func(
                     year=period_info["start"].year, month=period_info["start"].month,
                     location=xl_loc, config=cfg, lang=lang, return_warnings=True)
