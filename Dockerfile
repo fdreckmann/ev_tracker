@@ -4,6 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc git && rm -
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ .
+COPY version.json .
 VOLUME ["/data"]
 EXPOSE 8080
 ENV TZ=Europe/Berlin
