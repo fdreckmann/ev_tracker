@@ -23,7 +23,7 @@ from core.tokens import _API_SCOPES, _hash_token, _check_api_token, _require_api
 from routes import register_blueprints
 import core.state as _core_state
 
-APP_VERSION   = "2.0.21"
+APP_VERSION   = "2.0.22"
 
 CHANGELOG = [
     {"version":"2.0.0","changes":[

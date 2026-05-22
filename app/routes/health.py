@@ -2,6 +2,7 @@
 Health check and system status routes.
 """
 import sqlite3
+import time
 from pathlib import Path
 
 from flask import Blueprint, jsonify
@@ -9,6 +10,7 @@ from flask import Blueprint, jsonify
 from core.db import _get_db, close_db_if_owned, DB_PATH, DATA_DIR
 from core.config import load_config
 from core.security import require_login, has_permission, _current_user
+import core.state as _state
 
 health_bp = Blueprint("health", __name__)
 
@@ -86,4 +88,39 @@ def api_system_status():
         "mqtt_enabled": bool(cfg.get("mqtt_enabled")),
         "notifications_enabled": bool(cfg.get("notifications_enabled")),
         "warnings": warnings,
+    })
+
+
+@health_bp.route("/api/diagnostics")
+@require_login
+def api_diagnostics():
+    if not has_permission(_current_user(), "system:status"):
+        return jsonify({"error": "Keine Berechtigung: system:status"}), 403
+    cfg = load_config()
+    vehicles = []
+    for vid, st in _state.vehicle_states.items():
+        vehicles.append({
+            "vehicle_id": vid,
+            "name": st.get("name", vid),
+            "running": st.get("running", False),
+            "charging": st.get("charging", False),
+            "soc": st.get("soc_current"),
+            "last_poll": st.get("last_poll"),
+            "last_error": st.get("last_error"),
+            "last_successful_poll": st.get("last_successful_poll"),
+            "provider_debug": st.get("provider_debug"),
+        })
+    provider = cfg.get("provider", "ha")
+    provider_configured = bool(
+        cfg.get("ha_token") if provider == "ha" else cfg.get(f"{provider}_token", cfg.get(f"{provider}_api_key",""))
+    )
+    return jsonify({
+        "ok": True,
+        "provider": provider,
+        "provider_configured": provider_configured,
+        "ha_url": cfg.get("ha_url","") if provider == "ha" else None,
+        "charging_sensor": cfg.get("charging_sensor","") if provider == "ha" else None,
+        "poll_interval": cfg.get("poll_interval", 30),
+        "vehicles": vehicles,
+        "server_time": time.strftime("%Y-%m-%dT%H:%M:%S"),
     })

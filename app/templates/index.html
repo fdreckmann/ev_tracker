@@ -3086,12 +3086,16 @@ async function loadProviderFields(pid){
   container.innerHTML=fields.map(f=>{
     const val=cfg[f.id]||'';
     const w=fields.length<=2?'full':'';
+    const hasSaved=f.type==='password'&&!!val;
     const inp=f.type==='select'
       ?`<select id="pf_${f.id}" style="background:var(--bg);border:1px solid var(--brd);border-radius:8px;color:var(--txt);font-family:var(--mono);font-size:.84rem;padding:9px 13px;width:100%">${(f.options||[]).map(o=>`<option value="${o}" ${val===o?'selected':''}>${o}</option>`).join('')}</select>`
       :`<input type="${f.type||'text'}" id="pf_${f.id}" value="${f.type==='password'?'':val}" placeholder="${f.placeholder||''}">`;
+    const hintHtml=hasSaved
+      ?`<span class="hint" style="color:var(--acc)">Token gespeichert – leer lassen zum Beibehalten</span>`
+      :(f.hint?`<span class="hint">${f.hint}</span>`:'');
     return `<div class="fg ${w}">
       <label>${f.label}${!f.required?' <span style="color:var(--mute);font-size:.65rem">(optional)</span>':''}</label>
-      ${inp}${f.hint?`<span class="hint">${f.hint}</span>`:''}
+      ${inp}${hintHtml}
     </div>`;
   }).join('');
 }
@@ -3111,6 +3115,13 @@ async function saveConfig(){
     entsoe_dc_markup:     parseFloat($('c_dc_markup').value),
     poll_interval:        parseInt($('c_poll').value),
   };
+  // Collect all provider-specific fields (pf_*); skip empty/masked passwords to preserve stored secrets
+  document.querySelectorAll('[id^="pf_"]').forEach(el=>{
+    const key=el.id.replace('pf_','');
+    if(el.type==='password'&&(!el.value||el.value==='********')) return;
+    const v=el.type==='number'?parseFloat(el.value):el.value;
+    cfg[key]=v;
+  });
   const r = await apiFetch('/api/config',{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
   if(r.ok){ toast('Konfiguration gespeichert'); $('carName').textContent=cfg.car_name; }
@@ -3134,8 +3145,12 @@ async function testConn(){
   res.className='conn-res';res.style.display='block';res.textContent='⏳ Teste Verbindung…';
   const body={provider:$('c_provider')?.value||'ha'};
   document.querySelectorAll('[id^="pf_"]').forEach(el=>{ body[el.id.replace('pf_','')]=el.value; });
+  // For any masked/empty password field, fall back to the saved value so the test can authenticate
   const saved=await fetch('/api/config').then(r=>r.json()).catch(()=>({}));
-  if(!body.ha_token) body.ha_token=saved.ha_token||'';
+  document.querySelectorAll('[id^="pf_"]').forEach(el=>{
+    const key=el.id.replace('pf_','');
+    if(el.type==='password'&&(!body[key]||body[key]==='********')) body[key]=saved[key]||'';
+  });
   const r=await apiFetch('/api/test-connection',{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
   if(r.ok){ res.className='conn-res ok'; res.textContent=r.message; }
@@ -3144,81 +3159,6 @@ async function testConn(){
 
 // ── Charts ────────────────────────────────────────────────────────────────────
 
-function destroyCharts(){
-  Object.values(charts).forEach(c=>c?.destroy());
-  charts={};
-}
-
-function chartDefaults(){
-  return {
-    responsive:true, maintainAspectRatio:false,
-    plugins:{legend:{display:false}},
-    scales:{
-      x:{grid:{color:'#1c2430'},ticks:{color:'#4a5c72',font:{family:'DM Mono',size:10}}},
-      y:{grid:{color:'#1c2430'},ticks:{color:'#4a5c72',font:{family:'DM Mono',size:10}}}
-    }
-  };
-}
-
-async function loadCharts(){
-  const monthly = await fetch('/api/stats/monthly').then(r=>r.json());
-  const sessions= await fetch('/api/sessions').then(r=>r.json());
-  destroyCharts();
-
-  const months  = monthly.map(m=>m.month).reverse();
-  const costs   = monthly.map(m=>+(m.total_cost||0).toFixed(2)).reverse();
-  const kwhs    = monthly.map(m=>+(m.total_kwh||0).toFixed(2)).reverse();
-
-  // Cost chart
-  charts.cost = new Chart($('chartCost'), {
-    type:'bar',
-    data:{labels:months, datasets:[{data:costs,
-      backgroundColor:'rgba(245,158,11,.35)',borderColor:'#f59e0b',borderWidth:1.5,borderRadius:4}]},
-    options:{...chartDefaults(), plugins:{...chartDefaults().plugins,
-      tooltip:{callbacks:{label:c=>`${c.raw} €`}}}}
-  });
-
-  // kWh chart
-  charts.kwh = new Chart($('chartKwh'), {
-    type:'bar',
-    data:{labels:months, datasets:[{data:kwhs,
-      backgroundColor:'rgba(0,180,255,.25)',borderColor:'#00b4ff',borderWidth:1.5,borderRadius:4}]},
-    options:{...chartDefaults(), plugins:{...chartDefaults().plugins,
-      tooltip:{callbacks:{label:c=>`${c.raw} kWh`}}}}
-  });
-
-  // SOC verlauf (last 10 sessions)
-  const last10 = sessions.slice(0,10).reverse();
-  const socStart= last10.map(s=>s.soc_start||0);
-  const socEnd  = last10.map(s=>s.soc_end||0);
-  const socLabels=last10.map(s=>new Date(s.start_ts).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'}));
-  charts.soc = new Chart($('chartSoc'), {
-    type:'line',
-    data:{labels:socLabels, datasets:[
-      {label:'SOC Start',data:socStart,borderColor:'#4a5c72',backgroundColor:'rgba(74,92,114,.1)',
-       fill:true,tension:.3,pointRadius:3},
-      {label:'SOC Ende', data:socEnd,  borderColor:'#3ddc97',backgroundColor:'rgba(61,220,151,.1)',
-       fill:true,tension:.3,pointRadius:3},
-    ]},
-    options:{...chartDefaults(), plugins:{legend:{display:true,labels:{color:'#4a5c72',font:{family:'DM Mono',size:9}}}},
-      scales:{...chartDefaults().scales, y:{...chartDefaults().scales.y,
-        min:0,max:100,ticks:{...chartDefaults().scales.y.ticks,callback:v=>v+'%'}}}}
-  });
-
-  // Verbrauch kWh/100km per month
-  const eff = monthly.map(m=>{
-    if(!m.km_driven||m.km_driven<=0) return null;
-    return +(m.total_kwh/m.km_driven*100).toFixed(1);
-  }).reverse();
-  charts.km = new Chart($('chartKm'), {
-    type:'line',
-    data:{labels:months, datasets:[{data:eff,
-      borderColor:'#3ddc97',backgroundColor:'rgba(61,220,151,.08)',
-      fill:true,tension:.3,pointRadius:4,spanGaps:true}]},
-    options:{...chartDefaults(), plugins:{...chartDefaults().plugins,
-      tooltip:{callbacks:{label:c=>`${c.raw} kWh/100km`}}}}
-  });
-}
 
 // ── Config ────────────────────────────────────────────────────────────────────
 async function loadConfig(){
@@ -3273,74 +3213,6 @@ async function loadConfig(){
     if(c[key]!==undefined&&el.type!=='password') el.value=c[key]||el.value;
   });
 }
-// ── Provider selection ───────────────────────────────────────────────────────
-function selectProvider(id){
-  $('c_provider').value=id;
-  document.querySelectorAll('[id^="pcard_"]').forEach(el=>{
-    const pid=el.id.replace('pcard_','');
-    el.style.border=pid===id?'2px solid var(--acc)':'2px solid var(--brd)';
-    el.querySelector('div').style.color=pid===id?'var(--acc)':'#fff';
-  });
-  document.querySelectorAll('[id^="notes_"]').forEach(el=>{
-    el.style.display=el.id===`notes_${id}`?'block':'none';
-  });
-  loadProviderFields(id);
-}
-
-async function loadProviderFields(pid){
-  if(!pid) return;
-  const fields=await fetch(`/api/providers/${pid}/fields`).then(r=>r.json()).catch(()=>[]);
-  const cfg=await fetch('/api/config').then(r=>r.json()).catch(()=>({}));
-  const container=$('providerFields');
-  if(!container) return;
-  container.innerHTML=fields.map(f=>{
-    const val=cfg[f.id]||'';
-    const w=fields.length<=2?'full':'';
-    const inp=f.type==='select'
-      ?`<select id="pf_${f.id}" style="background:var(--bg);border:1px solid var(--brd);border-radius:8px;color:var(--txt);font-family:var(--mono);font-size:.84rem;padding:9px 13px;width:100%">${(f.options||[]).map(o=>`<option value="${o}" ${val===o?'selected':''}>${o}</option>`).join('')}</select>`
-      :`<input type="${f.type||'text'}" id="pf_${f.id}" value="${f.type==='password'?'':val}" placeholder="${f.placeholder||''}">`;
-    return `<div class="fg ${w}">
-      <label>${f.label}${!f.required?' <span style="color:var(--mute);font-size:.65rem">(optional)</span>':''}</label>
-      ${inp}${f.hint?`<span class="hint">${f.hint}</span>`:''}
-    </div>`;
-  }).join('');
-}
-
-async function saveConfig(){
-  const cfg={
-    provider:       $('c_provider')?.value||'ha',
-    car_name:       $('c_car').value,
-    notify_service: $('c_notify')?.value.trim()||'',
-    battery_capacity_kwh: parseFloat($('c_bat').value),
-    price_per_kwh_home:   parseFloat($('c_price_home').value),
-    price_per_kwh_ac:     parseFloat($('c_price_ac').value),
-    price_per_kwh_dc:     parseFloat($('c_price_dc').value),
-    dc_threshold_kw:      parseFloat($('c_dc_thresh').value),
-    entsoe_api_key:       $('c_entsoe_key').value.trim(),
-    entsoe_ac_markup:     parseFloat($('c_ac_markup').value),
-    entsoe_dc_markup:     parseFloat($('c_dc_markup').value),
-    poll_interval:        parseInt($('c_poll').value),
-  };
-  const r = await apiFetch('/api/config',{method:'POST',
-    headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
-  if(r.ok){ toast('Konfiguration gespeichert'); $('carName').textContent=cfg.car_name; }
-  else toast('Fehler beim Speichern','err');
-}
-
-async function testEntsoe(){
-  const res=$('entsoeRes'); res.textContent='⏳ Teste ENTSO-E…';
-  let key=$('c_entsoe_key').value.trim();
-  if(!key){ const c=await fetch('/api/config').then(r=>r.json()); key=c.entsoe_api_key||''; }
-  if(!key){ res.textContent='⚠ Kein API Key eingetragen'; return; }
-  const r=await apiFetch('/api/entsoe/test',{method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({entsoe_api_key:key})}).then(r=>r.json());
-  if(r.ok) res.innerHTML=`<span style="color:var(--acc)">✅ ${r.price_kwh.toFixed(4)} €/kWh (${r.price_mwh} €/MWh) — DE Spotpreis</span>`;
-  else res.innerHTML=`<span style="color:var(--danger)">❌ ${r.error}</span>`;
-}
-
-
-
 // ── Template Gallery ──────────────────────────────────────────────────────────
 let _galleryData = null;
 let _galleryFilter = null;
@@ -7400,26 +7272,11 @@ async function doMobileExport() {
       window.location.href = `/api/export/download/${_mobileExportToken}`;
       return;
     }
-    // Fallback: doExport() nutzen falls vorhanden
-    if (typeof doExport === 'function') {
-      doExport();
-    } else {
-      const r = await fetch('/api/export', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json','X-CSRF-Token': csrfToken},
-        body: JSON.stringify({month: monthVal, language: _mobileExportLang, include_signature: incSig, location: _mobileExportFilter !== 'all' ? _mobileExportFilter : undefined, vehicle_id: document.getElementById('mobileExportVehicle')?.value || 'all'})
-      });
-      if (r.ok) {
-        const blob = await r.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = `ladeprotokoll_${monthVal}.xlsx`; a.click();
-        if (resultEl) resultEl.innerHTML = '<p style="color:#64ffda">✅ Export erfolgreich</p>';
-      } else {
-        const j = await r.json();
-        if (resultEl) resultEl.innerHTML = `<p style="color:#ff5252">❌ ${j.error||'Fehler'}</p>`;
-      }
-    }
+    // Fallback: build GET export URL with query params
+    const vid = document.getElementById('mobileExportVehicle')?.value || 'all';
+    const params = new URLSearchParams({month: monthVal, language: _mobileExportLang, include_signature: incSig ? '1' : '0', vehicle_id: vid});
+    if (_mobileExportFilter && _mobileExportFilter !== 'all') params.set('location', _mobileExportFilter);
+    window.location.href = `/api/export?${params.toString()}`;
   } catch(e) {
     if (resultEl) resultEl.innerHTML = `<p style="color:#ff5252">❌ ${e.message}</p>`;
   }

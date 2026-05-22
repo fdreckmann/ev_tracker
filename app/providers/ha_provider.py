@@ -29,12 +29,28 @@ class HomeAssistantProvider(BaseProvider):
     def _get_entity(self, entity_id: str) -> dict | None:
         if not entity_id:
             return None
+        url = self.config.get("ha_url","").rstrip("/")
+        token = self.config.get("ha_token","")
+        if not url:
+            log.warning("HA: ha_url nicht konfiguriert")
+            return None
+        if not token:
+            log.warning("HA: ha_token nicht konfiguriert")
+            return None
         try:
-            url = self.config.get("ha_url","").rstrip("/")
-            r   = requests.get(f"{url}/api/states/{entity_id}",
-                               headers=self._headers(), timeout=10)
+            r = requests.get(f"{url}/api/states/{entity_id}",
+                             headers=self._headers(), timeout=10)
+            if r.status_code == 401:
+                log.warning("HA: Authentifizierung fehlgeschlagen (401) — Token prüfen")
+                return None
+            if r.status_code == 403:
+                log.warning("HA: Zugriff verweigert (403) — Token-Berechtigungen prüfen")
+                return None
             r.raise_for_status()
             return r.json()
+        except requests.exceptions.ConnectionError as e:
+            log.warning("HA: Verbindung zu %s fehlgeschlagen: %s", url, e)
+            return None
         except Exception as e:
             log.warning("HA entity %s error: %s", entity_id, e)
             return None
@@ -48,16 +64,29 @@ class HomeAssistantProvider(BaseProvider):
     def _bool_charging(self, entity_id: str) -> bool | None:
         data = self._get_entity(entity_id)
         if not data: return None
-        return data["state"].lower() in ("charging","laden","true","on","1","conserving")
+        return data["state"].lower() in (
+            "charging", "laden", "true", "on", "1", "conserving",
+            "plugged_in", "connected", "active", "lading", "opladen",
+        )
+
+    @staticmethod
+    def _normalize_location(state: str) -> str:
+        """Normalize location state to canonical 'home' or 'extern'."""
+        s = state.lower().strip()
+        extern_states = {"not_home", "away", "extern", "external", "unterwegs", "außer_haus"}
+        if s in extern_states:
+            return "extern"
+        return s  # caller checks against home_states list
 
     def _location(self) -> str:
         sensor = self.config.get("location_sensor","").strip()
         if not sensor: return "unknown"
         data = self._get_entity(sensor)
         if not data: return "unknown"
-        state       = data["state"].lower().strip()
+        raw         = data["state"].lower().strip()
+        normalized  = self._normalize_location(raw)
         home_states = [s.strip().lower() for s in self.config.get("home_states","home").split(",")]
-        return "home" if state in home_states else "extern"
+        return "home" if normalized in home_states else "extern"
 
     def _charge_type(self, power_kw: float | None) -> str:
         # 1. Dedicated type sensor
@@ -91,22 +120,61 @@ class HomeAssistantProvider(BaseProvider):
             return VehicleState(error=str(e))
 
     def test_connection(self) -> dict:
+        url   = self.config.get("ha_url","").rstrip("/")
+        token = self.config.get("ha_token","")
+        if not url:
+            return {"ok": False, "message": "❌ Keine Home Assistant URL konfiguriert"}
+        if not token:
+            return {"ok": False, "message": "❌ Kein Access Token konfiguriert"}
+
         chg_sensor = self.config.get("charging_sensor","")
+        if not chg_sensor:
+            # At minimum test basic API connectivity
+            try:
+                r = requests.get(f"{url}/api/", headers=self._headers(), timeout=10)
+                if r.status_code == 401:
+                    return {"ok": False, "message": "❌ Authentifizierung fehlgeschlagen (401) — Token prüfen"}
+                if r.status_code == 403:
+                    return {"ok": False, "message": "❌ Zugriff verweigert (403) — Token-Berechtigungen prüfen"}
+                if r.ok:
+                    return {"ok": True, "message": f"✅ HA erreichbar unter {url} — kein Ladestatus-Sensor konfiguriert"}
+            except Exception as e:
+                return {"ok": False, "message": f"❌ Verbindung fehlgeschlagen: {e}"}
+            return {"ok": False, "message": "❌ HA nicht erreichbar — URL prüfen"}
+
         data = self._get_entity(chg_sensor)
         if not data:
-            return {"ok": False, "message": "Verbindung fehlgeschlagen — URL oder Token prüfen"}
-        state    = data.get("state","?")
-        name     = data.get("attributes",{}).get("friendly_name", chg_sensor)
-        loc_info = ""
+            # Give specific error based on what's likely wrong
+            try:
+                r = requests.get(f"{url}/api/", headers=self._headers(), timeout=10)
+                if r.status_code == 401:
+                    return {"ok": False, "message": "❌ Authentifizierung fehlgeschlagen (401) — Token prüfen"}
+                if r.status_code == 403:
+                    return {"ok": False, "message": "❌ Zugriff verweigert (403) — Token-Berechtigungen prüfen"}
+                if r.ok:
+                    return {"ok": False, "message": f"❌ Sensor '{chg_sensor}' nicht gefunden — Entity-ID prüfen"}
+            except Exception as e:
+                return {"ok": False, "message": f"❌ Verbindung zu {url} fehlgeschlagen: {e}"}
+            return {"ok": False, "message": "❌ Verbindung fehlgeschlagen — URL oder Token prüfen"}
+
+        state = data.get("state","?")
+        name  = data.get("attributes",{}).get("friendly_name", chg_sensor)
+        parts = [f"✅ {name} · Zustand: '{state}'"]
+
+        if self.config.get("soc_sensor"):
+            soc = self._float(self.config["soc_sensor"])
+            parts.append(f"SOC: {soc}%" if soc is not None else "⚠ SOC-Sensor nicht gefunden")
+
         if self.config.get("location_sensor"):
             loc = self._get_entity(self.config["location_sensor"])
-            loc_info = f" · Standort: '{loc['state']}'" if loc else " · ⚠ Standort-Sensor nicht gefunden"
-        pwr_info = ""
-        if self.config.get("power_sensor") or self.config.get("charge_speed_sensor"):
-            pwr_entity = self.config.get("charge_speed_sensor","") or self.config.get("power_sensor","")
+            parts.append(f"Standort: '{loc['state']}'" if loc else "⚠ Standort-Sensor nicht gefunden")
+
+        pwr_entity = (self.config.get("charge_speed_sensor","") or self.config.get("power_sensor","")).strip()
+        if pwr_entity:
             pwr = self._get_entity(pwr_entity)
-            pwr_info = f" · Leistung: {pwr['state']} kW" if pwr else " · ⚠ Leistungs-Sensor nicht gefunden"
-        return {"ok": True, "message": f"✅ {name} · Zustand: '{state}'{loc_info}{pwr_info}"}
+            parts.append(f"Leistung: {pwr['state']} kW" if pwr else "⚠ Leistungs-Sensor nicht gefunden")
+
+        return {"ok": True, "message": " · ".join(parts)}
 
     @classmethod
     def get_config_fields(cls) -> list[dict]:
