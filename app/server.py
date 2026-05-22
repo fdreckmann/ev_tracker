@@ -163,6 +163,7 @@ SIGNATURE_PATH = SIGNATURE_DIR / "default_signature.png"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
+app.secret_key = _get_secret_key()
 
 @app.teardown_appcontext
 def _close_db(exc):
@@ -717,6 +718,11 @@ def tracker_loop(vehicle_id: str = "v0"):
             cfg = load_config()
         except Exception as _cfg_err:
             log.warning("Tracker [%s]: load_config fehlgeschlagen: %s", vehicle_id, _cfg_err)
+            st["last_poll"] = datetime.now().isoformat(timespec="seconds")
+            st["last_error"] = f"Config-Fehler: {_cfg_err}"
+            st["provider_connected"] = False
+            st["failed_poll_count"] = st.get("failed_poll_count", 0) + 1
+            st["poll_count"] = st.get("poll_count", 0) + 1
             stop.wait(30); continue
         # For v0 use flat config; for extra vehicles get their config merged with app config
         if vehicle_id == "v0":
@@ -846,7 +852,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                     from notification_manager import fire_event as _fire_event
                     _fire_event("charging_started", {
                         "vehicle_id": vehicle_id, "session_id": session_id,
-                        "location": location, "soc_start": soc_start,
+                        "location": _effective_location, "soc_start": soc_start,
                         "charger_type": charger_type,
                     }, load_config(), db_path=DB_PATH)
                 except Exception: pass
@@ -854,12 +860,13 @@ def tracker_loop(vehicle_id: str = "v0"):
                             (session_id,datetime.now().isoformat(timespec="seconds"),soc_start,power_kw))
                 con.commit()
                 log.info("⚡ [%s] Session #%d | %s | %s | %.2f €/kWh",
-                         vehicle_id,session_id,location.upper(),charger_type.upper(),price_kwh)
+                         vehicle_id,session_id,_effective_location.upper(),charger_type.upper(),price_kwh)
                 ha_notify(vcfg,f"⚡ {vcfg['car_name']} lädt",
-                    f"{'🏠 Zuhause' if location=='home' else '⚡ Extern'} · "
+                    f"{'🏠 Zuhause' if _effective_location=='home' else '⚡ Extern'} · "
                     f"{'DC' if charger_type=='dc' else 'AC'} · {price_kwh:.2f} €/kWh · SOC {soc_start or '?'}%")
 
             elif charging and session_active:
+                _effective_location = effective_session_location(location, st.get("location_status"))
                 cur.execute("INSERT INTO session_points (session_id,ts,soc,power_kw) VALUES (?,?,?,?)",
                             (session_id,datetime.now().isoformat(timespec="seconds"),soc,power_kw))
                 con.commit()
@@ -868,7 +875,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                     new_type = "dc" if power_kw > float(vcfg.get("dc_threshold_kw",22)) else "ac"
                     if new_type != charger_type:
                         spot = st.get("entsoe_spot")
-                        price = (cfg["price_per_kwh_home"] if location=="home"
+                        price = (cfg["price_per_kwh_home"] if _effective_location=="home"
                                  else calc_extern_price(cfg,new_type,spot))
                         cur.execute("UPDATE sessions SET charger_type=?,max_power_kw=?,price_per_kwh=? WHERE id=?",
                                     (new_type,peak_power,price,session_id))
@@ -913,7 +920,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                 effective_price = db_price or cfg.get("price_per_kwh_home", 0.30)
                 tariff_prov_name = cfg.get("tariff_provider", "fixed")
                 tariff_price_src = "config"
-                if not cost_manual and location == "home" and tariff_prov_name not in ("fixed", "", None):
+                if not cost_manual and _effective_location == "home" and tariff_prov_name not in ("fixed", "", None):
                     try:
                         from tariff_providers import get_tariff_provider
                         _tp = get_tariff_provider(cfg)
@@ -961,12 +968,12 @@ def tracker_loop(vehicle_id: str = "v0"):
                 st.update(session_active=False,session_id=None)
                 log.info("✅ [%s] Session #%d | %.2f kWh | %.2f €",vehicle_id,session_id,kwh or 0,cost or 0)
                 ha_notify(vcfg,f"✅ {vcfg['car_name']} fertig",
-                    f"{'🏠' if location=='home' else '⚡'} · {kwh or 0:.2f} kWh · {cost or 0:.2f} €")
+                    f"{'🏠' if _effective_location=='home' else '⚡'} · {kwh or 0:.2f} kWh · {cost or 0:.2f} €")
                 try:
                     from notification_manager import fire_event as _fire_event
                     _fire_event("charging_stopped", {
                         "vehicle_id": vehicle_id, "session_id": session_id,
-                        "location": location, "kwh": kwh or 0, "cost_eur": cost or 0,
+                        "location": _effective_location, "kwh": kwh or 0, "cost_eur": cost or 0,
                         "soc_end": soc, "kwh_source": kwh_source,
                     }, load_config(), db_path=DB_PATH)
                 except Exception: pass
@@ -1008,21 +1015,28 @@ def _stop_vehicle_tracker(vehicle_id: str):
 
 def start_tracker():
     """Start trackers for all active vehicles."""
-    # Prevent double-start: if tracker thread is already alive, skip
     existing = _vehicle_states.get("v0", {})
     if existing.get("tracker_alive") and existing.get("tracker_thread_id"):
         log.info("Tracker v0 already running (thread %s), skipping", existing["tracker_thread_id"])
-        return
-    _vehicle_stops["v0"].clear()
-    threading.Thread(target=tracker_loop, args=("v0",), daemon=True).start()
-    # Start extra vehicle trackers
+    else:
+        _vehicle_stops["v0"].clear()
+        threading.Thread(target=tracker_loop, args=("v0",), daemon=True).start()
+    # Always check extra vehicles
     cfg = load_config()
     for v in cfg.get("extra_vehicles", []):
-        if v.get("active", True):
-            vid = v["id"]
+        if not v.get("active", True):
+            continue
+        vid = v["id"]
+        ex = _vehicle_states.get(vid, {})
+        if ex.get("tracker_alive") and ex.get("tracker_thread_id"):
+            log.info("Tracker %s already running, skipping", vid)
+            continue
+        if vid not in _vehicle_states:
             _vehicle_states[vid] = _make_state(vid, v.get("provider","ha"))
-            _vehicle_stops[vid]  = threading.Event()
-            threading.Thread(target=tracker_loop, args=(vid,), daemon=True).start()
+        if vid not in _vehicle_stops:
+            _vehicle_stops[vid] = threading.Event()
+        _vehicle_stops[vid].clear()
+        threading.Thread(target=tracker_loop, args=(vid,), daemon=True).start()
 
 
 _started_once = False
@@ -2579,6 +2593,5 @@ _pdf_tokens: dict = {}  # token -> {bytes, expires}
 
 if __name__=="__main__":
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    app.secret_key = _get_secret_key()
-    init_db(); ensure_started_once(); schedule_backup(); schedule_report()
+    ensure_started_once()
     app.run(host="0.0.0.0",port=8080,debug=False)

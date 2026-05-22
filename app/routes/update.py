@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify, request
 
 from core.config import load_config
 from core.security import require_login, has_permission, _current_user
-from services.update_service import get_update_info, fetch_remote_version, docker_pull_and_restart
+from services.update_service import get_update_info, fetch_remote_version, docker_pull_and_restart, get_update_log
 
 update_bp = Blueprint("update", __name__)
 
@@ -37,5 +37,5 @@ def api_update_pull():
 @update_bp.route("/api/update/log")
 @require_login
 def api_update_log():
-    import server as _srv
-    return jsonify({"running": _srv._update_running, "lines": list(_srv._update_log)})
+    running, lines = get_update_log()
+    return jsonify({"running": running, "lines": lines})

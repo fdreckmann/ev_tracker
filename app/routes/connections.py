@@ -95,8 +95,8 @@ def api_entsoe_test():
         return jsonify({"ok": False, "error": "Keine Berechtigung: tariffs:test"}), 403
     key=(request.json or {}).get("entsoe_api_key","").strip()
     if not key: return jsonify({"ok":False,"error":"Kein API Key"})
-    from server import _entsoe_cache, fetch_entsoe_spot
-    _entsoe_cache["price"]=None
-    price=fetch_entsoe_spot(key)
+    import server as _srv
+    _srv._entsoe_cache["price"] = None
+    price = _srv.fetch_entsoe_spot(key)
     if price: return jsonify({"ok":True,"price_kwh":price,"price_mwh":round(price*1000,2)})
     return jsonify({"ok":False,"error":"Kein Preis erhalten"})

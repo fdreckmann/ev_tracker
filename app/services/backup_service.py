@@ -78,9 +78,10 @@ def restore_backup(zip_path: Path, data_dir: Path, pre_restore_fn=None) -> None:
 # ── Server re-exports (these have many dependencies on server.py globals) ──────
 
 def get_backup_funcs():
-    """Return server.py backup functions and constants as a tuple."""
-    from server import (create_backup, restore_backup, parse_cron_next,
-                        schedule_backup, BACKUP_DIR, _BACKUP_MAX_UPLOAD_BYTES)
+    """Return server.py backup functions as a tuple."""
+    from server import create_backup, restore_backup, parse_cron_next, schedule_backup
+    BACKUP_DIR = get_backup_dir()
+    _BACKUP_MAX_UPLOAD_BYTES = get_max_upload_bytes()
     return create_backup, restore_backup, parse_cron_next, schedule_backup, BACKUP_DIR, _BACKUP_MAX_UPLOAD_BYTES
 
 
@@ -107,13 +108,12 @@ def _srv_schedule_backup():
 
 
 def get_backup_dir():
-    from server import BACKUP_DIR
-    return BACKUP_DIR
+    from core.db import DATA_DIR
+    return DATA_DIR / "backups"
 
 
 def get_max_upload_bytes():
-    from server import _BACKUP_MAX_UPLOAD_BYTES
-    return _BACKUP_MAX_UPLOAD_BYTES
+    return 200 * 1024 * 1024  # 200 MB (same as server._BACKUP_MAX_UPLOAD_BYTES)
 
 
 # Keep old name for backward compatibility
@@ -121,7 +121,7 @@ get_backup_max_upload_bytes = get_max_upload_bytes
 
 
 def get_backup_timer():
-    import server as _srv
+    import server as _srv  # _backup_timer lives in server module-level scope
     return getattr(_srv, "_backup_timer", None)
 
 

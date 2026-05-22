@@ -31,8 +31,8 @@ _SECRET_MASK = "********"
 @main_routes_bp.route("/")
 @require_login
 def index():
-    from server import CHANGELOG, PROVIDERS
-    from providers import get_all_capabilities, get_config_fields
+    from server import CHANGELOG
+    from providers import get_all_capabilities, get_config_fields, PROVIDERS
     from services.vehicle_service import get_all_vehicles
     _TEMPLATE_PATH = DATA_DIR / "template.xlsx"
     cfg = load_config()
