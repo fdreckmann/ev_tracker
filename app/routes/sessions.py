@@ -15,13 +15,45 @@ log = logging.getLogger(__name__)
 sessions_bp = Blueprint("sessions", __name__)
 
 
+def _get_sessions(year=None, month=None, location=None, vehicle_id=None, limit=50):
+    where = ["end_ts IS NOT NULL"]; params = []
+    if year and month:
+        where.append("start_ts LIKE ?"); params.append(f"{year:04d}-{month:02d}%")
+    if location and location != "all":
+        where.append("location = ?"); params.append(location)
+    if vehicle_id and vehicle_id != "all":
+        where.append("vehicle_id = ?"); params.append(vehicle_id)
+    sql = f"SELECT * FROM sessions WHERE {' AND '.join(where)} ORDER BY start_ts DESC"
+    if not (year and month): sql += f" LIMIT {limit}"
+    con = _get_db()
+    rows = con.execute(sql, params).fetchall(); close_db_if_owned(con)
+    return [dict(r) for r in rows]
+
+
+def _get_monthly_stats():
+    con = _get_db()
+    rows = con.execute("""
+        SELECT strftime('%Y-%m', start_ts) AS month,
+               COUNT(*) AS sessions,
+               SUM(kwh_charged) AS total_kwh,
+               SUM(cost_eur) AS total_cost,
+               MAX(odo_end) - MIN(odo_start) AS km_driven,
+               SUM(CASE WHEN location='home'   THEN cost_eur ELSE 0 END) AS home_cost,
+               SUM(CASE WHEN location='extern' THEN cost_eur ELSE 0 END) AS ext_cost,
+               SUM(CASE WHEN charger_type='dc' THEN kwh_charged ELSE 0 END) AS dc_kwh,
+               SUM(CASE WHEN charger_type='ac' THEN kwh_charged ELSE 0 END) AS ac_kwh
+        FROM sessions WHERE end_ts IS NOT NULL
+        GROUP BY month ORDER BY month DESC LIMIT 12
+    """).fetchall()
+    close_db_if_owned(con); return [dict(r) for r in rows]
+
+
 @sessions_bp.route("/api/sessions")
 @require_login
 def api_sessions():
-    from server import get_sessions
     if not has_permission(_current_user(), "sessions:view"):
         return jsonify({"error": "Keine Berechtigung: sessions:view"}), 403
-    return jsonify(get_sessions(
+    return jsonify(_get_sessions(
         request.args.get("year",type=int),
         request.args.get("month",type=int),
         request.args.get("location",default="all"),
@@ -140,5 +172,4 @@ def api_patch_session(sid):
 @sessions_bp.route("/api/stats/monthly")
 @require_login
 def api_monthly_stats():
-    from server import get_monthly_stats
-    return jsonify(get_monthly_stats())
+    return jsonify(_get_monthly_stats())

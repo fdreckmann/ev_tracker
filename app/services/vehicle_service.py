@@ -40,3 +40,9 @@ def get_vehicle_tracker_funcs():
     """Return (_start_vehicle_tracker, _stop_vehicle_tracker) from server (shared state)."""
     from server import _start_vehicle_tracker, _stop_vehicle_tracker
     return _start_vehicle_tracker, _stop_vehicle_tracker
+
+
+def start_tracker():
+    """Start the primary (v0) tracker via server.start_tracker."""
+    from server import start_tracker as _f
+    return _f()

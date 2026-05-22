@@ -6,7 +6,7 @@ from io import BytesIO
 
 from flask import Blueprint, jsonify, request, send_file, Response
 
-from core.db import _get_db, close_db_if_owned
+from core.db import _get_db, close_db_if_owned, DATA_DIR
 from core.config import load_config
 from core.security import require_login, has_permission, _current_user, _audit
 import core.state as _state
@@ -44,7 +44,7 @@ def api_export_pdf():
     cfg["report_email_months"]        = data.get("months", cfg.get("report_email_months", []))
 
     from services.report_service import calculate_report_periods, _get_report_sessions
-    from server import SIGNATURE_PATH
+    SIGNATURE_PATH = DATA_DIR / "signatures" / "default_signature.png"
     periods     = calculate_report_periods(stype, pmode, datetime.now(), cfg)
     period_info = periods[0]
 

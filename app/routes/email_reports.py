@@ -8,9 +8,10 @@ from threading import Timer
 
 from flask import Blueprint, jsonify, request
 
-from core.db import _get_db, close_db_if_owned
+from core.db import _get_db, close_db_if_owned, DATA_DIR
 from core.config import load_config, save_config, DEFAULT_CONFIG
 from core.security import require_login, has_permission, _current_user, _audit
+from version import APP_VERSION
 
 email_reports_bp = Blueprint("email_reports", __name__)
 
@@ -176,9 +177,6 @@ def _report_filter_labels(cfg, is_de):
 
 
 def _build_report_html(sessions, period_info, cfg, lang="de"):
-    import server as _srv
-    from server import APP_VERSION  # noqa
-    APP_VERSION = _srv.APP_VERSION
     is_de      = lang != "en"
     plabel     = period_info.get("label_de" if is_de else "label_en", "")
     loc_filter = cfg.get("report_email_location_filter", "all")
@@ -233,9 +231,6 @@ def _build_report_html(sessions, period_info, cfg, lang="de"):
 
 def _build_multi_month_html(periods_sessions, cfg, lang="de"):
     """Build email HTML for multiple months. periods_sessions: list of (period_info, sessions)."""
-    import server as _srv
-    from server import APP_VERSION  # noqa
-    APP_VERSION = _srv.APP_VERSION
     is_de   = lang != "en"
     title   = "EV Tracker — Lade-Report" if is_de else "EV Tracker — Charging Report"
     n_months = len(periods_sessions)
@@ -295,7 +290,6 @@ def _send_email_with_attachments(to_addr, subject, body_html, attachments=None):
     from email.mime.base import MIMEBase
     from email import encoders as _enc
     import server as _srv
-    from server import APP_VERSION  # noqa
     cfg  = load_config()
     name = cfg.get("smtp_from_name", "EV Tracker")
     srv, frm, err = _srv._smtp_open(cfg)
@@ -365,9 +359,7 @@ def _send_report_email(cfg=None, triggered_by="auto"):
     if lang == "auto": lang = "de"
     is_de       = lang != "en"
 
-    import server as _srv
-    from server import APP_VERSION  # noqa
-    SIGNATURE_PATH = _srv.SIGNATURE_PATH
+    SIGNATURE_PATH = DATA_DIR / "signatures" / "default_signature.png"
 
     periods = calculate_report_periods(stype, period_mode, datetime.now(), cfg)
     if period_mode == "multiple_months" and len(periods) > 1:

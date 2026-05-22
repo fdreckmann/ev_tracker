@@ -9,13 +9,14 @@ from flask import Blueprint, jsonify, request
 from core.db import _get_db, close_db_if_owned
 from core.config import load_config
 from core.tokens import _require_api_token
+from version import APP_VERSION
 
 api_v1_bp = Blueprint("api_v1", __name__)
 
 
 @api_v1_bp.route("/api/v1/status")
 def api_v1_status():
-    from server import APP_VERSION
+
     token_row, err_resp, code = _require_api_token("system:read")
     if err_resp: return err_resp, code
     return jsonify({"status": "ok", "version": APP_VERSION, "ts": datetime.utcnow().isoformat()})
@@ -120,8 +121,9 @@ def api_v1_reports_create():
     """Create a report via API token. Requires scope 'reports:create'.
     Supports period_mode: previous_period, current_period, single_month, multiple_months.
     """
-    from server import (APP_VERSION, calculate_report_periods, _get_report_sessions,
-                        _save_report_record, _audit, DB_PATH)
+    from services.report_service import calculate_report_periods, _get_report_sessions, _save_report_record
+    from core.security import _audit
+    from core.db import DB_PATH
     token_row, err_resp, code = _require_api_token("reports:create")
     if err_resp: return err_resp, code
     data        = request.get_json(force=True) or {}

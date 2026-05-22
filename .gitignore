@@ -7,3 +7,4 @@ data/
 *.zip
 *.xlsx
 config.json
+.claude/

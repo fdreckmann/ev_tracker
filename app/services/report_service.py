@@ -20,3 +20,8 @@ def _save_report_record(vehicle_id, period_info, loc_filter, veh_filter, status,
     from server import _save_report_record as _f
     return _f(vehicle_id, period_info, loc_filter, veh_filter, status,
               created_by, excel_bytes, pdf_bytes, summary)
+
+
+def _month_period(ym_str):
+    from server import _month_period as _f
+    return _f(ym_str)

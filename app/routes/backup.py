@@ -61,6 +61,7 @@ def api_backup_download(filename):
 
 
 @backup_bp.route("/api/backup/restore", methods=["POST"])
+@require_login
 def api_backup_restore():
     user = _current_user()
     if not has_permission(user, "backup:restore"):

@@ -98,8 +98,10 @@ def api_delete_user(uid):
     return jsonify({"ok": True})
 
 @users_bp.route("/api/users/<int:uid>/reset-2fa", methods=["POST"])
-@require_admin
+@require_login
 def api_admin_reset_2fa(uid):
+    if not has_permission(_current_user(), "users:manage_2fa"):
+        return jsonify({"error": "Keine Berechtigung: users:manage_2fa"}), 403
     now = datetime.utcnow().isoformat()
     con = _get_db()
     con.execute("UPDATE users SET totp_secret='',totp_enabled=0,updated_at=? WHERE id=?", (now, uid))
@@ -108,8 +110,10 @@ def api_admin_reset_2fa(uid):
     return jsonify({"ok": True})
 
 @users_bp.route("/api/users/<int:uid>/invite", methods=["POST"])
-@require_admin
+@require_login
 def api_invite_user(uid):
+    if not has_permission(_current_user(), "users:create"):
+        return jsonify({"error": "Keine Berechtigung: users:create"}), 403
     from services.email_service import _send_email, _email_html, _email_btn
     user = _get_user_by_id(uid)
     if not user:

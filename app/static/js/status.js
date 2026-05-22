@@ -47,8 +47,9 @@ async function refreshStatus() {
 
     const locEl = $('dLoc');
     if (locEl) {
-      if (s.location === 'home') { locEl.textContent = ' Heim'; locEl.className = 'sv g'; }
-      else if (s.location === 'extern') { locEl.textContent = ' Extern'; locEl.className = 'sv w'; }
+      const loc = s.location_status || s.location;
+      if (loc === 'home') { locEl.textContent = ' Heim'; locEl.className = 'sv g'; }
+      else if (loc === 'extern') { locEl.textContent = ' Extern'; locEl.className = 'sv w'; }
       else { locEl.textContent = '—'; locEl.className = 'sv'; }
     }
 
@@ -57,7 +58,7 @@ async function refreshStatus() {
     if (typeEl && chargeLabel) {
       if (s.charging) {
         chargeLabel.textContent = 'Lädt gerade ⚡';
-        const locPart = s.location === 'home' ? '🏠 Zuhause' : s.location === 'extern' ? '🔌 Extern' : '';
+        const locPart = (s.location_status || s.location) === 'home' ? '🏠 Zuhause' : (s.location_status || s.location) === 'extern' ? '🔌 Extern' : '';
         const typePart = s.charger_type === 'dc' ? 'DC' : s.charger_type === 'ac' ? 'AC' : '';
         typeEl.textContent = [locPart, typePart].filter(Boolean).join(' · ') || '⚡';
         typeEl.className = 'sv w';
@@ -85,7 +86,7 @@ async function refreshStatus() {
         spotEl.textContent = Number(s.entsoe_spot * 1000).toFixed(2) + ' €/MWh';
         spotEl.className = 'sv g';
       } else {
-        spotEl.textContent = s.entsoe_ok === false && s.location === 'extern' ? 'Kein Key' : '—';
+        spotEl.textContent = s.entsoe_ok === false && (s.location_status || s.location) === 'extern' ? 'Kein Key' : '—';
         spotEl.className = 'sv';
       }
     }
