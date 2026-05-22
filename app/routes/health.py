@@ -45,7 +45,8 @@ def api_system_status():
     if not has_permission(_current_user(), "system:status"):
         return jsonify({"error": "Keine Berechtigung: system:status"}), 403
     try:
-        from server import APP_VERSION, BACKUP_DIR, get_all_vehicles
+        from server import APP_VERSION, BACKUP_DIR
+        from services.vehicle_service import get_all_vehicles
     except ImportError:
         APP_VERSION = "unknown"
         BACKUP_DIR = DATA_DIR / "backups"
@@ -122,6 +123,28 @@ def api_diagnostics():
         "same_module": _sys.modules.get("__main__") is _sys.modules.get("server"),
         "vehicle_states_id": id(_cs.vehicle_states),
     }
+    # Tracker state for primary vehicle (v0)
+    v0_st = _state.vehicle_states.get("v0", {})
+    tracker_state = {
+        "tracker_alive": v0_st.get("tracker_alive"),
+        "tracker_started": v0_st.get("tracker_started"),
+        "tracker_thread_id": v0_st.get("tracker_thread_id"),
+        "tracker_start_time": v0_st.get("tracker_start_time"),
+        "poll_count": v0_st.get("poll_count"),
+        "successful_poll_count": v0_st.get("successful_poll_count"),
+        "failed_poll_count": v0_st.get("failed_poll_count"),
+        "last_exception_type": v0_st.get("last_exception_type"),
+        "provider_connected": v0_st.get("provider_connected"),
+        "provider_debug": v0_st.get("provider_debug"),
+    }
+    # Config summary — no secrets
+    config_summary = {
+        "provider_set": bool(cfg.get("provider")),
+        "ha_url_set": bool(cfg.get("ha_url")),
+        "ha_token_set": bool(cfg.get("ha_token")),
+        "charging_sensor_set": bool(cfg.get("charging_sensor")),
+        "soc_sensor_set": bool(cfg.get("soc_sensor")),
+    }
     return jsonify({
         "ok": True,
         "provider": provider,
@@ -132,4 +155,6 @@ def api_diagnostics():
         "vehicles": vehicles,
         "server_time": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "module_info": module_info,
+        "tracker_state": tracker_state,
+        "config_summary": config_summary,
     })

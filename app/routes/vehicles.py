@@ -216,7 +216,7 @@ def _detect_location_status(vid: str, cfg: dict, vehicle_state: dict) -> dict:
 def api_get_vehicles():
     if not has_permission(_current_user(), "vehicles:view"):
         return jsonify({"error": "Keine Berechtigung: vehicles:view"}), 403
-    from server import get_all_vehicles
+    from services.vehicle_service import get_all_vehicles
     include_archived = request.args.get("include_archived", "false").lower() == "true"
     return jsonify(get_all_vehicles(include_archived=include_archived))
 
@@ -225,7 +225,8 @@ def api_get_vehicles():
 def api_add_vehicle():
     if not has_permission(_current_user(), "vehicles:create"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: vehicles:create"}), 403
-    from server import _start_vehicle_tracker
+    from services.vehicle_service import get_vehicle_tracker_funcs
+    _start_vehicle_tracker, _stop_vehicle_tracker = get_vehicle_tracker_funcs()
     data = request.json or {}
     cfg  = load_config()
     extras = list(cfg.get("extra_vehicles", []))
@@ -246,7 +247,8 @@ def api_add_vehicle():
 def api_update_vehicle(vid):
     if not has_permission(_current_user(), "vehicles:edit"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: vehicles:edit"}), 403
-    from server import _start_vehicle_tracker, _stop_vehicle_tracker
+    from services.vehicle_service import get_vehicle_tracker_funcs
+    _start_vehicle_tracker, _stop_vehicle_tracker = get_vehicle_tracker_funcs()
     if vid == "v0":
         data = request.json or {}
         cfg  = load_config()
@@ -303,7 +305,7 @@ def api_vehicle_location(vid):
         return jsonify({"error": "Keine Berechtigung: vehicles:location_view"}), 403
     if not _validate_vehicle_id(vid):
         return jsonify({"error": "Ungültige Fahrzeug-ID"}), 400
-    from server import build_vehicle_config
+    from services.vehicle_service import build_vehicle_config
     cfg  = load_config()
     vcfg = cfg if vid == "v0" else build_vehicle_config(
         next((v for v in cfg.get("extra_vehicles",[]) if v["id"]==vid), {}), cfg)
@@ -368,7 +370,7 @@ def api_vehicle_location_test(vid):
         return jsonify({"ok": False, "error": "Keine Berechtigung: vehicles:location_configure"}), 403
     if not _validate_vehicle_id(vid):
         return jsonify({"ok": False, "error": "Ungültige Fahrzeug-ID"}), 400
-    from server import build_vehicle_config
+    from services.vehicle_service import build_vehicle_config
     cfg  = load_config()
     vcfg = cfg if vid == "v0" else build_vehicle_config(
         next((v for v in cfg.get("extra_vehicles",[]) if v["id"]==vid), {}), cfg)
@@ -422,7 +424,8 @@ def api_delete_vehicle(vid):
     """
     if not has_permission(_current_user(), "vehicles:delete"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: vehicles:delete"}), 403
-    from server import _stop_vehicle_tracker
+    from services.vehicle_service import get_vehicle_tracker_funcs
+    _start_vehicle_tracker, _stop_vehicle_tracker = get_vehicle_tracker_funcs()
 
     if vid == "v0":
         return jsonify({"ok": False, "error": "Primärfahrzeug kann nicht gelöscht werden"}), 400

@@ -32,28 +32,55 @@ class HomeAssistantProvider(BaseProvider):
         url = self.config.get("ha_url","").rstrip("/")
         token = self.config.get("ha_token","")
         if not url:
-            log.warning("HA: ha_url nicht konfiguriert")
+            self._store_entity_debug(entity_id, reachable=False, error="ha_url nicht konfiguriert")
             return None
         if not token:
-            log.warning("HA: ha_token nicht konfiguriert")
+            self._store_entity_debug(entity_id, reachable=False, error="ha_token nicht konfiguriert")
             return None
         try:
             r = requests.get(f"{url}/api/states/{entity_id}",
                              headers=self._headers(), timeout=10)
             if r.status_code == 401:
-                log.warning("HA: Authentifizierung fehlgeschlagen (401) — Token prüfen")
+                self._store_entity_debug(entity_id, http_status=401, reachable=True, error="Token ungültig oder keine Berechtigung")
                 return None
             if r.status_code == 403:
-                log.warning("HA: Zugriff verweigert (403) — Token-Berechtigungen prüfen")
+                self._store_entity_debug(entity_id, http_status=403, reachable=True, error="Token ungültig oder keine Berechtigung")
+                return None
+            if r.status_code == 404:
+                self._store_entity_debug(entity_id, http_status=404, reachable=True, error="Entity nicht gefunden")
                 return None
             r.raise_for_status()
-            return r.json()
+            data = r.json()
+            state = data.get("state","")
+            unit  = data.get("attributes",{}).get("unit_of_measurement","")
+            unavailable = state.lower() in ("unavailable","unknown")
+            self._store_entity_debug(entity_id, http_status=200, reachable=True,
+                                     state=state, unit=unit,
+                                     error="Sensor unavailable" if unavailable else None)
+            return data
+        except requests.exceptions.Timeout:
+            self._store_entity_debug(entity_id, reachable=False, error="Timeout")
+            return None
         except requests.exceptions.ConnectionError as e:
-            log.warning("HA: Verbindung zu %s fehlgeschlagen: %s", url, e)
+            self._store_entity_debug(entity_id, reachable=False, error=f"Verbindung fehlgeschlagen: {e}")
             return None
         except Exception as e:
-            log.warning("HA entity %s error: %s", entity_id, e)
+            self._store_entity_debug(entity_id, reachable=False, error=str(e))
             return None
+
+    def _store_entity_debug(self, entity_id: str, *, reachable: bool = True,
+                            http_status: int | None = None, state: str | None = None,
+                            unit: str | None = None, error: str | None = None):
+        if not hasattr(self, "_entity_debug"):
+            self._entity_debug = {}
+        self._entity_debug[entity_id] = {
+            "entity_id": entity_id,
+            "reachable": reachable,
+            "http_status": http_status,
+            "state": state,
+            "unit": unit,
+            "error": error,
+        }
 
     def _float(self, entity_id: str) -> float | None:
         data = self._get_entity(entity_id)
@@ -61,13 +88,25 @@ class HomeAssistantProvider(BaseProvider):
         try: return float(data["state"])
         except: return None
 
+    _CHARGING_STATES = {
+        "charging", "charging_active", "connected_charging", "active_charging",
+        "laden", "ladend", "true", "on", "1", "conserving", "lading", "opladen",
+    }
+    _CONNECTED_ONLY_STATES = {
+        "connected", "plugged_in", "plugged", "cable_connected",
+    }
+    _NOT_CHARGING_STATES = {
+        "ready", "idle", "not_charging", "complete", "completed", "finished",
+        "off", "false", "0", "unavailable", "unknown", "disconnected",
+    }
+
     def _bool_charging(self, entity_id: str) -> bool | None:
         data = self._get_entity(entity_id)
         if not data: return None
-        return data["state"].lower() in (
-            "charging", "laden", "true", "on", "1", "conserving",
-            "plugged_in", "connected", "active", "lading", "opladen",
-        )
+        s = data["state"].lower()
+        if s in self._CONNECTED_ONLY_STATES:
+            return bool(self.config.get("ha_connected_means_charging", False))
+        return s in self._CHARGING_STATES
 
     @staticmethod
     def _normalize_location(state: str) -> str:
@@ -117,11 +156,12 @@ class HomeAssistantProvider(BaseProvider):
             if chg_id:
                 chg_data = self._get_entity(chg_id)
                 if chg_data:
-                    charging = chg_data["state"].lower() in (
-                        "charging","laden","true","on","1","conserving",
-                        "plugged_in","connected","active","lading","opladen",
-                    )
-                    debug["charging_sensor"] = {"entity_id": chg_id, "ok": True, "state": chg_data["state"]}
+                    s = chg_data["state"].lower()
+                    if s in self._CONNECTED_ONLY_STATES:
+                        charging = bool(self.config.get("ha_connected_means_charging", False))
+                    else:
+                        charging = s in self._CHARGING_STATES
+                    debug["charging_sensor"] = {"entity_id": chg_id, "ok": True, "state": chg_data["state"], "resolved_charging": charging}
                 else:
                     debug["charging_sensor"] = {"entity_id": chg_id, "ok": False, "error": "Nicht gefunden oder nicht erreichbar"}
             else:
@@ -170,7 +210,10 @@ class HomeAssistantProvider(BaseProvider):
             return VehicleState(error=str(e))
 
     def get_debug(self) -> dict:
-        return getattr(self, "_last_debug", {})
+        d = dict(getattr(self, "_last_debug", {}))
+        if hasattr(self, "_entity_debug"):
+            d["entities"] = dict(self._entity_debug)
+        return d
 
     def test_connection(self) -> dict:
         url   = self.config.get("ha_url","").rstrip("/")
@@ -247,6 +290,8 @@ class HomeAssistantProvider(BaseProvider):
             {"id":"location_sensor",    "label":"Standort Sensor / Device Tracker","type":"text",  "placeholder":"device_tracker.mein_auto_position", "required":False},
             {"id":"home_states",        "label":"'Zuhause' States",             "type":"text",     "placeholder":"home,zuhause",                               "required":False,
              "hint":"Kommagetrennte Werte die als Zuhause gelten"},
-            {"id":"dc_threshold_kw",    "label":"DC-Schwellwert (kW)",          "type":"number",   "placeholder":"22",                                         "required":False,
+            {"id":"dc_threshold_kw",           "label":"DC-Schwellwert (kW)",                  "type":"number",   "placeholder":"22",    "required":False,
              "hint":"Ladeleistung ab der DC erkannt wird (Standard: 22 kW)"},
+            {"id":"ha_connected_means_charging","label":"'connected'/'plugged_in' = Laden",     "type":"checkbox", "required":False,
+             "hint":"Standard: nein — angesteckt gilt nicht automatisch als Ladevorgang"},
         ]

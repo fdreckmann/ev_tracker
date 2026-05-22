@@ -75,7 +75,7 @@ def login_page():
                 if new_locked:
                     # notify admins about account lockout
                     try:
-                        from server import _send_email, _email_html
+                        from services.email_service import _send_email, _email_html
                         con2 = _get_db()
                         admins = con2.execute("SELECT email,name FROM users WHERE role='admin' AND status='active'").fetchall()
                         close_db_if_owned(con2)
@@ -200,7 +200,7 @@ def forgot_password_page():
     _forgot_pw_attempts[email] = attempts
     user  = _get_user_by_email(email)
     if user and user.get("status") != "disabled":
-        from server import _send_email, _email_html, _email_btn
+        from services.email_service import _send_email, _email_html, _email_btn
         token = secrets.token_urlsafe(32)
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         now_dt = datetime.utcnow()

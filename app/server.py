@@ -734,6 +734,7 @@ def tracker_loop(vehicle_id: str = "v0"):
             st["provider_debug"] = debug
 
             if state.error:
+                st["last_poll"] = datetime.now().isoformat(timespec="seconds")
                 st["last_error"] = state.error
                 st["provider_connected"] = False
                 st["failed_poll_count"] = st.get("failed_poll_count", 0) + 1
@@ -810,7 +811,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                     log.debug("[%s] Meter skipped at session start (scope=disabled)", vehicle_id)
                 elif _meter_scope == "home_only" and _effective_location != "home":
                     log.info("[%s] Meter skipped at session start (scope=home_only, location=%s)",
-                             vehicle_id, location)
+                             vehicle_id, _effective_location)
                 else:
                     _meter_start_res = _read_meter_impl(cfg)
                     meter_start_val = _meter_start_res.value
@@ -1019,6 +1020,26 @@ def start_tracker():
             _vehicle_states[vid] = _make_state(vid, v.get("provider","ha"))
             _vehicle_stops[vid]  = threading.Event()
             threading.Thread(target=tracker_loop, args=(vid,), daemon=True).start()
+
+
+_started_once = False
+_started_once_lock = threading.Lock()
+
+
+def ensure_started_once():
+    """Idempotent startup: init DB, start tracker and schedulers exactly once."""
+    global _started_once
+    with _started_once_lock:
+        if _started_once:
+            return
+        _started_once = True
+    init_db()
+    start_tracker()
+    if callable(globals().get("schedule_backup")):
+        schedule_backup()
+    if callable(globals().get("schedule_report")):
+        schedule_report()
+
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 

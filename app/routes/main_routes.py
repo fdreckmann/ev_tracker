@@ -32,7 +32,7 @@ _SECRET_MASK = "********"
 def index():
     from server import APP_VERSION, CHANGELOG, TEMPLATE_PATH, PROVIDERS
     from providers import get_all_capabilities, get_config_fields
-    from server import get_all_vehicles
+    from services.vehicle_service import get_all_vehicles
     cfg = load_config()
     caps = get_all_capabilities()
     provider_fields = get_config_fields(cfg.get("provider","ha"))
@@ -137,7 +137,7 @@ def api_state_alias():
 @require_login
 def api_mobile_summary():
     """Single aggregated endpoint for mobile dashboard — reduces multiple API calls to one."""
-    from server import get_all_vehicles
+    from services.vehicle_service import get_all_vehicles
     user = _current_user()
     cfg = load_config()
 
@@ -239,7 +239,9 @@ def api_tracker_restart():
         return jsonify({"ok": False, "error": "Keine Berechtigung"}), 403
     vid = request.json.get("vehicle_id", "v0") if request.json else "v0"
     try:
-        from server import _stop_vehicle_tracker, _start_vehicle_tracker, start_tracker
+        from server import start_tracker
+        from services.vehicle_service import get_vehicle_tracker_funcs
+        _start_vehicle_tracker, _stop_vehicle_tracker = get_vehicle_tracker_funcs()
         import time as _time
         if vid == "v0":
             _stop_vehicle_tracker("v0")

@@ -1,0 +1,182 @@
+/**
+ * status.js — Dashboard status polling, table rendering, stat tile helpers.
+ * Requires: api.js
+ */
+
+// ── Auto-scale stat values to fit their tile ─────────────────────────────────
+function fitText(el) {
+  el.style.fontSize = '';
+  const parent = el.closest('.stat') || el.parentElement;
+  if (!parent) return;
+  const available = parent.clientWidth - 36;
+  if (el.scrollWidth <= available) return;
+  let lo = 10, hi = parseFloat(getComputedStyle(el).fontSize);
+  for (let i = 0; i < 12; i++) {
+    const mid = (lo + hi) / 2;
+    el.style.fontSize = mid + 'px';
+    if (el.scrollWidth <= available) lo = mid; else hi = mid;
+  }
+}
+function fitAllStats() {
+  document.querySelectorAll('.sv').forEach(fitText);
+}
+window.addEventListener('resize', fitAllStats);
+
+// ── Status polling ────────────────────────────────────────────────────────────
+async function refreshStatus() {
+  try {
+    const s = await fetch('/api/status').then(r => r.json());
+    const dot = $('sDot'), txt = $('sTxt');
+
+    const trackerRunning = s.running || s.tracker_alive;
+    if (!trackerRunning) {
+      dot.className = 'dot err'; txt.textContent = 'Tracker gestoppt';
+    } else if (!s.provider_connected && s.last_error) {
+      dot.className = 'dot err'; txt.textContent = 'Provider Fehler';
+    } else if (!s.last_successful_poll) {
+      dot.className = 'dot warn'; txt.textContent = 'Warte auf Daten';
+    } else if (s.charging) {
+      dot.className = 'dot charging'; txt.textContent = 'Lädt ⚡';
+    } else {
+      dot.className = 'dot ok'; txt.textContent = 'Aktiv';
+    }
+
+    $('dSoc').textContent = s.soc_current != null ? fmt(s.soc_current, 0) + '%' : '—';
+    $('dOdo').textContent = s.odo_current != null ? Math.round(s.odo_current).toLocaleString('de') : '—';
+    $('dPoll').textContent = s.last_poll ? s.last_poll.substring(11, 16) : '—';
+
+    const locEl = $('dLoc');
+    if (locEl) {
+      if (s.location === 'home') { locEl.textContent = ' Heim'; locEl.className = 'sv g'; }
+      else if (s.location === 'extern') { locEl.textContent = ' Extern'; locEl.className = 'sv w'; }
+      else { locEl.textContent = '—'; locEl.className = 'sv'; }
+    }
+
+    const rows = await fetch('/api/sessions').then(r => r.json()).catch(() => []);
+    const typeEl = $('dType'), pwrEl = $('dPwr'), chargeLabel = $('dChargeLabel');
+    if (typeEl && chargeLabel) {
+      if (s.charging) {
+        chargeLabel.textContent = 'Lädt gerade ⚡';
+        const locPart = s.location === 'home' ? '🏠 Zuhause' : s.location === 'extern' ? '🔌 Extern' : '';
+        const typePart = s.charger_type === 'dc' ? 'DC' : s.charger_type === 'ac' ? 'AC' : '';
+        typeEl.textContent = [locPart, typePart].filter(Boolean).join(' · ') || '⚡';
+        typeEl.className = 'sv w';
+        if (pwrEl) pwrEl.textContent = s.power_kw != null ? Number(s.power_kw).toFixed(1) + ' kW' : '—';
+      } else {
+        const lastSess = rows.find(r => r.end_ts && (r.charger_type || r.location));
+        if (lastSess) {
+          chargeLabel.textContent = 'Letzte Ladung';
+          const locPart = lastSess.location === 'home' ? '🏠 Zuhause' : lastSess.location === 'extern' ? '🔌 Extern' : '';
+          const typePart = lastSess.charger_type === 'dc' ? 'DC' : lastSess.charger_type === 'ac' ? 'AC' : '';
+          typeEl.textContent = [locPart, typePart].filter(Boolean).join(' · ') || '—';
+          typeEl.className = 'sv';
+          if (pwrEl) pwrEl.textContent = lastSess.end_ts ? _timeAgo(lastSess.end_ts) : '—';
+        } else {
+          chargeLabel.textContent = 'Ladevorgang';
+          typeEl.textContent = '—'; typeEl.className = 'sv';
+          if (pwrEl) pwrEl.textContent = '—';
+        }
+      }
+    }
+
+    const spotEl = $('dSpot');
+    if (spotEl) {
+      if (s.entsoe_spot != null) {
+        spotEl.textContent = Number(s.entsoe_spot * 1000).toFixed(2) + ' €/MWh';
+        spotEl.className = 'sv g';
+      } else {
+        spotEl.textContent = s.entsoe_ok === false && s.location === 'extern' ? 'Kein Key' : '—';
+        spotEl.className = 'sv';
+      }
+    }
+
+    if (s.charging) {
+      $('dSt').textContent = 'Laden'; $('dSt').className = 'sv w';
+      $('dStSub').textContent = 'Session #' + (s.session_id || '?');
+      $('cbarWrap').classList.add('vis');
+      $('cbarFill').style.width = (s.soc_current || 0) + '%';
+      $('cbarSession').textContent = `Session #${s.session_id || '?'} · SOC ${fmt(s.soc_current, 0)}%`;
+    } else {
+      const _st_running = s.running || s.tracker_alive;
+      let _stLabel, _stClass;
+      if (!_st_running) { _stLabel = 'Gestoppt'; _stClass = 'sv'; }
+      else if (!s.provider_connected && s.last_error) { _stLabel = 'Provider Fehler'; _stClass = 'sv err'; }
+      else if (!s.provider_connected) { _stLabel = 'Warte auf Daten'; _stClass = 'sv'; }
+      else { _stLabel = 'Bereit'; _stClass = 'sv g'; }
+      $('dSt').textContent = _stLabel;
+      $('dSt').className = _stClass;
+      $('dStSub').textContent = s.last_error ? ('⚠ ' + s.last_error) : (s.last_successful_poll ? '' : 'Noch kein Poll') || 'Kein Ladevorgang';
+      $('cbarWrap').classList.remove('vis');
+    }
+
+    renderTbl($('recentTbl'), rows.slice(0, 5), false);
+
+    const lastMeter = rows.find(r => r.meter_new != null);
+    const meterTile = $('dMeterTile');
+    if (lastMeter && meterTile) {
+      $('dMeter').textContent = Math.round(Number(lastMeter.meter_new)).toLocaleString('de') + ' kWh';
+      meterTile.style.display = '';
+    }
+
+    fitAllStats();
+  } catch (e) {
+    $('sDot').className = 'dot err'; $('sTxt').textContent = 'Fehler';
+  }
+}
+
+// ── Table helpers ─────────────────────────────────────────────────────────────
+function locBadge(loc) {
+  if (loc === 'home')   return '<span class="loc-home">🏠 Zuhause</span>';
+  if (loc === 'extern') return '<span class="loc-ext">⚡ Extern</span>';
+  return '<span class="loc-unk">—</span>';
+}
+function typeBadge(t, kw) {
+  const pw = kw ? ` ${Number(kw).toFixed(1)} kW` : '';
+  if (t === 'dc') return `<span style="color:#f59e0b;font-size:.7rem">⚡ DC${pw}</span>`;
+  if (t === 'ac') return `<span style="color:#00b4ff;font-size:.7rem">🔌 AC${pw}</span>`;
+  return `<span style="color:var(--mute);font-size:.7rem">—</span>`;
+}
+
+function renderTbl(el, rows, showDel = true) {
+  if (!rows.length) { el.innerHTML = '<div class="empty">Keine Ladevorgänge</div>'; return; }
+  const hasMeter   = rows.some(r => r.meter_old != null || r.meter_new != null);
+  const hasVehicle = rows.some(r => r.vehicle_id && r.vehicle_id !== 'v0') || new Set(rows.map(r => r.vehicle_id)).size > 1;
+  const fmtMeter   = v => v != null ? Math.round(Number(v)).toLocaleString('de') : '—';
+  el.innerHTML = `<table>
+    <thead><tr>
+      <th>#</th><th>Datum</th><th>Start→Ende</th>
+      ${hasVehicle ? '<th>Fahrzeug</th>' : ''}
+      <th>SOC</th><th>Lader</th><th>kWh</th><th>Preis</th><th>Kosten</th>
+      ${hasMeter ? '<th>Zähler Alt→Neu</th>' : ''}
+      <th>Standort</th>
+      ${showDel ? '<th></th>' : ''}
+    </tr></thead>
+    <tbody>${rows.map(r => `<tr style='cursor:pointer' onclick='showSessionDetail(${r.id})'>
+      <td class="num">${r.id}</td>
+      <td>${fmtDate(r.start_ts).split(' ')[0]}</td>
+      <td>${fmtTime(r.start_ts)} → ${r.end_ts ? fmtTime(r.end_ts) : '…'}</td>
+      ${hasVehicle ? `<td style="font-size:.72rem;font-family:var(--mono);color:var(--acc2)">${r.vehicle_id || 'v0'}</td>` : ''}
+      <td>${fmt(r.soc_start, 0)}% → ${fmt(r.soc_end, 0)}%</td>
+      <td>${typeBadge(r.charger_type, r.max_power_kw)}</td>
+      <td class="g">${fmt(r.kwh_charged)} kWh</td>
+      <td style="font-size:.72rem;color:var(--mute)">${r.price_per_kwh ? fmt(r.price_per_kwh, 4) + ' €/kWh' : '—'}${r.entsoe_spot ? '<br><span style="color:#4a5c72">Spot:' + fmt(r.entsoe_spot, 4) + '</span>' : ''}</td>
+      <td class="w" id="cost_${r.id}">
+        ${r.cost_eur != null ? fmt(r.cost_eur) + ' €' : '—'}
+        ${r.cost_manual ? '<span title="Manuell" style="color:var(--acc);font-size:.65rem"> ✎</span>' : ''}
+      </td>
+      ${hasMeter ? `<td style="font-size:.72rem;color:#a78bfa;font-family:var(--mono)">${fmtMeter(r.meter_old)} → ${fmtMeter(r.meter_new)}</td>` : ''}
+      <td>${locBadge(r.location)}</td>
+      ${showDel ? `<td style="display:flex;gap:4px;padding:8px 4px">
+        <button onclick="editCost(${r.id},${r.kwh_charged || 0},${r.price_per_kwh || 0})"
+          style="background:rgba(0,180,255,.12);color:#00b4ff;border:1px solid rgba(0,180,255,.25);
+          border-radius:6px;padding:3px 8px;font-size:.65rem;cursor:pointer" title="Kosten bearbeiten">✎</button>
+        <button onclick="editLocation(${r.id},'${r.location || 'unknown'}')"
+          style="background:rgba(61,220,151,.12);color:#3ddc97;border:1px solid rgba(61,220,151,.25);
+          border-radius:6px;padding:3px 8px;font-size:.65rem;cursor:pointer" title="Standort ändern">📍</button>
+        <button onclick="delSession(${r.id})"
+          style="background:rgba(239,68,68,.12);color:#ef4444;border:1px solid rgba(239,68,68,.25);
+          border-radius:6px;padding:3px 8px;font-size:.65rem;cursor:pointer">✕</button>
+      </td>` : ''}
+    </tr>`).join('')}</tbody>
+  </table>`;
+}

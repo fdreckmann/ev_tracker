@@ -73,3 +73,70 @@ def restore_backup(zip_path: Path, data_dir: Path, pre_restore_fn=None) -> None:
             with zf.open(member) as src, open(dest, "wb") as dst:
                 dst.write(src.read())
     log.info("Backup wiederhergestellt: %s", zip_path.name)
+
+
+# ── Server re-exports (these have many dependencies on server.py globals) ──────
+
+def get_backup_funcs():
+    """Return server.py backup functions and constants as a tuple."""
+    from server import (create_backup, restore_backup, parse_cron_next,
+                        schedule_backup, BACKUP_DIR, _BACKUP_MAX_UPLOAD_BYTES)
+    return create_backup, restore_backup, parse_cron_next, schedule_backup, BACKUP_DIR, _BACKUP_MAX_UPLOAD_BYTES
+
+
+# Module-level lazy accessors
+
+def _srv_create_backup(label="manual"):
+    from server import create_backup as _f
+    return _f(label)
+
+
+def _srv_restore_backup(zip_path):
+    from server import restore_backup as _f
+    return _f(zip_path)
+
+
+def _srv_parse_cron_next(cron_expr):
+    from server import parse_cron_next as _f
+    return _f(cron_expr)
+
+
+def _srv_schedule_backup():
+    from server import schedule_backup as _f
+    return _f()
+
+
+def get_backup_dir():
+    from server import BACKUP_DIR
+    return BACKUP_DIR
+
+
+def get_max_upload_bytes():
+    from server import _BACKUP_MAX_UPLOAD_BYTES
+    return _BACKUP_MAX_UPLOAD_BYTES
+
+
+# Keep old name for backward compatibility
+get_backup_max_upload_bytes = get_max_upload_bytes
+
+
+def get_backup_timer():
+    import server as _srv
+    return getattr(_srv, "_backup_timer", None)
+
+
+# Public aliases matching server.py function names (used by routes)
+def create_backup(label="manual"):
+    return _srv_create_backup(label)
+
+
+def restore_backup(zip_path):
+    return _srv_restore_backup(zip_path)
+
+
+def parse_cron_next(cron_expr):
+    return _srv_parse_cron_next(cron_expr)
+
+
+def schedule_backup():
+    return _srv_schedule_backup()

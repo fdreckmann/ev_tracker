@@ -110,7 +110,7 @@ def api_admin_reset_2fa(uid):
 @users_bp.route("/api/users/<int:uid>/invite", methods=["POST"])
 @require_admin
 def api_invite_user(uid):
-    from server import _send_email, _email_html, _email_btn
+    from services.email_service import _send_email, _email_html, _email_btn
     user = _get_user_by_id(uid)
     if not user:
         return jsonify({"ok": False, "error": "Benutzer nicht gefunden"}), 404

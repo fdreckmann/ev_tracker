@@ -269,18 +269,16 @@ Dynamische Preise werden **zeitgewichtet** über den Ladezeitraum gemittelt (z.B
 
 ---
 
-## Neu in 2.0.24
+## Neu in 2.0.25
 
-- **Bugfix:** `sys.modules["server"]`-Alias verhindert Doppelimport von `server.py` — behebt dauerhaftes "Gestoppt" im Dashboard
-- **Tracker:** 12 neue Diagnosefelder (`tracker_alive`, `poll_count`, `provider_connected`, `last_fatal_error` u.a.) für bessere Fehlerdiagnose
-- **Tracker:** Schutz gegen Doppelstart; Exception-Handler speichert vollständigen Traceback
-- **HA Provider:** Partial-State bei Sensor-Ausfällen — einzelne Fehler stoppen nicht den gesamten Tracker
-- **UI:** Status unterscheidet jetzt "Gestoppt / Provider Fehler / Warte auf Daten / Bereit"
-- **UI:** "Tracker neu starten"-Button in der Verbindungskonfiguration
-- **API:** `POST /api/tracker/restart` — startet den Tracker-Thread neu ohne Container-Neustart
-- **API:** `/api/config POST` akzeptiert jetzt alle Felder des aktiven Providers
-- **Sicherheit:** 6 ungeschützte Endpunkte mit `@require_login` abgesichert
-- **Sicherheit:** Secret-Masking in `connections.py` generisch via `get_config_fields()` statt hardcodierter Liste
+- **Bugfix KRITISCH:** HA `connected`/`plugged_in` startet keine Ladesession mehr — `ha_connected_means_charging: false` als neuer Standard
+- **Bugfix:** `last_poll` wird jetzt auch bei Provider-Fehlern gesetzt — Tracker zeigt korrekten Polling-Status
+- **UI:** Status klar unterschieden: "Tracker gestoppt" / "Provider Fehler" / "Warte auf Daten" / "Aktiv"
+- **UI:** `last_error` sichtbar im Dashboard-Status — keine versteckten Fehler mehr
+- **HA Provider:** Per-Entity Debug-Info (`http_status`, `state`, `reachable`, `error`) in `/api/diagnostics`
+- **Services:** `app/services/` mit Email-, Vehicle-, Backup-, Update-, Report-Service — `from server import` Abhängigkeiten reduziert
+- **JS:** `api.js`, `status.js`, `config.js` als statische Dateien — `index.html` von 8381 → 8091 Zeilen
+- **server.py:** `ensure_started_once()` — sicherer Startup für App-Factory/Gunicorn
 
 ---
 
