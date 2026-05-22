@@ -21,7 +21,7 @@ from core.security import (_hash_password, _password_ok, _get_secret_key, _has_u
     ALL_PERMISSIONS, DEFAULT_ROLE_PERMISSIONS)
 from core.tokens import _API_SCOPES, _hash_token, _check_api_token, _require_api_token
 from routes import register_blueprints
-import core.state as _state
+import core.state as _core_state
 
 APP_VERSION   = "2.0.20"
 
@@ -653,13 +653,11 @@ def _make_state(vehicle_id="v0", provider_id="ha"):
         "location_status": "unknown", "location_source": "none",
     }
 
-_vehicle_states: dict[str, dict] = {"v0": _make_state("v0")}
-_vehicle_states_lock = threading.Lock()
-_vehicle_stops:  dict[str, threading.Event] = {"v0": threading.Event()}
-
-# Backward compat alias
-_state = _vehicle_states["v0"]
-_stop  = _vehicle_stops["v0"]
+_vehicle_states      = _core_state.vehicle_states       # shared with blueprints
+_vehicle_states_lock = _core_state.vehicle_states_lock
+_vehicle_stops       = _core_state.vehicle_stops
+_vehicle_states["v0"] = _make_state("v0")
+_vehicle_stops["v0"]  = threading.Event()
 
 def read_meter_value() -> Optional[float]:
     """Read current meter value. Returns kWh or None."""
