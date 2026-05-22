@@ -86,12 +86,14 @@ def api_save_config():
 
 
 @main_routes_bp.route("/api/providers")
+@require_login
 def api_providers():
     from providers import get_all_capabilities
     return jsonify(get_all_capabilities())
 
 
 @main_routes_bp.route("/api/providers/<provider_id>/fields")
+@require_login
 def api_provider_fields(provider_id):
     from providers import get_config_fields
     return jsonify(get_config_fields(provider_id))
@@ -146,7 +148,7 @@ def api_mobile_summary():
             "location_status": vs.get("location_status"),
             "power_kw": vs.get("power_kw"),
             "session_active": vs.get("session_active", False),
-            "image_url": f"/api/vehicles/{vid}/image",
+            "image_url": f"/api/vehicles/{vid}/image/file",
         })
 
     # Recent sessions (last 10)

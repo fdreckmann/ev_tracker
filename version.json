@@ -1,6 +1,24 @@
 {
-  "version": "2.0.21",
+  "version": "2.0.22",
   "changelog": [
+    {
+      "version": "2.0.22",
+      "date": "2026-05-22",
+      "changes": [
+        "Bugfix KRITISCH: saveConfig() speicherte Provider-Felder (pf_*) nie — HA-Token/URL/Sensoren wurden nie persistiert",
+        "Bugfix KRITISCH: testConn() setzte nur ha_token aus gespeichertem Config zurück — alle Passwortfelder werden jetzt behandelt",
+        "Bugfix: loadProviderFields() zeigt 'Token gespeichert – leer lassen zum Beibehalten' Hinweis für gespeicherte Passwörter",
+        "Bugfix: doMobileExport() Fallback nutzte POST /api/export statt GET mit Query-Parametern",
+        "Sicherheit: GET /api/providers und GET /api/providers/<id>/fields mit @require_login geschützt",
+        "Bugfix: /api/mobile/summary image_url war /api/vehicles/<id>/image statt /api/vehicles/<id>/image/file",
+        "HA Provider: Bessere Fehlermeldungen für fehlende URL/Token, HTTP 401/403, ConnectionError",
+        "HA Provider: _bool_charging() erkennt jetzt auch 'plugged_in', 'connected', 'active', 'lading', 'opladen'",
+        "HA Provider: _normalize_location() normalisiert 'not_home', 'away', 'external', 'extern', 'unterwegs' → 'extern'",
+        "HA Provider: test_connection() testet SOC-Sensor, Standort-Sensor und Leistungs-Sensor mit Einzelstatus",
+        "HA Provider: test_connection() gibt spezifische Fehlermeldung bei fehlender URL, fehlendem Token oder nicht gefundenem Sensor",
+        "Neu: GET /api/diagnostics — zeigt Provider-Konfiguration, Polling-Status, last_error, last_successful_poll je Fahrzeug"
+      ]
+    },
     {
       "version": "2.0.21",
       "date": "2026-05-22",
@@ -19,26 +37,6 @@
         "Architektur: server.py vollständig in core/ und routes/ Module aufgeteilt",
         "Architektur: 5 Core-Module — core/db.py, core/config.py, core/security.py, core/tokens.py, core/state.py",
         "Architektur: 25 Flask-Blueprints unter app/routes/ — alle Endpunkte ausgelagert",
-        "Architektur: routes/auth.py — Login, Logout, Setup, TOTP, WebAuthn/Passkeys, Google/MS OAuth2 (20 Endpunkte)",
-        "Architektur: routes/main_routes.py — Hauptseite, Config, Provider, Status, Mobile-Summary (8 Endpunkte)",
-        "Architektur: routes/vehicles.py — Fahrzeug-CRUD, Standort, Bilder (12 Endpunkte)",
-        "Architektur: routes/sessions.py — Ladevorgänge CRUD, Stats (8 Endpunkte)",
-        "Architektur: routes/users.py — Benutzerverwaltung, Profil, TOTP, CSRF (13 Endpunkte)",
-        "Architektur: routes/backup.py — Backup-Verwaltung (7 Endpunkte)",
-        "Architektur: routes/update.py — Docker-Update (3 Endpunkte)",
-        "Architektur: routes/tariff.py — Tarifkonfiguration (5 Endpunkte)",
-        "Architektur: routes/templates_routes.py — Export-Template Upload/Gallery/Preview (11 Endpunkte)",
-        "Architektur: routes/signatures.py — Unterschriften (5 Endpunkte)",
-        "Architektur: routes/export.py — Excel-Export (3 Endpunkte)",
-        "Architektur: routes/export_templates.py — Template-Verwaltung (4 Endpunkte)",
-        "Architektur: routes/pdf_export.py — PDF-Export (2 Endpunkte)",
-        "Architektur: routes/smtp.py — SMTP/OAuth-Konfiguration (6 Endpunkte)",
-        "Architektur: routes/audit_routes.py — Admin-Dashboard, Audit-Log (2 Endpunkte)",
-        "Architektur: routes/email_reports.py — E-Mail-Berichte (4 Endpunkte)",
-        "Architektur: routes/reports.py — Berichts-Archiv, PDF/Excel-Download (5 Endpunkte)",
-        "Architektur: routes/connections.py — Provider/Meter/ENTSO-E Tests (3 Endpunkte)",
-        "Architektur: routes/api_v1.py — Externe REST-API v1 (8 Endpunkte)",
-        "Architektur: routes/mqtt.py, notifications.py, tokens.py, admin.py, billing.py, health.py — bereits in v2.0.20-Start",
         "Refactoring: server.py von 7236 → 2497 Zeilen (65% reduziert) — keine API-Änderungen",
         "Bugfix: request.json ohne None-Check in 5 Routen behoben (AttributeError bei falschem Content-Type)"
       ]
@@ -49,71 +47,10 @@
       "changes": [
         "Bugfix KRITISCH: close_db_if_owned() rekursiver Selbstaufruf statt con.close() — alle sqlite3.connect()-Verbindungen wurden nie geschlossen",
         "Sicherheit: SQL-Injection in export_excel.py fetch_sessions() — location-Parameter wird jetzt parametrisiert übergeben",
-        "Sicherheit: XSS im Audit-Log — r.details wird jetzt durch escapeHtml() geleitet",
-        "Sicherheit: XSS in Benutzerverwaltung — u.name und u.email werden jetzt durch escapeHtml() geleitet",
-        "Sicherheit: XSS im Rollendialog — u.name wird jetzt via JSON.stringify() sicher in onclick-Attribut eingebettet",
-        "Sicherheit: XSS in Mobile-Ansicht — unbekannte Standorte werden durch escapeHtml() geleitet",
-        "Sicherheit: Open Redirect via ?next= — _safe_next() validiert dass next ein relativer Pfad auf dieser App ist",
-        "Bugfix: api_update_cost() Absturz wenn Request-Body fehlt oder cost_eur nicht enthalten",
-        "Bugfix: 7× ungeschützte int()-Konvertierungen → HTTP 500 bei ungültigem Query-Parameter (location/history, audit-log, report/history, reports/archive, v1/sessions, v1/reports)",
-        "Bugfix: /api/v1/sessions/<id> PATCH gibt 404 zurück wenn Session nicht existiert",
-        "Bugfix: /api/notifications/rules/<id> PUT gibt 404 zurück wenn Regel nicht existiert",
-        "Performance: get_sessions() und get_monthly_stats() nutzen _get_db() statt sqlite3.connect()",
-        "Performance: _audit() nutzt _get_db() statt sqlite3.connect() — reduziert DB-Verbindungen pro Request",
-        "UX: delSession() zeigt Fehlermeldung wenn Löschen fehlschlägt",
-        "UX: deleteTpl() zeigt Fehlermeldung wenn Template-Löschen fehlschlägt",
-        "UX: toggleNotifRule() zeigt Fehlermeldung bei Fehler statt silent fail",
-        "UX: setChannel() zeigt Fehlermeldung wenn Kanal nicht gespeichert werden konnte"
-      ]
-    },
-    {
-      "version": "2.0.18",
-      "date": "2026-05-21",
-      "changes": [
-        "Mobile: refreshMobileDashboard() und loadMobileVehicleCards() nutzen primär /api/mobile/summary (1 API-Call statt 3)",
-        "Mobile: Fallback auf /api/state + /api/sessions wenn /api/mobile/summary nicht verfügbar",
-        "Mobile: Fahrzeugkarten zeigen Fahrzeugbild (/api/vehicles/<id>/image/file) mit Placeholder-Fallback",
-        "Mobile: Dashboard zeigt aktives Fahrzeugbild via mobileVehicleImg-Element",
-        "Performance: close_db_if_owned() Helper — Request-Scoped g-Connection wird nicht mehr vorzeitig geschlossen",
-        "Performance: con.close() → close_db_if_owned(con) global ersetzt — teardown_appcontext schließt sauber",
-        "Sicherheit: _vehicle_exists() Check für alle 4 Fahrzeugbild-Endpoints — unbekannte IDs → 404",
-        "Sicherheit: /api/config POST nutzt @require_login + settings:edit statt @require_admin",
-        "Feature: Standort-Historie (vehicle_location_history) wird jetzt im Tracker befüllt wenn location_history_enabled=true",
-        "Feature: Präzision status_only/rounded/exact steuert welche Koordinaten gespeichert werden",
-        "Feature: Retention-Cleanup löscht alte Einträge automatisch nach location_history_retention_days",
-        "Feature: /api/vehicles/<vid>/location/history gibt latitude/longitude zurück (mit vehicles:location_exact_view)",
-        "CSRF: 12 weitere fetch()-POST/PUT-Aufrufe auf apiFetch() umgestellt (sessions/cost, sessions/location, config, entsoe/test, test-connection, backup/restore, backup/cron, export/templates)"
-      ]
-    },
-    {
-      "version": "2.0.17",
-      "date": "2026-05-21",
-      "changes": [
-        "Performance: _get_db() nutzt flask.g für Request-Scoped DB-Connection — ein sqlite3.connect() pro Request statt mehrerer",
-        "Performance: teardown_appcontext schließt g-Connection automatisch nach jedem Request",
-        "Performance: re.compile() in export_excel.py auf Modul-Ebene verschoben (_PH_PATTERN, _COL_ADDR_RE)",
-        "Thread-Safety: _vehicle_states.pop() in Archive/Delete mit _vehicle_states_lock abgesichert"
-      ]
-    },
-    {
-      "version": "2.0.16",
-      "date": "2026-05-21",
-      "changes": [
-        "Bugfix: /api/state als Kompatibilitäts-Alias für /api/status ergänzt (Mobile Dashboard)",
-        "Bugfix: Mobile Signatur-Upload auf /api/signature/upload korrigiert",
-        "Sicherheit: 5 fehlende CSRF-Token in fetch()-Aufrufen ergänzt (DELETE sessions/template/backup, PUT/DELETE export-templates)",
-        "Sicherheit: Sensible Konfigurationsfelder in /api/config maskiert (ha_token, entsoe_api_key, octopus_api_key, tibber_token, mqtt_password etc.)",
-        "Sicherheit: Template-Upload Größenlimit 10 MB ergänzt",
-        "Sicherheit: threading.Lock für _vehicle_states-Zugriffe ergänzt",
-        "Performance: load_config() mit 30-Sekunden-TTL-Cache — reduziert Disk-Reads im Tracker",
-        "Performance: has_permission() cacht Berechtigungen in flask.g — ein DB-Query pro Request statt mehrerer",
-        "Performance: Index idx_session_points_session und idx_session_points_ts in init_db() ergänzt",
-        "Stabilität: vehicle_id=NULL Backfill-Migration → 'v0'",
-        "Stabilität: Cleanup-Job für abgelaufene Export/PDF-Tokens und _update_log (alle 5 Min.)",
-        "Stabilität: DB-Verbindungslecks mit try/finally abgesichert",
-        "Stabilität: Bare except-Klauseln durch except Exception ersetzt",
-        "Berechtigungen: @require_admin durch granulare Permissions ersetzt für: updates:start, users:view/create/edit/delete, audit:view, settings:edit (SMTP)",
-        "Neu: GET /api/mobile/summary — ein Aggregations-Endpunkt für Mobile Dashboard (vehicles, state, sessions, monthly stats, permissions)"
+        "Sicherheit: XSS im Audit-Log, Benutzerverwaltung, Rollendialog, Mobile-Ansicht behoben",
+        "Sicherheit: Open Redirect via ?next= — _safe_next() validiert relative Pfade",
+        "Bugfix: 7× ungeschützte int()-Konvertierungen → HTTP 500 bei ungültigem Query-Parameter",
+        "Performance: get_sessions(), get_monthly_stats(), _audit() nutzen _get_db()"
       ]
     }
   ]
