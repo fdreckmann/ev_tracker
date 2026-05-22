@@ -1,6 +1,28 @@
 {
-  "version": "2.0.25",
+  "version": "2.0.26",
   "changelog": [
+    {
+      "version": "2.0.26",
+      "date": "2026-05-22",
+      "changes": [
+        "Bugfix: APP_VERSION aus version.json gelesen statt hardcodiert — korrekte Version in UI und API",
+        "Bugfix: sys.modules['server'] Alias vor allen anderen Imports gesetzt — kein Doppelimport bei gunicorn",
+        "Bugfix: effective_session_location(location, location_status) — Session-DB-Schreibung nutzt jetzt UniFi/HA Standorterkennung",
+        "Bugfix: Preis- und Meter-Scope-Entscheidung nutzen effective_session_location statt raw location",
+        "HA Provider: _float() unterstützt Komma-Dezimaltrennzeichen ('12,3' → 12.3), 'unknown'/'unavailable'/'' → None",
+        "HA Provider: test_connection() — wenn charging_sensor leer aber soc_sensor gesetzt → SOC-Sensor wird getestet",
+        "HA Provider: test_connection() — zeigt Pro-Sensor-Status als Liste (Ladestatus, SOC, Standort, Leistung)",
+        "status.js: location_status bevorzugt vor location für alle Standort-Anzeigen und Ladevorgang-Tile",
+        "server.py: ensure_started_once() wird im __main__ Block aufgerufen statt start_tracker()",
+        "Sicherheit: @require_login ergänzt für /api/backup/restore",
+        "Sicherheit: reset-2fa nutzt Berechtigung users:manage_2fa statt @require_admin",
+        "Sicherheit: invite nutzt Berechtigung users:create statt @require_admin",
+        "server import: health.py, pdf_export.py, email_reports.py, main_routes.py, sessions.py teilweise bereinigt",
+        "core/location.py: effective_session_location() Helper als eigenständiges Modul",
+        "JS-Modularisierung: sessions.js (editCost, loadSessions, editLocation, showSessionDetail, loadCharts), vehicles.js (loadVehicleList, openEditVehicleModal, saveVehicleModal), mobile.js (mobileNavTo, refreshMobileDashboard, initMobileView) als statische Dateien ausgelagert",
+        "index.html: 824 Zeilen entfernt durch JS-Auslagerung (7267 statt 8091)"
+      ]
+    },
     {
       "version": "2.0.25",
       "date": "2026-05-22",

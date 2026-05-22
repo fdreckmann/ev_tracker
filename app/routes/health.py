@@ -11,6 +11,7 @@ from core.db import _get_db, close_db_if_owned, DB_PATH, DATA_DIR
 from core.config import load_config
 from core.security import require_login, has_permission, _current_user
 import core.state as _state
+from version import APP_VERSION
 
 health_bp = Blueprint("health", __name__)
 
@@ -26,11 +27,6 @@ def api_health():
     except Exception:
         db_ok = False
     data_ok = DATA_DIR.exists()
-    # APP_VERSION imported lazily to avoid circular import with server.py
-    try:
-        from server import APP_VERSION
-    except ImportError:
-        APP_VERSION = "unknown"
     return jsonify({
         "ok": db_ok and data_ok,
         "version": APP_VERSION,
@@ -44,13 +40,8 @@ def api_health():
 def api_system_status():
     if not has_permission(_current_user(), "system:status"):
         return jsonify({"error": "Keine Berechtigung: system:status"}), 403
-    try:
-        from server import APP_VERSION, BACKUP_DIR
-        from services.vehicle_service import get_all_vehicles
-    except ImportError:
-        APP_VERSION = "unknown"
-        BACKUP_DIR = DATA_DIR / "backups"
-        get_all_vehicles = lambda: []
+    from services.vehicle_service import get_all_vehicles
+    BACKUP_DIR = DATA_DIR / "backups"
     try:
         con = _get_db()
         sessions_count = con.execute("SELECT COUNT(*) FROM sessions WHERE end_ts IS NOT NULL").fetchone()[0]

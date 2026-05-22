@@ -82,10 +82,14 @@ class HomeAssistantProvider(BaseProvider):
             "error": error,
         }
 
+    _UNAVAILABLE_STATES = {"unknown", "unavailable", "none", ""}
+
     def _float(self, entity_id: str) -> float | None:
         data = self._get_entity(entity_id)
         if not data: return None
-        try: return float(data["state"])
+        raw = str(data["state"]).strip()
+        if raw.lower() in self._UNAVAILABLE_STATES: return None
+        try: return float(raw.replace(",", "."))
         except: return None
 
     _CHARGING_STATES = {
@@ -223,54 +227,62 @@ class HomeAssistantProvider(BaseProvider):
         if not token:
             return {"ok": False, "message": "❌ Kein Access Token konfiguriert"}
 
-        chg_sensor = self.config.get("charging_sensor","")
-        if not chg_sensor:
-            # At minimum test basic API connectivity
-            try:
-                r = requests.get(f"{url}/api/", headers=self._headers(), timeout=10)
-                if r.status_code == 401:
-                    return {"ok": False, "message": "❌ Authentifizierung fehlgeschlagen (401) — Token prüfen"}
-                if r.status_code == 403:
-                    return {"ok": False, "message": "❌ Zugriff verweigert (403) — Token-Berechtigungen prüfen"}
-                if r.ok:
-                    return {"ok": True, "message": f"✅ HA erreichbar unter {url} — kein Ladestatus-Sensor konfiguriert"}
-            except Exception as e:
-                return {"ok": False, "message": f"❌ Verbindung fehlgeschlagen: {e}"}
-            return {"ok": False, "message": "❌ HA nicht erreichbar — URL prüfen"}
+        # ── Basic reachability check ─────────────────────────────────────────
+        try:
+            r = requests.get(f"{url}/api/", headers=self._headers(), timeout=10)
+            if r.status_code == 401:
+                return {"ok": False, "message": "❌ Authentifizierung fehlgeschlagen (401) — Token prüfen"}
+            if r.status_code == 403:
+                return {"ok": False, "message": "❌ Zugriff verweigert (403) — Token-Berechtigungen prüfen"}
+            if not r.ok:
+                return {"ok": False, "message": f"❌ HA antwortet mit HTTP {r.status_code}"}
+        except Exception as e:
+            return {"ok": False, "message": f"❌ Verbindung zu {url} fehlgeschlagen: {e}"}
 
-        data = self._get_entity(chg_sensor)
-        if not data:
-            # Give specific error based on what's likely wrong
-            try:
-                r = requests.get(f"{url}/api/", headers=self._headers(), timeout=10)
-                if r.status_code == 401:
-                    return {"ok": False, "message": "❌ Authentifizierung fehlgeschlagen (401) — Token prüfen"}
-                if r.status_code == 403:
-                    return {"ok": False, "message": "❌ Zugriff verweigert (403) — Token-Berechtigungen prüfen"}
-                if r.ok:
-                    return {"ok": False, "message": f"❌ Sensor '{chg_sensor}' nicht gefunden — Entity-ID prüfen"}
-            except Exception as e:
-                return {"ok": False, "message": f"❌ Verbindung zu {url} fehlgeschlagen: {e}"}
-            return {"ok": False, "message": "❌ Verbindung fehlgeschlagen — URL oder Token prüfen"}
+        chg_sensor = self.config.get("charging_sensor", "").strip()
+        soc_sensor = self.config.get("soc_sensor", "").strip()
+        parts: list[str] = []
+        overall_ok = True
 
-        state = data.get("state","?")
-        name  = data.get("attributes",{}).get("friendly_name", chg_sensor)
-        parts = [f"✅ {name} · Zustand: '{state}'"]
+        # ── Charging sensor (primary) ─────────────────────────────────────────
+        if chg_sensor:
+            data = self._get_entity(chg_sensor)
+            if data:
+                state = data.get("state", "?")
+                name  = data.get("attributes", {}).get("friendly_name", chg_sensor)
+                parts.append(f"✅ Ladestatus: {name} = '{state}'")
+            else:
+                parts.append(f"⚠ Ladestatus-Sensor '{chg_sensor}' nicht gefunden")
+                overall_ok = False
+        elif soc_sensor:
+            # No charging sensor but SOC sensor set — test SOC as fallback
+            soc = self._float(soc_sensor)
+            if soc is not None:
+                parts.append(f"✅ SOC-Sensor: {soc}% (kein Ladestatus-Sensor konfiguriert)")
+            else:
+                parts.append(f"⚠ SOC-Sensor '{soc_sensor}' nicht gefunden — Entity-ID prüfen")
+                overall_ok = False
+        else:
+            parts.append("⚠ Kein Ladestatus-Sensor und kein SOC-Sensor konfiguriert")
 
-        if self.config.get("soc_sensor"):
-            soc = self._float(self.config["soc_sensor"])
-            parts.append(f"SOC: {soc}%" if soc is not None else "⚠ SOC-Sensor nicht gefunden")
+        # ── SOC sensor ────────────────────────────────────────────────────────
+        if soc_sensor and chg_sensor:
+            soc = self._float(soc_sensor)
+            parts.append(f"✅ SOC: {soc}%" if soc is not None else f"⚠ SOC-Sensor '{soc_sensor}' nicht gefunden")
 
+        # ── Optional sensors ──────────────────────────────────────────────────
         if self.config.get("location_sensor"):
             loc = self._get_entity(self.config["location_sensor"])
-            parts.append(f"Standort: '{loc['state']}'" if loc else "⚠ Standort-Sensor nicht gefunden")
+            parts.append(f"✅ Standort: '{loc['state']}'" if loc else f"⚠ Standort-Sensor '{self.config['location_sensor']}' nicht gefunden")
 
-        pwr_entity = (self.config.get("charge_speed_sensor","") or self.config.get("power_sensor","")).strip()
+        pwr_entity = (self.config.get("charge_speed_sensor", "") or self.config.get("power_sensor", "")).strip()
         if pwr_entity:
             pwr = self._get_entity(pwr_entity)
-            parts.append(f"Leistung: {pwr['state']} kW" if pwr else "⚠ Leistungs-Sensor nicht gefunden")
+            parts.append(f"✅ Leistung: {pwr['state']} kW" if pwr else f"⚠ Leistungs-Sensor '{pwr_entity}' nicht gefunden")
 
-        return {"ok": True, "message": " · ".join(parts)}
+        prefix = "✅ HA verbunden" if overall_ok else "⚠ HA verbunden, Sensor-Fehler"
+        return {"ok": overall_ok, "message": f"{prefix} · " + " · ".join(parts),
+                "sensors": parts}
 
     @classmethod
     def get_config_fields(cls) -> list[dict]:

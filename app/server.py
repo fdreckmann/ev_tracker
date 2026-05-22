@@ -4,14 +4,23 @@ import smtplib, email
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+
+# ── Doppelimport-Fix: muss VOR jedem weiteren Import stehen ─────────────────
+# Wenn Blueprints `from server import X` aufrufen, sucht Python nach sys.modules["server"].
+# Ohne diesen Alias würde server.py als zweites Modul re-importiert und _vehicle_states
+# zurückgesetzt. Der Alias muss vor `from routes import` gesetzt werden.
+if __name__ == "__main__":
+    sys.modules["server"] = sys.modules["__main__"]
+
 from flask import Flask, render_template, request, jsonify, send_file, make_response, session, redirect, url_for, g, Response
 from providers import get_provider, get_all_capabilities, get_config_fields, PROVIDERS
 from meter_providers import read_meter as _read_meter_impl, MeterResult
+from core.location import effective_session_location
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-# ── Core module imports (modularization) ──────────────────────────────────────
+# ── Core module imports ───────────────────────────────────────────────────────
 from core.db import _get_db, close_db_if_owned, DB_PATH, DATA_DIR
 from core.config import (load_config, save_config, DEFAULT_CONFIG, CONFIG_FILE,
                           VEHICLE_SPECIFIC_KEYS)
@@ -23,13 +32,7 @@ from core.tokens import _API_SCOPES, _hash_token, _check_api_token, _require_api
 from routes import register_blueprints
 import core.state as _core_state
 
-# Prevent double-import: when blueprints do `from server import X`, Python would
-# re-execute server.py as a separate "server" module (distinct from __main__).
-# This alias ensures they get the same module object.
-if __name__ == "__main__":
-    sys.modules["server"] = sys.modules["__main__"]
-
-APP_VERSION   = "2.0.24"
+from version import APP_VERSION
 
 CHANGELOG = [
     {"version":"2.0.0","changes":[
@@ -805,7 +808,7 @@ def tracker_loop(vehicle_id: str = "v0"):
             if charging and not session_active:
                 soc_start = soc; odo_start = odo; peak_power = power_kw or 0
                 _meter_scope = cfg.get("meter_scope", "home_only")
-                _effective_location = st.get("location_status") or location
+                _effective_location = effective_session_location(location, st.get("location_status"))
                 meter_start_val = None
                 if _meter_scope == "disabled":
                     log.debug("[%s] Meter skipped at session start (scope=disabled)", vehicle_id)
@@ -824,18 +827,18 @@ def tracker_loop(vehicle_id: str = "v0"):
                                 "phase": "start", "source": cfg.get("meter_source")},
                                 cfg, db_path=DB_PATH)
                         except Exception: pass
-                spot = fetch_entsoe_spot(cfg.get("entsoe_api_key","")) if location=="extern" else None
+                spot = fetch_entsoe_spot(cfg.get("entsoe_api_key","")) if _effective_location == "extern" else None
                 st["entsoe_spot"] = spot
-                price_kwh = (cfg["price_per_kwh_home"] if location=="home"
+                price_kwh = (cfg["price_per_kwh_home"] if _effective_location == "home"
                              else calc_extern_price(cfg, charger_type, spot))
                 # Set wallbox power for home sessions
-                sess_charger_kw = (cfg.get("home_charger_power_kw") or None) if location=="home" else None
+                sess_charger_kw = (cfg.get("home_charger_power_kw") or None) if _effective_location == "home" else None
                 cur.execute("""INSERT INTO sessions
                     (start_ts,odo_start,soc_start,location,charger_type,
                      max_power_kw,price_per_kwh,entsoe_spot,provider,meter_old,vehicle_id,charger_power_kw)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (datetime.now().isoformat(timespec="seconds"),
-                     odo_start,soc_start,location,charger_type,power_kw,price_kwh,spot,
+                     odo_start,soc_start,_effective_location,charger_type,power_kw,price_kwh,spot,
                      provider_id,meter_start_val,vehicle_id,sess_charger_kw))
                 con.commit(); session_id=cur.lastrowid; session_active=True
                 st["session_id"]=session_id
@@ -881,7 +884,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                     if not cost_manual:
                         cost = round(kwh*(db_price or cfg["price_per_kwh_home"]),2)
                 _meter_scope = cfg.get("meter_scope", "home_only")
-                _effective_location = st.get("location_status") or location
+                _effective_location = effective_session_location(location, st.get("location_status"))
                 meter_end_val = None
                 meter_skipped_reason = None
                 meter_used = 0
@@ -2577,5 +2580,5 @@ _pdf_tokens: dict = {}  # token -> {bytes, expires}
 if __name__=="__main__":
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     app.secret_key = _get_secret_key()
-    init_db(); start_tracker(); schedule_backup(); schedule_report()
+    init_db(); ensure_started_once(); schedule_backup(); schedule_report()
     app.run(host="0.0.0.0",port=8080,debug=False)

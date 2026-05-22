@@ -43,7 +43,7 @@ def api_test():
         if test_cfg.get(secret_key) in ("", _MASK):
             test_cfg[secret_key] = cfg.get(secret_key, "")
     try:
-        from server import get_provider
+        from providers import get_provider
         provider = get_provider(test_cfg.get("provider","ha"), test_cfg)
         result   = provider.test_connection()
         return jsonify(result)

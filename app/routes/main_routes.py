@@ -6,8 +6,9 @@ from datetime import datetime
 
 from flask import Blueprint, jsonify, render_template, request, make_response
 
-from core.db import _get_db, close_db_if_owned
+from core.db import _get_db, close_db_if_owned, DATA_DIR
 from core.config import load_config, save_config, DEFAULT_CONFIG
+from version import APP_VERSION
 from core.security import (
     require_login, has_permission, _current_user, _audit,
     _has_users, _get_user_permissions, ALL_PERMISSIONS,
@@ -30,14 +31,15 @@ _SECRET_MASK = "********"
 @main_routes_bp.route("/")
 @require_login
 def index():
-    from server import APP_VERSION, CHANGELOG, TEMPLATE_PATH, PROVIDERS
+    from server import CHANGELOG, PROVIDERS
     from providers import get_all_capabilities, get_config_fields
     from services.vehicle_service import get_all_vehicles
+    _TEMPLATE_PATH = DATA_DIR / "template.xlsx"
     cfg = load_config()
     caps = get_all_capabilities()
     provider_fields = get_config_fields(cfg.get("provider","ha"))
     resp = make_response(render_template("index.html", cfg=cfg, state=_state,
-                           has_template=TEMPLATE_PATH.exists(),
+                           has_template=_TEMPLATE_PATH.exists(),
                            all_providers=caps,
                            provider_fields=provider_fields,
                            provider_names={k:v.PROVIDER_NAME for k,v in PROVIDERS.items()},
@@ -239,8 +241,7 @@ def api_tracker_restart():
         return jsonify({"ok": False, "error": "Keine Berechtigung"}), 403
     vid = request.json.get("vehicle_id", "v0") if request.json else "v0"
     try:
-        from server import start_tracker
-        from services.vehicle_service import get_vehicle_tracker_funcs
+        from services.vehicle_service import get_vehicle_tracker_funcs, start_tracker
         _start_vehicle_tracker, _stop_vehicle_tracker = get_vehicle_tracker_funcs()
         import time as _time
         if vid == "v0":

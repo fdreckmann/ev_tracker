@@ -48,8 +48,7 @@ def api_reports_archive():
 @reports_bp.route("/api/reports/create", methods=["POST"])
 @require_login
 def api_reports_create():
-    from services.report_service import _save_report_record, _get_report_sessions, calculate_report_periods
-    from server import _month_period
+    from services.report_service import _save_report_record, _get_report_sessions, calculate_report_periods, _month_period
     import logging
     log = logging.getLogger(__name__)
     if not has_permission(_current_user(), "reports:send"):
