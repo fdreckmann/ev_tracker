@@ -273,7 +273,7 @@ Dynamische Preise werden **zeitgewichtet** über den Ladezeitraum gemittelt (z.B
 
 | Version | Highlights |
 |---------|-----------|
-| **2.0.20** | Architektur: `server.py` in `core/` und `routes/` Module aufgeteilt (Phase 1 Modularisierung); 12 Blueprints für Health, MQTT, Notifications, Tokens, Admin, Billing; server.py von 7236 auf ~5900 Zeilen reduziert; keine API-Änderungen |
+| **2.0.20** | Architektur: `server.py` vollständig modularisiert — 5 Core-Module (`core/`) + 25 Flask-Blueprints (`routes/`); server.py von 7236 → 2497 Zeilen (65% reduziert); alle ~140 API-Endpunkte unverändert; Bugfix: `request.json`-Crash bei falschem Content-Type |
 | **2.0.19** | Bugfix: `close_db_if_owned()` recursiver Selbstaufruf (alle DB-Verbindungen wurden nie geschlossen); SQL-Injection in Excel-Export behoben; XSS in Audit-Log, Benutzerverwaltung und Mobile-Ansicht; Open-Redirect via `?next=` abgesichert; 7× ungeschützte `int()`-Konvertierungen; 404 bei Update nicht-existenter Sessions/Regeln; UX-Fehlermeldungen bei delete/toggle |
 | **2.0.18** | Mobile: `/api/mobile/summary` als Single-Call für Dashboard (1 statt 3 API-Requests); Fahrzeugbilder in Mobile-Cards; Standort-Historie (`vehicle_location_history`); CSRF-Fix für 12 weitere fetch()-Aufrufe |
 | **2.0.17** | Performance: `flask.g`-scoped DB-Connection (`_get_db()`), `teardown_appcontext`-Cleanup; `re.compile()` auf Modul-Ebene; `threading.Lock` für `_vehicle_states` |
