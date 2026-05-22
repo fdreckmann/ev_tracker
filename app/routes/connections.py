@@ -21,7 +21,7 @@ def _sanitize_url(url):
 def api_test():
     if not has_permission(_current_user(), "providers:test"):
         return jsonify({"ok": False, "message": "Keine Berechtigung: providers:test"}), 403
-    data=request.json; cfg=load_config()
+    data=request.json or {}; cfg=load_config()
     # merge submitted fields into config for test
     test_cfg={**cfg,**data}
     # use saved token if empty
@@ -74,7 +74,7 @@ def api_meter_test():
 def api_entsoe_test():
     if not has_permission(_current_user(), "tariffs:test"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: tariffs:test"}), 403
-    key=request.json.get("entsoe_api_key","").strip()
+    key=(request.json or {}).get("entsoe_api_key","").strip()
     if not key: return jsonify({"ok":False,"error":"Kein API Key"})
     from server import _entsoe_cache, fetch_entsoe_spot
     _entsoe_cache["price"]=None
