@@ -1,6 +1,24 @@
 {
-  "version": "2.0.24",
+  "version": "2.0.25",
   "changelog": [
+    {
+      "version": "2.0.25",
+      "date": "2026-05-22",
+      "changes": [
+        "Bugfix KRITISCH: HA Provider — 'connected'/'plugged_in' startet keine Ladesession mehr (ha_connected_means_charging: false ist Standard)",
+        "Bugfix: last_poll wird jetzt auch bei Provider-Fehlern gesetzt — Tracker zeigt korrekten Polling-Status",
+        "UI: Status 'Tracker gestoppt' / 'Provider Fehler' / 'Warte auf Daten' / 'Aktiv' klar unterschieden",
+        "UI: last_error im Dashboard-Status sichtbar (⚠ Fehlermeldung in Sub-Text)",
+        "UI: dot.warn (gelb, pulsierend) für 'Warte auf Daten' Zustand",
+        "HA Provider: _get_entity speichert http_status, reachable, state, unit, error pro Entity",
+        "HA Provider: get_debug() enthält jetzt entities-Dict mit Per-Sensor Debug-Info",
+        "Services: app/services/ — email_service, vehicle_service, backup_service, update_service, report_service",
+        "Routes: backup.py, update.py, reports.py, pdf_export.py, health.py, notification_manager.py nutzen Service-Imports",
+        "JS-Modularisierung: api.js (Helpers, CSRF, fetch), status.js (refreshStatus, renderTbl), config.js (loadProviderFields, saveConfig, testConn, restartTracker) als statische Dateien ausgelagert",
+        "server.py: ensure_started_once() — verhindert Doppelstart bei App-Factory/Gunicorn",
+        "Meter-Scope: Logging nutzt _effective_location statt raw location"
+      ]
+    },
     {
       "version": "2.0.24",
       "date": "2026-05-22",

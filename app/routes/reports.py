@@ -48,7 +48,8 @@ def api_reports_archive():
 @reports_bp.route("/api/reports/create", methods=["POST"])
 @require_login
 def api_reports_create():
-    from server import _save_report_record, _get_report_sessions, _month_period, calculate_report_periods
+    from services.report_service import _save_report_record, _get_report_sessions, calculate_report_periods
+    from server import _month_period
     import logging
     log = logging.getLogger(__name__)
     if not has_permission(_current_user(), "reports:send"):
@@ -218,7 +219,7 @@ def api_report_download(report_id, fmt):
 @reports_bp.route("/api/reports/<int:report_id>/send", methods=["POST"])
 @require_login
 def api_report_send(report_id):
-    from server import _send_email_with_attachments
+    from services.email_service import _send_email_with_attachments
     if not has_permission(_current_user(), "reports:resend"):
         return jsonify({"error": "Keine Berechtigung"}), 403
     data = request.get_json(force=True) or {}

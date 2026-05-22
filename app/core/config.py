@@ -28,7 +28,8 @@ DEFAULT_CONFIG = {
     "charge_type_sensor":   "",
     "location_sensor":      "",
     "home_states":          "home,zuhause",
-    "dc_threshold_kw":      22.0,
+    "dc_threshold_kw":                22.0,
+    "ha_connected_means_charging":    False,
 
     # VW provider fields
     "vw_username":          "",

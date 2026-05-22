@@ -11,6 +11,9 @@
 <title>EV Tracker – {{ cfg.car_name }}</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="/static/js/api.js"></script>
+<script src="/static/js/status.js"></script>
+<script src="/static/js/config.js"></script>
 <style>
 :root{
   --bg:#080b10;--surf:#0e1319;--brd:#1c2430;--brd2:#253040;
@@ -43,6 +46,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:32p
 .dot.ok{background:var(--acc);box-shadow:0 0 8px var(--acc);animation:pulse 2s infinite}
 .dot.charging{background:var(--warn);box-shadow:0 0 8px var(--warn);animation:pulse 1s infinite}
 .dot.err{background:var(--danger)}
+.dot.warn{background:var(--warn);animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 
 /* Nav */
@@ -2712,7 +2716,6 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
 <script>
 // ── Helpers ──────────────────────────────────────────────────────────────────
-const $ = id => document.getElementById(id);
 
 // Cache-Buster: reload without query param if version changed
 (function(){
@@ -2725,17 +2728,6 @@ const $ = id => document.getElementById(id);
     localStorage.setItem('ev_version',v);
   }
 })();
-function toast(msg, type='ok'){
-  const el=document.createElement('div');
-  el.className=`toast ${type}`;
-  el.innerHTML=(type==='ok'?'✅':'❌')+' '+msg;
-  $('toasts').appendChild(el);
-  setTimeout(()=>el.remove(), 3500);
-}
-function fmt(v,d=2){return v!=null&&v!==''?Number(v).toFixed(d):'—'}
-function fmtDate(ts){if(!ts)return'—';const d=new Date(ts);
-  return d.toLocaleDateString('de-DE')+' '+d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})}
-function fmtTime(ts){return ts?new Date(ts).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}):'—'}
 
 // ── Nav ───────────────────────────────────────────────────────────────────────
 function tab(id, btn){
@@ -2751,176 +2743,11 @@ function tab(id, btn){
 }
 
 // ── Auto-scale stat values to fit their tile ─────────────────────────────────
-function fitText(el) {
-  el.style.fontSize = '';
-  const parent = el.closest('.stat') || el.parentElement;
-  if (!parent) return;
-  const available = parent.clientWidth - 36;
-  if (el.scrollWidth <= available) return;
-  let lo = 10, hi = parseFloat(getComputedStyle(el).fontSize);
-  for (let i = 0; i < 12; i++) {
-    const mid = (lo + hi) / 2;
-    el.style.fontSize = mid + 'px';
-    if (el.scrollWidth <= available) lo = mid; else hi = mid;
-  }
-}
-function fitAllStats() {
-  document.querySelectorAll('.sv').forEach(fitText);
-}
 window.addEventListener('resize', fitAllStats);
 
 // ── Status polling ────────────────────────────────────────────────────────────
-async function refreshStatus(){
-  try{
-    const s = await fetch('/api/status').then(r=>r.json());
-    const dot=$('sDot'), txt=$('sTxt');
-
-    if(!s.running && !s.tracker_alive){
-      dot.className='dot err'; txt.textContent='Gestoppt';
-    } else if(s.running && !s.provider_connected && s.last_error){
-      dot.className='dot err'; txt.textContent='Provider Fehler';
-    } else if(s.charging){
-      dot.className='dot charging'; txt.textContent='Lädt ⚡';
-    } else {
-      dot.className='dot ok'; txt.textContent='Aktiv';
-    }
-
-    $('dSoc').textContent = s.soc_current!=null ? fmt(s.soc_current,0)+'%' : '—';
-    $('dOdo').textContent = s.odo_current!=null ? Math.round(s.odo_current).toLocaleString('de') : '—';
-    $('dPoll').textContent= s.last_poll ? s.last_poll.substring(11,16) : '—';
-
-    // Location
-    const locEl=$('dLoc');
-    if(s.location==='home'){locEl.textContent=' Heim';locEl.className='sv g';}
-    else if(s.location==='extern'){locEl.textContent=' Extern';locEl.className='sv w';}
-    else{locEl.textContent='—';locEl.className='sv';}
-    // Context-aware charge tile — fetch sessions first so we have last-session data
-    const rows = await fetch('/api/sessions').then(r=>r.json()).catch(()=>[]);
-    const typeEl=$('dType'), pwrEl=$('dPwr'), chargeLabel=$('dChargeLabel');
-    if(typeEl && chargeLabel){
-      if(s.charging){
-        chargeLabel.textContent = 'Lädt gerade ⚡';
-        const locPart = s.location==='home'?'🏠 Zuhause':s.location==='extern'?'🔌 Extern':'';
-        const typePart = s.charger_type==='dc'?'DC':s.charger_type==='ac'?'AC':'';
-        typeEl.textContent = [locPart, typePart].filter(Boolean).join(' · ') || '⚡';
-        typeEl.className = 'sv w';
-        if(pwrEl) pwrEl.textContent = s.power_kw!=null ? Number(s.power_kw).toFixed(1)+' kW' : '—';
-      } else {
-        const lastSess = rows.find(r=>r.end_ts && (r.charger_type||r.location));
-        if(lastSess){
-          chargeLabel.textContent = 'Letzte Ladung';
-          const locPart = lastSess.location==='home'?'🏠 Zuhause':lastSess.location==='extern'?'🔌 Extern':'';
-          const typePart = lastSess.charger_type==='dc'?'DC':lastSess.charger_type==='ac'?'AC':'';
-          typeEl.textContent = [locPart, typePart].filter(Boolean).join(' · ') || '—';
-          typeEl.className = 'sv';
-          if(pwrEl) pwrEl.textContent = lastSess.end_ts ? _timeAgo(lastSess.end_ts) : '—';
-        } else {
-          chargeLabel.textContent = 'Ladevorgang';
-          typeEl.textContent = '—'; typeEl.className = 'sv';
-          if(pwrEl) pwrEl.textContent = '—';
-        }
-      }
-    }
-    // ENTSO-E spot
-    const spotEl=$('dSpot');
-    if(spotEl){
-      if(s.entsoe_spot!=null){
-        spotEl.textContent=Number(s.entsoe_spot*1000).toFixed(2)+' €/MWh';
-        spotEl.className='sv g';
-      } else {
-        spotEl.textContent=s.entsoe_ok===false&&s.location==='extern'?'Kein Key':'—';
-        spotEl.className='sv';
-      }
-    }
-
-    // Status
-    if(s.charging){
-      $('dSt').textContent='Laden'; $('dSt').className='sv w';
-      $('dStSub').textContent='Session #'+(s.session_id||'?');
-      $('cbarWrap').classList.add('vis');
-      $('cbarFill').style.width=(s.soc_current||0)+'%';
-      $('cbarSession').textContent=`Session #${s.session_id||'?'} · SOC ${fmt(s.soc_current,0)}%`;
-    } else {
-      const _st_running = s.running || s.tracker_alive;
-      $('dSt').textContent = _st_running ? (s.provider_connected ? 'Bereit' : 'Warte auf Daten') : 'Gestoppt';
-      $('dSt').className = 'sv' + (_st_running ? ' g' : '');
-      $('dStSub').textContent = s.last_error || (s.last_successful_poll ? '' : 'Noch kein Poll') || 'Kein Ladevorgang';
-      $('cbarWrap').classList.remove('vis');
-    }
-
-    // Recent
-    renderTbl($('recentTbl'), rows.slice(0,5), false);
-
-    // Zählerstand: last meter_new from most recent session
-    const lastMeter = rows.find(r=>r.meter_new!=null);
-    const meterTile = $('dMeterTile');
-    if(lastMeter && meterTile){
-      $('dMeter').textContent = Math.round(Number(lastMeter.meter_new)).toLocaleString('de')+' kWh';
-      meterTile.style.display='';
-    }
-
-    fitAllStats();
-  } catch(e){
-    $('sDot').className='dot err'; $('sTxt').textContent='Fehler';
-  }
-}
 
 // ── Table rendering ───────────────────────────────────────────────────────────
-function locBadge(loc){
-  if(loc==='home')   return '<span class="loc-home">🏠 Zuhause</span>';
-  if(loc==='extern') return '<span class="loc-ext">⚡ Extern</span>';
-  return '<span class="loc-unk">—</span>';
-}
-function typeBadge(t,kw){
-  const pw=kw?` ${Number(kw).toFixed(1)} kW`:'';
-  if(t==='dc') return `<span style="color:#f59e0b;font-size:.7rem">⚡ DC${pw}</span>`;
-  if(t==='ac') return `<span style="color:#00b4ff;font-size:.7rem">🔌 AC${pw}</span>`;
-  return `<span style="color:var(--mute);font-size:.7rem">—</span>`;
-}
-
-function renderTbl(el, rows, showDel=true){
-  if(!rows.length){el.innerHTML='<div class="empty">Keine Ladevorgänge</div>';return;}
-  const hasMeter   = rows.some(r=>r.meter_old!=null||r.meter_new!=null);
-  const hasVehicle = rows.some(r=>r.vehicle_id && r.vehicle_id!=='v0') || new Set(rows.map(r=>r.vehicle_id)).size>1;
-  const fmtMeter   = v => v!=null ? Math.round(Number(v)).toLocaleString('de') : '—';
-  el.innerHTML=`<table>
-    <thead><tr>
-      <th>#</th><th>Datum</th><th>Start→Ende</th>
-      ${hasVehicle?'<th>Fahrzeug</th>':''}
-      <th>SOC</th><th>Lader</th><th>kWh</th><th>Preis</th><th>Kosten</th>
-      ${hasMeter?'<th>Zähler Alt→Neu</th>':''}
-      <th>Standort</th>
-      ${showDel?'<th></th>':''}
-    </tr></thead>
-    <tbody>${rows.map(r=>`<tr style='cursor:pointer' onclick='showSessionDetail(${r.id})'>
-      <td class="num">${r.id}</td>
-      <td>${fmtDate(r.start_ts).split(' ')[0]}</td>
-      <td>${fmtTime(r.start_ts)} → ${r.end_ts?fmtTime(r.end_ts):'…'}</td>
-      ${hasVehicle?`<td style="font-size:.72rem;font-family:var(--mono);color:var(--acc2)">${r.vehicle_id||'v0'}</td>`:''}
-      <td>${fmt(r.soc_start,0)}% → ${fmt(r.soc_end,0)}%</td>
-      <td>${typeBadge(r.charger_type,r.max_power_kw)}</td>
-      <td class="g">${fmt(r.kwh_charged)} kWh</td>
-      <td style="font-size:.72rem;color:var(--mute)">${r.price_per_kwh?fmt(r.price_per_kwh,4)+' €/kWh':'—'}${r.entsoe_spot?'<br><span style="color:#4a5c72">Spot:'+fmt(r.entsoe_spot,4)+'</span>':''}</td>
-      <td class="w" id="cost_${r.id}">
-        ${r.cost_eur!=null?fmt(r.cost_eur)+' €':'—'}
-        ${r.cost_manual?'<span title="Manuell" style="color:var(--acc);font-size:.65rem"> ✎</span>':''}
-      </td>
-      ${hasMeter?`<td style="font-size:.72rem;color:#a78bfa;font-family:var(--mono)">${fmtMeter(r.meter_old)} → ${fmtMeter(r.meter_new)}</td>`:''}
-      <td>${locBadge(r.location)}</td>
-      ${showDel?`<td style="display:flex;gap:4px;padding:8px 4px">
-        <button onclick="editCost(${r.id},${r.kwh_charged||0},${r.price_per_kwh||0})"
-          style="background:rgba(0,180,255,.12);color:#00b4ff;border:1px solid rgba(0,180,255,.25);
-          border-radius:6px;padding:3px 8px;font-size:.65rem;cursor:pointer" title="Kosten bearbeiten">✎</button>
-        <button onclick="editLocation(${r.id},'${r.location||'unknown'}')"
-          style="background:rgba(61,220,151,.12);color:#3ddc97;border:1px solid rgba(61,220,151,.25);
-          border-radius:6px;padding:3px 8px;font-size:.65rem;cursor:pointer" title="Standort ändern">📍</button>
-        <button onclick="delSession(${r.id})"
-          style="background:rgba(239,68,68,.12);color:#ef4444;border:1px solid rgba(239,68,68,.25);
-          border-radius:6px;padding:3px 8px;font-size:.65rem;cursor:pointer">✕</button>
-      </td>`:''}
-    </tr>`).join('')}</tbody>
-  </table>`;
-}
 
 async function editCost(id, kwh, currentPrice){
   const newPrice = prompt(
@@ -3068,69 +2895,7 @@ async function loadCharts(){
 
 // ── Config ────────────────────────────────────────────────────────────────────
 // ── Provider selection ───────────────────────────────────────────────────────
-function selectProvider(id){
-  $('c_provider').value=id;
-  document.querySelectorAll('[id^="pcard_"]').forEach(el=>{
-    const pid=el.id.replace('pcard_','');
-    el.style.border=pid===id?'2px solid var(--acc)':'2px solid var(--brd)';
-    el.querySelector('div').style.color=pid===id?'var(--acc)':'#fff';
-  });
-  document.querySelectorAll('[id^="notes_"]').forEach(el=>{
-    el.style.display=el.id===`notes_${id}`?'block':'none';
-  });
-  loadProviderFields(id);
-}
 
-async function loadProviderFields(pid){
-  if(!pid) return;
-  const fields=await fetch(`/api/providers/${pid}/fields`).then(r=>r.json()).catch(()=>[]);
-  const cfg=await fetch('/api/config').then(r=>r.json()).catch(()=>({}));
-  const container=$('providerFields');
-  if(!container) return;
-  container.innerHTML=fields.map(f=>{
-    const val=cfg[f.id]||'';
-    const w=fields.length<=2?'full':'';
-    const hasSaved=f.type==='password'&&!!val;
-    const inp=f.type==='select'
-      ?`<select id="pf_${f.id}" style="background:var(--bg);border:1px solid var(--brd);border-radius:8px;color:var(--txt);font-family:var(--mono);font-size:.84rem;padding:9px 13px;width:100%">${(f.options||[]).map(o=>`<option value="${o}" ${val===o?'selected':''}>${o}</option>`).join('')}</select>`
-      :`<input type="${f.type||'text'}" id="pf_${f.id}" value="${f.type==='password'?'':val}" placeholder="${f.placeholder||''}">`;
-    const hintHtml=hasSaved
-      ?`<span class="hint" style="color:var(--acc)">Token gespeichert – leer lassen zum Beibehalten</span>`
-      :(f.hint?`<span class="hint">${f.hint}</span>`:'');
-    return `<div class="fg ${w}">
-      <label>${f.label}${!f.required?' <span style="color:var(--mute);font-size:.65rem">(optional)</span>':''}</label>
-      ${inp}${hintHtml}
-    </div>`;
-  }).join('');
-}
-
-async function saveConfig(){
-  const cfg={
-    provider:       $('c_provider')?.value||'ha',
-    car_name:       $('c_car').value,
-    notify_service: $('c_notify')?.value.trim()||'',
-    battery_capacity_kwh: parseFloat($('c_bat').value),
-    price_per_kwh_home:   parseFloat($('c_price_home').value),
-    price_per_kwh_ac:     parseFloat($('c_price_ac').value),
-    price_per_kwh_dc:     parseFloat($('c_price_dc').value),
-    dc_threshold_kw:      parseFloat($('c_dc_thresh').value),
-    entsoe_api_key:       $('c_entsoe_key').value.trim(),
-    entsoe_ac_markup:     parseFloat($('c_ac_markup').value),
-    entsoe_dc_markup:     parseFloat($('c_dc_markup').value),
-    poll_interval:        parseInt($('c_poll').value),
-  };
-  // Collect all provider-specific fields (pf_*); skip empty/masked passwords to preserve stored secrets
-  document.querySelectorAll('[id^="pf_"]').forEach(el=>{
-    const key=el.id.replace('pf_','');
-    if(el.type==='password'&&(!el.value||el.value==='********')) return;
-    const v=el.type==='number'?parseFloat(el.value):el.value;
-    cfg[key]=v;
-  });
-  const r = await apiFetch('/api/config',{method:'POST',
-    headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
-  if(r.ok){ toast('Konfiguration gespeichert'); $('carName').textContent=cfg.car_name; }
-  else toast('Fehler beim Speichern','err');
-}
 
 async function testEntsoe(){
   const res=$('entsoeRes'); res.textContent='⏳ Teste ENTSO-E…';
@@ -3144,32 +2909,6 @@ async function testEntsoe(){
   else res.innerHTML=`<span style="color:var(--danger)">❌ ${r.error}</span>`;
 }
 
-async function restartTracker(){
-  const btn=$('btnRestartTracker');
-  if(btn) btn.disabled=true;
-  const r=await apiFetch('/api/tracker/restart',{method:'POST',
-    headers:{'Content-Type':'application/json'},body:JSON.stringify({vehicle_id:'v0'})}).then(x=>x.json()).catch(()=>({ok:false}));
-  if(r.ok) toast('Tracker neu gestartet');
-  else toast('Fehler: '+(r.error||'unbekannt'),'err');
-  if(btn){btn.disabled=false;}
-  setTimeout(refreshStatus, 2000);
-}
-async function testConn(){
-  const res=$('connRes');
-  res.className='conn-res';res.style.display='block';res.textContent='⏳ Teste Verbindung…';
-  const body={provider:$('c_provider')?.value||'ha'};
-  document.querySelectorAll('[id^="pf_"]').forEach(el=>{ body[el.id.replace('pf_','')]=el.value; });
-  // For any masked/empty password field, fall back to the saved value so the test can authenticate
-  const saved=await fetch('/api/config').then(r=>r.json()).catch(()=>({}));
-  document.querySelectorAll('[id^="pf_"]').forEach(el=>{
-    const key=el.id.replace('pf_','');
-    if(el.type==='password'&&(!body[key]||body[key]==='********')) body[key]=saved[key]||'';
-  });
-  const r=await apiFetch('/api/test-connection',{method:'POST',
-    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
-  if(r.ok){ res.className='conn-res ok'; res.textContent=r.message; }
-  else{ res.className='conn-res err'; res.textContent='❌ '+(r.message||r.error||'Fehler'); }
-}
 
 // ── Charts ────────────────────────────────────────────────────────────────────
 
@@ -5081,14 +4820,6 @@ async function loadVehicleList() {
   });
 }
 
-function _timeAgo(isoTs) {
-  if(!isoTs) return '';
-  const diff = Math.floor((Date.now() - new Date(isoTs).getTime()) / 1000);
-  if(diff < 60)    return `vor ${diff} Sek.`;
-  if(diff < 3600)  return `vor ${Math.floor(diff/60)} Min.`;
-  if(diff < 86400) return `vor ${Math.floor(diff/3600)} Std.`;
-  return `vor ${Math.floor(diff/86400)} Tagen`;
-}
 
 async function loadVehicleLocationBadge(vid) {
   const el = $('veh_loc_' + vid);
@@ -5565,18 +5296,6 @@ async function saveCron(){
 }
 
 // ── CSRF ─────────────────────────────────────────────────────────────────────
-let csrfToken = '';
-async function initCsrf(){
-  try {
-    const r = await fetch('/api/csrf-token').then(r=>r.json());
-    csrfToken = r.token || '';
-  } catch(e){ csrfToken = ''; }
-}
-function apiFetch(url, opts={}){
-  opts.headers = opts.headers || {};
-  if(csrfToken) opts.headers['X-CSRF-Token'] = csrfToken;
-  return fetch(url, opts);
-}
 
 // ── Admin Dashboard ───────────────────────────────────────────────────────────
 async function loadAdminDashboard(){

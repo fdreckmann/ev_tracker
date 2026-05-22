@@ -43,7 +43,8 @@ def api_export_pdf():
     cfg["report_email_single_month"]  = data.get("single_month", cfg.get("report_email_single_month", ""))
     cfg["report_email_months"]        = data.get("months", cfg.get("report_email_months", []))
 
-    from server import calculate_report_periods, _get_report_sessions, SIGNATURE_PATH
+    from services.report_service import calculate_report_periods, _get_report_sessions
+    from server import SIGNATURE_PATH
     periods     = calculate_report_periods(stype, pmode, datetime.now(), cfg)
     period_info = periods[0]
 

@@ -110,7 +110,7 @@ def _format_message(event_type: str, context: dict) -> dict:
 
 def _send_email(rule: dict, msg: dict, config: dict) -> bool:
     try:
-        from server import _send_email_with_attachments
+        from services.email_service import _send_email_with_attachments
         subject = msg["title"]
         html = (f'<p style="font-family:sans-serif"><b>{subject}</b></p>'
                 f'<p>{msg["body"]}</p>'

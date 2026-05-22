@@ -177,6 +177,7 @@ def _report_filter_labels(cfg, is_de):
 
 def _build_report_html(sessions, period_info, cfg, lang="de"):
     import server as _srv
+    from server import APP_VERSION  # noqa
     APP_VERSION = _srv.APP_VERSION
     is_de      = lang != "en"
     plabel     = period_info.get("label_de" if is_de else "label_en", "")
@@ -233,6 +234,7 @@ def _build_report_html(sessions, period_info, cfg, lang="de"):
 def _build_multi_month_html(periods_sessions, cfg, lang="de"):
     """Build email HTML for multiple months. periods_sessions: list of (period_info, sessions)."""
     import server as _srv
+    from server import APP_VERSION  # noqa
     APP_VERSION = _srv.APP_VERSION
     is_de   = lang != "en"
     title   = "EV Tracker — Lade-Report" if is_de else "EV Tracker — Charging Report"
@@ -293,6 +295,7 @@ def _send_email_with_attachments(to_addr, subject, body_html, attachments=None):
     from email.mime.base import MIMEBase
     from email import encoders as _enc
     import server as _srv
+    from server import APP_VERSION  # noqa
     cfg  = load_config()
     name = cfg.get("smtp_from_name", "EV Tracker")
     srv, frm, err = _srv._smtp_open(cfg)
@@ -363,6 +366,7 @@ def _send_report_email(cfg=None, triggered_by="auto"):
     is_de       = lang != "en"
 
     import server as _srv
+    from server import APP_VERSION  # noqa
     SIGNATURE_PATH = _srv.SIGNATURE_PATH
 
     periods = calculate_report_periods(stype, period_mode, datetime.now(), cfg)

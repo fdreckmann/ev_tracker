@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request
 
 from core.config import load_config
 from core.security import require_login, has_permission, _current_user
+from services.update_service import get_update_info, fetch_remote_version, docker_pull_and_restart
 
 update_bp = Blueprint("update", __name__)
 
@@ -12,7 +13,6 @@ update_bp = Blueprint("update", __name__)
 @update_bp.route("/api/update/check")
 @require_login
 def api_update_check():
-    from server import get_update_info, fetch_remote_version, docker_pull_and_restart
     info = get_update_info()
     if info.get("ok") and not info.get("up_to_date"):
         tag = info.get("tag", "latest")
@@ -21,17 +21,18 @@ def api_update_check():
         info["remote_changelog"] = remote_ver.get("changelog", [])
     return jsonify(info)
 
+
 @update_bp.route("/api/update/pull", methods=["POST"])
 @require_login
 def api_update_pull():
-    from server import get_update_info, fetch_remote_version, docker_pull_and_restart
     user = _current_user()
     if not has_permission(user, "updates:start"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: updates:start"}), 403
     cfg = load_config()
-    tag = cfg.get("update_channel","latest")
+    tag = cfg.get("update_channel", "latest")
     ok, msg = docker_pull_and_restart(tag)
     return jsonify({"ok": ok, "output": msg, "restarting": ok})
+
 
 @update_bp.route("/api/update/log")
 @require_login
