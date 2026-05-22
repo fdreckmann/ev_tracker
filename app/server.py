@@ -23,7 +23,7 @@ from core.tokens import _API_SCOPES, _hash_token, _check_api_token, _require_api
 from routes import register_blueprints
 import core.state as _core_state
 
-APP_VERSION   = "2.0.20"
+APP_VERSION   = "2.0.21"
 
 CHANGELOG = [
     {"version":"2.0.0","changes":[
@@ -975,7 +975,7 @@ def check_auth():
     if request.path in _AUTH_EXEMPT:
         # If users exist, /setup should redirect to index
         if request.path == "/setup" and _has_users():
-            return redirect(url_for("index"))
+            return redirect(url_for("main_routes.index"))
         return
     if any(request.path.startswith(p) for p in _AUTH_EXEMPT_PREFIXES):
         return
@@ -995,7 +995,7 @@ def check_auth():
         return _check_csrf()
     if request.path.startswith("/api/"):
         return jsonify({"error": "Nicht eingeloggt", "login_required": True}), 401
-    return redirect(url_for("login_page", next=request.path))
+    return redirect(url_for("auth.login_page", next=request.path))
 
 def _check_csrf():
     """Verify CSRF token for state-changing requests. Returns error response or None."""

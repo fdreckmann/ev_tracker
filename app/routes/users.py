@@ -125,7 +125,7 @@ def api_invite_user(uid):
     con.execute("INSERT INTO invite_tokens (user_id,token_hash,expires_at,created_at) VALUES (?,?,?,?)",
                 (uid, token_hash, expires, now_dt.isoformat()))
     con.commit(); close_db_if_owned(con)
-    invite_url = request.host_url.rstrip("/") + url_for("accept_invite_page", token=token)
+    invite_url = request.host_url.rstrip("/") + url_for("auth.accept_invite_page", token=token)
     body_html = _email_html(
         "Einladung zu EV Tracker",
         f"Hallo {user['name']},",

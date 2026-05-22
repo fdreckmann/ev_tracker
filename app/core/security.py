@@ -236,7 +236,7 @@ def require_login(f):
         if not session.get("user_id"):
             if request.path.startswith("/api/"):
                 return jsonify({"error": "Nicht eingeloggt", "login_required": True}), 401
-            return redirect(url_for("login_page", next=request.path))
+            return redirect(url_for("auth.login_page", next=request.path))
         return f(*args, **kwargs)
     return wrapper
 
@@ -247,14 +247,14 @@ def require_admin(f):
         if not session.get("user_id"):
             if request.path.startswith("/api/"):
                 return jsonify({"error": "Nicht eingeloggt", "login_required": True}), 401
-            return redirect(url_for("login_page", next=request.path))
+            return redirect(url_for("auth.login_page", next=request.path))
         user = _get_user_by_id(session.get("user_id"))
         is_admin = (session.get("user_role") == "admin") or \
                    (user and ("admin:all" in _get_user_permissions(user["id"])))
         if not is_admin:
             if request.path.startswith("/api/"):
                 return jsonify({"error": "Admin-Berechtigung erforderlich"}), 403
-            return redirect(url_for("index"))
+            return redirect(url_for("main_routes.index"))
         return f(*args, **kwargs)
     return wrapper
 
@@ -311,7 +311,7 @@ def _safe_next(next_url: "str | None") -> str:
     """Return next_url only if it is a relative path on this app (no open redirect)."""
     if next_url and next_url.startswith("/") and not next_url.startswith("//"):
         return next_url
-    return url_for("index")
+    return url_for("main_routes.index")
 
 # ── Audit logging ─────────────────────────────────────────────────────────────
 

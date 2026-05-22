@@ -4,7 +4,7 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 
 ![Docker Hub](https://img.shields.io/docker/pulls/19121412/ev-tracker)
 ![GitHub Actions](https://github.com/fdreckmann/ev_tracker/actions/workflows/docker-build.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-2.0.20-blue)
+![Version](https://img.shields.io/badge/version-2.0.21-blue)
 
 ---
 
@@ -273,6 +273,7 @@ Dynamische Preise werden **zeitgewichtet** über den Ladezeitraum gemittelt (z.B
 
 | Version | Highlights |
 |---------|-----------|
+| **2.0.21** | Bugfix KRITISCH: `url_for('index'/'login_page'/'accept_invite_page')` → Blueprint-Endpunkte (`main_routes.index`, `auth.login_page`, `auth.accept_invite_page`) — BuildError nach Blueprint-Refactoring; Bugfix: `_vehicle_states` mit `core.state` synchronisiert — Dashboard zeigte 'Gestoppt'; Bugfix: Verbindungstest mit maskiertem Token |
 | **2.0.20** | Architektur: `server.py` vollständig modularisiert — 5 Core-Module (`core/`) + 25 Flask-Blueprints (`routes/`); server.py von 7236 → 2497 Zeilen (65% reduziert); alle ~140 API-Endpunkte unverändert; Bugfix: `request.json`-Crash bei falschem Content-Type |
 | **2.0.19** | Bugfix: `close_db_if_owned()` recursiver Selbstaufruf (alle DB-Verbindungen wurden nie geschlossen); SQL-Injection in Excel-Export behoben; XSS in Audit-Log, Benutzerverwaltung und Mobile-Ansicht; Open-Redirect via `?next=` abgesichert; 7× ungeschützte `int()`-Konvertierungen; 404 bei Update nicht-existenter Sessions/Regeln; UX-Fehlermeldungen bei delete/toggle |
 | **2.0.18** | Mobile: `/api/mobile/summary` als Single-Call für Dashboard (1 statt 3 API-Requests); Fahrzeugbilder in Mobile-Cards; Standort-Historie (`vehicle_location_history`); CSRF-Fix für 12 weitere fetch()-Aufrufe |

@@ -1,6 +1,17 @@
 {
-  "version": "2.0.20",
+  "version": "2.0.21",
   "changelog": [
+    {
+      "version": "2.0.21",
+      "date": "2026-05-22",
+      "changes": [
+        "Bugfix KRITISCH: url_for('index') → url_for('main_routes.index') — BuildError bei Login-Redirect nach Blueprint-Refactoring",
+        "Bugfix KRITISCH: url_for('login_page') → url_for('auth.login_page') — BuildError bei unangemeldeten Nutzern",
+        "Bugfix KRITISCH: url_for('accept_invite_page') → url_for('auth.accept_invite_page') — Einladungs-E-Mails fehlerhaft",
+        "Bugfix: _vehicle_states mit core.state.vehicle_states synchronisiert — Dashboard zeigte 'Gestoppt' wegen getrennter Dicts",
+        "Bugfix: Verbindungstest schlägt nach Neustart fehl wenn UI maskierten Token sendet"
+      ]
+    },
     {
       "version": "2.0.20",
       "date": "2026-05-22",
