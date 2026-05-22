@@ -15,8 +15,18 @@ SIGNATURE_PATH = SIGNATURE_DIR / "default_signature.png"
 
 
 def _normalize_signature_image(img, padding=None):
-    from server import _normalize_signature_image as _impl
-    return _impl(img, padding)
+    """Crop to visible content bbox, then add transparent padding."""
+    from PIL import Image as _PILImage, ImageOps as _ImageOps
+    cfg = load_config()
+    if padding is None:
+        padding = int(cfg.get("signature_padding_px", 24))
+    img = img.convert("RGBA")
+    alpha = img.getchannel("A")
+    bbox = alpha.getbbox()
+    if bbox:
+        img = img.crop(bbox)
+    img = _ImageOps.expand(img, border=padding, fill=(255, 255, 255, 0))
+    return img
 
 
 @signatures_bp.route("/api/signature")

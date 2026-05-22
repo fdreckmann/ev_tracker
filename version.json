@@ -1,6 +1,21 @@
 {
-  "version": "2.0.26",
+  "version": "2.0.27",
   "changelog": [
+    {
+      "version": "2.0.27",
+      "date": "2026-05-22",
+      "changes": [
+        "Bugfix: Tarifberechnung nutzt effective_location statt raw location — dynamischer Heimtarif greift auch wenn location_status=home",
+        "Bugfix: Preis-Update bei charger_type-Wechsel nutzt effective_location",
+        "Bugfix: Notifications (charging_started/stopped), ha_notify und log.info nutzen effective_location",
+        "Bugfix: start_tracker() — Extra-Fahrzeuge werden gestartet auch wenn v0 bereits läuft",
+        "Bugfix: __main__ ruft nur ensure_started_once() — kein Doppelstart von Scheduler/init_db",
+        "Bugfix: app.secret_key direkt nach Flask-Init gesetzt — funktioniert auch bei gunicorn-Import",
+        "Bugfix: load_config-Fehler im Tracker setzt last_poll, last_error, provider_connected, poll_count",
+        "server import: export.py, update.py, connections.py, signatures.py, main_routes.py, backup_service.py weiter bereinigt",
+        "JS: reports.js und export.js ausgelagert"
+      ]
+    },
     {
       "version": "2.0.26",
       "date": "2026-05-22",

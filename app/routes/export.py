@@ -8,10 +8,12 @@ from io import BytesIO
 
 from flask import Blueprint, jsonify, request, send_file
 
-from core.db import _get_db, close_db_if_owned
+from core.db import _get_db, close_db_if_owned, DATA_DIR
 from core.config import load_config
 from core.security import require_login, has_permission, _current_user, _audit
 import core.state as _state
+
+_SIGNATURE_PATH = DATA_DIR / "signatures" / "default_signature.png"
 
 export_bp = Blueprint("export", __name__)
 
@@ -96,9 +98,7 @@ def api_export():
         sig_mapping = dict(sig_mapping)
         sig_mapping["anchor_cell"] = sig_mapping["cell"]
 
-    # Resolve SIGNATURE_PATH via lazy import from server
-    import server as _srv
-    SIGNATURE_PATH = _srv.SIGNATURE_PATH
+    SIGNATURE_PATH = _SIGNATURE_PATH
 
     try:
         xlsx_bytes = export(y, m, loc, col_override=override, start_row=start_row, header_row=header_row,
@@ -162,9 +162,7 @@ def api_export_preview():
         sig_mapping = dict(sig_mapping)
         sig_mapping["anchor_cell"] = sig_mapping["cell"]
 
-    # Resolve SIGNATURE_PATH via lazy import from server
-    import server as _srv
-    SIGNATURE_PATH = _srv.SIGNATURE_PATH
+    SIGNATURE_PATH = _SIGNATURE_PATH
 
     # Cleanup old tokens first
     _cleanup_export_tokens()
