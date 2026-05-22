@@ -4,7 +4,7 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 
 ![Docker Hub](https://img.shields.io/docker/pulls/19121412/ev-tracker)
 ![GitHub Actions](https://github.com/fdreckmann/ev_tracker/actions/workflows/docker-build.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-2.0.15-blue)
+![Version](https://img.shields.io/badge/version-2.0.19-blue)
 
 ---
 
@@ -273,6 +273,10 @@ Dynamische Preise werden **zeitgewichtet** über den Ladezeitraum gemittelt (z.B
 
 | Version | Highlights |
 |---------|-----------|
+| **2.0.19** | Bugfix: `close_db_if_owned()` recursiver Selbstaufruf (alle DB-Verbindungen wurden nie geschlossen); SQL-Injection in Excel-Export behoben; XSS in Audit-Log, Benutzerverwaltung und Mobile-Ansicht; Open-Redirect via `?next=` abgesichert; 7× ungeschützte `int()`-Konvertierungen; 404 bei Update nicht-existenter Sessions/Regeln; UX-Fehlermeldungen bei delete/toggle |
+| **2.0.18** | Mobile: `/api/mobile/summary` als Single-Call für Dashboard (1 statt 3 API-Requests); Fahrzeugbilder in Mobile-Cards; Standort-Historie (`vehicle_location_history`); CSRF-Fix für 12 weitere fetch()-Aufrufe |
+| **2.0.17** | Performance: `flask.g`-scoped DB-Connection (`_get_db()`), `teardown_appcontext`-Cleanup; `re.compile()` auf Modul-Ebene; `threading.Lock` für `_vehicle_states` |
+| **2.0.16** | `/api/state`-Alias für Mobile; Sensible Config-Felder maskiert; granulare Permissions für Updates/Users/Audit/Settings; `GET /api/mobile/summary` |
 | **2.0.15** | HA + EVCC Tarifprovider, zeitgewichteter Preisdurchschnitt, `POST /api/tariffs/recalculate` für Neuberechnung bestehender Sessions |
 | **2.0.14** | Dashboard: kontextsensitive Ladetyp-Kachel — bei aktiver Session "Lädt gerade ⚡ · Zuhause · AC · 11 kW", sonst "Letzte Ladung · vor X Std." |
 | **2.0.13** | Zählerstände (meter_old/meter_new) überall als ganze kWh — UI, Excel, Template-Platzhalter; Berechnung intern weiterhin mit Rohwerten |
