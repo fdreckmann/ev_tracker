@@ -1,6 +1,16 @@
 {
-  "version": "2.0.22",
+  "version": "2.0.23",
   "changelog": [
+    {
+      "version": "2.0.23",
+      "date": "2026-05-22",
+      "changes": [
+        "Bugfix KRITISCH: Python re-importierte server.py als 'server'-Modul wenn Blueprints 'from server import ...' aufriefen — dabei wurde _vehicle_states['v0'] auf running=False zurückgesetzt, Tracker-Thread schrieb in veraltetes Dict → Dashboard zeigte permanent 'Gestoppt'",
+        "Bugfix: Guard 'if v0 not in _vehicle_states' verhindert Reinitialisierung des Fahrzeugstatus bei Modul-Reimport",
+        "Bugfix: load_config() fängt jetzt JSONDecodeError/OSError ab statt den Tracker-Thread zu crashen",
+        "Bugfix: Tracker-Loop fängt load_config()-Ausnahmen außerhalb des inneren try/except ab"
+      ]
+    },
     {
       "version": "2.0.22",
       "date": "2026-05-22",

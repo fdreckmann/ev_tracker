@@ -280,12 +280,17 @@ _CONFIG_CACHE_TTL = 30  # seconds
 
 
 def load_config() -> dict:
+    import logging as _log
     now = time.time()
     if _config_cache["data"] is not None and now - _config_cache["ts"] < _CONFIG_CACHE_TTL:
         return dict(_config_cache["data"])
     if CONFIG_FILE.exists():
-        with open(CONFIG_FILE) as f:
-            cfg = {**DEFAULT_CONFIG, **json.load(f)}
+        try:
+            with open(CONFIG_FILE) as f:
+                cfg = {**DEFAULT_CONFIG, **json.load(f)}
+        except (json.JSONDecodeError, OSError, ValueError) as e:
+            _log.getLogger(__name__).warning("Config file unreadable (%s), using defaults", e)
+            cfg = DEFAULT_CONFIG.copy()
     else:
         cfg = DEFAULT_CONFIG.copy()
     _config_cache["data"] = cfg

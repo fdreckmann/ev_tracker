@@ -23,7 +23,7 @@ from core.tokens import _API_SCOPES, _hash_token, _check_api_token, _require_api
 from routes import register_blueprints
 import core.state as _core_state
 
-APP_VERSION   = "2.0.22"
+APP_VERSION   = "2.0.23"
 
 CHANGELOG = [
     {"version":"2.0.0","changes":[
@@ -656,8 +656,15 @@ def _make_state(vehicle_id="v0", provider_id="ha"):
 _vehicle_states      = _core_state.vehicle_states       # shared with blueprints
 _vehicle_states_lock = _core_state.vehicle_states_lock
 _vehicle_stops       = _core_state.vehicle_stops
-_vehicle_states["v0"] = _make_state("v0")
-_vehicle_stops["v0"]  = threading.Event()
+
+# Guard: blueprints do `from server import ...` which causes Python to re-import
+# server.py as a separate "server" module (distinct from __main__). Without this
+# guard the module-level init code would run a second time and overwrite the live
+# vehicle state dict (including running=True) with a fresh dict (running=False),
+# making the dashboard show "Gestoppt" permanently.
+if "v0" not in _vehicle_states:
+    _vehicle_states["v0"] = _make_state("v0")
+    _vehicle_stops["v0"]  = threading.Event()
 
 def read_meter_value() -> Optional[float]:
     """Read current meter value. Returns kWh or None."""
@@ -678,7 +685,11 @@ def tracker_loop(vehicle_id: str = "v0"):
 
     log.info("Tracker gestartet: %s", vehicle_id)
     while not stop.is_set():
-        cfg = load_config()
+        try:
+            cfg = load_config()
+        except Exception as _cfg_err:
+            log.warning("Tracker [%s]: load_config fehlgeschlagen: %s", vehicle_id, _cfg_err)
+            stop.wait(30); continue
         # For v0 use flat config; for extra vehicles get their config merged with app config
         if vehicle_id == "v0":
             vcfg = cfg
