@@ -55,6 +55,10 @@ class BaseProvider:
         """Aktuellen Fahrzeugzustand abrufen."""
         raise NotImplementedError
 
+    def get_debug(self) -> dict:
+        """Return last poll debug info. Override in subclasses."""
+        return {}
+
     def test_connection(self) -> dict:
         """Verbindung testen — gibt {"ok": bool, "message": str} zurück."""
         raise NotImplementedError

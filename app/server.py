@@ -1,4 +1,4 @@
-import os, json, time, sqlite3, logging, threading, requests, hashlib, secrets, functools, re
+import sys, os, json, time, sqlite3, logging, threading, requests, hashlib, secrets, functools, re
 from typing import Optional
 import smtplib, email
 import xml.etree.ElementTree as ET
@@ -23,7 +23,13 @@ from core.tokens import _API_SCOPES, _hash_token, _check_api_token, _require_api
 from routes import register_blueprints
 import core.state as _core_state
 
-APP_VERSION   = "2.0.23"
+# Prevent double-import: when blueprints do `from server import X`, Python would
+# re-execute server.py as a separate "server" module (distinct from __main__).
+# This alias ensures they get the same module object.
+if __name__ == "__main__":
+    sys.modules["server"] = sys.modules["__main__"]
+
+APP_VERSION   = "2.0.24"
 
 CHANGELOG = [
     {"version":"2.0.0","changes":[
@@ -642,8 +648,23 @@ def ha_notify(cfg, title, message):
 def _make_state(vehicle_id="v0", provider_id="ha"):
     return {
         "vehicle_id": vehicle_id,
-        "running": False, "session_active": False, "session_id": None,
-        "last_poll": None, "last_error": None, "soc_current": None,
+        "running": False,
+        "tracker_started": False,
+        "tracker_alive": False,
+        "tracker_thread_id": None,
+        "tracker_start_time": None,
+        "session_active": False, "session_id": None,
+        "last_poll": None,
+        "last_successful_poll": None,
+        "last_error": None,
+        "last_fatal_error": None,
+        "last_exception_type": None,
+        "poll_count": 0,
+        "successful_poll_count": 0,
+        "failed_poll_count": 0,
+        "provider_debug": {},
+        "provider_connected": False,
+        "soc_current": None,
         "odo_current": None, "charging": False, "location": "unknown",
         "charger_type": "unknown", "power_kw": None, "entsoe_spot": None,
         "provider": provider_id,
@@ -680,6 +701,10 @@ def tracker_loop(vehicle_id: str = "v0"):
     st   = _vehicle_states[vehicle_id]
     stop = _vehicle_stops[vehicle_id]
     st["running"] = True
+    st["tracker_started"] = True
+    st["tracker_alive"] = True
+    st["tracker_start_time"] = datetime.now().isoformat(timespec="seconds")
+    st["tracker_thread_id"] = threading.get_ident()
     session_active = False; session_id = None
     soc_start = odo_start = peak_power = meter_start_val = None
 
@@ -705,9 +730,14 @@ def tracker_loop(vehicle_id: str = "v0"):
         try:
             provider = get_provider(provider_id, vcfg)
             state    = provider.get_state()
+            debug = provider.get_debug() if hasattr(provider, 'get_debug') else {}
+            st["provider_debug"] = debug
 
             if state.error:
                 st["last_error"] = state.error
+                st["provider_connected"] = False
+                st["failed_poll_count"] = st.get("failed_poll_count", 0) + 1
+                st["poll_count"] = st.get("poll_count", 0) + 1
                 stop.wait(vcfg.get("poll_interval", 60)); continue
 
             charging     = state.charging or False
@@ -722,8 +752,13 @@ def tracker_loop(vehicle_id: str = "v0"):
                 location=location, charger_type=charger_type, power_kw=power_kw,
                 session_active=session_active,
                 last_poll=datetime.now().isoformat(timespec="seconds"),
+                last_successful_poll=datetime.now().isoformat(timespec="seconds"),
                 last_error=None, provider=provider_id,
                 provider_name=PROVIDERS.get(provider_id, PROVIDERS["ha"]).PROVIDER_NAME,
+                provider_connected=True,
+                poll_count=st.get("poll_count", 0) + 1,
+                successful_poll_count=st.get("successful_poll_count", 0) + 1,
+                name=vcfg.get("car_name", vehicle_id),
             )
 
             # Update location status
@@ -769,10 +804,11 @@ def tracker_loop(vehicle_id: str = "v0"):
             if charging and not session_active:
                 soc_start = soc; odo_start = odo; peak_power = power_kw or 0
                 _meter_scope = cfg.get("meter_scope", "home_only")
+                _effective_location = st.get("location_status") or location
                 meter_start_val = None
                 if _meter_scope == "disabled":
                     log.debug("[%s] Meter skipped at session start (scope=disabled)", vehicle_id)
-                elif _meter_scope == "home_only" and location != "home":
+                elif _meter_scope == "home_only" and _effective_location != "home":
                     log.info("[%s] Meter skipped at session start (scope=home_only, location=%s)",
                              vehicle_id, location)
                 else:
@@ -844,15 +880,16 @@ def tracker_loop(vehicle_id: str = "v0"):
                     if not cost_manual:
                         cost = round(kwh*(db_price or cfg["price_per_kwh_home"]),2)
                 _meter_scope = cfg.get("meter_scope", "home_only")
+                _effective_location = st.get("location_status") or location
                 meter_end_val = None
                 meter_skipped_reason = None
                 meter_used = 0
                 if _meter_scope == "disabled":
                     meter_skipped_reason = "disabled"
-                elif _meter_scope == "home_only" and location != "home":
-                    meter_skipped_reason = "external_charging" if location == "extern" else "unknown_location"
+                elif _meter_scope == "home_only" and _effective_location != "home":
+                    meter_skipped_reason = "external_charging" if _effective_location == "extern" else "unknown_location"
                     log.info("[%s] Meter skipped at session end (scope=home_only, location=%s)",
-                             vehicle_id, location)
+                             vehicle_id, _effective_location)
                 else:
                     _meter_end_res = _read_meter_impl(cfg)
                     meter_end_val = _meter_end_res.value
@@ -933,12 +970,24 @@ def tracker_loop(vehicle_id: str = "v0"):
             close_db_if_owned(con)
 
         except Exception as e:
-            log.warning("Tracker error [%s]: %s", vehicle_id, e); st["last_error"]=str(e)
+            import traceback as _tb
+            log.warning("Tracker error [%s]: %s", vehicle_id, e)
+            st["last_error"] = str(e)
+            st["last_fatal_error"] = _tb.format_exc()
+            st["last_exception_type"] = type(e).__name__
+            st["provider_connected"] = False
+            st["failed_poll_count"] = st.get("failed_poll_count", 0) + 1
+            st["poll_count"] = st.get("poll_count", 0) + 1
         stop.wait(vcfg.get("poll_interval",60))
-    st["running"]=False
+    st["running"] = False
+    st["tracker_alive"] = False
 
 def _start_vehicle_tracker(vehicle_id: str):
     with _vehicle_states_lock:
+        existing = _vehicle_states.get(vehicle_id, {})
+        if existing.get("tracker_alive"):
+            log.info("Tracker %s already running, skipping", vehicle_id)
+            return
         if vehicle_id not in _vehicle_states:
             cfg = load_config()
             extras = cfg.get("extra_vehicles", [])
@@ -955,6 +1004,11 @@ def _stop_vehicle_tracker(vehicle_id: str):
 
 def start_tracker():
     """Start trackers for all active vehicles."""
+    # Prevent double-start: if tracker thread is already alive, skip
+    existing = _vehicle_states.get("v0", {})
+    if existing.get("tracker_alive") and existing.get("tracker_thread_id"):
+        log.info("Tracker v0 already running (thread %s), skipping", existing["tracker_thread_id"])
+        return
     _vehicle_stops["v0"].clear()
     threading.Thread(target=tracker_loop, args=("v0",), daemon=True).start()
     # Start extra vehicle trackers

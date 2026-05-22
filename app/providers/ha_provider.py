@@ -102,22 +102,75 @@ class HomeAssistantProvider(BaseProvider):
         return "dc" if power_kw > float(self.config.get("dc_threshold_kw", 22.0)) else "ac"
 
     def get_state(self) -> VehicleState:
+        debug = {}
         try:
-            charging = self._bool_charging(self.config.get("charging_sensor",""))
-            soc      = self._float(self.config.get("soc_sensor",""))
-            odo      = self._float(self.config.get("odo_sensor",""))
-            # speed sensor has priority over power sensor
-            pwr_entity = self.config.get("charge_speed_sensor","").strip() or \
-                         self.config.get("power_sensor","").strip()
-            power_kw   = self._float(pwr_entity) if pwr_entity else None
-            location   = self._location()
-            chg_type   = self._charge_type(power_kw)
+            url   = self.config.get("ha_url","").rstrip("/")
+            token = self.config.get("ha_token","")
+            if not url or not token:
+                err = "HA URL oder Token nicht konfiguriert"
+                setattr(self, "_last_debug", {"ha_reachable": False, "error": err})
+                return VehicleState(error=err)
+
+            # charging sensor — required for useful data
+            chg_id = self.config.get("charging_sensor","")
+            charging = None
+            if chg_id:
+                chg_data = self._get_entity(chg_id)
+                if chg_data:
+                    charging = chg_data["state"].lower() in (
+                        "charging","laden","true","on","1","conserving",
+                        "plugged_in","connected","active","lading","opladen",
+                    )
+                    debug["charging_sensor"] = {"entity_id": chg_id, "ok": True, "state": chg_data["state"]}
+                else:
+                    debug["charging_sensor"] = {"entity_id": chg_id, "ok": False, "error": "Nicht gefunden oder nicht erreichbar"}
+            else:
+                debug["charging_sensor"] = {"entity_id": "", "ok": False, "error": "Nicht konfiguriert"}
+
+            # soc sensor
+            soc_id = self.config.get("soc_sensor","")
+            soc = None
+            if soc_id:
+                soc = self._float(soc_id)
+                debug["soc_sensor"] = {"entity_id": soc_id, "ok": soc is not None, "state": str(soc) if soc is not None else None}
+            else:
+                debug["soc_sensor"] = {"entity_id": "", "ok": False, "error": "Nicht konfiguriert"}
+
+            # odo sensor
+            odo_id = self.config.get("odo_sensor","")
+            odo = None
+            if odo_id:
+                odo = self._float(odo_id)
+                debug["odo_sensor"] = {"entity_id": odo_id, "ok": odo is not None}
+
+            # power sensor
+            pwr_entity = (self.config.get("charge_speed_sensor","").strip() or
+                          self.config.get("power_sensor","").strip())
+            power_kw = None
+            if pwr_entity:
+                power_kw = self._float(pwr_entity)
+                debug["power_sensor"] = {"entity_id": pwr_entity, "ok": power_kw is not None}
+
+            # location
+            location = self._location()
+            debug["location_sensor"] = {"entity_id": self.config.get("location_sensor",""), "ok": location != "unknown"}
+
+            chg_type = self._charge_type(power_kw)
+
+            debug["ha_reachable"] = True
+            debug["token_valid"] = True
+            setattr(self, "_last_debug", debug)
+
             return VehicleState(
                 charging=charging, soc=soc, odometer=odo,
                 charge_power=power_kw, location=location, charge_type=chg_type
             )
         except Exception as e:
+            setattr(self, "_last_debug", {"ha_reachable": False, "error": str(e)})
             return VehicleState(error=str(e))
+
+    def get_debug(self) -> dict:
+        return getattr(self, "_last_debug", {})
 
     def test_connection(self) -> dict:
         url   = self.config.get("ha_url","").rstrip("/")

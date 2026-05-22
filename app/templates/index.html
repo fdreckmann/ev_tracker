@@ -835,6 +835,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           <div class="form-grid" id="providerFields"></div>
           <div style="margin-top:14px">
             <button class="btn-g" onclick="testConn()">🔗 Verbindung testen</button>
+            <button class="btn" onclick="restartTracker()" id="btnRestartTracker">🔄 Tracker neu starten</button>
             <div class="conn-res" id="connRes"></div>
           </div>
         </div>
@@ -2774,8 +2775,10 @@ async function refreshStatus(){
     const s = await fetch('/api/status').then(r=>r.json());
     const dot=$('sDot'), txt=$('sTxt');
 
-    if(!s.running){
+    if(!s.running && !s.tracker_alive){
       dot.className='dot err'; txt.textContent='Gestoppt';
+    } else if(s.running && !s.provider_connected && s.last_error){
+      dot.className='dot err'; txt.textContent='Provider Fehler';
     } else if(s.charging){
       dot.className='dot charging'; txt.textContent='Lädt ⚡';
     } else {
@@ -2838,9 +2841,10 @@ async function refreshStatus(){
       $('cbarFill').style.width=(s.soc_current||0)+'%';
       $('cbarSession').textContent=`Session #${s.session_id||'?'} · SOC ${fmt(s.soc_current,0)}%`;
     } else {
-      $('dSt').textContent=s.running?'Bereit':'Gestoppt';
-      $('dSt').className='sv'+(s.running?' g':'');
-      $('dStSub').textContent=s.last_error||'Kein Ladevorgang';
+      const _st_running = s.running || s.tracker_alive;
+      $('dSt').textContent = _st_running ? (s.provider_connected ? 'Bereit' : 'Warte auf Daten') : 'Gestoppt';
+      $('dSt').className = 'sv' + (_st_running ? ' g' : '');
+      $('dStSub').textContent = s.last_error || (s.last_successful_poll ? '' : 'Noch kein Poll') || 'Kein Ladevorgang';
       $('cbarWrap').classList.remove('vis');
     }
 
@@ -3140,6 +3144,16 @@ async function testEntsoe(){
   else res.innerHTML=`<span style="color:var(--danger)">❌ ${r.error}</span>`;
 }
 
+async function restartTracker(){
+  const btn=$('btnRestartTracker');
+  if(btn) btn.disabled=true;
+  const r=await apiFetch('/api/tracker/restart',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({vehicle_id:'v0'})}).then(x=>x.json()).catch(()=>({ok:false}));
+  if(r.ok) toast('Tracker neu gestartet');
+  else toast('Fehler: '+(r.error||'unbekannt'),'err');
+  if(btn){btn.disabled=false;}
+  setTimeout(refreshStatus, 2000);
+}
 async function testConn(){
   const res=$('connRes');
   res.className='conn-res';res.style.display='block';res.textContent='⏳ Teste Verbindung…';

@@ -10,6 +10,7 @@ update_bp = Blueprint("update", __name__)
 
 
 @update_bp.route("/api/update/check")
+@require_login
 def api_update_check():
     from server import get_update_info, fetch_remote_version, docker_pull_and_restart
     info = get_update_info()
@@ -33,6 +34,7 @@ def api_update_pull():
     return jsonify({"ok": ok, "output": msg, "restarting": ok})
 
 @update_bp.route("/api/update/log")
+@require_login
 def api_update_log():
     import server as _srv
     return jsonify({"running": _srv._update_running, "lines": list(_srv._update_log)})

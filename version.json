@@ -1,6 +1,27 @@
 {
-  "version": "2.0.23",
+  "version": "2.0.24",
   "changelog": [
+    {
+      "version": "2.0.24",
+      "date": "2026-05-22",
+      "changes": [
+        "Bugfix KRITISCH: sys.modules['server'] Alias verhindert Doppelimport von server.py wenn Blueprints 'from server import ...' aufrufen",
+        "Tracker-State: 12 neue Diagnosefelder — tracker_alive, tracker_started, tracker_thread_id, tracker_start_time, last_successful_poll, last_fatal_error, last_exception_type, poll_count, successful_poll_count, failed_poll_count, provider_debug, provider_connected",
+        "tracker_loop: Schutz gegen Doppelstart in start_tracker() und _start_vehicle_tracker()",
+        "tracker_loop: Exception-Handler befüllt last_fatal_error + last_exception_type mit Traceback",
+        "tracker_loop: provider_debug aus Provider.get_debug() wird bei jedem Poll gespeichert",
+        "tracker_loop: meter_scope nutzt jetzt st['location_status'] statt location (UniFi/Home-Erkennung wird berücksichtigt)",
+        "HA Provider: get_state() sammelt per-Sensor Debug-Info, setzt state.error nur bei komplettem Ausfall",
+        "HA Provider: get_debug() Methode gibt last_debug zurück; BaseProvider hat get_debug() Stub",
+        "UI: refreshStatus() unterscheidet Gestoppt / Provider Fehler / Warte auf Daten / Bereit",
+        "UI: 'Tracker neu starten' Button mit POST /api/tracker/restart",
+        "API: POST /api/tracker/restart Endpoint (permissions: settings:edit oder providers:test)",
+        "API: /api/config POST akzeptiert jetzt alle Felder des aktiven Providers (get_config_fields())",
+        "API: /api/diagnostics gibt module_info zurück (same_module, vehicle_states_id)",
+        "Sicherheit: @require_login ergänzt für /api/update/check, /api/update/log, /api/stats/monthly, /api/template/preview, /api/template/render, /api/sessions/sample",
+        "connections.py: Secret-Masking generisch via get_config_fields() statt hardcodierter Liste"
+      ]
+    },
     {
       "version": "2.0.23",
       "date": "2026-05-22",

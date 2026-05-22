@@ -66,19 +66,32 @@ def api_get_config():
 def api_save_config():
     if not has_permission(_current_user(), "settings:edit"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: settings:edit"}), 403
-    data=request.json or {}; cfg=load_config()
-    floats={"battery_capacity_kwh","price_per_kwh_home","price_per_kwh_ac","price_per_kwh_dc",
-            "dc_threshold_kw","entsoe_ac_markup","entsoe_dc_markup","home_radius_m"}
-    ints={"poll_interval"}
-    for key in DEFAULT_CONFIG:
+    data = request.json or {}
+    cfg  = load_config()
+    floats = {"battery_capacity_kwh","price_per_kwh_home","price_per_kwh_ac","price_per_kwh_dc",
+              "dc_threshold_kw","entsoe_ac_markup","entsoe_dc_markup","home_radius_m"}
+    ints = {"poll_interval"}
+    # Build set of accepted keys: DEFAULT_CONFIG + current provider's field IDs
+    accepted_keys = set(DEFAULT_CONFIG.keys())
+    try:
+        from providers import get_config_fields
+        provider_id = data.get("provider", cfg.get("provider","ha"))
+        for f in get_config_fields(provider_id):
+            accepted_keys.add(f["id"])
+    except Exception:
+        pass
+    for key in accepted_keys:
         if key in data:
-            v=data[key]
-            # Never overwrite a stored secret with the masked placeholder
+            v = data[key]
             if key in _SENSITIVE_CONFIG_KEYS and v == _SECRET_MASK:
                 continue
-            if key in floats and v!="": v=float(v)
-            elif key in ints: v=int(v)
-            cfg[key]=v
+            if key in floats and v != "":
+                try: v = float(v)
+                except (ValueError, TypeError): pass
+            elif key in ints:
+                try: v = int(v)
+                except (ValueError, TypeError): pass
+            cfg[key] = v
     save_config(cfg)
     if any(str(k).startswith("smtp_") for k in data):
         _audit("smtp_config_updated", ip=request.remote_addr)
@@ -217,3 +230,31 @@ def api_mobile_summary():
         },
         "permissions": perm_summary,
     })
+
+
+@main_routes_bp.route("/api/tracker/restart", methods=["POST"])
+@require_login
+def api_tracker_restart():
+    if not has_permission(_current_user(), "settings:edit") and not has_permission(_current_user(), "providers:test"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung"}), 403
+    vid = request.json.get("vehicle_id", "v0") if request.json else "v0"
+    try:
+        from server import _stop_vehicle_tracker, _start_vehicle_tracker, start_tracker
+        import time as _time
+        if vid == "v0":
+            _stop_vehicle_tracker("v0")
+            _time.sleep(0.5)
+            # Reset error state but keep history
+            from core.state import vehicle_states
+            if "v0" in vehicle_states:
+                vehicle_states["v0"]["last_error"] = None
+                vehicle_states["v0"]["last_fatal_error"] = None
+                vehicle_states["v0"]["tracker_alive"] = False
+            start_tracker()
+        else:
+            _stop_vehicle_tracker(vid)
+            _time.sleep(0.5)
+            _start_vehicle_tracker(vid)
+        return jsonify({"ok": True, "message": f"Tracker {vid} neu gestartet"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
