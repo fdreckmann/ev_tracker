@@ -4,7 +4,7 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 
 ![Docker Hub](https://img.shields.io/docker/pulls/19121412/ev-tracker)
 ![GitHub Actions](https://github.com/fdreckmann/ev_tracker/actions/workflows/docker-build.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-2.0.21-blue)
+![Version](https://img.shields.io/badge/version-2.0.24-blue)
 
 ---
 
@@ -269,49 +269,18 @@ Dynamische Preise werden **zeitgewichtet** über den Ladezeitraum gemittelt (z.B
 
 ---
 
-## Changelog
+## Neu in 2.0.24
 
-| Version | Highlights |
-|---------|-----------|
-| **2.0.21** | Bugfix KRITISCH: `url_for('index'/'login_page'/'accept_invite_page')` → Blueprint-Endpunkte (`main_routes.index`, `auth.login_page`, `auth.accept_invite_page`) — BuildError nach Blueprint-Refactoring; Bugfix: `_vehicle_states` mit `core.state` synchronisiert — Dashboard zeigte 'Gestoppt'; Bugfix: Verbindungstest mit maskiertem Token |
-| **2.0.20** | Architektur: `server.py` vollständig modularisiert — 5 Core-Module (`core/`) + 25 Flask-Blueprints (`routes/`); server.py von 7236 → 2497 Zeilen (65% reduziert); alle ~140 API-Endpunkte unverändert; Bugfix: `request.json`-Crash bei falschem Content-Type |
-| **2.0.19** | Bugfix: `close_db_if_owned()` recursiver Selbstaufruf (alle DB-Verbindungen wurden nie geschlossen); SQL-Injection in Excel-Export behoben; XSS in Audit-Log, Benutzerverwaltung und Mobile-Ansicht; Open-Redirect via `?next=` abgesichert; 7× ungeschützte `int()`-Konvertierungen; 404 bei Update nicht-existenter Sessions/Regeln; UX-Fehlermeldungen bei delete/toggle |
-| **2.0.18** | Mobile: `/api/mobile/summary` als Single-Call für Dashboard (1 statt 3 API-Requests); Fahrzeugbilder in Mobile-Cards; Standort-Historie (`vehicle_location_history`); CSRF-Fix für 12 weitere fetch()-Aufrufe |
-| **2.0.17** | Performance: `flask.g`-scoped DB-Connection (`_get_db()`), `teardown_appcontext`-Cleanup; `re.compile()` auf Modul-Ebene; `threading.Lock` für `_vehicle_states` |
-| **2.0.16** | `/api/state`-Alias für Mobile; Sensible Config-Felder maskiert; granulare Permissions für Updates/Users/Audit/Settings; `GET /api/mobile/summary` |
-| **2.0.15** | HA + EVCC Tarifprovider, zeitgewichteter Preisdurchschnitt, `POST /api/tariffs/recalculate` für Neuberechnung bestehender Sessions |
-| **2.0.14** | Dashboard: kontextsensitive Ladetyp-Kachel — bei aktiver Session "Lädt gerade ⚡ · Zuhause · AC · 11 kW", sonst "Letzte Ladung · vor X Std." |
-| **2.0.13** | Zählerstände (meter_old/meter_new) überall als ganze kWh — UI, Excel, Template-Platzhalter; Berechnung intern weiterhin mit Rohwerten |
-| **2.0.12** | `meter_scope`: lokaler Zähler nur für Zuhause-Ladevorgänge (`home_only` Standard); `meter_skipped_reason` + `meter_used` pro Session |
-| **2.0.11** | Mobile Bottom-Sheet-System: openMobileSessionCreate, Meter-Test, Connection-Test, Signatur, System-Status, Update-Check, Backup, Fahrzeugdetails |
-| **2.0.10** | Mobile PWA (installierbar), FAB, echte Session-Cards, Fahrzeuge-Tab, Skeleton Loader |
-| **2.0.9** | Fahrzeug-Standorterkennung (GPS-Geofence + HA device_tracker, kombinierbare Modi), Standort-Historie, Berechtigungs-Härtung für Templates/Meter/Provider-Test |
-| **2.0.8** | Fahrzeug-Archivierung (soft-delete) und Hard-Delete mit "LÖSCHEN"-Bestätigung; `GET /api/vehicles/<id>/delete-check` |
-| **2.0.7** | Session-Bearbeitungs-Modal (kwh, Leistung, Preis, Kosten), PATCH /api/sessions/<id>, Fahrzeugbild-Berechtigungen |
-| **2.0.6** | Security Headers, Backup Zip-Slip-Härtung, Fahrzeugbild-Routen mit Path-Traversal-Schutz |
-| **2.0.5** | API v1/* mit Bearer-Token, dynamischer Tarifpreis pro Session, Wallbox-Leistungs-Konfiguration |
-| **2.0.4** | CSRF-Schutz global, SQLite WAL-Modus + 21 Indexe, Backup-Restore Sicherheits-Backup |
-| **2.0.3** | Billing-Wizard, Report-Archiv, PDF-Export (reportlab), dynamische Tarifprovider, API-Tokens, MQTT, Benachrichtigungsregeln |
-| **2.0.2** | Multi-Monats-Berichte: ein Tabellenblatt pro Monat, Chip-Auswahl bis 24 Monate |
-| **2.0.1** | Bugfix: init_db() Absturz beim ersten Start (row_factory fehlte) |
-| **2.0.0** | Flexibles RBAC (70+ Permissions, eigene Rollen), vollständige Export-Lokalisierung (de/en), Export-Vorschau mit Download-Token |
-| **1.9.9** | Passkey (WebAuthn/FIDO2) — Fingerabdruck, Face ID, Hardware-Key |
-| **1.9.8** | Export-Lokalisierung, charge_power_kw, Vorschau-API, Unterschrift-Ankerzelle |
-| **1.9.7** | 12 neue Fahrzeug-Provider: Stellantis, Ford, MG, Toyota, Nissan, Porsche, JLR + Aggregatoren |
-| **1.9.6** | Modulares Zähler-Provider-System (12 Provider), Shelly Gen2 RPC, Generic HTTP Meter |
-| **1.9.5** | Unterschriften-Funktion: Upload oder Canvas-Zeichnen, frei positionierbar |
-| **1.9.4** | Template-Galerie mit 4 vorgefertigten Vorlagen |
-| **1.9.3** | Automatische Template-Analyse mit Konfidenz-Score und Synonymerkennung |
-| **1.9.2** | Docker-Update überlebt Container-Neustart zuverlässig (Helper-Container) |
-| **1.9.1** | HTML-E-Mails, Admin-Dashboard, Audit-Log mit Benutzerspalte |
-| **1.9.0** | Rate-Limiting, Passwort-Reset per E-Mail, 2FA Backup-Codes, CSRF-Schutz |
-| **1.8.0** | Multi-User-Auth, OAuth (Google/Microsoft), TOTP 2FA, Einrichtungsassistent |
-| **1.7.0** | Docker-Update über Web UI, Update-Kanal wählbar, Live-Log |
-| **1.6.0** | Excel-Template-System mit Spalten- und Zell-Mapping, Backup-System |
-| **1.5.0** | Mehrfahrzeug-Unterstützung, Polestar, Audi, Hyundai/Kia, Renault |
-| **1.4.0** | Zählerstand-Integration (Shelly, Tasmota, go-e, openWB …), ENTSO-E Spotpreise |
-| **1.3.0** | BMW/Mini, Mercedes, Volvo, Tesla, VW-Provider |
-| **1.0.0** | Erstes Release — Home Assistant, Auto-Ladeprotokoll, Excel-Export |
+- **Bugfix:** `sys.modules["server"]`-Alias verhindert Doppelimport von `server.py` — behebt dauerhaftes "Gestoppt" im Dashboard
+- **Tracker:** 12 neue Diagnosefelder (`tracker_alive`, `poll_count`, `provider_connected`, `last_fatal_error` u.a.) für bessere Fehlerdiagnose
+- **Tracker:** Schutz gegen Doppelstart; Exception-Handler speichert vollständigen Traceback
+- **HA Provider:** Partial-State bei Sensor-Ausfällen — einzelne Fehler stoppen nicht den gesamten Tracker
+- **UI:** Status unterscheidet jetzt "Gestoppt / Provider Fehler / Warte auf Daten / Bereit"
+- **UI:** "Tracker neu starten"-Button in der Verbindungskonfiguration
+- **API:** `POST /api/tracker/restart` — startet den Tracker-Thread neu ohne Container-Neustart
+- **API:** `/api/config POST` akzeptiert jetzt alle Felder des aktiven Providers
+- **Sicherheit:** 6 ungeschützte Endpunkte mit `@require_login` abgesichert
+- **Sicherheit:** Secret-Masking in `connections.py` generisch via `get_config_fields()` statt hardcodierter Liste
 
 ---
 
