@@ -57,9 +57,23 @@ async function refreshStatus() {
     const locEl = $('dLoc');
     if (locEl) {
       const loc = normalizeLocation(s.location_status || s.location);
-      if (loc === 'home') { locEl.textContent = ' Heim'; locEl.className = 'sv g'; }
-      else if (loc === 'extern') { locEl.textContent = ' Extern'; locEl.className = 'sv w'; }
-      else { locEl.textContent = '—'; locEl.className = 'sv'; }
+      const locSrc = s.location_source || '';
+      if (loc === 'home') {
+        const meterHint = locSrc === 'meter_delta' ? ' 📊' : '';
+        locEl.textContent = ' Heim' + meterHint;
+        locEl.title = locSrc === 'meter_delta' ? 'Zuhause erkannt über steigenden Wallbox-Zähler' : '';
+        locEl.className = 'sv g';
+      } else if (loc === 'extern') {
+        const conflictHint = locSrc === 'meter_conflict' ? ' ⚠' : '';
+        locEl.textContent = ' Extern' + conflictHint;
+        locEl.title = locSrc === 'meter_conflict' ? 'Zähler steigt, aber Standortquelle meldet extern' : '';
+        locEl.className = 'sv w';
+      } else {
+        const meterActive = s.meter_home_det_active ? ' 🔍' : '';
+        locEl.textContent = '—' + meterActive;
+        locEl.title = s.meter_home_det_active ? 'Zähler-Heimerkennung aktiv…' : '';
+        locEl.className = 'sv';
+      }
     }
 
     const rows = await fetch('/api/sessions').then(r => r.json()).catch(() => []);
@@ -137,11 +151,15 @@ async function refreshStatus() {
 }
 
 // ── Table helpers ─────────────────────────────────────────────────────────────
-function locBadge(loc) {
+function locBadge(loc, locSource) {
   const n = normalizeLocation(loc);
-  if (n === 'home')   return '<span class="loc-home">🏠 Zuhause</span>';
-  if (n === 'extern') return '<span class="loc-ext">⚡ Extern</span>';
-  return '<span class="loc-unk">—</span>';
+  let badge = '';
+  if (n === 'home')   badge = '<span class="loc-home">🏠 Zuhause</span>';
+  else if (n === 'extern') badge = '<span class="loc-ext">⚡ Extern</span>';
+  else badge = '<span class="loc-unk">—</span>';
+  if (locSource === 'meter_delta') badge += '<span title="Erkannt über Zähler-Delta" style="color:#34d399;font-size:.6rem;margin-left:3px">📊</span>';
+  else if (locSource === 'meter_conflict') badge += '<span title="Zähler steigt, aber Standort extern gemeldet" style="color:#f59e0b;font-size:.6rem;margin-left:3px">⚠</span>';
+  return badge;
 }
 function typeBadge(t, kw) {
   const pw = kw ? ` ${Number(kw).toFixed(1)} kW` : '';
@@ -178,7 +196,7 @@ function renderTbl(el, rows, showDel = true) {
         ${r.cost_manual ? '<span title="Manuell" style="color:var(--acc);font-size:.65rem"> ✎</span>' : ''}
       </td>
       ${hasMeter ? `<td style="font-size:.72rem;color:#a78bfa;font-family:var(--mono)">${fmtMeter(r.meter_old)} → ${fmtMeter(r.meter_new)}</td>` : ''}
-      <td>${locBadge(r.location)}</td>
+      <td>${locBadge(r.location, r.location_source)}</td>
       ${showDel ? `<td style="display:flex;gap:4px;padding:8px 4px">
         <button onclick="editCost(${r.id},${r.kwh_charged || 0},${r.price_per_kwh || 0})"
           style="background:rgba(0,180,255,.12);color:#00b4ff;border:1px solid rgba(0,180,255,.25);

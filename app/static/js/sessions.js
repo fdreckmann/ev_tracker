@@ -88,6 +88,25 @@ async function showSessionDetail(id){
     stats.push({l:'Zähler Alt', v:fmtMeterVal(s.meter_old)||'—', c:'#a78bfa'});
     stats.push({l:'Zähler Neu', v:fmtMeterVal(s.meter_new)||'—', c:'#a78bfa'});
   }
+  if(s.location_source){
+    var locSrcLabels = {
+      'meter_delta': '📊 Zähler-Delta',
+      'meter_conflict': '⚠ Zähler-Konflikt',
+      'provider': '📡 Provider',
+      'ha': '🏠 Home Assistant',
+      'gps': '📍 GPS',
+      'manual': '✏️ Manuell',
+      'unknown': '— Unbekannt',
+    };
+    var locSrcLabel = locSrcLabels[s.location_source] || s.location_source;
+    stats.push({l:'Standortquelle', v:locSrcLabel, c: s.location_source==='meter_delta'?'#34d399': s.location_source==='meter_conflict'?'#f59e0b':null});
+    if(s.location_source==='meter_delta'&&s.meter_home_detection_delta_kwh!=null){
+      stats.push({l:'Zähler-Delta (Erkennung)', v:Number(s.meter_home_detection_delta_kwh).toFixed(3)+' kWh', c:'#34d399'});
+    }
+    if(s.location_confidence!=null&&s.location_confidence>0){
+      stats.push({l:'Standort-Konfidenz', v:s.location_confidence+'%'});
+    }
+  }
   $('modalStats').innerHTML = stats.map(function(x){return '<div class="stat"><div class="sl">'+x.l+'</div><div class="sv" style="font-size:1.1rem'+(x.c?';color:'+x.c:'')+'">'+x.v+'</div></div>';}).join('');
 
   // fetch charge curve points

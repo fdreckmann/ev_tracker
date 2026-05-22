@@ -271,6 +271,11 @@ def init_db():
         ("tariff_price_source","TEXT DEFAULT 'config'"),
         ("meter_skipped_reason", "TEXT"),
         ("meter_used",           "INTEGER DEFAULT 0"),
+        ("meter_home_detection_start_value", "REAL"),
+        ("meter_home_detection_start_ts",    "TEXT"),
+        ("meter_home_detection_delta_kwh",   "REAL"),
+        ("location_source",      "TEXT DEFAULT 'unknown'"),
+        ("location_confidence",  "INTEGER DEFAULT 0"),
     ]:
         try:
             con.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
@@ -676,6 +681,7 @@ def _make_state(vehicle_id="v0", provider_id="ha"):
         "location_lat": None, "location_lon": None,
         "location_accuracy": None, "location_timestamp": None,
         "location_status": "unknown", "location_source": "none",
+        "meter_home_det_start_val": None, "meter_home_det_start_ts": None,
     }
 
 _vehicle_states      = _core_state.vehicle_states       # shared with blueprints
@@ -833,19 +839,44 @@ def tracker_loop(vehicle_id: str = "v0"):
                                 "phase": "start", "source": cfg.get("meter_source")},
                                 cfg, db_path=DB_PATH)
                         except Exception: pass
+                # Meter-based home detection: save reference value when location is unknown
+                mhd_start_val = None
+                mhd_start_ts  = None
+                _mhd_enabled = cfg.get("meter_home_detection_enabled", True)
+                if (_effective_location == "unknown" and _mhd_enabled
+                        and cfg.get("meter_source", "none") != "none"):
+                    _mhd_res = _read_meter_impl(cfg)
+                    if _mhd_res.value is not None:
+                        mhd_start_val = _mhd_res.value
+                        mhd_start_ts  = datetime.utcnow().isoformat(timespec="seconds")
+                        st["meter_home_det_start_val"] = mhd_start_val
+                        st["meter_home_det_start_ts"]  = mhd_start_ts
+                        log.debug("[%s] Meter-Home-Detection Referenzwert: %.3f kWh", vehicle_id, mhd_start_val)
+                    else:
+                        st["meter_home_det_start_val"] = None
+                        st["meter_home_det_start_ts"]  = None
+                else:
+                    st["meter_home_det_start_val"] = None
+                    st["meter_home_det_start_ts"]  = None
+
                 spot = fetch_entsoe_spot(cfg.get("entsoe_api_key","")) if _effective_location == "extern" else None
                 st["entsoe_spot"] = spot
                 price_kwh = (cfg["price_per_kwh_home"] if _effective_location == "home"
                              else calc_extern_price(cfg, charger_type, spot))
                 # Set wallbox power for home sessions
                 sess_charger_kw = (cfg.get("home_charger_power_kw") or None) if _effective_location == "home" else None
+                _loc_src = st.get("location_source", "unknown") if _effective_location != "unknown" else "unknown"
                 cur.execute("""INSERT INTO sessions
                     (start_ts,odo_start,soc_start,location,charger_type,
-                     max_power_kw,price_per_kwh,entsoe_spot,provider,meter_old,vehicle_id,charger_power_kw)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     max_power_kw,price_per_kwh,entsoe_spot,provider,meter_old,vehicle_id,charger_power_kw,
+                     meter_home_detection_start_value,meter_home_detection_start_ts,
+                     location_source,location_confidence)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (datetime.now().isoformat(timespec="seconds"),
                      odo_start,soc_start,_effective_location,charger_type,power_kw,price_kwh,spot,
-                     provider_id,meter_start_val,vehicle_id,sess_charger_kw))
+                     provider_id,meter_start_val,vehicle_id,sess_charger_kw,
+                     mhd_start_val, mhd_start_ts,
+                     _loc_src, 0 if _effective_location == "unknown" else 80))
                 con.commit(); session_id=cur.lastrowid; session_active=True
                 st["session_id"]=session_id
                 try:
@@ -870,6 +901,79 @@ def tracker_loop(vehicle_id: str = "v0"):
                 cur.execute("INSERT INTO session_points (session_id,ts,soc,power_kw) VALUES (?,?,?,?)",
                             (session_id,datetime.now().isoformat(timespec="seconds"),soc,power_kw))
                 con.commit()
+
+                # ── Meter-based home detection ─────────────────────────────────
+                _mhd_enabled = cfg.get("meter_home_detection_enabled", True)
+                _mhd_start   = st.get("meter_home_det_start_val")
+                _mhd_start_ts= st.get("meter_home_det_start_ts")
+                if (_mhd_enabled and _mhd_start is not None and _mhd_start_ts is not None
+                        and cfg.get("meter_source", "none") != "none"):
+                    _can_detect = (
+                        _effective_location == "unknown" or
+                        (_effective_location == "extern" and cfg.get("meter_home_detection_override_external", False))
+                    )
+                    _is_conflict = (_effective_location == "extern")
+                    if _can_detect or _is_conflict:
+                        try:
+                            _mhd_now_res = _read_meter_impl(cfg)
+                            if _mhd_now_res.value is not None:
+                                _mhd_delta = _mhd_now_res.value - _mhd_start
+                                _mhd_min   = float(cfg.get("meter_home_detection_min_delta_kwh", 0.2))
+                                _mhd_win   = float(cfg.get("meter_home_detection_window_minutes", 10))
+                                _mhd_max_h = float(cfg.get("meter_home_detection_max_delta_kwh_per_hour", 30.0))
+                                # Validate time window
+                                try:
+                                    _mhd_age_min = (datetime.utcnow() - datetime.fromisoformat(_mhd_start_ts)).total_seconds() / 60
+                                except Exception:
+                                    _mhd_age_min = 0
+                                # Rate sanity: delta per hour
+                                _mhd_rate_ok = True
+                                if _mhd_age_min > 0:
+                                    _mhd_rate_kw_h = _mhd_delta / (_mhd_age_min / 60)
+                                    if _mhd_rate_kw_h > _mhd_max_h:
+                                        _mhd_rate_ok = False
+                                        log.warning("[%s] Meter-Home-Detection: Delta %.3f kWh in %.1f min → Rate %.1f kWh/h > Max %.1f — ignoriert",
+                                                    vehicle_id, _mhd_delta, _mhd_age_min, _mhd_rate_kw_h, _mhd_max_h)
+                                if _is_conflict and not _can_detect:
+                                    # Warn only: extern + meter rising
+                                    if _mhd_delta >= _mhd_min and _mhd_rate_ok:
+                                        log.warning("[%s] Zähler steigt (%.3f kWh), aber Standort als extern erkannt — kein Auto-Override",
+                                                    vehicle_id, _mhd_delta)
+                                        cur.execute("UPDATE sessions SET location_source=? WHERE id=?",
+                                                    ("meter_conflict", session_id))
+                                        con.commit()
+                                elif (_can_detect and _mhd_delta >= _mhd_min
+                                        and _mhd_rate_ok and 0 < _mhd_age_min <= _mhd_win):
+                                    # Home detected via meter!
+                                    log.info("[%s] Meter-Home-Detection: %.3f kWh Delta → Session als Zuhause markiert",
+                                             vehicle_id, _mhd_delta)
+                                    st["location_status"] = "home"
+                                    st["location_source"]  = "meter_delta"
+                                    _effective_location    = "home"
+                                    # Recalculate price at home tariff
+                                    _mhd_home_price = cfg.get("price_per_kwh_home", 0.30)
+                                    cur.execute(
+                                        "UPDATE sessions SET location=?,price_per_kwh=?,meter_old=?,"
+                                        "meter_home_detection_start_value=?,meter_home_detection_start_ts=?,"
+                                        "meter_home_detection_delta_kwh=?,location_source=?,location_confidence=?,"
+                                        "meter_used=? WHERE id=?",
+                                        ("home", _mhd_home_price, _mhd_start,
+                                         _mhd_start, _mhd_start_ts, round(_mhd_delta, 3),
+                                         "meter_delta", 70, 1, session_id))
+                                    con.commit()
+                                    # Prevent re-detection on next poll
+                                    st["meter_home_det_start_val"] = None
+                                    st["meter_home_det_start_ts"]  = None
+                                    try:
+                                        from notification_manager import fire_event as _fe
+                                        _fe("session_location_detected_by_meter", {
+                                            "vehicle_id": vehicle_id, "session_id": session_id,
+                                            "delta_kwh": round(_mhd_delta, 3),
+                                        }, load_config(), db_path=DB_PATH)
+                                    except Exception: pass
+                        except Exception as _mhd_err:
+                            log.debug("[%s] Meter-Home-Detection Fehler: %s", vehicle_id, _mhd_err)
+
                 if power_kw and (peak_power is None or power_kw > peak_power):
                     peak_power = power_kw
                     new_type = "dc" if power_kw > float(vcfg.get("dc_threshold_kw",22)) else "ac"
@@ -892,6 +996,47 @@ def tracker_loop(vehicle_id: str = "v0"):
                         cost = round(kwh*(db_price or cfg["price_per_kwh_home"]),2)
                 _meter_scope = cfg.get("meter_scope", "home_only")
                 _effective_location = effective_session_location(location, st.get("location_status"))
+
+                # Final meter-based home detection at session end
+                _mhd_enabled = cfg.get("meter_home_detection_enabled", True)
+                _mhd_start   = st.get("meter_home_det_start_val")
+                _mhd_start_ts= st.get("meter_home_det_start_ts")
+                if (_effective_location == "unknown" and _mhd_enabled
+                        and _mhd_start is not None and cfg.get("meter_source", "none") != "none"):
+                    try:
+                        _mhd_end_res = _read_meter_impl(cfg)
+                        if _mhd_end_res.value is not None:
+                            _mhd_delta_end = _mhd_end_res.value - _mhd_start
+                            _mhd_min = float(cfg.get("meter_home_detection_min_delta_kwh", 0.2))
+                            _mhd_max_h = float(cfg.get("meter_home_detection_max_delta_kwh_per_hour", 30.0))
+                            _mhd_rate_ok = True
+                            if _mhd_start_ts:
+                                try:
+                                    _mhd_age_min = (datetime.utcnow() - datetime.fromisoformat(_mhd_start_ts)).total_seconds() / 60
+                                    if _mhd_age_min > 0:
+                                        _rate = _mhd_delta_end / (_mhd_age_min / 60)
+                                        if _rate > _mhd_max_h:
+                                            _mhd_rate_ok = False
+                                except Exception: pass
+                            if _mhd_delta_end >= _mhd_min and _mhd_rate_ok and 0 < _mhd_delta_end <= 250:
+                                log.info("[%s] Meter-Home-Detection (Session-Ende): %.3f kWh → Zuhause",
+                                         vehicle_id, _mhd_delta_end)
+                                _effective_location = "home"
+                                st["location_status"] = "home"
+                                st["location_source"]  = "meter_delta"
+                                cur.execute(
+                                    "UPDATE sessions SET location=?,meter_home_detection_start_value=?,"
+                                    "meter_home_detection_start_ts=?,meter_home_detection_delta_kwh=?,"
+                                    "location_source=?,location_confidence=? WHERE id=?",
+                                    ("home", _mhd_start, _mhd_start_ts, round(_mhd_delta_end, 3),
+                                     "meter_delta", 70, session_id))
+                                con.commit()
+                                db_price = cfg.get("price_per_kwh_home", 0.30)
+                    except Exception as _mhd_end_err:
+                        log.debug("[%s] Meter-Home-Detection (Session-Ende) Fehler: %s", vehicle_id, _mhd_end_err)
+                st["meter_home_det_start_val"] = None
+                st["meter_home_det_start_ts"]  = None
+
                 meter_end_val = None
                 meter_skipped_reason = None
                 meter_used = 0
@@ -949,6 +1094,8 @@ def tracker_loop(vehicle_id: str = "v0"):
                 if kwh is not None and not cost_manual:
                     cost = round(kwh * effective_price, 2)
                 end_ts_str = datetime.now().isoformat(timespec="seconds")
+                _fin_loc_src = st.get("location_source", "unknown")
+                _fin_loc_conf = 70 if _fin_loc_src == "meter_delta" else (80 if _effective_location != "unknown" else 0)
                 cur.execute("""UPDATE sessions
                     SET end_ts=?,odo_end=?,soc_end=?,kwh_charged=?,
                     cost_eur=CASE WHEN cost_manual=1 THEN cost_eur ELSE ? END,
@@ -956,13 +1103,15 @@ def tracker_loop(vehicle_id: str = "v0"):
                     tariff_provider=?,tariff_price_source=?,
                     max_power_kw=?,meter_new=?,kwh_source=?,
                     meter_delta_kwh=CASE WHEN ? IS NOT NULL AND ? IS NOT NULL THEN ?-? ELSE NULL END,
-                    meter_skipped_reason=?,meter_used=?
+                    meter_skipped_reason=?,meter_used=?,
+                    location_source=COALESCE(location_source,?),location_confidence=COALESCE(location_confidence,?)
                     WHERE id=?""",
                     (end_ts_str,odo,soc,kwh,cost,effective_price,
                      tariff_prov_name,tariff_price_src,peak_power,
                      meter_end_val,kwh_source,
                      meter_start_val, meter_end_val, meter_end_val, meter_start_val,
                      meter_skipped_reason, meter_used,
+                     _fin_loc_src, _fin_loc_conf,
                      session_id))
                 con.commit(); session_active=False
                 st.update(session_active=False,session_id=None)
