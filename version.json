@@ -1,6 +1,24 @@
 {
-  "version": "2.0.28",
+  "version": "2.0.29",
   "changelog": [
+    {
+      "version": "2.0.29",
+      "date": "2026-05-22",
+      "changes": [
+        "Feature: Zähler-basierte Home-Erkennung (Meter-Home-Detection) als Fallback wenn Standort unknown",
+        "Config: meter_home_detection_enabled, meter_home_detection_min_delta_kwh, meter_home_detection_window_minutes, meter_home_detection_override_external, meter_home_detection_max_delta_kwh_per_hour",
+        "Tracker: Beim Session-Start mit unknown Standort wird Zähler-Referenzwert gespeichert (meter_home_det_start_val/ts im State)",
+        "Tracker: Während aktiver Session — wenn Delta >= min_delta und im Zeitfenster → Session auf home gesetzt, Home-Tarif genutzt, Meter als kWh-Quelle aktiviert",
+        "Tracker: Warnung wenn Zähler steigt aber Standort als extern erkannt (meter_conflict) — kein Auto-Override",
+        "Tracker: Finaler Check am Session-Ende wenn Standort noch unknown und Zähler-Referenz vorhanden",
+        "DB: Neue Spalten — meter_home_detection_start_value, meter_home_detection_start_ts, meter_home_detection_delta_kwh, location_source, location_confidence",
+        "API: /api/diagnostics zeigt meter_home_detection Status pro Fahrzeug (enabled, start_value, current delta, threshold)",
+        "API: /api/status gibt location_source und meter_home_det_active zurück",
+        "UI: Session-Detail zeigt Standortquelle (📊 Zähler-Delta, ⚠ Konflikt), Delta-kWh und Konfidenz",
+        "UI: Dashboard-Standort-Tile zeigt 📊 bei Meter-Erkennung, ⚠ bei Konflikt, 🔍 wenn Erkennung aktiv",
+        "UI: Tabelle — locBadge() zeigt Quelle-Icon neben Standortbadge"
+      ]
+    },
     {
       "version": "2.0.28",
       "date": "2026-05-22",

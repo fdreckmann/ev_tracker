@@ -118,6 +118,11 @@ DEFAULT_CONFIG = {
     "meter_verify_ssl":  True,
     "meter_prefer_meter_delta": False,
     "meter_scope":       "home_only",
+    "meter_home_detection_enabled":             True,
+    "meter_home_detection_min_delta_kwh":       0.2,
+    "meter_home_detection_window_minutes":      10,
+    "meter_home_detection_override_external":   False,
+    "meter_home_detection_max_delta_kwh_per_hour": 30.0,
     "home_charger_power_kw":    11.0,
 
     # Auth — password + TOTP

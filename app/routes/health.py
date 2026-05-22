@@ -136,6 +136,20 @@ def api_diagnostics():
         "charging_sensor_set": bool(cfg.get("charging_sensor")),
         "soc_sensor_set": bool(cfg.get("soc_sensor")),
     }
+    # Meter-based home detection state per vehicle
+    meter_home_detection = {}
+    for vid, st in _state.vehicle_states.items():
+        meter_home_detection[vid] = {
+            "enabled": cfg.get("meter_home_detection_enabled", True),
+            "min_delta_kwh": cfg.get("meter_home_detection_min_delta_kwh", 0.2),
+            "window_minutes": cfg.get("meter_home_detection_window_minutes", 10),
+            "override_external": cfg.get("meter_home_detection_override_external", False),
+            "max_delta_kwh_per_hour": cfg.get("meter_home_detection_max_delta_kwh_per_hour", 30.0),
+            "start_value": st.get("meter_home_det_start_val"),
+            "start_ts": st.get("meter_home_det_start_ts"),
+            "location_status": st.get("location_status"),
+            "location_source": st.get("location_source"),
+        }
     return jsonify({
         "ok": True,
         "provider": provider,
@@ -148,4 +162,5 @@ def api_diagnostics():
         "module_info": module_info,
         "tracker_state": tracker_state,
         "config_summary": config_summary,
+        "meter_home_detection": meter_home_detection,
     })
