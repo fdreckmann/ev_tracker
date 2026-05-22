@@ -55,7 +55,7 @@ def api_backup_restore():
     user = _current_user()
     if not has_permission(user, "backup:restore"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: backup:restore"}), 403
-    name=request.json.get("name","")
+    name=(request.json or {}).get("name","")
     if ".." in name or "/" in name: return jsonify({"ok":False,"error":"ungültig"}),400
     path=BACKUP_DIR/name
     if not path.exists(): return jsonify({"ok":False,"error":"nicht gefunden"}),404
@@ -97,7 +97,7 @@ def api_backup_cron():
     if not has_permission(_current_user(), "backup:create"):
         return jsonify({"error": "Keine Berechtigung: backup:create"}), 403
     import server as _server
-    cron=request.json.get("cron","").strip()
+    cron=(request.json or {}).get("cron","").strip()
     cfg=load_config(); cfg["backup_cron"]=cron; save_config(cfg)
     if _server._backup_timer: _server._backup_timer.cancel()
     if cron:

@@ -53,7 +53,7 @@ def api_session_points(sid):
 def api_update_location(sid):
     if not has_permission(_current_user(), "sessions:edit"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: sessions:edit"}), 403
-    loc = request.json.get("location","unknown")
+    loc = (request.json or {}).get("location","unknown")
     if loc not in ("home","extern","unknown"):
         return jsonify({"ok":False,"error":"Ungültiger Standort"}), 400
     con = sqlite3.connect(DB_PATH)

@@ -66,7 +66,7 @@ def api_get_config():
 def api_save_config():
     if not has_permission(_current_user(), "settings:edit"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: settings:edit"}), 403
-    data=request.json; cfg=load_config()
+    data=request.json or {}; cfg=load_config()
     floats={"battery_capacity_kwh","price_per_kwh_home","price_per_kwh_ac","price_per_kwh_dc",
             "dc_threshold_kw","entsoe_ac_markup","entsoe_dc_markup","home_radius_m"}
     ints={"poll_interval"}
