@@ -24,8 +24,12 @@ def api_test():
     data=request.json or {}; cfg=load_config()
     # merge submitted fields into config for test
     test_cfg={**cfg,**data}
-    # use saved token if empty
-    if not test_cfg.get("ha_token"): test_cfg["ha_token"]=cfg.get("ha_token","")
+    # restore real values if UI sent masked placeholder
+    _MASK = "********"
+    for secret_key in ("ha_token","tronity_client_secret","enode_client_secret",
+                       "smartcar_access_token","tesla_access_token","vw_password"):
+        if test_cfg.get(secret_key) in ("", _MASK):
+            test_cfg[secret_key] = cfg.get(secret_key, "")
     try:
         from server import get_provider
         provider=get_provider(test_cfg.get("provider","ha"), test_cfg)
@@ -44,8 +48,11 @@ def api_meter_test():
     cfg = load_config()
     # Body-first: merge body values with priority over stored config (without saving)
     body = request.get_json(silent=True) or {}
+    _MASK = "********"
     for k, v in body.items():
         if k.startswith("meter_") or k in ("ha_url", "ha_token"):
+            if v == _MASK:
+                continue  # keep stored real value
             cfg[k] = v
 
     from meter_providers import read_meter as _read_meter_impl
