@@ -2719,6 +2719,9 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 <script src="/static/js/sessions.js"></script>
 <script src="/static/js/vehicles.js"></script>
 <script src="/static/js/mobile.js"></script>
+<script src="/static/js/billing.js"></script>
+<script src="/static/js/templates.js"></script>
+<script src="/static/js/settings.js"></script>
 <script>
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -2889,43 +2892,8 @@ function renderGallery(){
   `).join('');
 }
 
-function previewGalleryTemplate(id){
-  window.open(`/api/template/gallery/${id}/preview`, '_blank');
-}
 
-async function useGalleryTemplate(id, name){
-  if(!confirm(`Vorlage "${name}" aktivieren? Dein aktuelles Template und Mapping werden überschrieben.`)) return;
-  try {
-    const r = await apiFetch(`/api/template/gallery/${id}/use`, {method:'POST'}).then(r=>r.json());
-    if(r.ok){
-      toast(`✓ Vorlage "${name}" aktiviert`);
-      _galleryData = null; // force reload
-      await loadGallery();
-      renderGallery();
-      closeGalleryModal();
-      // Refresh template status UI
-      await refreshTplInfo();
-      loadMappingPreview();
-      updateActiveTemplateInfo(r.active_template);
-    } else {
-      toast('❌ ' + (r.error||'Fehler'), 'err');
-    }
-  } catch(e){
-    toast('❌ ' + e.message, 'err');
-  }
-}
 
-function updateActiveTemplateInfo(info){
-  const el = $('activeTemplateInfo');
-  if(!el) return;
-  if(!info || !info.source){
-    el.textContent = '';
-  } else if(info.source === 'builtin'){
-    el.innerHTML = `<span style="color:var(--acc)">✓ ${info.name}</span>`;
-  } else {
-    el.innerHTML = `<span style="color:var(--mute)">Eigene Vorlage</span>`;
-  }
-}
 
 // ── Template upload ───────────────────────────────────────────────────────────
 async function refreshTplInfo(){
@@ -3803,90 +3771,8 @@ async function loadMappingPreview(){
 }
 
 // ── Template Analysis ─────────────────────────────────────────────────────────
-async function runTemplateAnalysis(){
-  const btn = $('analyzeBtn');
-  btn.disabled = true; btn.textContent = '⏳ Analysiere…';
-  try {
-    const res = await apiFetch('/api/template/analyze').then(r=>r.json());
-    btn.disabled = false; btn.textContent = '🔍 Automatisch analysieren';
-    if(!res.ok){ toast('❌ ' + (res.error||'Analysefehler'), 'err'); return; }
-    // Store result but do NOT apply immediately (TEIL 7)
-    _lastAnalysis = res;
-    _analysisResult = res;
-    showAnalysisPanel(res);
-    // Show sig suggestion button if available
-    if(res.signature_suggestion && $('sigAnalysisSuggestBtn')){
-      $('sigAnalysisSuggestBtn').style.display = '';
-    }
-  } catch(e){
-    btn.disabled = false; btn.textContent = '🔍 Automatisch analysieren';
-    toast('❌ Analysefehler: ' + e.message, 'err');
-  }
-}
 
-function showAnalysisPanel(a){
-  const panel = $('analysisPanel');
-  panel.style.display = 'block';
 
-  // Confidence bar
-  const pct = Math.round((a.confidence||0)*100);
-  const col = pct>=80?'var(--acc)':pct>=60?'#eab308':'var(--danger)';
-  $('analysisConfidence').innerHTML =
-    `<span style="color:${col};font-weight:600">${pct}% Konfidenz</span>` +
-    (a.sheet ? `<span style="color:var(--mute);margin-left:10px">Sheet: ${a.sheet}</span>` : '') +
-    (a.start_row ? `<span style="color:var(--mute);margin-left:10px">Startzeile: ${a.start_row}</span>` : '');
-
-  // Warnings
-  const warnings = a.warnings||[];
-  $('analysisWarnings').innerHTML = warnings.length
-    ? `<div style="color:#f59e0b;font-size:.72rem;font-family:var(--mono)">${warnings.map(w=>`⚠ ${w}`).join('<br>')}</div>`
-    : '';
-
-  // Suggestions summary
-  const colCount  = Object.keys(a.column_mapping||{}).length;
-  const cellCount = Object.keys(a.cell_mapping||{}).length;
-  const phCount   = (a.placeholders||[]).length;
-  $('analysisSuggestions').innerHTML =
-    `✓ ${colCount} Spalten erkannt &nbsp;·&nbsp; ${cellCount} Einzelzellen erkannt &nbsp;·&nbsp; ${phCount} Platzhalter`;
-
-  // Highlight cells in grid
-  highlightAnalysisCells(a);
-}
-
-function highlightAnalysisCells(a){
-  // Highlight column headers
-  Object.entries(a.column_mapping||{}).forEach(([col, info])=>{
-    const th = document.querySelector(`#excelGridHead th[data-col="${col}"]`);
-    if(th){
-      const field = info.field||info;
-      const color = FIELD_COLORS[field]||'#22c55e';
-      th.style.background = color + '33';
-      th.style.color = color;
-    }
-  });
-  // Highlight cell mapping cells
-  Object.entries(a.cell_mapping||{}).forEach(([addr, info])=>{
-    const col = addr.replace(/[0-9]/g,'');
-    const row = parseInt(addr.replace(/[A-Z]/gi,''));
-    const colIdx = col.split('').reduce((acc,c)=>acc*26+c.charCodeAt(0)-64,0);
-    const td = document.getElementById(`gc_${row}_${colIdx}`);
-    if(td){
-      td.style.outline = '2px solid #f59e0b';
-      td.title = `→ ${info.field||info} (${Math.round((info.confidence||0)*100)}%)`;
-    }
-  });
-  // Highlight placeholders
-  (a.placeholders||[]).forEach(ph=>{
-    const col = ph.cell.replace(/[0-9]/g,'');
-    const row = parseInt(ph.cell.replace(/[A-Z]/gi,''));
-    const colIdx = col.split('').reduce((acc,c)=>acc*26+c.charCodeAt(0)-64,0);
-    const td = document.getElementById(`gc_${row}_${colIdx}`);
-    if(td){
-      td.style.outline = '2px solid #a855f7';
-      td.title = `Platzhalter → ${ph.field}`;
-    }
-  });
-}
 
 function applyAnalysis(){
   const a = _analysisResult || _lastAnalysis;
@@ -5091,82 +4977,10 @@ function repMonthsRender(){
 
 
 // ── BILLING ───────────────────────────────────────────────────────────────────
-function billingTab(n, btn){
-  [1,2,3,4].forEach(i=>{ const el=$('billing_step_'+i); if(el) el.style.display=i===n?'':'none'; });
-  document.querySelectorAll('.billing-tab').forEach(b=>b.classList.remove('active'));
-  if(btn) btn.classList.add('active');
-}
 
-function onBillingReimbModeChange(){
-  const m = $('billing_reimb_mode')?.value||'fixed_price';
-  const fp = $('billing_fixed_price_row');
-  if(fp) fp.style.display = m==='fixed_price'?'':'none';
-}
 
-async function loadBillingConfig(){
-  const vid = $('billing_vehicle_id')?.value||'v0';
-  try{
-    const r = await apiFetch(`/api/billing/config/${vid}`).then(r=>r.json());
-    const s = id=>$(id);
-    if(s('billing_enabled'))      s('billing_enabled').checked         = !!r.enabled;
-    if(s('billing_location_filter')) s('billing_location_filter').value= r.location_filter||'all';
-    if(s('billing_reimb_mode'))   s('billing_reimb_mode').value        = r.reimbursement_mode||'fixed_price';
-    if(s('billing_reimb_price'))  s('billing_reimb_price').value       = r.reimbursement_price_per_kwh||0.30;
-    if(s('billing_driver'))       s('billing_driver').value            = r.driver_name||'';
-    if(s('billing_plate'))        s('billing_plate').value             = r.license_plate||'';
-    if(s('billing_dept'))         s('billing_dept').value              = r.department||'';
-    if(s('billing_cc'))           s('billing_cc').value                = r.cost_center||'';
-    if(s('billing_emp_id'))       s('billing_emp_id').value            = r.employee_id||'';
-    if(s('billing_employer_email')) s('billing_employer_email').value  = r.employer_email||'';
-    if(s('billing_req_signature')) s('billing_req_signature').checked  = !!r.requires_signature;
-    if(s('billing_req_approval'))  s('billing_req_approval').checked   = !!r.requires_approval;
-    if(s('billing_auto_send'))     s('billing_auto_send').checked      = !!r.auto_send;
-    if(s('billing_recipients'))    s('billing_recipients').value       = (r.recipients||[]).join('\n');
-    onBillingReimbModeChange();
-    loadBillingSummary();
-  }catch(e){ console.warn('loadBillingConfig',e); }
-}
 
-async function loadBillingSummary(){
-  const strip = $('billing_summary_strip');
-  if(!strip) return;
-  try{
-    const r = await apiFetch('/api/billing/summary').then(r=>r.json());
-    strip.innerHTML = [
-      `<span>📅 <b>${r.month||''}</b></span>`,
-      `<span>⚡ kWh gesamt: <b>${(r.total_kwh||0).toFixed(2)}</b></span>`,
-      `<span>💰 Kosten: <b>${(r.total_cost||0).toFixed(2)} €</b></span>`,
-      `<span>💼 Erstattbar: <b>${(r.reimbursable_kwh||0).toFixed(2)} kWh</b></span>`,
-      `<span style="color:#6ee7b7">✅ Erstattung: <b>${(r.reimbursement_total||0).toFixed(2)} €</b></span>`,
-    ].join('');
-  }catch(e){ if(strip) strip.innerHTML='<span style="color:var(--mute)">Keine Daten</span>'; }
-}
 
-async function saveBillingConfig(){
-  const g=id=>$(id), st=$('billing_status');
-  const vid = g('billing_vehicle_id')?.value||'v0';
-  const payload = {
-    enabled:                    g('billing_enabled')?.checked||false,
-    location_filter:            g('billing_location_filter')?.value||'all',
-    reimbursement_mode:         g('billing_reimb_mode')?.value||'fixed_price',
-    reimbursement_price_per_kwh: parseFloat(g('billing_reimb_price')?.value||0.30),
-    driver_name:                g('billing_driver')?.value||'',
-    license_plate:              g('billing_plate')?.value||'',
-    department:                 g('billing_dept')?.value||'',
-    cost_center:                g('billing_cc')?.value||'',
-    employee_id:                g('billing_emp_id')?.value||'',
-    employer_email:             g('billing_employer_email')?.value||'',
-    requires_signature:         g('billing_req_signature')?.checked||false,
-    requires_approval:          g('billing_req_approval')?.checked||false,
-    auto_send:                  g('billing_auto_send')?.checked||false,
-    recipients: (g('billing_recipients')?.value||'').split(/[\n,]+/).map(s=>s.trim()).filter(Boolean),
-  };
-  if(st){st.textContent='⏳ Speichere…';st.style.color='var(--mute)';}
-  try{
-    const r = await apiFetch(`/api/billing/config/${vid}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());
-    if(st){st.textContent=r.ok?'✅ Gespeichert':'❌ '+(r.error||'Fehler');st.style.color=r.ok?'#6ee7b7':'#f87171';}
-  }catch(e){if(st){st.textContent='❌ '+e.message;st.style.color='#f87171';}}
-}
 
 // ── REPORT ARCHIVE ────────────────────────────────────────────────────────────
 
@@ -5844,25 +5658,8 @@ async function checkSmtpForTotp(){
 
 // ── Export Templates ──────────────────────────────────────────────────────────
 
-async function saveCurrentAsTemplate(){
-  const name=prompt('Name für diese Vorlage:','Meine Vorlage');
-  if(!name) return;
-  const saved=await fetch('/api/template/mapping').then(r=>r.json()).catch(()=>({}));
-  const r=await apiFetch('/api/export/templates',{method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({name,mapping:saved.mapping||{},start_row:saved.start_row})
-  }).then(r=>r.json());
-  if(r.ok){ toast('Vorlage gespeichert','ok'); loadExportTemplates(); }
-  else toast('Fehler','err');
-}
 
 
-async function setDefaultTemplate(tid){
-  await apiFetch(`/api/export/templates/${tid}`,{method:'PUT',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({is_default:true})});
-  toast('Als Standardvorlage gesetzt','ok');
-  loadExportTemplates();
-}
 
 
 // ── Password Strength ─────────────────────────────────────────────────────────
@@ -6408,16 +6205,6 @@ function _applyExportPermissions() {
   }
 }
 
-function _applySettingsPermissions() {
-  if (!hasPermission('settings:edit')) {
-    // Settings-Speichern-Buttons deaktivieren
-    document.querySelectorAll('[onclick*="saveSettings"], [onclick*="saveCfg"]').forEach(btn => {
-      btn.disabled = true;
-      btn.title = 'Keine Berechtigung: settings:edit';
-      btn.style.opacity = '0.5';
-    });
-  }
-}
 
 function _applyUpdatePermissions() {
   if (!hasPermission('updates:start')) {

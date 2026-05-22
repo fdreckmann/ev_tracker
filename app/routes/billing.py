@@ -94,11 +94,12 @@ def api_billing_summary():
     total_cost = sum(r.get("cost_eur") or 0 for r in rows)
     bc         = dict(bc_row) if bc_row else {}
     reimb_rate = float(bc.get("reimbursement_price_per_kwh") or 0)
-    lf = bc.get("location_filter", "all")
+    from core.location import normalize_location as _nl
+    lf = _nl(bc.get("location_filter", "all")) if bc.get("location_filter", "all") not in ("all",) else "all"
     if lf == "home":
         kwh_for_reimb = sum((r.get("kwh_charged") or 0) for r in rows if r.get("location") == "home")
-    elif lf in ("extern", "external"):
-        kwh_for_reimb = sum((r.get("kwh_charged") or 0) for r in rows if r.get("location") in ("extern", "external"))
+    elif lf == "extern":
+        kwh_for_reimb = sum((r.get("kwh_charged") or 0) for r in rows if r.get("location") == "extern")
     else:
         kwh_for_reimb = total_kwh
     return jsonify({

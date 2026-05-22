@@ -3,6 +3,15 @@
  * Requires: api.js
  */
 
+// ── Location normalization ────────────────────────────────────────────────────
+function normalizeLocation(val) {
+  if (!val) return 'unknown';
+  const v = String(val).trim().toLowerCase();
+  if (['home', 'zuhause', 'at_home', 'home_charging'].includes(v)) return 'home';
+  if (['extern', 'external', 'not_home', 'away', 'unterwegs', 'extern_charging'].includes(v)) return 'extern';
+  return 'unknown';
+}
+
 // ── Auto-scale stat values to fit their tile ─────────────────────────────────
 function fitText(el) {
   el.style.fontSize = '';
@@ -47,7 +56,7 @@ async function refreshStatus() {
 
     const locEl = $('dLoc');
     if (locEl) {
-      const loc = s.location_status || s.location;
+      const loc = normalizeLocation(s.location_status || s.location);
       if (loc === 'home') { locEl.textContent = ' Heim'; locEl.className = 'sv g'; }
       else if (loc === 'extern') { locEl.textContent = ' Extern'; locEl.className = 'sv w'; }
       else { locEl.textContent = '—'; locEl.className = 'sv'; }
@@ -58,7 +67,8 @@ async function refreshStatus() {
     if (typeEl && chargeLabel) {
       if (s.charging) {
         chargeLabel.textContent = 'Lädt gerade ⚡';
-        const locPart = (s.location_status || s.location) === 'home' ? '🏠 Zuhause' : (s.location_status || s.location) === 'extern' ? '🔌 Extern' : '';
+        const _sloc = normalizeLocation(s.location_status || s.location);
+        const locPart = _sloc === 'home' ? '🏠 Zuhause' : _sloc === 'extern' ? '🔌 Extern' : '';
         const typePart = s.charger_type === 'dc' ? 'DC' : s.charger_type === 'ac' ? 'AC' : '';
         typeEl.textContent = [locPart, typePart].filter(Boolean).join(' · ') || '⚡';
         typeEl.className = 'sv w';
@@ -67,7 +77,8 @@ async function refreshStatus() {
         const lastSess = rows.find(r => r.end_ts && (r.charger_type || r.location));
         if (lastSess) {
           chargeLabel.textContent = 'Letzte Ladung';
-          const locPart = lastSess.location === 'home' ? '🏠 Zuhause' : lastSess.location === 'extern' ? '🔌 Extern' : '';
+          const _lloc = normalizeLocation(lastSess.location);
+          const locPart = _lloc === 'home' ? '🏠 Zuhause' : _lloc === 'extern' ? '🔌 Extern' : '';
           const typePart = lastSess.charger_type === 'dc' ? 'DC' : lastSess.charger_type === 'ac' ? 'AC' : '';
           typeEl.textContent = [locPart, typePart].filter(Boolean).join(' · ') || '—';
           typeEl.className = 'sv';
@@ -127,8 +138,9 @@ async function refreshStatus() {
 
 // ── Table helpers ─────────────────────────────────────────────────────────────
 function locBadge(loc) {
-  if (loc === 'home')   return '<span class="loc-home">🏠 Zuhause</span>';
-  if (loc === 'extern') return '<span class="loc-ext">⚡ Extern</span>';
+  const n = normalizeLocation(loc);
+  if (n === 'home')   return '<span class="loc-home">🏠 Zuhause</span>';
+  if (n === 'extern') return '<span class="loc-ext">⚡ Extern</span>';
   return '<span class="loc-unk">—</span>';
 }
 function typeBadge(t, kw) {

@@ -83,7 +83,8 @@ class FixedPriceTariffProvider(BaseTariffProvider):
     def get_price_at(self, timestamp, location=None):
         if location == "home":
             return float(self.config.get("price_per_kwh_home", 0.30))
-        return float(self.config.get("price_per_kwh_dc", 0.75)) if location in ("extern","external","dc") \
+        from core.location import normalize_location as _nl
+        return float(self.config.get("price_per_kwh_dc", 0.75)) if (_nl(location) == "extern" or location == "dc") \
                else float(self.config.get("price_per_kwh_ac", 0.45))
 
     def get_prices_for_range(self, start, end):

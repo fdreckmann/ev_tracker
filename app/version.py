@@ -9,6 +9,9 @@ _vfile = next(
     None,
 )
 try:
-    APP_VERSION = json.loads(_vfile.read_text())["version"]
+    _data = json.loads(_vfile.read_text())
+    APP_VERSION = _data["version"]
+    CHANGELOG   = _data.get("changelog", [])
 except Exception:
     APP_VERSION = "unknown"
+    CHANGELOG   = []
