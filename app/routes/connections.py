@@ -21,22 +21,34 @@ def _sanitize_url(url):
 def api_test():
     if not has_permission(_current_user(), "providers:test"):
         return jsonify({"ok": False, "message": "Keine Berechtigung: providers:test"}), 403
-    data=request.json or {}; cfg=load_config()
-    # merge submitted fields into config for test
-    test_cfg={**cfg,**data}
-    # restore real values if UI sent masked placeholder
+    data = request.json or {}
+    cfg  = load_config()
+    test_cfg = {**cfg, **data}
     _MASK = "********"
+    # Generic: for any password field sent as empty/"********", use saved value
+    provider_id = test_cfg.get("provider", "ha")
+    try:
+        from providers import get_config_fields
+        fields = get_config_fields(provider_id)
+        for f in fields:
+            if f.get("type") == "password":
+                key = f["id"]
+                if test_cfg.get(key) in ("", _MASK):
+                    test_cfg[key] = cfg.get(key, "")
+    except Exception:
+        pass
+    # Fallback for legacy keys
     for secret_key in ("ha_token","tronity_client_secret","enode_client_secret",
                        "smartcar_access_token","tesla_access_token","vw_password"):
         if test_cfg.get(secret_key) in ("", _MASK):
             test_cfg[secret_key] = cfg.get(secret_key, "")
     try:
         from server import get_provider
-        provider=get_provider(test_cfg.get("provider","ha"), test_cfg)
-        result=provider.test_connection()
+        provider = get_provider(test_cfg.get("provider","ha"), test_cfg)
+        result   = provider.test_connection()
         return jsonify(result)
     except Exception as e:
-        return jsonify({"ok":False,"message":str(e)})
+        return jsonify({"ok": False, "message": str(e)})
 
 
 @connections_bp.route("/api/meter/test", methods=["POST"])

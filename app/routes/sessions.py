@@ -138,6 +138,7 @@ def api_patch_session(sid):
     return jsonify({"ok": True, "id": sid})
 
 @sessions_bp.route("/api/stats/monthly")
+@require_login
 def api_monthly_stats():
     from server import get_monthly_stats
     return jsonify(get_monthly_stats())

@@ -114,6 +114,14 @@ def api_diagnostics():
     provider_configured = bool(
         cfg.get("ha_token") if provider == "ha" else cfg.get(f"{provider}_token", cfg.get(f"{provider}_api_key",""))
     )
+    import sys as _sys
+    import core.state as _cs
+    module_info = {
+        "main_module_id": id(_sys.modules.get("__main__")),
+        "server_module_id": id(_sys.modules.get("server")),
+        "same_module": _sys.modules.get("__main__") is _sys.modules.get("server"),
+        "vehicle_states_id": id(_cs.vehicle_states),
+    }
     return jsonify({
         "ok": True,
         "provider": provider,
@@ -123,4 +131,5 @@ def api_diagnostics():
         "poll_interval": cfg.get("poll_interval", 30),
         "vehicles": vehicles,
         "server_time": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "module_info": module_info,
     })

@@ -177,6 +177,7 @@ def api_template_gallery_use(template_id):
 
 # ── POST /api/template/preview ────────────────────────────────────────────────
 @templates_routes_bp.route("/api/template/preview")
+@require_login
 def api_template_preview():
     if not TEMPLATE_PATH.exists():
         return jsonify({"ok": False, "error": "Kein Template"})
@@ -229,6 +230,7 @@ def api_template_preview():
 
 # ── GET /api/template/render ──────────────────────────────────────────────────
 @templates_routes_bp.route("/api/template/render")
+@require_login
 def api_template_render():
     if not TEMPLATE_PATH.exists():
         return jsonify({"ok": False, "error": "Kein Template"})
@@ -322,6 +324,7 @@ def api_template_render():
 
 # ── GET /api/sessions/sample ──────────────────────────────────────────────────
 @templates_routes_bp.route("/api/sessions/sample")
+@require_login
 def api_sessions_sample():
     """Return one recent completed session for live export preview."""
     import sqlite3
