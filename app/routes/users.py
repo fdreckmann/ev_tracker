@@ -47,16 +47,22 @@ def api_create_user():
     try:
         con = _get_db()
         if invite_mode:
-            con.execute(
+            cur = con.execute(
                 "INSERT INTO users (name,email,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
                 (name, email, "", role, "invited", now, now))
         else:
             pw_err = _password_ok(pw)
             if pw_err:
                 return jsonify({"ok": False, "error": pw_err})
-            con.execute(
+            cur = con.execute(
                 "INSERT INTO users (name,email,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
                 (name, email, _hash_password(pw), role, "active", now, now))
+        user_id = cur.lastrowid
+        role_name = role if role in ("admin", "user", "readonly") else "user"
+        role_row = con.execute("SELECT id FROM roles WHERE name=?", (role_name,)).fetchone()
+        if role_row:
+            con.execute("INSERT OR IGNORE INTO user_roles (user_id, role_id) VALUES (?,?)",
+                        (user_id, role_row["id"]))
         con.commit(); close_db_if_owned(con)
     except sqlite3.IntegrityError:
         return jsonify({"ok": False, "error": "E-Mail bereits vorhanden"})

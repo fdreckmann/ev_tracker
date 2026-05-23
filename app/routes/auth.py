@@ -163,9 +163,15 @@ def setup_page():
             now = datetime.utcnow().isoformat()
             con = _get_db()
             try:
-                con.execute(
+                cur = con.execute(
                     "INSERT INTO users (name,email,password_hash,role,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
                     (name, email, _hash_password(pw), "admin", "active", now, now))
+                user_id = cur.lastrowid
+                # Assign to admin role in user_roles (required for permission checks)
+                role_row = con.execute("SELECT id FROM roles WHERE name='admin'").fetchone()
+                if role_row:
+                    con.execute("INSERT OR IGNORE INTO user_roles (user_id, role_id) VALUES (?,?)",
+                                (user_id, role_row["id"]))
                 con.commit()
             except sqlite3.IntegrityError:
                 error = "E-Mail-Adresse bereits vorhanden"
