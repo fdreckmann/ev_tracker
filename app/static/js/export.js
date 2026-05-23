@@ -140,7 +140,7 @@ async function loadExportTemplate(tid){
   const templates=await fetch('/api/export/templates').then(r=>r.json());
   const t=templates.find(x=>x.id===tid);
   if(!t) return;
-  await fetch('/api/template/mapping',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},
+  await apiFetch('/api/template/mapping',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({mapping:t.mapping||{},start_row:t.start_row})});
   toast('Vorlage "'+t.name+'" geladen','ok');
   loadMappingPreview();

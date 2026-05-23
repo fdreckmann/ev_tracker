@@ -20,10 +20,10 @@ async function editCost(id, kwh, currentPrice){
     body={price_per_kwh:parseFloat(newPrice),cost_eur:0};
   }
 
-  var r=await fetch('/api/sessions/'+id+'/cost',{method:'POST',
-    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.json();});
+  var r=await apiFetch('/api/sessions/'+encodeURIComponent(id)+'/cost',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.json();}).catch(function(){return {ok:false};});
   if(r.ok){ toast('Session #'+id+' Kosten aktualisiert: '+fmt(r.cost_eur,2)+' €'); loadSessions(); }
-  else toast('Fehler','err');
+  else toast('Fehler beim Speichern','err');
 }
 
 async function loadSessions(){
@@ -44,18 +44,18 @@ async function editLocation(id, current){
   var map={'1':'home','2':'extern','3':'unknown'};
   var loc=map[choice.trim()];
   if(!loc){toast('Ungültige Eingabe — 1, 2 oder 3','err');return;}
-  var r=await fetch('/api/sessions/'+id+'/location',{method:'POST',
+  var r=await apiFetch('/api/sessions/'+encodeURIComponent(id)+'/location',{method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({location:loc})}).then(function(r){return r.json();});
+    body:JSON.stringify({location:loc})}).then(function(r){return r.json();}).catch(function(){return {ok:false};});
   if(r.ok){toast('Session #'+id+' → '+labels[loc]);loadSessions();}
-  else toast('Fehler','err');
+  else toast('Fehler beim Speichern','err');
 }
 
 async function delSession(id){
   if(!confirm('Session #'+id+' wirklich löschen?')) return;
-  await fetch('/api/sessions/'+id, {method:'DELETE'});
-  toast('Session #'+id+' gelöscht');
-  loadSessions(); loadCharts();
+  var r=await apiFetch('/api/sessions/'+encodeURIComponent(id),{method:'DELETE'}).then(function(r){return r.json();}).catch(function(){return {ok:false};});
+  if(r.ok){ toast('Session #'+id+' gelöscht'); loadSessions(); loadCharts(); }
+  else toast((r.error||'Fehler beim Löschen'),'err');
 }
 
 // ── Session Detail Modal ─────────────────────────────────────────────────────

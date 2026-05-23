@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 95" width="220" height="95">
+  <!-- Background -->
+  <rect width="220" height="95" fill="#16182a" rx="6"/>
+  <!-- Ground shadows -->
+  <ellipse cx="55" cy="87" rx="21" ry="4" fill="#0d0e18"/>
+  <ellipse cx="160" cy="87" rx="21" ry="4" fill="#0d0e18"/>
+  <!-- Main body lower (chassis) -->
+  <rect x="26" y="58" width="164" height="18" fill="#2d3350" rx="3"/>
+  <!-- Cabin: 2-box, roof slopes steeply at rear (hatchback) -->
+  <!-- Short hood up front, cabin extends further back vs sedan -->
+  <polygon points="64,58 72,26 152,26 186,58" fill="#2d3350"/>
+  <!-- Hood (shorter than sedan) -->
+  <polygon points="16,68 26,58 64,58 64,50 32,50" fill="#2d3350"/>
+  <polygon points="12,72 16,68 32,50 64,50 64,58 26,58" fill="#2d3350"/>
+  <!-- Rear hatch area (steep ~45deg slope) -->
+  <polygon points="152,26 186,58 190,58 190,66 186,66 158,28" fill="#252840"/>
+  <!-- Front bumper -->
+  <path d="M12,72 Q9,76 10,80 L26,80 L26,72 Z" fill="#252740"/>
+  <!-- Rear lower bumper -->
+  <rect x="186" y="62" width="6" height="10" fill="#252740" rx="1"/>
+  <!-- Front headlight -->
+  <rect x="12" y="66" width="9" height="5" fill="#8899cc" rx="1" opacity="0.9"/>
+  <!-- Rear light (on hatch, vertical) -->
+  <rect x="185" y="44" width="4" height="14" fill="#9b2020" rx="1"/>
+  <!-- Windows: single large 2-box greenhouse -->
+  <polygon points="76,57 82,28 144,28 172,57" fill="#3a4a6e" opacity="0.85"/>
+  <!-- B-pillar -->
+  <line x1="118" y1="28" x2="116" y2="57" stroke="#16182a" stroke-width="3"/>
+  <!-- Rear quarter window (triangular) -->
+  <polygon points="145,29 170,56 145,56" fill="#3a4a6e" opacity="0.6"/>
+  <!-- Door handle front -->
+  <rect x="142" y="62" width="11" height="3" fill="#3a3c58" rx="1"/>
+  <!-- Door handle rear -->
+  <rect x="96" y="62" width="11" height="3" fill="#3a3c58" rx="1"/>
+  <!-- Rear wheel arch -->
+  <circle cx="55" cy="76" r="16" fill="#16182a"/>
+  <!-- Front wheel arch -->
+  <circle cx="160" cy="76" r="16" fill="#16182a"/>
+  <!-- Rear wheel -->
+  <circle cx="55" cy="76" r="13" fill="#1a1c2e"/>
+  <circle cx="55" cy="76" r="9" fill="#252842"/>
+  <circle cx="55" cy="76" r="6" fill="#3d4060"/>
+  <circle cx="55" cy="76" r="2.5" fill="#555"/>
+  <!-- Front wheel -->
+  <circle cx="160" cy="76" r="13" fill="#1a1c2e"/>
+  <circle cx="160" cy="76" r="9" fill="#252842"/>
+  <circle cx="160" cy="76" r="6" fill="#3d4060"/>
+  <circle cx="160" cy="76" r="2.5" fill="#555"/>
+</svg>

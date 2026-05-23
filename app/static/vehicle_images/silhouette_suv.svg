@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 95" width="220" height="95">
+  <!-- Background -->
+  <rect width="220" height="95" fill="#16182a" rx="6"/>
+  <!-- Ground shadows -->
+  <ellipse cx="52" cy="88" rx="22" ry="4" fill="#0d0e18"/>
+  <ellipse cx="164" cy="88" rx="22" ry="4" fill="#0d0e18"/>
+  <!-- Main body lower: tall, higher ground clearance -->
+  <rect x="24" y="54" width="170" height="22" fill="#2d3350" rx="3"/>
+  <!-- SUV cabin: tall upright, roofline ~y=18, squared-off -->
+  <polygon points="60,54 68,18 180,18 190,54" fill="#2d3350"/>
+  <!-- Hood: medium length, slightly raised -->
+  <polygon points="14,66 24,54 60,54 60,46 32,46" fill="#2d3350"/>
+  <polygon points="10,70 14,66 32,46 60,46 60,54 24,54" fill="#2d3350"/>
+  <!-- Front bumper (chunkier / taller) -->
+  <path d="M10,70 Q8,76 9,80 L24,80 L24,66 Z" fill="#252740"/>
+  <!-- Rear bumper (squared, tall) -->
+  <rect x="193" y="54" width="8" height="22" fill="#252740" rx="2"/>
+  <!-- Rear lights (tall vertical) -->
+  <rect x="190" y="20" width="4" height="16" fill="#9b2020" rx="1"/>
+  <!-- Front headlight (wide) -->
+  <rect x="10" y="59" width="12" height="6" fill="#8899cc" rx="1" opacity="0.9"/>
+  <!-- Front DRL strip -->
+  <rect x="10" y="56" width="16" height="2" fill="#aabbdd" rx="1" opacity="0.7"/>
+  <!-- Skid plate / underbody protection -->
+  <rect x="10" y="74" width="14" height="3" fill="#3a3c58" rx="1"/>
+  <!-- Windows (tall, upright pillars, large greenhouse) -->
+  <polygon points="72,53 78,20 174,20 184,53" fill="#3a4a6e" opacity="0.85"/>
+  <!-- B-pillar (wide, upright) -->
+  <line x1="128" y1="20" x2="126" y2="53" stroke="#16182a" stroke-width="4"/>
+  <!-- Roof rails (prominent on SUVs) -->
+  <rect x="68" y="17" width="114" height="2.5" fill="#3a3c58" rx="1"/>
+  <!-- Door handle front -->
+  <rect x="148" y="62" width="12" height="3" fill="#3a3c58" rx="1"/>
+  <!-- Door handle rear -->
+  <rect x="104" y="62" width="12" height="3" fill="#3a3c58" rx="1"/>
+  <!-- Rear wheel arch -->
+  <circle cx="52" cy="76" r="18" fill="#16182a"/>
+  <!-- Front wheel arch -->
+  <circle cx="164" cy="76" r="18" fill="#16182a"/>
+  <!-- Rear wheel (larger diameter) -->
+  <circle cx="52" cy="76" r="15" fill="#1a1c2e"/>
+  <circle cx="52" cy="76" r="10" fill="#252842"/>
+  <circle cx="52" cy="76" r="7" fill="#3d4060"/>
+  <circle cx="52" cy="76" r="3" fill="#555"/>
+  <!-- Front wheel (larger diameter) -->
+  <circle cx="164" cy="76" r="15" fill="#1a1c2e"/>
+  <circle cx="164" cy="76" r="10" fill="#252842"/>
+  <circle cx="164" cy="76" r="7" fill="#3d4060"/>
+  <circle cx="164" cy="76" r="3" fill="#555"/>
+</svg>
