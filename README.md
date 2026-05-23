@@ -4,7 +4,7 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 
 ![Docker Hub](https://img.shields.io/docker/pulls/19121412/ev-tracker)
 ![GitHub Actions](https://github.com/fdreckmann/ev_tracker/actions/workflows/docker-build.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-2.0.24-blue)
+![Version](https://img.shields.io/badge/version-2.0.30-blue)
 
 ---
 
@@ -42,7 +42,7 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 | Feature | Beschreibung |
 |---------|-------------|
 | ⚡ Auto-Erkennung | Ladevorgänge werden automatisch erkannt und gespeichert |
-| 🏠 Standort | Unterscheidet Zuhause / Extern — GPS + Home Assistant Entities + Geofence |
+| 🏠 Standort | Unterscheidet Zuhause / Extern — GPS + Home Assistant Entities + Geofence + Zähler-Fallback |
 | 🔌 AC / DC | Ladertyp-Erkennung via Leistungssensor oder HA Sensor |
 | 💰 Preismodell | Heimtarif fix · dynamisch via Tibber/Octopus/HA/EVCC · Extern via ENTSO-E Spotpreis |
 | ✎ Manuelle Korrektur | Kosten und Standort pro Session überschreibbar |
@@ -90,6 +90,8 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 
 **Zähler-Scope (`meter_scope`):** Der lokale Stromzähler kann auf Zuhause-Ladevorgänge beschränkt werden (`home_only`, Standard). Externe Ladevorgänge überspringen die Zählerablesung automatisch. Der Grund wird pro Session gespeichert (`meter_skipped_reason`).
 
+**Zähler-basierte Heimerkennung:** Wenn Standort unbekannt ist und der lokale Zähler während des Ladens steigt, erkennt EV Tracker die Session automatisch als Zuhause. Schwellwert (Standard: 0,2 kWh / 10 Minuten) und Ratengrenze konfigurierbar.
+
 ### Stromtarif
 
 | Quelle | Beschreibung |
@@ -123,8 +125,10 @@ Preise werden **zeitgewichtet** über den Ladezeitraum gemittelt. Bestehende Hom
 |---------|-------------|
 | 📍 GPS-Geofence | Haversine-Distanz zur Heimadresse, konfigurierbare Radius |
 | 🏠 HA Entities | Home Assistant `device_tracker` Entities als Standortquelle |
-| 🔀 Kombiniert | Provider-GPS + HA kombinierbar (any/all/provider_only/ha_only) |
+| 🔀 Kombiniert | Provider-GPS + HA kombinierbar (any/all/provider_only/ha_only/manual) |
+| 📊 Zähler-Fallback | Steigender Wallbox-Zähler bei unbekanntem Standort → automatisch Zuhause |
 | 📜 Historie | Standort-Verlauf mit Zeitstempel (lat/lon nur mit `vehicles:location_exact_view`) |
+| 🏷 Standortquelle | Jede Session speichert die Erkennungsquelle: provider / ha / gps / meter_delta / manual |
 
 ### Benutzerverwaltung & Sicherheit
 
@@ -269,19 +273,6 @@ Dynamische Preise werden **zeitgewichtet** über den Ladezeitraum gemittelt (z.B
 
 ---
 
-## Neu in 2.0.25
-
-- **Bugfix KRITISCH:** HA `connected`/`plugged_in` startet keine Ladesession mehr — `ha_connected_means_charging: false` als neuer Standard
-- **Bugfix:** `last_poll` wird jetzt auch bei Provider-Fehlern gesetzt — Tracker zeigt korrekten Polling-Status
-- **UI:** Status klar unterschieden: "Tracker gestoppt" / "Provider Fehler" / "Warte auf Daten" / "Aktiv"
-- **UI:** `last_error` sichtbar im Dashboard-Status — keine versteckten Fehler mehr
-- **HA Provider:** Per-Entity Debug-Info (`http_status`, `state`, `reachable`, `error`) in `/api/diagnostics`
-- **Services:** `app/services/` mit Email-, Vehicle-, Backup-, Update-, Report-Service — `from server import` Abhängigkeiten reduziert
-- **JS:** `api.js`, `status.js`, `config.js` als statische Dateien — `index.html` von 8381 → 8091 Zeilen
-- **server.py:** `ensure_started_once()` — sicherer Startup für App-Factory/Gunicorn
-
----
-
 ## Entwicklung
 
 ```bash
@@ -305,7 +296,7 @@ docker run -d --name ev-tracker -p 8054:8080 \
 
 | Bereich | Technologie |
 |---------|-------------|
-| Backend | Python 3.12 + Flask |
+| Backend | Python 3.12 + Flask (modular via Blueprints) |
 | Datenbank | SQLite (WAL-Modus, 21+ Indexe) |
 | Frontend | Vanilla JS + Chart.js (responsive, PWA-fähig) |
 | Excel | openpyxl |

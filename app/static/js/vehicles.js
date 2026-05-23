@@ -1,7 +1,7 @@
 // vehicles.js — provides:
 //   loadVehicleList, openAddVehicleModal, openEditVehicleModal,
 //   loadVehicleModalFields, closeVehicleModal, saveVehicleModal,
-//   deleteVehicleModal
+//   archiveVehicleModal
 
 var _editingVehicleId = null;
 
@@ -28,6 +28,13 @@ async function loadVehicleList() {
   });
 }
 
+function _setVehicleModalButtons(isEdit) {
+  var archiveBtn    = $('vm_archive_btn');
+  var hardDeleteBtn = $('vm_hard_delete_btn');
+  if (archiveBtn)    archiveBtn.style.display    = isEdit ? '' : 'none';
+  if (hardDeleteBtn) hardDeleteBtn.style.display  = isEdit ? '' : 'none';
+}
+
 async function openAddVehicleModal() {
   _editingVehicleId = null;
   $('vehicleModalTitle').textContent = 'Fahrzeug hinzufügen';
@@ -37,8 +44,26 @@ async function openAddVehicleModal() {
   $('vm_home_lat').value = '';
   $('vm_home_lon').value = '';
   $('vm_provider').selectedIndex = 0;
-  $('vm_delete_btn').style.display = 'none';
   $('vm_info').textContent = '';
+  _setVehicleModalButtons(false);
+  // Reset location fields
+  var locEnabled = $('vm_loc_enabled');
+  if (locEnabled) locEnabled.checked = false;
+  var locMode = $('vm_loc_mode');
+  if (locMode) locMode.value = 'home_external';
+  var locSource = $('vm_loc_source');
+  if (locSource) locSource.value = 'combined';
+  var locDetect = $('vm_loc_detect_mode');
+  if (locDetect) locDetect.value = 'any';
+  var locRadius = $('vm_loc_radius');
+  if (locRadius) locRadius.value = '150';
+  var locEntities = $('vm_loc_ha_entities');
+  if (locEntities) locEntities.value = '';
+  var locHistory = $('vm_loc_history_enabled');
+  if (locHistory) locHistory.checked = false;
+  // Hide image section for new vehicles
+  var imgSection = $('vmImageSection');
+  if (imgSection) imgSection.style.display = 'none';
   await loadVehicleModalFields();
   $('vehicleModal').style.display = 'flex';
 }
@@ -58,8 +83,26 @@ async function openEditVehicleModal(vid) {
   for(var i=0;i<sel.options.length;i++){
     if(sel.options[i].value===v.provider){ sel.selectedIndex=i; break; }
   }
-  $('vm_delete_btn').style.display = '';
   $('vm_info').textContent = '';
+  _setVehicleModalButtons(true);
+  // Location fields
+  var locEnabled = $('vm_loc_enabled');
+  if (locEnabled) locEnabled.checked = !!v.location_enabled;
+  var locMode = $('vm_loc_mode');
+  if (locMode) locMode.value = v.location_mode || 'home_external';
+  var locSource = $('vm_loc_source');
+  if (locSource) locSource.value = v.location_source || 'combined';
+  var locDetect = $('vm_loc_detect_mode');
+  if (locDetect) locDetect.value = v.home_detection_mode || 'any';
+  var locRadius = $('vm_loc_radius');
+  if (locRadius) locRadius.value = v.home_radius_m || '150';
+  var locEntities = $('vm_loc_ha_entities');
+  if (locEntities) locEntities.value = (v.location_ha_entities||[]).join('\n');
+  var locHistory = $('vm_loc_history_enabled');
+  if (locHistory) locHistory.checked = !!v.location_history_enabled;
+  // Show image section for existing vehicles
+  var imgSection = $('vmImageSection');
+  if (imgSection) imgSection.style.display = '';
   await loadVehicleModalFields(v);
   $('vehicleModal').style.display = 'flex';
 }
@@ -93,6 +136,7 @@ function closeVehicleModal() {
 async function saveVehicleModal() {
   var provider = $('vm_provider').value;
   var fields = await fetch('/api/providers/'+provider+'/fields').then(function(r){return r.json();}).catch(function(){return [];});
+  var haEntities = ($('vm_loc_ha_entities')||{value:''}).value.split('\n').map(function(s){return s.trim();}).filter(Boolean);
   var data = {
     name:                $('vm_name').value.trim() || 'Neues Fahrzeug',
     provider:            provider,
@@ -101,6 +145,13 @@ async function saveVehicleModal() {
     poll_interval:       parseInt($('vm_poll').value)||60,
     home_lat:            $('vm_home_lat').value.trim(),
     home_lon:            $('vm_home_lon').value.trim(),
+    location_enabled:    !!($('vm_loc_enabled')||{}).checked,
+    location_mode:       ($('vm_loc_mode')||{value:'home_external'}).value,
+    location_source:     ($('vm_loc_source')||{value:'combined'}).value,
+    home_detection_mode: ($('vm_loc_detect_mode')||{value:'any'}).value,
+    home_radius_m:       parseFloat(($('vm_loc_radius')||{value:'150'}).value)||150,
+    location_ha_entities: haEntities,
+    location_history_enabled: !!($('vm_loc_history_enabled')||{}).checked,
   };
   fields.forEach(function(f) {
     var el = $('vmf_'+f.id);
@@ -109,7 +160,7 @@ async function saveVehicleModal() {
 
   var url  = _editingVehicleId ? '/api/vehicles/'+_editingVehicleId : '/api/vehicles';
   var meth = _editingVehicleId ? 'PUT' : 'POST';
-  var r = await fetch(url,{method:meth,headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(function(x){return x.json();});
+  var r = await apiFetch(url,{method:meth,headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(function(x){return x.json();});
   if(r.ok){
     closeVehicleModal();
     toast(_editingVehicleId ? 'Fahrzeug aktualisiert' : 'Fahrzeug hinzugefügt', 'ok');
@@ -119,13 +170,16 @@ async function saveVehicleModal() {
   }
 }
 
-async function deleteVehicleModal() {
+async function archiveVehicleModal() {
   if(!_editingVehicleId) return;
-  if(!confirm('Fahrzeug löschen? Ladevorgänge bleiben erhalten.')) return;
-  var r = await fetch('/api/vehicles/'+_editingVehicleId,{method:'DELETE'}).then(function(x){return x.json();});
+  var vname = $('vm_name').value || _editingVehicleId;
+  if(!confirm('Fahrzeug "'+vname+'" archivieren?\nLadevorgänge bleiben erhalten. Das Fahrzeug wird nicht mehr aktiv gepollt.')) return;
+  var r = await apiFetch('/api/vehicles/'+_editingVehicleId,{method:'DELETE'}).then(function(x){return x.json();}).catch(function(){return {ok:false,error:'Netzwerkfehler'};});
   if(r.ok){
     closeVehicleModal();
-    toast('Fahrzeug gelöscht','ok');
+    toast('Fahrzeug archiviert','ok');
     loadVehicleList();
+  } else {
+    $('vm_info').innerHTML = '<span style="color:var(--danger)">❌ '+(r.error||'Fehler')+'</span>';
   }
 }
