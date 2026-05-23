@@ -1596,9 +1596,9 @@ def _detect_location_status(vid: str, cfg: dict, vehicle_state: dict) -> dict:
                 )
                 with _ur.urlopen(req, timeout=5) as resp:
                     data = _json.loads(resp.read())
-                state_val = data.get("state", "").lower()
-                loc = normalize_location(state_val)
-                if loc == "home":
+                state_val = data.get("state", "").lower().strip()
+                ha_loc = normalize_location(state_val)
+                if ha_loc == "home":
                     ha_home_count += 1
                     sources_home.append(f"ha:{entity_id}")
                     # Try to get exact coords from attributes
@@ -1608,7 +1608,7 @@ def _detect_location_status(vid: str, cfg: dict, vehicle_state: dict) -> dict:
                         result["latitude"]  = float(attrs["latitude"])
                         result["longitude"] = float(attrs["longitude"])
                         result["accuracy_m"] = attrs.get("gps_accuracy")
-                elif state_val not in ("", "unavailable", "unknown"):
+                elif ha_loc == "extern" or state_val not in ("", "unknown", "unavailable", "none"):
                     ha_ext_count += 1
                     sources_extern.append(f"ha:{entity_id}")
             except Exception as _ha_e:

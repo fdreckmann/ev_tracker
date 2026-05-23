@@ -4352,11 +4352,12 @@ async function loadVehicleLocationBadge(vid) {
     if(!loc.ok || loc.location_mode === 'disabled' || !loc.location_enabled) {
       el.style.display = 'none'; return;
     }
-    const icons = { home: '🏠', external: '📍', unknown: '❓', disabled: '' };
-    const labels = { home: 'Zuhause', external: 'Extern', unknown: 'Unbekannt', disabled: '' };
+    const icons = { home: '🏠', extern: '📍', external: '📍', unknown: '❓', disabled: '' };
+    const labels = { home: 'Zuhause', extern: 'Extern', external: 'Extern', unknown: 'Unbekannt', disabled: '' };
     const srcLabels = { provider: 'Provider', ha: 'Home Assistant', combined: 'Kombiniert', manual: 'Manuell', none: '' };
-    const icon  = icons[loc.status]  || '❓';
-    const label = labels[loc.status] || 'Unbekannt';
+    const normStatus = normalizeLocation(loc.status);
+    const icon  = icons[normStatus]  || icons[loc.status]  || '❓';
+    const label = labels[normStatus] || labels[loc.status] || 'Unbekannt';
     const src   = srcLabels[loc.source] || loc.source || '';
     const ago   = loc.last_update ? _timeAgo(loc.last_update) : '';
     el.innerHTML = `<span title="${src}${ago ? ' · ' + ago : ''}" style="font-size:.8rem;color:var(--mute)">${icon} ${label}${src ? ' · ' + src : ''}${ago ? ' · ' + ago : ''}</span>`;
