@@ -3,16 +3,7 @@
  * Requires: api.js
  */
 
-// ── Location normalization ────────────────────────────────────────────────────
-function normalizeLocation(val) {
-  if (!val) return 'unknown';
-  const v = String(val).trim().toLowerCase();
-  if (['unknown','unavailable','disabled','none','n/a','null','offline',''].includes(v)) return 'unknown';
-  if (['home','zuhause','at_home','home_charging','garage','local'].includes(v)) return 'home';
-  if (['extern','external','not_home','away','unterwegs','extern_charging',
-       'outside','remote','roaming','public','charging_away','travel'].includes(v)) return 'extern';
-  return 'unknown';
-}
+// normalizeLocation() is defined in api.js (loaded first).
 
 // ── Auto-scale stat values to fit their tile ─────────────────────────────────
 function fitText(el) {

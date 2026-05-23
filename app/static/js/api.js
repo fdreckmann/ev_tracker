@@ -50,3 +50,15 @@ function apiFetch(url, opts) {
   if (csrfToken) opts.headers['X-CSRF-Token'] = csrfToken;
   return fetch(url, opts);
 }
+
+// ── Location normalization ────────────────────────────────────────────────────
+// Single source of truth — used by status.js, mobile.js, vehicles.js.
+function normalizeLocation(val) {
+  if (!val) return 'unknown';
+  var v = String(val).trim().toLowerCase();
+  if (['unknown','unavailable','disabled','none','n/a','null','offline',''].indexOf(v) >= 0) return 'unknown';
+  if (['home','zuhause','at_home','home_charging','garage','local'].indexOf(v) >= 0) return 'home';
+  if (['extern','external','not_home','away','unterwegs','extern_charging',
+       'outside','remote','roaming','public','charging_away','travel'].indexOf(v) >= 0) return 'extern';
+  return 'unknown';
+}

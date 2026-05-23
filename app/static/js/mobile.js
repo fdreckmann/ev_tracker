@@ -1,5 +1,4 @@
 // mobile.js — provides:
-// normalizeLocation (also defined in status.js for desktop)
 //   mobileNavTo, switchToDesktopSettings,
 //   refreshMobileDashboard, renderMobileRecentSessions,
 //   renderMobileSessionCards, buildSessionCard, mobileSessionDetail,
@@ -11,15 +10,7 @@
 // MOBILE NAVIGATION
 // =========================================================
 
-function normalizeLocation(val) {
-  if (!val) return 'unknown';
-  const v = String(val).trim().toLowerCase();
-  if (['unknown','unavailable','disabled','none','n/a','null','offline',''].includes(v)) return 'unknown';
-  if (['home','zuhause','at_home','home_charging','garage','local'].includes(v)) return 'home';
-  if (['extern','external','not_home','away','unterwegs','extern_charging',
-       'outside','remote','roaming','public','charging_away','travel'].includes(v)) return 'extern';
-  return 'unknown';
-}
+// normalizeLocation() is defined in api.js (loaded first).
 
 var _mobileCurrentSection = 'home';
 var _mobileLang = 'de';
