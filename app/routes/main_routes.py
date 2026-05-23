@@ -25,7 +25,7 @@ _SENSITIVE_CONFIG_KEYS = {
     "ha_token", "entsoe_api_key", "octopus_api_key", "tibber_token", "tariff_ha_token",
     "mqtt_password", "ntfy_token", "gotify_token",
 }
-_SECRET_MASK = "********"
+from core.security import SECRET_MASK as _SECRET_MASK
 
 
 @main_routes_bp.route("/")
@@ -113,15 +113,36 @@ def api_provider_fields(provider_id):
     return jsonify(get_config_fields(provider_id))
 
 
+def _compute_tracker_status(st: dict) -> str:
+    """Return one of: stopped, provider_error, no_data, polling, sleeping, charging, ready."""
+    if not (st.get("running") or st.get("tracker_alive")):
+        return "stopped"
+    if st.get("last_fatal_error"):
+        return "provider_error"
+    if not st.get("provider_connected") and st.get("last_error"):
+        return "provider_error"
+    if not st.get("last_successful_poll"):
+        return "no_data"
+    if st.get("charging"):
+        return "charging"
+    # Detect sleeping vehicle: SOC not null, no activity for >60s
+    last_poll = st.get("last_poll")
+    if last_poll and not st.get("provider_connected"):
+        return "polling"
+    return "ready"
+
+
 @main_routes_bp.route("/api/status")
 @require_login
 def api_status():
     vid = request.args.get("vehicle_id","v0")
     st  = _state.vehicle_states.get(vid, _state.vehicle_states.get("v0", {}))
     result = dict(st)
+    result["tracker_status"] = _compute_tracker_status(st)
     result["all_vehicles"] = [
         {"vehicle_id": k, "name": v.get("name",k), "running": v.get("running",False),
-         "charging": v.get("charging",False), "session_active": v.get("session_active",False)}
+         "charging": v.get("charging",False), "session_active": v.get("session_active",False),
+         "tracker_status": _compute_tracker_status(v)}
         for k, v in _state.vehicle_states.items()
     ]
     return jsonify(result)

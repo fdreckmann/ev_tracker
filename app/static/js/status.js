@@ -7,8 +7,10 @@
 function normalizeLocation(val) {
   if (!val) return 'unknown';
   const v = String(val).trim().toLowerCase();
-  if (['home', 'zuhause', 'at_home', 'home_charging'].includes(v)) return 'home';
-  if (['extern', 'external', 'not_home', 'away', 'unterwegs', 'extern_charging'].includes(v)) return 'extern';
+  if (['unknown','unavailable','disabled','none','n/a','null','offline',''].includes(v)) return 'unknown';
+  if (['home','zuhause','at_home','home_charging','garage','local'].includes(v)) return 'home';
+  if (['extern','external','not_home','away','unterwegs','extern_charging',
+       'outside','remote','roaming','public','charging_away','travel'].includes(v)) return 'extern';
   return 'unknown';
 }
 
@@ -37,18 +39,17 @@ async function refreshStatus() {
     const s = await fetch('/api/status').then(r => r.json());
     const dot = $('sDot'), txt = $('sTxt');
 
-    const trackerRunning = s.running || s.tracker_alive;
-    if (!trackerRunning) {
-      dot.className = 'dot err'; txt.textContent = 'Tracker gestoppt';
-    } else if (!s.provider_connected && s.last_error) {
-      dot.className = 'dot err'; txt.textContent = 'Provider Fehler';
-    } else if (!s.last_successful_poll) {
-      dot.className = 'dot warn'; txt.textContent = 'Warte auf Daten';
-    } else if (s.charging) {
-      dot.className = 'dot charging'; txt.textContent = 'Lädt ⚡';
-    } else {
-      dot.className = 'dot ok'; txt.textContent = 'Aktiv';
-    }
+    const ts = s.tracker_status || (s.running || s.tracker_alive ? 'ready' : 'stopped');
+    const _tsMap = {
+      stopped:        ['dot err',      'Tracker gestoppt'],
+      provider_error: ['dot err',      'Provider Fehler'],
+      no_data:        ['dot warn',     'Warte auf Daten'],
+      polling:        ['dot warn',     'Verbinde…'],
+      charging:       ['dot charging', 'Lädt ⚡'],
+      ready:          ['dot ok',       'Aktiv'],
+    };
+    const [dotCls, dotTxt] = _tsMap[ts] || ['dot ok', 'Aktiv'];
+    dot.className = dotCls; txt.textContent = dotTxt;
 
     $('dSoc').textContent = s.soc_current != null ? fmt(s.soc_current, 0) + '%' : '—';
     $('dOdo').textContent = s.odo_current != null ? Math.round(s.odo_current).toLocaleString('de') : '—';
@@ -123,12 +124,14 @@ async function refreshStatus() {
       $('cbarFill').style.width = (s.soc_current || 0) + '%';
       $('cbarSession').textContent = `Session #${s.session_id || '?'} · SOC ${fmt(s.soc_current, 0)}%`;
     } else {
-      const _st_running = s.running || s.tracker_alive;
-      let _stLabel, _stClass;
-      if (!_st_running) { _stLabel = 'Gestoppt'; _stClass = 'sv'; }
-      else if (!s.provider_connected && s.last_error) { _stLabel = 'Provider Fehler'; _stClass = 'sv err'; }
-      else if (!s.provider_connected) { _stLabel = 'Warte auf Daten'; _stClass = 'sv'; }
-      else { _stLabel = 'Bereit'; _stClass = 'sv g'; }
+      const _tileMap = {
+        stopped:        ['Gestoppt',         'sv'],
+        provider_error: ['Provider Fehler',  'sv err'],
+        no_data:        ['Warte auf Daten',  'sv'],
+        polling:        ['Verbinde…',        'sv'],
+        ready:          ['Bereit',           'sv g'],
+      };
+      const [_stLabel, _stClass] = _tileMap[ts] || ['Bereit', 'sv g'];
       $('dSt').textContent = _stLabel;
       $('dSt').className = _stClass;
       $('dStSub').textContent = s.last_error ? ('⚠ ' + s.last_error) : (s.last_successful_poll ? '' : 'Noch kein Poll') || 'Kein Ladevorgang';

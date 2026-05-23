@@ -3,9 +3,18 @@ Session location resolution helpers.
 """
 from __future__ import annotations
 
-_HOME_VALUES  = {"home", "zuhause", "at_home", "home_charging"}
-_EXTERN_VALUES = {"extern", "external", "not_home", "away", "unterwegs", "extern_charging"}
-_SKIP_VALUES  = {"unknown", "unavailable", "disabled", "none", ""}
+_HOME_VALUES  = {
+    "home", "zuhause", "at_home", "home_charging",
+    "garage", "local",
+}
+_EXTERN_VALUES = {
+    "extern", "external", "not_home", "away", "unterwegs", "extern_charging",
+    "outside", "remote", "roaming", "public", "charging_away", "travel",
+}
+_SKIP_VALUES  = {
+    "unknown", "unavailable", "disabled", "none", "",
+    "n/a", "null", "offline",
+}
 
 
 def normalize_location(value: str | None) -> str:
@@ -13,6 +22,8 @@ def normalize_location(value: str | None) -> str:
     if not value:
         return "unknown"
     v = str(value).strip().lower()
+    if v in _SKIP_VALUES:
+        return "unknown"
     if v in _HOME_VALUES:
         return "home"
     if v in _EXTERN_VALUES:

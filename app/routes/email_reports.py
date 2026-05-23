@@ -291,10 +291,10 @@ def _send_email_with_attachments(to_addr, subject, body_html, attachments=None):
     from email.mime.text import MIMEText
     from email.mime.base import MIMEBase
     from email import encoders as _enc
-    import server as _srv
+    from server import _smtp_open as _srv_smtp_open
     cfg  = load_config()
     name = cfg.get("smtp_from_name", "EV Tracker")
-    srv, frm, err = _srv._smtp_open(cfg)
+    srv, frm, err = _srv_smtp_open(cfg)
     if err:
         return False, err
     if not frm:

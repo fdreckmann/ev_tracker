@@ -1,5 +1,5 @@
 """
-Shared mutable runtime state — vehicle tracking, update log, export tokens.
+Shared mutable runtime state — vehicle tracking, update log, export tokens, caches.
 
 This module holds module-level dicts/lists that are shared between the
 tracker loop (server.py) and blueprint route handlers. Python's module
@@ -22,3 +22,6 @@ pdf_tokens: dict = {}
 update_log: list = []
 update_lock = threading.Lock()
 update_thread = None             # set by server.py when an update is running
+
+# ENTSO-E spot price cache — written by server.py, readable by routes
+entsoe_cache: dict = {"price": None, "ts": 0}

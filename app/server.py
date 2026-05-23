@@ -1,16 +1,12 @@
 import sys, os, json, time, sqlite3, logging, threading, requests, hashlib, secrets, functools, re
+# Doppelimport-Fix: VOR jedem weiteren Import — Blueprints rufen `from server import X` auf.
+# setdefault: falls schon gesetzt (gunicorn re-import), bleibt das Original erhalten.
+sys.modules.setdefault("server", sys.modules[__name__])
 from typing import Optional
 import smtplib, email
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-
-# ── Doppelimport-Fix: muss VOR jedem weiteren Import stehen ─────────────────
-# Wenn Blueprints `from server import X` aufrufen, sucht Python nach sys.modules["server"].
-# Ohne diesen Alias würde server.py als zweites Modul re-importiert und _vehicle_states
-# zurückgesetzt. Der Alias muss vor `from routes import` gesetzt werden.
-if __name__ == "__main__":
-    sys.modules["server"] = sys.modules["__main__"]
 
 from flask import Flask, render_template, request, jsonify, send_file, make_response, session, redirect, url_for, g, Response
 from providers import get_provider, get_all_capabilities, get_config_fields, PROVIDERS
@@ -597,7 +593,7 @@ def get_monthly_stats():
     close_db_if_owned(con); return [dict(r) for r in rows]
 
 # ── ENTSO-E ───────────────────────────────────────────────────────────────────
-_entsoe_cache = {"price": None, "ts": 0}
+_entsoe_cache = _core_state.entsoe_cache  # shared via core.state
 _forgot_pw_attempts: dict[str, list] = {}  # email -> [timestamp, ...]
 
 def fetch_entsoe_spot(api_key: str):
@@ -688,11 +684,6 @@ _vehicle_states      = _core_state.vehicle_states       # shared with blueprints
 _vehicle_states_lock = _core_state.vehicle_states_lock
 _vehicle_stops       = _core_state.vehicle_stops
 
-# Guard: blueprints do `from server import ...` which causes Python to re-import
-# server.py as a separate "server" module (distinct from __main__). Without this
-# guard the module-level init code would run a second time and overwrite the live
-# vehicle state dict (including running=True) with a fresh dict (running=False),
-# making the dashboard show "Gestoppt" permanently.
 if "v0" not in _vehicle_states:
     _vehicle_states["v0"] = _make_state("v0")
     _vehicle_stops["v0"]  = threading.Event()
@@ -1470,7 +1461,7 @@ _SENSITIVE_CONFIG_KEYS = {
     "ha_token", "entsoe_api_key", "octopus_api_key", "tibber_token", "tariff_ha_token",
     "mqtt_password", "ntfy_token", "gotify_token",
 }
-_SECRET_MASK = "********"
+from core.security import SECRET_MASK as _SECRET_MASK
 
 
 
