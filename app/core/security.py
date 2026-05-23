@@ -145,6 +145,7 @@ DEFAULT_ROLE_PERMISSIONS = {
     "admin": ["admin:all"],
     "user": [
         "dashboard:view", "vehicles:view", "vehicles:switch", "vehicles:location_view",
+        "vehicles:create", "vehicles:edit", "vehicles:image_manage", "vehicles:location_configure",
         "sessions:view", "sessions:create", "sessions:edit", "sessions:manual_add",
         "analytics:view",
         "export:view", "export:create", "export:preview", "export:download", "export:pdf",
