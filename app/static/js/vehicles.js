@@ -167,7 +167,17 @@ async function saveVehicleModal() {
   };
   fields.forEach(function(f) {
     var el = $('vmf_'+f.id);
-    if(el) data[f.id] = el.value;
+    if(!el) return;
+    if(f.type === 'password') {
+      if(!el.value || el.value === '********') return; // keep stored secret
+      data[f.id] = el.value;
+    } else if(f.type === 'checkbox') {
+      data[f.id] = !!el.checked;
+    } else if(f.type === 'number') {
+      data[f.id] = el.value === '' ? null : parseFloat(el.value);
+    } else {
+      data[f.id] = el.value;
+    }
   });
 
   var url  = _editingVehicleId ? '/api/vehicles/'+_editingVehicleId : '/api/vehicles';
@@ -266,7 +276,9 @@ async function uploadVehicleImage() {
   if(!fileEl || !fileEl.files || !fileEl.files[0]) return;
   var fd = new FormData();
   fd.append('file', fileEl.files[0]);
-  var r = await fetch('/api/vehicles/'+encodeURIComponent(_editingVehicleId)+'/image/upload', {method:'POST',body:fd}).then(function(x){return x.json();}).catch(function(){return {ok:false,error:'Netzwerkfehler'};});
+  // No Content-Type header — browser sets multipart boundary automatically.
+  // apiFetch adds X-CSRF-Token without overriding Content-Type.
+  var r = await apiFetch('/api/vehicles/'+encodeURIComponent(_editingVehicleId)+'/image/upload', {method:'POST',body:fd}).then(function(x){return x.json();}).catch(function(){return {ok:false,error:'Netzwerkfehler'};});
   if(r.ok) {
     var preview = $('vmImagePreview');
     if(preview) preview.src = r.url+'?t='+Date.now();

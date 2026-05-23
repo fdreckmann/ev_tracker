@@ -4360,12 +4360,13 @@ async function loadVehicleLocationBadge(vid) {
 
 async function hardDeleteVehicleModal() {
   if(!_editingVehicleId) return;
+  const vid = encodeURIComponent(_editingVehicleId);
   const vname = $('vm_name').value || _editingVehicleId;
 
   // Step 1: check what data exists (never delete on first action)
   let checkData;
   try {
-    checkData = await apiFetch(`/api/vehicles/${_editingVehicleId}/delete-check`).then(x=>x.json());
+    checkData = await apiFetch(`/api/vehicles/${vid}/delete-check`).then(x=>x.json());
   } catch(e) {
     $('vm_info').innerHTML = `<span style="color:var(--danger)">❌ Netzwerkfehler beim Prüfen</span>`;
     return;
@@ -4386,7 +4387,7 @@ async function hardDeleteVehicleModal() {
   if(input !== 'LÖSCHEN') { toast('Abgebrochen','info'); return; }
 
   // Step 3: execute hard delete (with delete_sessions=true to handle any existing data)
-  const r = await apiFetch(`/api/vehicles/${_editingVehicleId}?mode=hard&delete_sessions=true`,{method:'DELETE'}).then(x=>x.json());
+  const r = await apiFetch(`/api/vehicles/${vid}?mode=hard&delete_sessions=true`,{method:'DELETE'}).then(x=>x.json());
   if(r.ok){
     closeVehicleModal();
     toast('Fahrzeug endgültig gelöscht','ok');

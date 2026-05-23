@@ -126,10 +126,19 @@ class HomeAssistantProvider(BaseProvider):
         if not sensor: return "unknown"
         data = self._get_entity(sensor)
         if not data: return "unknown"
-        raw         = data["state"].lower().strip()
-        normalized  = self._normalize_location(raw)
+        raw = data["state"].lower().strip()
+        # Anything unknown/unavailable from HA must not become "extern"
+        from core.location import normalize_location
+        canonical = normalize_location(raw)
+        if canonical == "home":
+            return "home"
+        if canonical == "extern":
+            return "extern"
+        # canonical == "unknown": also check raw value against user-defined home_states
         home_states = [s.strip().lower() for s in self.config.get("home_states","home").split(",")]
-        return "home" if normalized in home_states else "extern"
+        if raw in home_states or canonical in home_states:
+            return "home"
+        return "unknown"
 
     def _charge_type(self, power_kw: float | None) -> str:
         # 1. Dedicated type sensor

@@ -1,6 +1,22 @@
 {
-  "version": "2.0.31",
+  "version": "2.0.32",
   "changelog": [
+    {
+      "version": "2.0.32",
+      "date": "2026-05-23",
+      "changes": [
+        "Bugfix: HA Provider _location() — unknown/unavailable HA-Sensorwerte wurden fälschlicherweise als 'extern' zurückgegeben; jetzt korrekt 'unknown'",
+        "Bugfix: Fahrzeugbild-Upload in vehicles.js nutzt apiFetch() statt fetch() → CSRF-Token wird korrekt mitgesendet",
+        "Bugfix: saveVehicleModal() überspringt leere/maskierte Passwortfelder — bestehende Provider-Secrets bleiben erhalten",
+        "Bugfix: saveVehicleModal() behandelt Checkbox-Felder als Boolean und Number-Felder als Float",
+        "Bugfix: testConn() in config.js sendet Checkbox-Felder als Boolean (z.B. ha_connected_means_charging)",
+        "Bugfix: PUT /api/vehicles/<vid> — leere/maskierte Passwörter überschreiben gespeicherte Secrets nicht mehr",
+        "Bugfix: GET/POST /api/vehicles/<vid>/delete-check|location|location/test|location/history — 404 für unbekannte Fahrzeug-IDs",
+        "Bugfix: hardDeleteVehicleModal() nutzt encodeURIComponent für Fahrzeug-ID in URLs",
+        "Bugfix: vehicle_image_service.resolve_vehicle_image_url() validiert vehicle_id gegen Path-Traversal",
+        "API: apiJson() Helper in api.js — wirft Error mit Fehlermeldung bei HTTP 4xx/5xx statt stilles Ignorieren"
+      ]
+    },
     {
       "version": "2.0.31",
       "date": "2026-05-23",
