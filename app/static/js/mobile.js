@@ -247,9 +247,9 @@ async function doMobileExport() {
     if (typeof doExport === 'function') {
       doExport();
     } else {
-      var r = await fetch('/api/export', {
+      var r = await apiFetch('/api/export', {
         method: 'POST',
-        headers: {'Content-Type':'application/json','X-CSRFToken': window._csrfToken||''},
+        headers: {'Content-Type':'application/json'},
         body: JSON.stringify({month: monthVal, language: _mobileExportLang, include_signature: incSig})
       });
       if (r.ok) {
@@ -278,9 +278,9 @@ async function doMobileExportPreview() {
   if (resultEl) resultEl.innerHTML = '<p>⏳ Lade Vorschau…</p>';
 
   try {
-    var r = await fetch('/api/export/preview', {
+    var r = await apiFetch('/api/export/preview', {
       method: 'POST',
-      headers: {'Content-Type':'application/json','X-CSRFToken':window._csrfToken||''},
+      headers: {'Content-Type':'application/json'},
       body: JSON.stringify({month: monthVal, year: year, month_num: month, language: _mobileExportLang, include_signature: incSig})
     }).then(function(x) { return x.json(); });
 
