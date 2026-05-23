@@ -63,7 +63,7 @@ def api_smtp_oauth_status():
 @smtp_bp.route("/api/smtp/oauth/<provider>/connect")
 @require_admin
 def api_smtp_oauth_connect(provider):
-    from server import _oauth_redirect_base
+    from routes.auth import _oauth_redirect_base
     if provider not in _SMTP_OAUTH:
         return jsonify({"error": "Unbekannter Provider"}), 400
     cfg = load_config()
@@ -96,7 +96,7 @@ def api_smtp_oauth_connect(provider):
 @smtp_bp.route("/smtp/oauth/<provider>/callback")
 @require_admin
 def smtp_oauth_callback(provider):
-    from server import _oauth_redirect_base
+    from routes.auth import _oauth_redirect_base
     if provider not in _SMTP_OAUTH:
         return "Unbekannter Provider", 400
     state = request.args.get("state", "")
@@ -170,7 +170,8 @@ def api_smtp_oauth_disconnect(provider):
 @smtp_bp.route("/api/smtp/test", methods=["POST"])
 @require_login
 def smtp_test():
-    from server import _smtp_open, _SECRET_MASK
+    from server import _smtp_open
+    from core.security import SECRET_MASK as _SECRET_MASK
     if not has_permission(_current_user(), "settings:edit"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: settings:edit"}), 403
     data = request.json or {}

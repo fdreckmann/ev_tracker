@@ -1,6 +1,24 @@
 {
-  "version": "2.0.29",
+  "version": "2.0.30",
   "changelog": [
+    {
+      "version": "2.0.30",
+      "date": "2026-05-23",
+      "changes": [
+        "Bugfix KRITISCH: sys.modules.setdefault('server', sys.modules[__name__]) ganz oben in server.py — VOR Flask/Blueprint-Imports, stabil unter Gunicorn/Import/Test",
+        "Bugfix: Alter if __name__=='__main__': sys.modules['server']=... Block entfernt — setdefault deckt beide Fälle ab",
+        "normalize_location: Neue Aliase — extern: outside/remote/roaming/public/charging_away/travel; home: garage/local; skip: n/a/null/offline",
+        "_SKIP_VALUES jetzt aktiv genutzt in normalize_location — 'offline', 'n/a', 'null' → 'unknown'",
+        "JS normalizeLocation() in status.js+mobile.js erweitert — identisch mit Python-Implementierung",
+        "Tracker-Status: /api/status gibt 'tracker_status' zurück (stopped/provider_error/no_data/polling/charging/ready)",
+        "Dashboard: Status-Dot und Tile nutzen tracker_status-Map statt hardcodierter Bedingungen",
+        "SECRET_MASK nach core.security.SECRET_MASK verschoben — server.py und main_routes.py importieren von dort",
+        "smtp.py: _oauth_redirect_base aus routes.auth importiert (nicht mehr aus server); _SECRET_MASK aus core.security",
+        "connections.py: _entsoe_cache Invalidierung nutzt core.state.entsoe_cache statt import server as _srv",
+        "core/state.py: entsoe_cache als shared Dict exportiert — einzige Instanz im Prozess",
+        "email_reports.py: 'import server as _srv' → 'from server import _smtp_open as _srv_smtp_open'"
+      ]
+    },
     {
       "version": "2.0.29",
       "date": "2026-05-22",

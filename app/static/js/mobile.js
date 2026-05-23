@@ -14,8 +14,10 @@
 function normalizeLocation(val) {
   if (!val) return 'unknown';
   const v = String(val).trim().toLowerCase();
-  if (['home', 'zuhause', 'at_home', 'home_charging'].includes(v)) return 'home';
-  if (['extern', 'external', 'not_home', 'away', 'unterwegs', 'extern_charging'].includes(v)) return 'extern';
+  if (['unknown','unavailable','disabled','none','n/a','null','offline',''].includes(v)) return 'unknown';
+  if (['home','zuhause','at_home','home_charging','garage','local'].includes(v)) return 'home';
+  if (['extern','external','not_home','away','unterwegs','extern_charging',
+       'outside','remote','roaming','public','charging_away','travel'].includes(v)) return 'extern';
   return 'unknown';
 }
 

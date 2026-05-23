@@ -17,6 +17,8 @@ import secrets
 from datetime import datetime
 
 import flask
+
+SECRET_MASK = "********"
 from flask import g, jsonify, redirect, request, session, url_for
 
 from core.db import _get_db, close_db_if_owned
