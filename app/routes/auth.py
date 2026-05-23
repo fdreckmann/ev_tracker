@@ -393,6 +393,23 @@ def _webauthn_origin() -> str:
     return f"{scheme}://{request.host}"
 
 
+def _webauthn_credential_id_from_body(body: dict) -> str:
+    """Normalize credential ID from a WebAuthn response body to canonical base64url.
+
+    rawId (bytes as base64url) is preferred over id; both are round-tripped
+    through bytes so padding/variant differences (Bitwarden, Chrome, Safari)
+    don't cause lookup mismatches against the stored canonical form.
+    """
+    from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
+    raw = body.get("rawId") or body.get("id") or ""
+    if not raw:
+        return ""
+    try:
+        return bytes_to_base64url(base64url_to_bytes(raw))
+    except Exception:
+        return raw  # best-effort: return as-is
+
+
 # ── WebAuthn / Passkey routes ─────────────────────────────────────────────────
 
 @auth_bp.route("/api/auth/passkey/register/begin", methods=["POST"])
@@ -433,7 +450,7 @@ def api_passkey_register_begin():
             user_name=user["email"],
             user_display_name=user["name"],
             authenticator_selection=AuthenticatorSelectionCriteria(
-                resident_key=ResidentKeyRequirement.PREFERRED,
+                resident_key=ResidentKeyRequirement.REQUIRED,
                 user_verification=UserVerificationRequirement.PREFERRED,
             ),
             attestation=AttestationConveyancePreference.NONE,
@@ -478,6 +495,8 @@ def api_passkey_register_complete():
         # Always use server-verified credential_id as canonical storage key
         cred_id = bytes_to_base64url(verification.credential_id)
         pub_key = bytes_to_base64url(verification.credential_public_key)
+        log.info("Passkey registered: user=%s cred_len=%s cred_prefix=%s",
+                 user["email"], len(cred_id), cred_id[:12])
 
         con = _get_db()
         now = datetime.utcnow().isoformat()
@@ -529,7 +548,9 @@ def api_passkey_login_begin():
     body = request.get_json(silent=True) or {}
     email = body.get("email", "").strip().lower()
 
-    allow_creds = []
+    # allow_credentials=None → discoverable/resident credentials (Bitwarden, iCloud Keychain).
+    # Only restrict to known credential IDs when an email is provided and credentials exist.
+    allow_creds = None
     if email:
         user = _get_user_by_email(email)
         if user:
@@ -539,15 +560,19 @@ def api_passkey_login_begin():
                 (user["id"],)
             ).fetchall()
             close_db_if_owned(con)
-            from webauthn.helpers.structs import PublicKeyCredentialDescriptor
-            from webauthn.helpers import base64url_to_bytes
-            for row in rows:
-                try:
-                    allow_creds.append(PublicKeyCredentialDescriptor(
-                        id=base64url_to_bytes(row["credential_id"])
-                    ))
-                except Exception:
-                    pass
+            if rows:
+                from webauthn.helpers.structs import PublicKeyCredentialDescriptor
+                from webauthn.helpers import base64url_to_bytes
+                creds = []
+                for row in rows:
+                    try:
+                        creds.append(PublicKeyCredentialDescriptor(
+                            id=base64url_to_bytes(row["credential_id"])
+                        ))
+                    except Exception:
+                        pass
+                if creds:
+                    allow_creds = creds
 
     try:
         options = webauthn.generate_authentication_options(
@@ -579,15 +604,10 @@ def api_passkey_login_complete():
         from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
         expected_challenge = base64url_to_bytes(challenge_b64)
 
-        # Normalize credential ID to canonical base64url (same encoding used at registration).
-        # rawId is the authoritative bytes field; fall back to id. Both may have non-standard
-        # padding or encoding variants (Bitwarden, Chrome, Safari differ) — round-tripping
-        # through bytes ensures a match against the stored canonical form.
-        raw_id_str = body.get("rawId") or body.get("id", "")
-        try:
-            cred_id_b64 = bytes_to_base64url(base64url_to_bytes(raw_id_str))
-        except Exception:
-            cred_id_b64 = raw_id_str  # best-effort fallback
+        # Normalize to canonical base64url via the helper (rawId preferred over id).
+        cred_id_b64 = _webauthn_credential_id_from_body(body)
+        if not cred_id_b64:
+            return jsonify({"ok": False, "error": "Keine Credential-ID in der Antwort"}), 400
 
         con = _get_db()
         row = con.execute(
@@ -601,7 +621,13 @@ def api_passkey_login_complete():
 
         if not row:
             close_db_if_owned(con)
-            return jsonify({"ok": False, "error": "Passkey nicht registriert. Bitte mit Passwort einloggen und den Passkey unter Einstellungen → Sicherheit neu hinzufügen."}), 400
+            log.warning("Unknown passkey credential: len=%s prefix=%s",
+                        len(cred_id_b64), cred_id_b64[:12] if cred_id_b64 else "")
+            return jsonify({"ok": False, "error": (
+                "Dieser Passkey ist dem EV Tracker nicht bekannt. "
+                "Bitte alte EV-Tracker-Passkeys in Bitwarden löschen, "
+                "dich einmal mit Passwort anmelden und den Passkey neu hinzufügen."
+            )}), 400
 
         row = dict(row)
         if row.get("status") == "disabled":
