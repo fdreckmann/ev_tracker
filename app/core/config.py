@@ -260,6 +260,11 @@ VEHICLE_SPECIFIC_KEYS = {
     "home_lat","home_lon","home_radius_m","dc_threshold_kw",
     "ha_url","ha_token","charging_sensor","soc_sensor","odo_sensor",
     "power_sensor","charge_speed_sensor","charge_type_sensor","location_sensor","home_states",
+    # Location detection
+    "location_enabled","location_mode","location_source","home_detection_mode",
+    "location_ha_entities","location_history_enabled","location_history_precision",
+    "location_history_retention_days","location_status_manual",
+    # Provider credentials
     "vw_username","vw_password","vw_vin","vw_update_interval",
     "tesla_email","tesla_vin",
     "volvo_api_key","volvo_access_token","volvo_vin",

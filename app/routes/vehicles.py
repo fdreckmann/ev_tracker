@@ -155,7 +155,7 @@ def _detect_location_status(vid: str, cfg: dict, vehicle_state: dict) -> dict:
                 )
                 with _ur.urlopen(req, timeout=5) as resp:
                     data = _json.loads(resp.read())
-                state_val = data.get("state", "").lower()
+                state_val = data.get("state", "").lower().strip()
                 ha_loc = normalize_location(state_val)
                 if ha_loc == "home":
                     ha_home_count += 1
@@ -167,7 +167,7 @@ def _detect_location_status(vid: str, cfg: dict, vehicle_state: dict) -> dict:
                         result["latitude"]  = float(attrs["latitude"])
                         result["longitude"] = float(attrs["longitude"])
                         result["accuracy_m"] = attrs.get("gps_accuracy")
-                elif ha_loc == "extern":
+                elif ha_loc == "extern" or state_val not in ("", "unknown", "unavailable", "none"):
                     ha_ext_count += 1
                     sources_extern.append(f"ha:{entity_id}")
             except Exception as _ha_e:
@@ -250,13 +250,19 @@ def api_update_vehicle(vid):
     from services.vehicle_service import get_vehicle_tracker_funcs
     _start_vehicle_tracker, _stop_vehicle_tracker = get_vehicle_tracker_funcs()
     _MASK = "********"
+    _LOCATION_KEYS = {
+        "location_enabled","location_mode","location_source","home_detection_mode",
+        "location_ha_entities","location_history_enabled","location_history_precision",
+        "location_history_retention_days","location_status_manual",
+    }
     if vid == "v0":
         data = request.get_json(silent=True) or {}
         cfg  = load_config()
         for k, val in data.items():
             if k in VEHICLE_SPECIFIC_KEYS or k == "car_name":
-                if val in ("", _MASK):
-                    continue  # never overwrite stored secret with empty/mask
+                # Location fields: False, [], "disabled" are valid — only skip mask/empty string
+                if k not in _LOCATION_KEYS and val in ("", _MASK):
+                    continue
                 cfg[k] = val
         save_config(cfg)
         return jsonify({"ok": True})
@@ -328,14 +334,21 @@ def api_vehicle_location(vid):
     st   = _vehicle_states.get(vid, {})
     loc  = _detect_location_status(vid, vcfg, st)
     has_exact = has_permission(_current_user(), "vehicles:location_exact_view")
+    ha_entities = vcfg.get("location_ha_entities") or []
     resp = {
         "ok": True, "vehicle_id": vid,
         "status": loc["status"], "source": loc["source"],
         "source_detail": loc["source_detail"],
         "last_update": st.get("location_timestamp"),
         "has_exact_location": bool(loc.get("latitude")),
+        # Debug fields
         "location_enabled": vcfg.get("location_enabled", False),
         "location_mode": vcfg.get("location_mode", "home_external"),
+        "home_detection_mode": vcfg.get("home_detection_mode", "any"),
+        "ha_entities_count": len(ha_entities),
+        "ha_entities_configured": [e for e in ha_entities if e],
+        "tracker_location": st.get("location"),
+        "tracker_location_status": st.get("location_status"),
     }
     if has_exact and loc.get("latitude") is not None:
         resp["latitude"]   = loc["latitude"]
@@ -393,6 +406,18 @@ def api_vehicle_location_test(vid):
     vcfg = cfg if vid == "v0" else build_vehicle_config(
         next((v for v in cfg.get("extra_vehicles",[]) if v["id"]==vid), {}), cfg)
     st   = _vehicle_states.get(vid, {})
+
+    # Early diagnostics before running detection
+    if not vcfg.get("location_enabled"):
+        return jsonify({"ok": False, "status": "disabled",
+                        "error": "Standortanzeige ist deaktiviert. Bitte aktivieren und speichern."})
+    ha_entities = [e for e in (vcfg.get("location_ha_entities") or []) if e]
+    provider_has_loc = (st.get("location_lat") is not None
+                        or vcfg.get("location_sensor","").strip())
+    if not ha_entities and not provider_has_loc:
+        return jsonify({"ok": False, "status": "unknown",
+                        "error": "Keine Standortquelle konfiguriert. Bitte HA-Entities oder Standort-Sensor eintragen."})
+
     try:
         loc = _detect_location_status(vid, vcfg, st)
     except Exception as e:
@@ -400,7 +425,10 @@ def api_vehicle_location_test(vid):
     _audit("vehicle_location_tested", f"vehicle_id={vid} status={loc['status']}", ip=request.remote_addr)
     has_exact = has_permission(_current_user(), "vehicles:location_exact_view")
     resp = {"ok": True, "status": loc["status"], "source": loc["source"],
-            "source_detail": loc["source_detail"]}
+            "source_detail": loc["source_detail"],
+            "location_enabled": vcfg.get("location_enabled", False),
+            "home_detection_mode": vcfg.get("home_detection_mode", "any"),
+            "ha_entities_configured": ha_entities}
     if has_exact and loc.get("latitude") is not None:
         resp["latitude"]  = loc["latitude"]
         resp["longitude"] = loc["longitude"]
