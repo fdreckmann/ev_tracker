@@ -423,6 +423,14 @@ def api_vehicle_location_test(vid):
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
     _audit("vehicle_location_tested", f"vehicle_id={vid} status={loc['status']}", ip=request.remote_addr)
+
+    # Update vehicle_states immediately so the dashboard reflects the result without
+    # waiting for the next tracker poll (which can be up to poll_interval seconds away).
+    with _vehicle_states_lock:
+        st_live = _vehicle_states.setdefault(vid, {})
+        st_live["location_status"] = loc["status"]
+        st_live["location_source"] = loc["source"]
+
     has_exact = has_permission(_current_user(), "vehicles:location_exact_view")
     resp = {"ok": True, "status": loc["status"], "source": loc["source"],
             "source_detail": loc["source_detail"],
