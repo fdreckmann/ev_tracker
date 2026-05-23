@@ -37,76 +37,86 @@ function _setVehicleModalButtons(isEdit) {
 }
 
 async function openAddVehicleModal() {
-  _editingVehicleId = null;
-  $('vehicleModalTitle').textContent = 'Fahrzeug hinzufügen';
-  $('vm_name').value = '';
-  $('vm_battery').value = '77.0';
-  $('vm_poll').value = '60';
-  $('vm_home_lat').value = '';
-  $('vm_home_lon').value = '';
-  $('vm_provider').selectedIndex = 0;
-  $('vm_info').textContent = '';
-  _setVehicleModalButtons(false);
-  // Reset location fields
-  var locEnabled = $('vm_loc_enabled');
-  if (locEnabled) locEnabled.checked = false;
-  var locMode = $('vm_loc_mode');
-  if (locMode) locMode.value = 'home_external';
-  var locSource = $('vm_loc_source');
-  if (locSource) locSource.value = 'combined';
-  var locDetect = $('vm_loc_detect_mode');
-  if (locDetect) locDetect.value = 'any';
-  var locRadius = $('vm_loc_radius');
-  if (locRadius) locRadius.value = '150';
-  var locEntities = $('vm_loc_ha_entities');
-  if (locEntities) locEntities.value = '';
-  var locHistory = $('vm_loc_history_enabled');
-  if (locHistory) locHistory.checked = false;
-  // Hide image section for new vehicles
-  var imgSection = $('vmImageSection');
-  if (imgSection) imgSection.style.display = 'none';
-  await loadVehicleModalFields();
-  $('vehicleModal').style.display = 'flex';
+  try {
+    _editingVehicleId = null;
+    $('vehicleModalTitle').textContent = 'Fahrzeug hinzufügen';
+    $('vm_name').value = '';
+    $('vm_battery').value = '77.0';
+    $('vm_poll').value = '60';
+    $('vm_home_lat').value = '';
+    $('vm_home_lon').value = '';
+    $('vm_provider').selectedIndex = 0;
+    $('vm_info').textContent = '';
+    _setVehicleModalButtons(false);
+    // Reset location fields
+    var locEnabled = $('vm_loc_enabled');
+    if (locEnabled) locEnabled.checked = false;
+    var locMode = $('vm_loc_mode');
+    if (locMode) locMode.value = 'home_external';
+    var locSource = $('vm_loc_source');
+    if (locSource) locSource.value = 'combined';
+    var locDetect = $('vm_loc_detect_mode');
+    if (locDetect) locDetect.value = 'any';
+    var locRadius = $('vm_loc_radius');
+    if (locRadius) locRadius.value = '150';
+    var locEntities = $('vm_loc_ha_entities');
+    if (locEntities) locEntities.value = '';
+    var locHistory = $('vm_loc_history_enabled');
+    if (locHistory) locHistory.checked = false;
+    // Hide image section for new vehicles (no vehicle_id yet)
+    var imgSection = $('vmImageSection');
+    if (imgSection) imgSection.style.display = 'none';
+    await loadVehicleModalFields();
+    $('vehicleModal').style.display = 'flex';
+  } catch(e) {
+    console.error('openAddVehicleModal failed', e);
+    toast('Fahrzeugdialog konnte nicht geöffnet werden: ' + e.message, 'err');
+  }
 }
 
 async function openEditVehicleModal(vid) {
-  _editingVehicleId = vid;
-  var vehicles = await fetch('/api/vehicles').then(function(r){return r.json();});
-  var v = vehicles.find(function(x){return x.id===vid;});
-  if(!v) return;
-  $('vehicleModalTitle').textContent = 'Fahrzeug bearbeiten';
-  $('vm_name').value = v.name||'';
-  $('vm_battery').value = v.battery_capacity_kwh||'77.0';
-  $('vm_poll').value = v.poll_interval||'60';
-  $('vm_home_lat').value = v.home_lat||'';
-  $('vm_home_lon').value = v.home_lon||'';
-  var sel = $('vm_provider');
-  for(var i=0;i<sel.options.length;i++){
-    if(sel.options[i].value===v.provider){ sel.selectedIndex=i; break; }
+  try {
+    _editingVehicleId = vid;
+    var vehicles = await fetch('/api/vehicles').then(function(r){return r.json();});
+    var v = vehicles.find(function(x){return x.id===vid;});
+    if(!v) { toast('Fahrzeug nicht gefunden','err'); return; }
+    $('vehicleModalTitle').textContent = 'Fahrzeug bearbeiten';
+    $('vm_name').value = v.name||'';
+    $('vm_battery').value = v.battery_capacity_kwh||'77.0';
+    $('vm_poll').value = v.poll_interval||'60';
+    $('vm_home_lat').value = v.home_lat||'';
+    $('vm_home_lon').value = v.home_lon||'';
+    var sel = $('vm_provider');
+    for(var i=0;i<sel.options.length;i++){
+      if(sel.options[i].value===v.provider){ sel.selectedIndex=i; break; }
+    }
+    $('vm_info').textContent = '';
+    _setVehicleModalButtons(true);
+    // Location fields
+    var locEnabled = $('vm_loc_enabled');
+    if (locEnabled) locEnabled.checked = !!v.location_enabled;
+    var locMode = $('vm_loc_mode');
+    if (locMode) locMode.value = v.location_mode || 'home_external';
+    var locSource = $('vm_loc_source');
+    if (locSource) locSource.value = v.location_source || 'combined';
+    var locDetect = $('vm_loc_detect_mode');
+    if (locDetect) locDetect.value = v.home_detection_mode || 'any';
+    var locRadius = $('vm_loc_radius');
+    if (locRadius) locRadius.value = v.home_radius_m || '150';
+    var locEntities = $('vm_loc_ha_entities');
+    if (locEntities) locEntities.value = (v.location_ha_entities||[]).join('\n');
+    var locHistory = $('vm_loc_history_enabled');
+    if (locHistory) locHistory.checked = !!v.location_history_enabled;
+    // Show image section for existing vehicles
+    var imgSection = $('vmImageSection');
+    if (imgSection) imgSection.style.display = '';
+    await loadVehicleModalFields(v);
+    await refreshVehicleModalImage();
+    $('vehicleModal').style.display = 'flex';
+  } catch(e) {
+    console.error('openEditVehicleModal failed', e);
+    toast('Fahrzeugdialog konnte nicht geöffnet werden: ' + e.message, 'err');
   }
-  $('vm_info').textContent = '';
-  _setVehicleModalButtons(true);
-  // Location fields
-  var locEnabled = $('vm_loc_enabled');
-  if (locEnabled) locEnabled.checked = !!v.location_enabled;
-  var locMode = $('vm_loc_mode');
-  if (locMode) locMode.value = v.location_mode || 'home_external';
-  var locSource = $('vm_loc_source');
-  if (locSource) locSource.value = v.location_source || 'combined';
-  var locDetect = $('vm_loc_detect_mode');
-  if (locDetect) locDetect.value = v.home_detection_mode || 'any';
-  var locRadius = $('vm_loc_radius');
-  if (locRadius) locRadius.value = v.home_radius_m || '150';
-  var locEntities = $('vm_loc_ha_entities');
-  if (locEntities) locEntities.value = (v.location_ha_entities||[]).join('\n');
-  var locHistory = $('vm_loc_history_enabled');
-  if (locHistory) locHistory.checked = !!v.location_history_enabled;
-  // Show image section for existing vehicles
-  var imgSection = $('vmImageSection');
-  if (imgSection) imgSection.style.display = '';
-  await loadVehicleModalFields(v);
-  await refreshVehicleModalImage();
-  $('vehicleModal').style.display = 'flex';
 }
 
 async function loadVehicleModalFields(existingVehicle) {
@@ -181,9 +191,14 @@ async function archiveVehicleModal() {
     closeVehicleModal();
     toast('Fahrzeug archiviert','ok');
     loadVehicleList();
+    if(typeof refreshMobileDashboard === 'function') refreshMobileDashboard();
   } else {
     $('vm_info').innerHTML = '<span style="color:var(--danger)">❌ '+(r.error||'Fehler')+'</span>';
   }
+}
+
+function deleteVehicleModal() {
+  return archiveVehicleModal();
 }
 
 // ── Vehicle Image Functions ──────────────────────────────────────────────────
