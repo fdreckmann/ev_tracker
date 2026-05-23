@@ -495,8 +495,10 @@ def api_passkey_register_complete():
         # Always use server-verified credential_id as canonical storage key
         cred_id = bytes_to_base64url(verification.credential_id)
         pub_key = bytes_to_base64url(verification.credential_public_key)
-        log.info("Passkey registered: user=%s cred_len=%s cred_prefix=%s",
-                 user["email"], len(cred_id), cred_id[:12])
+        rp_id   = _webauthn_rp_id()
+        origin  = _webauthn_origin()
+        log.info("Passkey registered: user=%s rp_id=%s origin=%s cred_len=%s cred_prefix=%s",
+                 user["email"], rp_id, origin, len(cred_id), cred_id[:12])
 
         con = _get_db()
         now = datetime.utcnow().isoformat()
@@ -538,6 +540,41 @@ def api_passkey_credential_delete(cred_db_id):
     con.commit(); close_db_if_owned(con)
     _audit("passkey_deleted", f"cred_id={cred_db_id}", ip=request.remote_addr)
     return jsonify({"ok": True})
+
+
+@auth_bp.route("/api/auth/passkey/webauthn-config")
+@require_login
+def api_passkey_webauthn_config():
+    """Admin-only debug endpoint: shows WebAuthn RP-ID, Origin, and proxy headers.
+    Helps diagnose domain/origin mismatches when Passkeys don't work behind a reverse proxy.
+    """
+    user = _current_user()
+    if not has_permission(user, "admin:all"):
+        return jsonify({"ok": False, "error": "Admin-Berechtigung erforderlich"}), 403
+    cfg = load_config()
+    base_url = cfg.get("oauth_base_url", "").rstrip("/")
+    rp_id    = _webauthn_rp_id()
+    origin   = _webauthn_origin()
+    x_proto  = request.headers.get("X-Forwarded-Proto", "")
+    x_host   = request.headers.get("X-Forwarded-Host", "")
+    x_for    = request.headers.get("X-Forwarded-For", "")
+    return jsonify({
+        "ok": True,
+        "webauthn_rp_id":         rp_id,
+        "webauthn_origin":        origin,
+        "oauth_base_url":         base_url or "(nicht gesetzt)",
+        "request_host":           request.host,
+        "request_scheme":         request.scheme,
+        "x_forwarded_proto":      x_proto or "(nicht vorhanden)",
+        "x_forwarded_host":       x_host  or "(nicht vorhanden)",
+        "x_forwarded_for":        x_for   or "(nicht vorhanden)",
+        "reverse_proxy_mode":     bool(base_url or x_proto),
+        "hint": (
+            "rp_id und origin müssen exakt der externen HTTPS-Domain entsprechen, "
+            "unter der Bitwarden/Browser den Passkey gespeichert hat. "
+            "Falls oauth_base_url nicht gesetzt ist, wird request.host + X-Forwarded-Proto verwendet."
+        ),
+    })
 
 
 @auth_bp.route("/api/auth/passkey/login/begin", methods=["POST"])
@@ -609,6 +646,11 @@ def api_passkey_login_complete():
         if not cred_id_b64:
             return jsonify({"ok": False, "error": "Keine Credential-ID in der Antwort"}), 400
 
+        rp_id  = _webauthn_rp_id()
+        origin = _webauthn_origin()
+        log.info("Passkey login attempt: cred_len=%s cred_prefix=%s rp_id=%s origin=%s",
+                 len(cred_id_b64), cred_id_b64[:12], rp_id, origin)
+
         con = _get_db()
         row = con.execute(
             """SELECT wc.id as cred_id, wc.credential_id, wc.public_key, wc.sign_count, wc.name as cred_name,
@@ -621,10 +663,12 @@ def api_passkey_login_complete():
 
         if not row:
             close_db_if_owned(con)
-            log.warning("Unknown passkey credential: len=%s prefix=%s",
-                        len(cred_id_b64), cred_id_b64[:12] if cred_id_b64 else "")
+            log.warning("Passkey login: no DB match — cred_len=%s cred_prefix=%s rp_id=%s origin=%s",
+                        len(cred_id_b64), cred_id_b64[:12] if cred_id_b64 else "", rp_id, origin)
             return jsonify({"ok": False, "error": (
-                "Dieser Passkey ist dem EV Tracker nicht bekannt. "
+                "Dieser Passkey wurde vom Browser gesendet, ist dem EV Tracker jedoch nicht bekannt. "
+                "Mögliche Ursachen: Passkey wurde unter einer anderen Domain/RP-ID registriert, "
+                "oder Bitwarden hat ihn für eine andere URL gespeichert. "
                 "Bitte alte EV-Tracker-Passkeys in Bitwarden löschen, "
                 "dich einmal mit Passwort anmelden und den Passkey neu hinzufügen."
             )}), 400
@@ -655,6 +699,7 @@ def api_passkey_login_complete():
         )
         con.commit(); close_db_if_owned(con)
 
+        log.info("Passkey login success: user=%s cred_prefix=%s", row["email"], cred_id_b64[:12])
         session["user_id"]    = row["user_id"]
         session["user_email"] = row["email"]
         session["user_role"]  = row["role"]

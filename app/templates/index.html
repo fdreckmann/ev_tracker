@@ -1838,10 +1838,16 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           <div id="passkeyList" style="margin-bottom:12px">
             <div style="font-size:.73rem;font-family:var(--mono);color:var(--mute)">Lade…</div>
           </div>
-          <button class="btn-s" onclick="registerPasskey()" style="font-size:.78rem">
-            ➕ Passkey hinzufügen
-          </button>
-          <span id="passkeyMsg" style="font-size:.73rem;font-family:var(--mono);color:var(--acc);margin-left:10px"></span>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <button class="btn-s" onclick="registerPasskey()" style="font-size:.78rem">
+              ➕ Passkey hinzufügen
+            </button>
+            <button class="btn-s" onclick="showWebAuthnConfig()" style="font-size:.72rem;background:rgba(255,255,255,.04);border-color:var(--brd);color:var(--mute)" title="WebAuthn RP-ID & Origin prüfen">
+              🔍 Domain-Konfig
+            </button>
+          </div>
+          <span id="passkeyMsg" style="font-size:.73rem;font-family:var(--mono);color:var(--acc);display:block;margin-top:8px"></span>
+          <div id="webauthnConfigInfo" style="display:none;margin-top:10px;padding:10px 14px;background:rgba(0,180,255,.06);border:1px solid rgba(0,180,255,.2);border-radius:8px;font-size:.7rem;font-family:var(--mono);color:var(--mute)"></div>
         </div>
       </div>
 
@@ -4528,6 +4534,7 @@ async function registerPasskey(){
   const name = prompt('Name für diesen Passkey (z.B. "MacBook Touch ID"):') || 'Passkey';
   if(!name) return;
   const msg = $('passkeyMsg');
+  msg.style.color = 'var(--acc)';
   msg.textContent = '⏳ Warte auf Authenticator…';
   try {
     // Step 1: get options
@@ -4544,6 +4551,11 @@ async function registerPasskey(){
     // Step 2: browser creates credential
     const credential = await navigator.credentials.create({publicKey: opts});
 
+    // Validate that the browser returned a usable credential
+    if(!credential || !credential.id || !credential.rawId){
+      throw new Error('Browser hat keinen Passkey zurückgegeben. Bitte erneut versuchen.');
+    }
+
     // Step 3: send to server
     const credJson = {
       name,
@@ -4559,12 +4571,23 @@ async function registerPasskey(){
       method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(credJson)
     }).then(r=>r.json());
 
-    if(res.ok){ msg.textContent='✅ '+res.message; await loadPasskeys(); }
-    else throw new Error(res.error);
+    if(!res.ok) throw new Error(res.error);
+
+    // Step 4: confirm the passkey actually landed in the DB
+    await loadPasskeys();
+    const verify = await apiFetch('/api/auth/passkey/credentials').then(r=>r.json());
+    const saved = verify.ok && verify.credentials && verify.credentials.length > 0;
+    if(saved){
+      msg.textContent = '✅ Passkey in EV Tracker gespeichert. Bitte prüfen, ob Bitwarden ihn für diese Domain gespeichert hat.';
+    } else {
+      msg.style.color = 'var(--danger)';
+      msg.textContent = '⚠ Server meldete Erfolg, aber Passkey nicht in Datenbank sichtbar. Bitte erneut versuchen.';
+    }
+    setTimeout(()=>{ msg.textContent=''; msg.style.color='var(--acc)'; }, 8000);
   } catch(e){
     msg.style.color='var(--danger)';
     msg.textContent = e.name==='NotAllowedError' ? '⚠ Abgebrochen' : '❌ '+e.message;
-    setTimeout(()=>{ msg.textContent=''; msg.style.color='var(--acc)'; }, 4000);
+    setTimeout(()=>{ msg.textContent=''; msg.style.color='var(--acc)'; }, 6000);
   }
 }
 
@@ -4573,6 +4596,27 @@ async function deletePasskey(id){
   const r = await apiFetch(`/api/auth/passkey/credentials/${id}`, {method:'DELETE'}).then(r=>r.json());
   if(r.ok){ toast('Passkey entfernt'); await loadPasskeys(); }
   else toast('Fehler: '+r.error,'err');
+}
+
+async function showWebAuthnConfig(){
+  const box = $('webauthnConfigInfo');
+  if(!box) return;
+  if(box.style.display !== 'none'){ box.style.display='none'; return; }
+  try {
+    const r = await apiFetch('/api/auth/passkey/webauthn-config').then(x=>x.json());
+    if(!r.ok){ box.textContent = r.error; box.style.display=''; return; }
+    box.innerHTML = [
+      `<b>RP-ID:</b> ${r.webauthn_rp_id}`,
+      `<b>Origin:</b> ${r.webauthn_origin}`,
+      `<b>oauth_base_url:</b> ${r.oauth_base_url}`,
+      `<b>request.host:</b> ${r.request_host}`,
+      `<b>X-Forwarded-Proto:</b> ${r.x_forwarded_proto}`,
+      `<b>X-Forwarded-Host:</b> ${r.x_forwarded_host}`,
+      `<b>Reverse-Proxy-Modus:</b> ${r.reverse_proxy_mode ? 'Ja' : 'Nein'}`,
+      `<span style="color:var(--acc)">${r.hint}</span>`,
+    ].join('<br>');
+    box.style.display = '';
+  } catch(e){ box.textContent = e.message; box.style.display=''; }
 }
 
 // base64url helpers for passkey operations
