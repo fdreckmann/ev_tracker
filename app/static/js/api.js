@@ -51,6 +51,15 @@ function apiFetch(url, opts) {
   return fetch(url, opts);
 }
 
+async function apiJson(url, opts) {
+  const res = await apiFetch(url, opts);
+  const data = await res.json().catch(function() { return {}; });
+  if (!res.ok) {
+    throw new Error(data.error || data.message || ('HTTP ' + res.status));
+  }
+  return data;
+}
+
 // ── Location normalization ────────────────────────────────────────────────────
 // Single source of truth — used by status.js, mobile.js, vehicles.js.
 function normalizeLocation(val) {

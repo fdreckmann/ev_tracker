@@ -249,15 +249,27 @@ def api_update_vehicle(vid):
         return jsonify({"ok": False, "error": "Keine Berechtigung: vehicles:edit"}), 403
     from services.vehicle_service import get_vehicle_tracker_funcs
     _start_vehicle_tracker, _stop_vehicle_tracker = get_vehicle_tracker_funcs()
+    _MASK = "********"
     if vid == "v0":
-        data = request.json or {}
+        data = request.get_json(silent=True) or {}
         cfg  = load_config()
         for k, val in data.items():
             if k in VEHICLE_SPECIFIC_KEYS or k == "car_name":
+                if val in ("", _MASK):
+                    continue  # never overwrite stored secret with empty/mask
                 cfg[k] = val
         save_config(cfg)
         return jsonify({"ok": True})
-    data   = request.json or {}
+    data   = request.get_json(silent=True) or {}
+    # Strip empty/masked password fields so stored secrets survive
+    from providers import get_config_fields
+    try:
+        provider_id = data.get("provider") or "ha"
+        pw_keys = {f["id"] for f in get_config_fields(provider_id) if f.get("type") == "password"}
+    except Exception:
+        pw_keys = set()
+    data = {k: v for k, v in data.items()
+            if not (k in pw_keys and v in ("", _MASK))}
     cfg    = load_config()
     extras = list(cfg.get("extra_vehicles", []))
     for i, v in enumerate(extras):
@@ -283,6 +295,8 @@ def api_vehicle_delete_check(vid):
         return jsonify({"ok": False, "error": "Ungültige Fahrzeug-ID"}), 400
     if vid == "v0":
         return jsonify({"ok": False, "error": "Primärfahrzeug kann nicht gelöscht werden"}), 400
+    if not _vehicle_exists(vid):
+        return jsonify({"ok": False, "error": "Fahrzeug nicht gefunden"}), 404
     con = _get_db()
     sess_count    = con.execute("SELECT COUNT(*) FROM sessions WHERE vehicle_id=?", (vid,)).fetchone()[0]
     rep_count     = con.execute("SELECT COUNT(*) FROM reports  WHERE vehicle_id=?", (vid,)).fetchone()[0]
@@ -305,6 +319,8 @@ def api_vehicle_location(vid):
         return jsonify({"error": "Keine Berechtigung: vehicles:location_view"}), 403
     if not _validate_vehicle_id(vid):
         return jsonify({"error": "Ungültige Fahrzeug-ID"}), 400
+    if not _vehicle_exists(vid):
+        return jsonify({"error": "Fahrzeug nicht gefunden"}), 404
     from services.vehicle_service import build_vehicle_config
     cfg  = load_config()
     vcfg = cfg if vid == "v0" else build_vehicle_config(
@@ -370,6 +386,8 @@ def api_vehicle_location_test(vid):
         return jsonify({"ok": False, "error": "Keine Berechtigung: vehicles:location_configure"}), 403
     if not _validate_vehicle_id(vid):
         return jsonify({"ok": False, "error": "Ungültige Fahrzeug-ID"}), 400
+    if not _vehicle_exists(vid):
+        return jsonify({"ok": False, "error": "Fahrzeug nicht gefunden"}), 404
     from services.vehicle_service import build_vehicle_config
     cfg  = load_config()
     vcfg = cfg if vid == "v0" else build_vehicle_config(
@@ -396,6 +414,8 @@ def api_vehicle_location_history(vid):
         return jsonify({"error": "Keine Berechtigung: vehicles:location_history_view"}), 403
     if not _validate_vehicle_id(vid):
         return jsonify({"error": "Ungültige Fahrzeug-ID"}), 400
+    if not _vehicle_exists(vid):
+        return jsonify({"error": "Fahrzeug nicht gefunden"}), 404
     try: limit = min(int(request.args.get("limit", 100)), 500)
     except (ValueError, TypeError): limit = 100
     con = _get_db()

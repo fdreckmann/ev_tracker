@@ -94,7 +94,11 @@ async function testConn() {
   const res = $('connRes');
   res.className = 'conn-res'; res.style.display = 'block'; res.textContent = '⏳ Teste Verbindung…';
   const body = { provider: $('c_provider')?.value || 'ha' };
-  document.querySelectorAll('[id^="pf_"]').forEach(el => { body[el.id.replace('pf_', '')] = el.value; });
+  document.querySelectorAll('[id^="pf_"]').forEach(el => {
+    const key = el.id.replace('pf_', '');
+    if (el.type === 'checkbox') body[key] = el.checked;
+    else body[key] = el.value;
+  });
   const saved = await fetch('/api/config').then(r => r.json()).catch(() => ({}));
   document.querySelectorAll('[id^="pf_"]').forEach(el => {
     const key = el.id.replace('pf_', '');

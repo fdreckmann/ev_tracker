@@ -106,6 +106,16 @@ def _detect_body_type(text: str) -> str:
     return "silhouette_suv"
 
 
+_VID_RE = __import__("re").compile(r'^[a-zA-Z0-9_-]{1,64}$')
+
+
+def _safe_vid(vid: str) -> str | None:
+    """Return vid if safe, else None."""
+    if not vid or not _VID_RE.match(vid) or ".." in vid or "/" in vid:
+        return None
+    return vid
+
+
 def resolve_vehicle_image_url(vehicle: dict) -> str:
     """
     Return the URL that best represents this vehicle's image.
@@ -114,11 +124,12 @@ def resolve_vehicle_image_url(vehicle: dict) -> str:
     from pathlib import Path as _Path
     from core.db import DATA_DIR
 
-    vid = vehicle.get("id", "v0")
+    raw_vid = vehicle.get("id", "v0")
+    vid = _safe_vid(str(raw_vid)) if raw_vid else None
 
-    # 1. Uploaded image
-    img_path = DATA_DIR / "vehicles" / vid / "car.webp"
-    if img_path.exists():
+    # 1. Uploaded image (only if vid is safe)
+    img_path = DATA_DIR / "vehicles" / vid / "car.webp" if vid else None
+    if img_path and img_path.exists():
         return f"/api/vehicles/{vid}/image/file"
 
     # 2. Saved default image key (v0 uses a prefixed config key name)
