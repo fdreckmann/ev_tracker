@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 95" width="220" height="95">
+  <!-- Background -->
+  <rect width="220" height="95" fill="#16182a" rx="6"/>
+  <!-- Ground shadows -->
+  <ellipse cx="52" cy="88" rx="22" ry="4" fill="#0d0e18"/>
+  <ellipse cx="164" cy="88" rx="22" ry="4" fill="#0d0e18"/>
+  <!-- Main body: tall boxy rectangle (van profile) -->
+  <rect x="20" y="18" width="182" height="58" fill="#2d3350" rx="4"/>
+  <!-- Flat roof (slightly raised trim line) -->
+  <rect x="20" y="14" width="182" height="6" fill="#353860" rx="2"/>
+  <!-- Front face: cab-over style, short angled nose -->
+  <polygon points="14,26 20,18 20,76 14,76 12,52" fill="#252740"/>
+  <!-- Front windshield (upright, large) -->
+  <rect x="22" y="20" width="38" height="30" fill="#3a4a6e" opacity="0.85" rx="2"/>
+  <!-- Front headlights -->
+  <rect x="13" y="48" width="8" height="7" fill="#8899cc" rx="1" opacity="0.9"/>
+  <!-- Front DRL -->
+  <rect x="13" y="44" width="10" height="2.5" fill="#aabbdd" rx="1" opacity="0.6"/>
+  <!-- Front lower bumper / step -->
+  <rect x="14" y="74" width="8" height="4" fill="#3a3c58" rx="1"/>
+  <!-- Rear panel (vertical) -->
+  <rect x="198" y="18" width="8" height="58" fill="#252740" rx="2"/>
+  <!-- Rear lights (tall) -->
+  <rect x="195" y="22" width="4" height="16" fill="#9b2020" rx="1"/>
+  <!-- Rear step/bumper -->
+  <rect x="196" y="74" width="8" height="4" fill="#3a3c58" rx="1"/>
+  <!-- Sliding door seam (vertical line on body side) -->
+  <line x1="128" y1="19" x2="128" y2="74" stroke="#1e2038" stroke-width="2.5"/>
+  <!-- Sliding door handle -->
+  <rect x="118" y="46" width="8" height="3" fill="#3a3c58" rx="1"/>
+  <!-- Front side window -->
+  <rect x="64" y="22" width="52" height="26" fill="#3a4a6e" opacity="0.8" rx="2"/>
+  <!-- Rear side window -->
+  <rect x="134" y="22" width="52" height="26" fill="#3a4a6e" opacity="0.8" rx="2"/>
+  <!-- Roof rack / rails (distinctive van feature) -->
+  <rect x="20" y="13" width="182" height="2" fill="#3a3c58" rx="1"/>
+  <!-- Rear wheel arch -->
+  <circle cx="52" cy="76" r="18" fill="#16182a"/>
+  <!-- Front wheel arch -->
+  <circle cx="164" cy="76" r="18" fill="#16182a"/>
+  <!-- Rear wheel (van, larger) -->
+  <circle cx="52" cy="76" r="15" fill="#1a1c2e"/>
+  <circle cx="52" cy="76" r="10" fill="#252842"/>
+  <circle cx="52" cy="76" r="7" fill="#3d4060"/>
+  <circle cx="52" cy="76" r="3" fill="#555"/>
+  <!-- Front wheel (van, larger) -->
+  <circle cx="164" cy="76" r="15" fill="#1a1c2e"/>
+  <circle cx="164" cy="76" r="10" fill="#252842"/>
+  <circle cx="164" cy="76" r="7" fill="#3d4060"/>
+  <circle cx="164" cy="76" r="3" fill="#555"/>
+</svg>

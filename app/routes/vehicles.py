@@ -596,3 +596,71 @@ def api_vehicle_image_delete(vid):
         _audit("vehicle_image_deleted", f"vehicle_id={vid}", ip=request.remote_addr)
     _update_vehicle_image_meta(vid, mode="none", path="")
     return jsonify({"ok": True})
+
+
+# ── Vehicle Image Suggestion / Manifest ────────────────────────────────────────
+
+@vehicles_bp.route("/api/vehicles/<vid>/image/suggest")
+@require_login
+def api_vehicle_image_suggest(vid):
+    """Return the best auto-suggested image key for a vehicle."""
+    if not has_permission(_current_user(), "vehicles:view"):
+        return jsonify({"error": "Keine Berechtigung: vehicles:view"}), 403
+    if not _vehicle_exists(vid):
+        return jsonify({"error": "Fahrzeug nicht gefunden"}), 404
+    from services.vehicle_service import get_all_vehicles
+    cfg = load_config()
+    vehicles = get_all_vehicles(cfg=cfg, include_archived=True)
+    vehicle = next((v for v in vehicles if v.get("id") == vid), None)
+    if vehicle is None:
+        return jsonify({"error": "Fahrzeug nicht gefunden"}), 404
+    # v0 stores image key under a different config name
+    saved_key = (cfg.get("vehicle_default_image_key", "")
+                 if vid == "v0" else vehicle.get("default_image_key", ""))
+    from services.vehicle_image_service import suggest_vehicle_image_key, resolve_vehicle_image_url
+    key = suggest_vehicle_image_key(
+        brand=vehicle.get("brand", ""),
+        model=vehicle.get("model", ""),
+        name=vehicle.get("name", ""),
+    )
+    return jsonify({
+        "ok": True,
+        "vehicle_id": vid,
+        "suggested_key": key,
+        "suggested_url": f"/static/vehicle_images/{key}.svg" if key else "/static/vehicle_images/placeholder_car.svg",
+        "resolved_url": resolve_vehicle_image_url(vehicle),
+        "saved_key": saved_key,
+    })
+
+
+@vehicles_bp.route("/api/vehicle-images/manifest")
+@require_login
+def api_vehicle_images_manifest():
+    """Return the local vehicle images manifest."""
+    if not has_permission(_current_user(), "vehicles:view"):
+        return jsonify({"error": "Keine Berechtigung: vehicles:view"}), 403
+    from services.vehicle_image_service import get_manifest
+    return jsonify(get_manifest())
+
+
+@vehicles_bp.route("/api/vehicles/<vid>/image/default-key", methods=["POST"])
+@require_login
+def api_vehicle_image_set_default_key(vid):
+    """Save a chosen silhouette key as the vehicle's default image."""
+    if not has_permission(_current_user(), "vehicles:image_manage"):
+        return jsonify({"error": "Keine Berechtigung: vehicles:image_manage"}), 403
+    if not _vehicle_exists(vid):
+        return jsonify({"error": "Fahrzeug nicht gefunden"}), 404
+    key = (request.json or {}).get("key", "")
+    # Validate key is in manifest (or empty to clear)
+    if key:
+        from services.vehicle_image_service import get_manifest
+        manifest = get_manifest()
+        valid_keys = {s["key"] for s in manifest.get("silhouettes", [])}
+        if key not in valid_keys:
+            return jsonify({"error": f"Unbekannter Bildschlüssel: {key}"}), 400
+    _update_vehicle_image_meta(vid, mode="default_key" if key else "none",
+                               path=f"/static/vehicle_images/{key}.svg" if key else "",
+                               source="local", default_image_key=key)
+    _audit("vehicle_image_key_set", f"vehicle_id={vid} key={key}", ip=request.remote_addr)
+    return jsonify({"ok": True, "key": key})

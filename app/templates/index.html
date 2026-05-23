@@ -2397,18 +2397,24 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     <div id="vmImageSection" style="margin-top:14px;display:none">
       <div class="fg full"><label>Fahrzeugbild</label>
         <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
-          <img id="vmImagePreview" src="" alt="Fahrzeugbild"
-               style="width:120px;height:75px;object-fit:cover;border-radius:8px;border:1px solid var(--brd);display:none">
-          <div id="vmImagePlaceholder"
-               style="width:120px;height:75px;border-radius:8px;border:1px solid var(--brd);display:flex;align-items:center;justify-content:center;font-size:2rem;color:var(--mute)">🚗</div>
+          <img id="vmImagePreview" src="/static/vehicle_images/placeholder_car.svg" alt="Fahrzeugbild"
+               style="width:140px;height:80px;object-fit:contain;border-radius:8px;border:1px solid var(--brd);background:var(--bg2)"
+               onerror="this.src='/static/vehicle_images/placeholder_car.svg'">
           <div style="display:flex;flex-direction:column;gap:6px">
+            <button class="btn-s" style="font-size:.75rem" onclick="suggestVehicleImage()">✨ Auto-Vorschlag</button>
+            <button class="btn-s" style="font-size:.75rem" onclick="openSilhouettePicker()">🚗 Silhouette wählen</button>
             <label class="btn-s" style="cursor:pointer;font-size:.75rem">
-              📷 Bild hochladen
+              📷 Foto hochladen
               <input type="file" id="vmImageFile" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="uploadVehicleImage()">
             </label>
             <button class="btn-s" style="font-size:.75rem;color:var(--danger)" onclick="deleteVehicleImage()">🗑 Entfernen</button>
             <span style="font-size:.65rem;color:var(--mute)">Max. 3 MB · PNG/JPG/WebP</span>
           </div>
+        </div>
+        <!-- Silhouette picker (inline) -->
+        <div id="vmSilhouettePicker" style="display:none;margin-top:10px">
+          <div style="font-size:.78rem;color:var(--mute);margin-bottom:6px">Karosserieform wählen:</div>
+          <div id="vmSilhouetteGrid" style="display:flex;flex-wrap:wrap;gap:8px"></div>
         </div>
       </div>
     </div>
@@ -5372,47 +5378,16 @@ async function loadDashboardVehicleImage(vid) {
   const dashImg = $('dashVehicleImg');
   if (!dashImg) return;
   const useVid = vid || 'v0';
-  const r = await apiFetch(`/api/vehicles/${encodeURIComponent(useVid)}/image`).then(r=>r.json()).catch(()=>null);
-  if (r && r.exists && r.url) {
-    dashImg.src = r.url + '?t=' + Date.now();
+  const r = await apiFetch(`/api/vehicles/${encodeURIComponent(useVid)}/image/suggest`).then(r=>r.json()).catch(()=>null);
+  if (r && r.resolved_url) {
+    dashImg.src = r.resolved_url + '?t=' + Date.now();
   } else {
     dashImg.src = '/static/vehicle_images/placeholder_car.svg';
   }
 }
 
-async function loadVehicleImage(vid) {
-  if (!vid) return;
-  // Also refresh dashboard image when the modal image changes
-  if (vid === 'v0') loadDashboardVehicleImage('v0');
-  const r = await apiFetch(`/api/vehicles/${encodeURIComponent(vid)}/image`).then(r=>r.json()).catch(()=>null);
-  const preview = $('vmImagePreview');
-  const placeholder = $('vmImagePlaceholder');
-  if (!r || !r.exists) {
-    if (preview) { preview.style.display='none'; preview.src=''; }
-    if (placeholder) placeholder.style.display='';
-  } else {
-    if (preview) { preview.src = r.url + '?t=' + Date.now(); preview.style.display=''; }
-    if (placeholder) placeholder.style.display='none';
-  }
-}
-
-async function uploadVehicleImage() {
-  const file = $('vmImageFile')?.files[0];
-  if (!file || !_editingVehicleId) return;
-  const fd = new FormData(); fd.append('file', file);
-  const r = await fetch(`/api/vehicles/${encodeURIComponent(_editingVehicleId)}/image/upload`, {
-    method: 'POST', body: fd,
-    headers: {'X-CSRF-Token': csrfToken}
-  }).then(r=>r.json()).catch(e=>({ok:false,error:e.message}));
-  if (r.ok) { toast('Bild hochgeladen'); loadVehicleImage(_editingVehicleId); }
-  else toast('Fehler: ' + (r.error||'unbekannt'), 'err');
-}
-
-async function deleteVehicleImage() {
-  if (!_editingVehicleId || !confirm('Fahrzeugbild löschen?')) return;
-  const r = await apiFetch(`/api/vehicles/${encodeURIComponent(_editingVehicleId)}/image`, {method:'DELETE'}).then(r=>r.json()).catch(()=>({ok:false}));
-  if (r.ok) { toast('Bild gelöscht'); loadVehicleImage(_editingVehicleId); }
-  else toast('Fehler beim Löschen','err');
+function refreshDashboardVehicleImage(vid) {
+  loadDashboardVehicleImage(vid);
 }
 
 // ── Wallbox Power ─────────────────────────────────────────────────────────────

@@ -1,7 +1,8 @@
 // vehicles.js — provides:
 //   loadVehicleList, openAddVehicleModal, openEditVehicleModal,
 //   loadVehicleModalFields, closeVehicleModal, saveVehicleModal,
-//   archiveVehicleModal
+//   archiveVehicleModal, suggestVehicleImage, openSilhouettePicker,
+//   uploadVehicleImage, deleteVehicleImage, refreshVehicleModalImage
 
 var _editingVehicleId = null;
 
@@ -104,6 +105,7 @@ async function openEditVehicleModal(vid) {
   var imgSection = $('vmImageSection');
   if (imgSection) imgSection.style.display = '';
   await loadVehicleModalFields(v);
+  await refreshVehicleModalImage();
   $('vehicleModal').style.display = 'flex';
 }
 
@@ -181,5 +183,94 @@ async function archiveVehicleModal() {
     loadVehicleList();
   } else {
     $('vm_info').innerHTML = '<span style="color:var(--danger)">❌ '+(r.error||'Fehler')+'</span>';
+  }
+}
+
+// ── Vehicle Image Functions ──────────────────────────────────────────────────
+
+async function refreshVehicleModalImage() {
+  if(!_editingVehicleId) return;
+  var preview = $('vmImagePreview');
+  if(!preview) return;
+  var r = await fetch('/api/vehicles/'+encodeURIComponent(_editingVehicleId)+'/image/suggest').then(function(x){return x.json();}).catch(function(){return null;});
+  if(!r) return;
+  var url = r.resolved_url || '/static/vehicle_images/placeholder_car.svg';
+  preview.src = url + (url.indexOf('?')<0 ? '?t='+Date.now() : '&t='+Date.now());
+}
+
+async function suggestVehicleImage() {
+  if(!_editingVehicleId) return;
+  var r = await fetch('/api/vehicles/'+encodeURIComponent(_editingVehicleId)+'/image/suggest').then(function(x){return x.json();}).catch(function(){return null;});
+  if(!r || !r.suggested_key) { toast('Kein Vorschlag verfügbar','warn'); return; }
+  var ok = await apiFetch('/api/vehicles/'+encodeURIComponent(_editingVehicleId)+'/image/default-key',
+    {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:r.suggested_key})}).then(function(x){return x.json();}).catch(function(){return {ok:false};});
+  if(ok.ok) {
+    var preview = $('vmImagePreview');
+    if(preview) { preview.src = r.suggested_url+'?t='+Date.now(); }
+    toast('Silhouette: '+r.suggested_key,'ok');
+  }
+}
+
+async function openSilhouettePicker() {
+  var picker = $('vmSilhouettePicker');
+  var grid   = $('vmSilhouetteGrid');
+  if(!picker || !grid) return;
+  var manifest = await fetch('/api/vehicle-images/manifest').then(function(x){return x.json();}).catch(function(){return null;});
+  if(!manifest) { toast('Manifest nicht geladen','warn'); return; }
+  grid.innerHTML = '';
+  (manifest.silhouettes||[]).forEach(function(s) {
+    var btn = document.createElement('button');
+    btn.title = s.label;
+    btn.style.cssText = 'background:var(--bg2);border:1px solid var(--brd);border-radius:8px;padding:4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px';
+    btn.innerHTML = '<img src="/static/vehicle_images/'+s.file+'" style="width:90px;height:52px;object-fit:contain" onerror="this.style.display=\'none\'">' +
+                    '<span style="font-size:.6rem;color:var(--mute)">'+s.label+'</span>';
+    btn.onclick = function() { selectSilhouette(s.key, '/static/vehicle_images/'+s.file); };
+    grid.appendChild(btn);
+  });
+  picker.style.display = picker.style.display === 'none' ? '' : 'none';
+}
+
+async function selectSilhouette(key, url) {
+  if(!_editingVehicleId) return;
+  var r = await apiFetch('/api/vehicles/'+encodeURIComponent(_editingVehicleId)+'/image/default-key',
+    {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:key})}).then(function(x){return x.json();}).catch(function(){return {ok:false};});
+  if(r.ok) {
+    var preview = $('vmImagePreview');
+    if(preview) preview.src = url+'?t='+Date.now();
+    var picker = $('vmSilhouettePicker');
+    if(picker) picker.style.display = 'none';
+    toast('Silhouette gespeichert','ok');
+  } else {
+    toast(r.error||'Fehler','err');
+  }
+}
+
+async function uploadVehicleImage() {
+  if(!_editingVehicleId) return;
+  var fileEl = $('vmImageFile');
+  if(!fileEl || !fileEl.files || !fileEl.files[0]) return;
+  var fd = new FormData();
+  fd.append('file', fileEl.files[0]);
+  var r = await fetch('/api/vehicles/'+encodeURIComponent(_editingVehicleId)+'/image/upload', {method:'POST',body:fd}).then(function(x){return x.json();}).catch(function(){return {ok:false,error:'Netzwerkfehler'};});
+  if(r.ok) {
+    var preview = $('vmImagePreview');
+    if(preview) preview.src = r.url+'?t='+Date.now();
+    toast('Bild hochgeladen','ok');
+    // Refresh dashboard image if this is the active vehicle
+    if(typeof refreshDashboardVehicleImage === 'function') refreshDashboardVehicleImage(_editingVehicleId);
+  } else {
+    toast(r.error||'Upload fehlgeschlagen','err');
+  }
+  fileEl.value = '';
+}
+
+async function deleteVehicleImage() {
+  if(!_editingVehicleId) return;
+  if(!confirm('Fahrzeugbild löschen?')) return;
+  var r = await apiFetch('/api/vehicles/'+encodeURIComponent(_editingVehicleId)+'/image',{method:'DELETE'}).then(function(x){return x.json();}).catch(function(){return {ok:false};});
+  if(r.ok) {
+    await refreshVehicleModalImage();
+    toast('Bild entfernt','ok');
+    if(typeof refreshDashboardVehicleImage === 'function') refreshDashboardVehicleImage(_editingVehicleId);
   }
 }

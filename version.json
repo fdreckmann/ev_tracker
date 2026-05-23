@@ -1,6 +1,25 @@
 {
-  "version": "2.0.30",
+  "version": "2.0.31",
   "changelog": [
+    {
+      "version": "2.0.31",
+      "date": "2026-05-23",
+      "changes": [
+        "Feature: Fahrzeugbilder — lokale SVG-Silhouetten für 6 Karosserieformen (Sedan, Hatchback, Kombi, SUV, Crossover, Van)",
+        "Feature: Automatische Modell-Erkennung — 40+ bekannte EV-Modelle werden aus Name/Marke/Modell-Feldern erkannt und der passenden Silhouette zugeordnet",
+        "Feature: Silhouetten-Picker im Fahrzeug-Modal — manuelle Auswahl der Karosserieform per Klick",
+        "Feature: Auto-Vorschlag Button — erkennt Silhouette automatisch aus Fahrzeugname",
+        "Feature: Foto-Upload im Fahrzeug-Modal — PNG/JPG/WebP bis 3 MB, wird als WebP gespeichert",
+        "API: GET /api/vehicles/<vid>/image/suggest — gibt suggested_key, suggested_url und resolved_url zurück",
+        "API: GET /api/vehicle-images/manifest — gibt lokales Bildmanifest (Silhouetten + Modell-Zuordnungen) zurück",
+        "API: POST /api/vehicles/<vid>/image/default-key — speichert gewählten Silhouetten-Schlüssel im Config",
+        "services/vehicle_image_service.py — suggest_vehicle_image_key(), resolve_vehicle_image_url(), get_manifest()",
+        "Dashboard: loadDashboardVehicleImage() nutzt /suggest statt /image Endpunkt — zeigt Silhouette auch ohne Upload",
+        "Bugfix: Fahrzeug-Modal lädt Bild-Vorschau beim Öffnen (refreshVehicleModalImage)",
+        "Bugfix Fahrzeug-Modal: vm_archive_btn / vm_hard_delete_btn null-safe; archiveVehicleModal() implementiert",
+        "Bugfix Fahrzeug-Modal: Standort-Felder (vm_loc_*) werden beim Öffnen/Speichern korrekt gelesen/geschrieben"
+      ]
+    },
     {
       "version": "2.0.30",
       "date": "2026-05-23",

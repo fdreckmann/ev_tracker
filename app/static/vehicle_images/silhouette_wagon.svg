@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 95" width="220" height="95">
+  <!-- Background -->
+  <rect width="220" height="95" fill="#16182a" rx="6"/>
+  <!-- Ground shadows -->
+  <ellipse cx="50" cy="87" rx="21" ry="4" fill="#0d0e18"/>
+  <ellipse cx="168" cy="87" rx="21" ry="4" fill="#0d0e18"/>
+  <!-- Main body lower (chassis, longer than sedan) -->
+  <rect x="22" y="59" width="178" height="17" fill="#2d3350" rx="3"/>
+  <!-- Wagon cabin: long flat roof extending all the way to near-vertical rear panel -->
+  <!-- Front slope / A-pillar -->
+  <polygon points="62,59 72,28 192,28 196,40 196,59" fill="#2d3350"/>
+  <!-- Hood (medium length) -->
+  <polygon points="14,68 22,59 62,59 62,51 30,51" fill="#2d3350"/>
+  <polygon points="10,72 14,68 30,51 62,51 62,59 22,59" fill="#2d3350"/>
+  <!-- Front bumper -->
+  <path d="M10,72 Q7,76 8,80 L22,80 L22,72 Z" fill="#252740"/>
+  <!-- Rear vertical panel (estate/wagon rear with slight angle at top) -->
+  <polygon points="196,40 202,42 202,76 196,76 196,59" fill="#252740"/>
+  <!-- Rear tailgate glass (large, near-vertical) -->
+  <rect x="193" y="42" width="2" height="16" fill="#3a4a6e" opacity="0.6" rx="1"/>
+  <!-- Rear lights -->
+  <rect x="194" y="30" width="3" height="10" fill="#9b2020" rx="1"/>
+  <!-- Front headlight -->
+  <rect x="10" y="66" width="9" height="5" fill="#8899cc" rx="1" opacity="0.9"/>
+  <!-- Windows: very long greenhouse, nearly flat top -->
+  <polygon points="76,58 84,30 184,30 188,41 188,58" fill="#3a4a6e" opacity="0.85"/>
+  <!-- B-pillar (front door / rear door split) -->
+  <line x1="122" y1="30" x2="120" y2="58" stroke="#16182a" stroke-width="3"/>
+  <!-- C-pillar (rear door / load area split) -->
+  <line x1="162" y1="30" x2="164" y2="58" stroke="#16182a" stroke-width="2.5"/>
+  <!-- Roof rails (characteristic of wagons) -->
+  <rect x="72" y="27" width="120" height="2" fill="#3a3c58" rx="1"/>
+  <!-- Door handle front -->
+  <rect x="138" y="63" width="11" height="3" fill="#3a3c58" rx="1"/>
+  <!-- Door handle rear -->
+  <rect x="96" y="63" width="11" height="3" fill="#3a3c58" rx="1"/>
+  <!-- Rear wheel arch -->
+  <circle cx="50" cy="76" r="16" fill="#16182a"/>
+  <!-- Front wheel arch -->
+  <circle cx="168" cy="76" r="16" fill="#16182a"/>
+  <!-- Rear wheel -->
+  <circle cx="50" cy="76" r="13" fill="#1a1c2e"/>
+  <circle cx="50" cy="76" r="9" fill="#252842"/>
+  <circle cx="50" cy="76" r="6" fill="#3d4060"/>
+  <circle cx="50" cy="76" r="2.5" fill="#555"/>
+  <!-- Front wheel -->
+  <circle cx="168" cy="76" r="13" fill="#1a1c2e"/>
+  <circle cx="168" cy="76" r="9" fill="#252842"/>
+  <circle cx="168" cy="76" r="6" fill="#3d4060"/>
+  <circle cx="168" cy="76" r="2.5" fill="#555"/>
+</svg>
