@@ -475,8 +475,8 @@ def api_passkey_register_complete():
             require_user_verification=False,
         )
 
-        # Use body["id"] directly — same base64url the browser will send on login
-        cred_id = body.get("id") or bytes_to_base64url(verification.credential_id)
+        # Always use server-verified credential_id as canonical storage key
+        cred_id = bytes_to_base64url(verification.credential_id)
         pub_key = bytes_to_base64url(verification.credential_public_key)
 
         con = _get_db()
@@ -579,8 +579,15 @@ def api_passkey_login_complete():
         from webauthn.helpers import base64url_to_bytes, bytes_to_base64url
         expected_challenge = base64url_to_bytes(challenge_b64)
 
-        # credential id is the base64url "id" field from the browser response
-        cred_id_b64 = body.get("id", "")
+        # Normalize credential ID to canonical base64url (same encoding used at registration).
+        # rawId is the authoritative bytes field; fall back to id. Both may have non-standard
+        # padding or encoding variants (Bitwarden, Chrome, Safari differ) — round-tripping
+        # through bytes ensures a match against the stored canonical form.
+        raw_id_str = body.get("rawId") or body.get("id", "")
+        try:
+            cred_id_b64 = bytes_to_base64url(base64url_to_bytes(raw_id_str))
+        except Exception:
+            cred_id_b64 = raw_id_str  # best-effort fallback
 
         con = _get_db()
         row = con.execute(
@@ -626,6 +633,8 @@ def api_passkey_login_complete():
         session["user_email"] = row["email"]
         session["user_role"]  = row["role"]
         session["user_name"]  = row["name"]
+        session["csrf_token"] = secrets.token_hex(32)
+        session.permanent     = True
         _audit("passkey_login", f"user={row['email']}", ip=request.remote_addr)
 
         return jsonify({"ok": True, "redirect": "/"})
