@@ -1,6 +1,19 @@
 {
-  "version": "2.0.32",
+  "version": "2.0.33",
   "changelog": [
+    {
+      "version": "2.0.33",
+      "date": "2026-05-23",
+      "changes": [
+        "Bugfix: loadVehicleList() zeigt ✏ Bearbeiten-Button jetzt auch für v0 (Primärfahrzeug)",
+        "Bugfix: _setVehicleModalButtons(isEdit, isV0) — Archivieren/Löschen-Buttons werden für v0 immer ausgeblendet",
+        "Bugfix: openEditVehicleModal(vid) übergibt isV0-Flag an _setVehicleModalButtons",
+        "Bugfix: saveVehicleModal() mappt 'name' → 'car_name' für v0 — Backend akzeptiert VEHICLE_SPECIFIC_KEYS",
+        "Bugfix: saveVehicleModal() zeigt klare Fehlermeldung 'Keine Berechtigung' bei HTTP 403",
+        "Bugfix: saveVehicleModal() ruft nach Erfolg loadMobileVehicleCards() und refreshMobileDashboard() auf",
+        "Security: DEFAULT_ROLE_PERMISSIONS['user'] ergänzt um vehicles:create, vehicles:edit, vehicles:image_manage, vehicles:location_configure"
+      ]
+    },
     {
       "version": "2.0.32",
       "date": "2026-05-23",

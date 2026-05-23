@@ -24,16 +24,17 @@ async function loadVehicleList() {
       '<div style="font-size:.72rem;font-family:var(--mono);color:'+(active?'var(--acc)':'var(--mute)')+'">' +
         (active?'● Aktiv':'○ Inaktiv') +
       '</div>' +
-      (isV0 ? '' : '<button class="btn-s" style="font-size:.72rem;padding:5px 12px" onclick="openEditVehicleModal(\''+v.id+'\')">✏ Bearbeiten</button>');
+      '<button class="btn-s" style="font-size:.72rem;padding:5px 12px" onclick="openEditVehicleModal(\''+v.id+'\')">✏ Bearbeiten</button>';
     el.appendChild(row);
   });
 }
 
-function _setVehicleModalButtons(isEdit) {
+function _setVehicleModalButtons(isEdit, isV0) {
   var archiveBtn    = $('vm_archive_btn');
   var hardDeleteBtn = $('vm_hard_delete_btn');
-  if (archiveBtn)    archiveBtn.style.display    = isEdit ? '' : 'none';
-  if (hardDeleteBtn) hardDeleteBtn.style.display  = isEdit ? '' : 'none';
+  var showDelete = isEdit && !isV0;
+  if (archiveBtn)    archiveBtn.style.display    = showDelete ? '' : 'none';
+  if (hardDeleteBtn) hardDeleteBtn.style.display  = showDelete ? '' : 'none';
 }
 
 async function openAddVehicleModal() {
@@ -91,7 +92,7 @@ async function openEditVehicleModal(vid) {
       if(sel.options[i].value===v.provider){ sel.selectedIndex=i; break; }
     }
     $('vm_info').textContent = '';
-    _setVehicleModalButtons(true);
+    _setVehicleModalButtons(true, vid === 'v0');
     // Location fields
     var locEnabled = $('vm_loc_enabled');
     if (locEnabled) locEnabled.checked = !!v.location_enabled;
@@ -180,15 +181,28 @@ async function saveVehicleModal() {
     }
   });
 
+  // v0 uses car_name instead of name in backend config
+  if (_editingVehicleId === 'v0') {
+    data.car_name = data.name;
+    delete data.name;
+  }
+
   var url  = _editingVehicleId ? '/api/vehicles/'+_editingVehicleId : '/api/vehicles';
   var meth = _editingVehicleId ? 'PUT' : 'POST';
-  var r = await apiFetch(url,{method:meth,headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(function(x){return x.json();});
-  if(r.ok){
+  var resp = await apiFetch(url,{method:meth,headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  var r = await resp.json().catch(function(){return {};});
+  if(resp.ok && r.ok){
     closeVehicleModal();
     toast(_editingVehicleId ? 'Fahrzeug aktualisiert' : 'Fahrzeug hinzugefügt', 'ok');
     loadVehicleList();
+    if (typeof loadMobileVehicleCards === 'function') loadMobileVehicleCards();
+    if (typeof refreshMobileDashboard === 'function') refreshMobileDashboard();
   } else {
-    $('vm_info').innerHTML = '<span style="color:var(--danger)">❌ '+(r.error||'Fehler')+'</span>';
+    var errMsg = r.error || 'Fehler';
+    if (resp.status === 403) {
+      errMsg = 'Keine Berechtigung: Fahrzeuge erstellen/bearbeiten';
+    }
+    $('vm_info').innerHTML = '<span style="color:var(--danger)">❌ '+errMsg+'</span>';
   }
 }
 
