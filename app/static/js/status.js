@@ -25,9 +25,35 @@ function fitAllStats() {
 window.addEventListener('resize', fitAllStats);
 
 // ── Status polling ────────────────────────────────────────────────────────────
+function _applyLocationToTile(locEl, locStatus, locSrc, meterActive) {
+  const loc = normalizeLocation(locStatus);
+  if (loc === 'home') {
+    const meterHint = locSrc === 'meter_delta' ? ' 📊' : '';
+    locEl.textContent = ' Heim' + meterHint;
+    locEl.title = locSrc === 'meter_delta' ? 'Zuhause erkannt über steigenden Wallbox-Zähler' : '';
+    locEl.className = 'sv g';
+  } else if (loc === 'extern') {
+    const conflictHint = locSrc === 'meter_conflict' ? ' ⚠' : '';
+    locEl.textContent = ' Extern' + conflictHint;
+    locEl.title = locSrc === 'meter_conflict' ? 'Zähler steigt, aber Standortquelle meldet extern' : '';
+    locEl.className = 'sv w';
+  } else {
+    const hint = meterActive ? ' 🔍' : '';
+    locEl.textContent = '—' + hint;
+    locEl.title = meterActive ? 'Zähler-Heimerkennung aktiv…' : '';
+    locEl.className = 'sv';
+  }
+}
+
 async function refreshStatus() {
   try {
-    const s = await fetch('/api/status').then(r => r.json());
+    // Fetch primary status and location endpoint in parallel (fix B).
+    // The location endpoint also updates vehicle_states so subsequent calls benefit too.
+    const vid = window._activeVehicleId || 'v0';
+    const [s, locData] = await Promise.all([
+      fetch('/api/status').then(r => r.json()),
+      fetch(`/api/vehicles/${encodeURIComponent(vid)}/location`).then(r => r.json()).catch(() => null),
+    ]);
     const dot = $('sDot'), txt = $('sTxt');
 
     const ts = s.tracker_status || (s.running || s.tracker_alive ? 'ready' : 'stopped');
@@ -48,24 +74,13 @@ async function refreshStatus() {
 
     const locEl = $('dLoc');
     if (locEl) {
-      const loc = normalizeLocation(s.location_status || s.location);
-      const locSrc = s.location_source || '';
-      if (loc === 'home') {
-        const meterHint = locSrc === 'meter_delta' ? ' 📊' : '';
-        locEl.textContent = ' Heim' + meterHint;
-        locEl.title = locSrc === 'meter_delta' ? 'Zuhause erkannt über steigenden Wallbox-Zähler' : '';
-        locEl.className = 'sv g';
-      } else if (loc === 'extern') {
-        const conflictHint = locSrc === 'meter_conflict' ? ' ⚠' : '';
-        locEl.textContent = ' Extern' + conflictHint;
-        locEl.title = locSrc === 'meter_conflict' ? 'Zähler steigt, aber Standortquelle meldet extern' : '';
-        locEl.className = 'sv w';
-      } else {
-        const meterActive = s.meter_home_det_active ? ' 🔍' : '';
-        locEl.textContent = '—' + meterActive;
-        locEl.title = s.meter_home_det_active ? 'Zähler-Heimerkennung aktiv…' : '';
-        locEl.className = 'sv';
-      }
+      // Prefer the location endpoint result (fresher, queries HA entities directly).
+      // Fall back to /api/status fields.
+      const locStatus = (locData && locData.ok && locData.status !== 'disabled')
+        ? locData.status
+        : (s.location_status || s.location);
+      const locSrc = (locData && locData.ok) ? (locData.source || '') : (s.location_source || '');
+      _applyLocationToTile(locEl, locStatus, locSrc, s.meter_home_det_active);
     }
 
     const rows = await fetch('/api/sessions').then(r => r.json()).catch(() => []);

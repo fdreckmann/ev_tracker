@@ -170,6 +170,7 @@ def api_mobile_summary():
 
     # All vehicles (for vehicle switcher)
     all_vehicles_cfg = get_all_vehicles(include_archived=False)
+    from core.location import effective_session_location
     vehicles_out = []
     for v in all_vehicles_cfg:
         vid = v.get("id", "v0")
@@ -182,6 +183,9 @@ def api_mobile_summary():
             "location": vs.get("location"),
             "location_status": vs.get("location_status"),
             "location_source": vs.get("location_source"),
+            "effective_location": effective_session_location(
+                vs.get("location"), vs.get("location_status")
+            ),
             "power_kw": vs.get("power_kw"),
             "session_active": vs.get("session_active", False),
             "image_url": f"/api/vehicles/{vid}/image/file",
