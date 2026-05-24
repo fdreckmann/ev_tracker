@@ -89,9 +89,16 @@ async function refreshMobileDashboard() {
   // Fahrzeugdaten aus dem vorhandenen State lesen
   // (nutzt dieselben Daten wie Desktop, kein doppelter API-Call)
   try {
+    // Load summary (includes fresh location detection)
+    var summary = null;
+    try {
+      summary = await apiFetch('/api/mobile/summary', {cache: 'no-store'}).then(function(r) { return r.json(); });
+    } catch(_e) { summary = null; }
+
     // Fahrzeugname/Kennzeichen
     var cfg = window._currentConfig || {};
-    var vehicleName = document.getElementById('vehicleNameDisplay')?.textContent
+    var pv = (summary && summary.primary_vehicle) || {};
+    var vehicleName = pv.name || document.getElementById('vehicleNameDisplay')?.textContent
       || cfg.vehicle_name || cfg.vehicle_model || '—';
     var plate = cfg.kennzeichen || cfg.vehicle_plate || '—';
     var elName = document.getElementById('mobileVehicleName');
@@ -99,9 +106,23 @@ async function refreshMobileDashboard() {
     if (elName) elName.textContent = vehicleName;
     if (elPlate) elPlate.textContent = plate;
 
-    // SOC aus bestehendem State
-    var socEl = document.querySelector('[data-soc]') || document.getElementById('socValue');
-    var soc = socEl ? parseInt(socEl.textContent) : null;
+    // Standort
+    var locEl = document.getElementById('mobileVehicleLocation');
+    if (locEl) {
+      var effLoc = normalizeEffectiveLocation(
+        pv.effective_location, pv.location_status, pv.location
+      );
+      locEl.textContent = effLoc === 'home' ? '🏠 Zuhause' :
+                          effLoc === 'extern' ? '📍 Extern' :
+                          '❓ Unbekannt';
+    }
+
+    // SOC
+    var soc = (pv.soc != null) ? parseInt(pv.soc) : null;
+    if (soc == null) {
+      var socEl = document.querySelector('[data-soc]') || document.getElementById('socValue');
+      soc = socEl ? parseInt(socEl.textContent) : null;
+    }
     if (soc != null && !isNaN(soc)) {
       var bar = document.getElementById('mobileSocBar');
       var pct = document.getElementById('mobileSocPct');
@@ -112,8 +133,11 @@ async function refreshMobileDashboard() {
       }
     }
 
-    // Monatsstatistik aus bestehendem State lesen
+    // Monatsstatistik
     var sessions = window._allSessions || window._sessions || [];
+    if (summary && summary.recent_sessions && summary.recent_sessions.length > 0) {
+      sessions = summary.recent_sessions;
+    }
     var now = new Date();
     var monthSessions = sessions.filter(function(s) {
       var d = new Date(s.start_time || s.date || '');
