@@ -195,6 +195,7 @@ async function saveVehicleModal() {
     closeVehicleModal();
     toast(_editingVehicleId ? 'Fahrzeug aktualisiert' : 'Fahrzeug hinzugefügt', 'ok');
     loadVehicleList();
+    if (typeof refreshStatus === 'function') setTimeout(refreshStatus, 500);
     if (typeof loadMobileVehicleCards === 'function') loadMobileVehicleCards();
     if (typeof refreshMobileDashboard === 'function') refreshMobileDashboard();
   } else {

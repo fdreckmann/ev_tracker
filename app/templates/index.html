@@ -4410,8 +4410,12 @@ async function testVehicleLocation() {
   const r = await apiFetch(`/api/vehicles/${_editingVehicleId}/location/test`, {method:'POST'}).then(x=>x.json()).catch(()=>null);
   if(!r) { $('vm_loc_test_result').textContent = '❌ Netzwerkfehler'; return; }
   if(!r.ok) { $('vm_loc_test_result').textContent = `❌ ${r.error}`; return; }
-  const icons = {home:'🏠', external:'📍', unknown:'❓'};
-  $('vm_loc_test_result').textContent = `${icons[r.status]||'❓'} ${r.status} · ${r.source}${r.source_detail ? ' (' + r.source_detail + ')' : ''}`;
+  const icons = {home:'🏠', extern:'📍', external:'📍', unknown:'❓', disabled:'⛔'};
+  const labels = {home:'Zuhause', extern:'Extern', external:'Extern', unknown:'Unbekannt', disabled:'Deaktiviert'};
+  const norm = normalizeLocation(r.status);
+  $('vm_loc_test_result').textContent = `${icons[norm]||'❓'} ${labels[norm]||r.status} · ${r.source}${r.source_detail ? ' (' + r.source_detail + ')' : ''}`;
+  // Update dashboard immediately (vehicle_states already updated on server side)
+  if(typeof refreshStatus === 'function') setTimeout(refreshStatus, 300);
 }
 
 // ── Auth / Login ─────────────────────────────────────────────────────────────
