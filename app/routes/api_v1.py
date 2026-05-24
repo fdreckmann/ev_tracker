@@ -71,13 +71,33 @@ def api_v1_session_create():
     token_row, err_resp, code = _require_api_token("sessions:write")
     if err_resp: return err_resp, code
     data = request.get_json(force=True) or {}
-    con  = _get_db()
-    cur  = con.execute("""INSERT INTO sessions
-        (start_ts,end_ts,kwh_charged,cost_eur,location,vehicle_id,provider)
-        VALUES (?,?,?,?,?,?,?)""",
+    kwh = data.get("kwh_charged")
+    price_kwh = data.get("price_per_kwh")
+    cost_eur  = data.get("cost_eur")
+    cost_manual = 0
+    if cost_eur is not None:
+        cost_manual = 1
+    elif kwh is not None and price_kwh is not None:
+        try: cost_eur = round(float(kwh) * float(price_kwh), 2); cost_manual = 1
+        except (ValueError, TypeError): pass
+    con = _get_db()
+    cur = con.execute("""INSERT INTO sessions
+        (start_ts, end_ts, kwh_charged, cost_eur, cost_manual, price_per_kwh,
+         location, charger_type, charger_power_kw, max_power_kw,
+         soc_start, soc_end, odo_start, odo_end,
+         meter_old, meter_new, vehicle_id, provider, kwh_source, created_mode,
+         manual_note, manual_reason)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (data.get("start_ts"), data.get("end_ts"),
-         data.get("kwh_charged"), data.get("cost_eur"),
-         data.get("location","unknown"), data.get("vehicle_id","v0"), "api"))
+         kwh, cost_eur, cost_manual, price_kwh,
+         data.get("location","unknown"),
+         data.get("charger_type","unknown"),
+         data.get("charger_power_kw"), data.get("max_power_kw"),
+         data.get("soc_start"), data.get("soc_end"),
+         data.get("odo_start"), data.get("odo_end"),
+         data.get("meter_old"), data.get("meter_new"),
+         data.get("vehicle_id","v0"), "api", "api", "api",
+         data.get("manual_note"), data.get("manual_reason")))
     sid = cur.lastrowid
     con.commit(); close_db_if_owned(con)
     return jsonify({"ok": True, "id": sid}), 201

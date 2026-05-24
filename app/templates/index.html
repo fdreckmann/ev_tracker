@@ -731,7 +731,15 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 ══════════════════════════════════════════════════════ -->
 <div class="panel" id="panel-sessions">
   <div class="card">
-    <div class="card-title">Alle Ladevorgänge</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
+      <div class="card-title" style="margin-bottom:0">Alle Ladevorgänge</div>
+      <button onclick="openAddSessionModal()"
+        data-requires-permission="sessions:manual_add"
+        style="background:rgba(61,220,151,.15);color:#3ddc97;border:1px solid rgba(61,220,151,.3);
+               border-radius:8px;padding:6px 14px;font-size:.78rem;cursor:pointer;white-space:nowrap">
+        ➕ Ladevorgang hinzufügen
+      </button>
+    </div>
     <div class="filter-row">
       <select id="sFilter" onchange="loadSessions()">
         <option value="all">🔁 Alle Standorte</option>
@@ -2673,6 +2681,166 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     </div>
   </div>
 </div>
+
+<!-- ── Manual Add Session Modal ── -->
+<div class="modal-overlay" id="addSessionModal" style="display:none" onclick="if(event.target===this)closeAddSessionModal()">
+  <div class="modal" style="max-width:680px;width:96vw;padding:28px 28px 20px;max-height:90vh;overflow-y:auto">
+    <button class="modal-close" onclick="closeAddSessionModal()">✕</button>
+    <h2 style="margin-bottom:18px">➕ Ladevorgang manuell hinzufügen</h2>
+
+    <div style="display:grid;gap:12px">
+
+      <!-- Row 1: Vehicle + Reason -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label class="lbl">Fahrzeug *</label>
+          <select class="inp" id="as_vehicle"></select>
+        </div>
+        <div>
+          <label class="lbl">Grund</label>
+          <select class="inp" id="as_reason">
+            <option value="">— Kein Grund angegeben</option>
+            <option value="Auto offline">Auto offline</option>
+            <option value="Provider-Ausfall">Provider-Ausfall</option>
+            <option value="App/Tracker offline">App/Tracker offline</option>
+            <option value="Nachtrag">Nachtrag</option>
+            <option value="Sonstiges">Sonstiges</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Row 2: Start + End -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label class="lbl">Startzeit *</label>
+          <input class="inp" type="datetime-local" id="as_start" oninput="_asRecalc()">
+        </div>
+        <div>
+          <label class="lbl">Endzeit</label>
+          <input class="inp" type="datetime-local" id="as_end" oninput="_asRecalc()">
+        </div>
+      </div>
+
+      <!-- Row 3: Location + Charger type -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label class="lbl">Standort</label>
+          <select class="inp" id="as_location">
+            <option value="home">🏠 Zuhause</option>
+            <option value="extern">⚡ Extern</option>
+            <option value="unknown">— Unbekannt</option>
+          </select>
+        </div>
+        <div>
+          <label class="lbl">Ladeart</label>
+          <select class="inp" id="as_charger_type">
+            <option value="unknown">— Unbekannt</option>
+            <option value="ac">🔌 AC</option>
+            <option value="dc">⚡ DC</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Row 4: kWh + Price + Cost -->
+      <div>
+        <label class="lbl" style="font-size:.75rem;color:var(--acc2)">Energie &amp; Kosten</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+          <div>
+            <label class="lbl">Geladene kWh *</label>
+            <input class="inp" type="number" id="as_kwh" step="0.001" min="0" placeholder="22.500" oninput="_asClearCost();_asClearPrice()">
+          </div>
+          <div>
+            <label class="lbl">Preis/kWh (€)</label>
+            <input class="inp" type="number" id="as_price" step="0.0001" min="0" placeholder="0.3000" oninput="_asClearCost()">
+          </div>
+          <div>
+            <label class="lbl">Kosten gesamt (€)</label>
+            <input class="inp" type="number" id="as_cost" step="0.01" min="0" placeholder="6.75" oninput="_asClearPrice()">
+          </div>
+        </div>
+        <div id="as_avg_power" style="font-size:.72rem;color:var(--mute);margin-top:4px;font-family:var(--mono)"></div>
+      </div>
+
+      <!-- Row 5: Meter readings -->
+      <div>
+        <label class="lbl" style="font-size:.75rem;color:var(--acc2)">Zählerstände (optional — berechnet kWh automatisch)</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div>
+            <label class="lbl">Zähler vorher (kWh)</label>
+            <input class="inp" type="number" id="as_meter_old" step="0.001" min="0" placeholder="1200.000" oninput="_asClearKwh()">
+          </div>
+          <div>
+            <label class="lbl">Zähler nachher (kWh)</label>
+            <input class="inp" type="number" id="as_meter_new" step="0.001" min="0" placeholder="1225.000" oninput="_asClearKwh()">
+          </div>
+        </div>
+      </div>
+
+      <!-- Row 6: SOC + Odo -->
+      <div>
+        <label class="lbl" style="font-size:.75rem;color:var(--acc2)">SOC &amp; Kilometerstand (optional)</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">
+          <div>
+            <label class="lbl">SOC Start (%)</label>
+            <input class="inp" type="number" id="as_soc_start" step="1" min="0" max="100" placeholder="20">
+          </div>
+          <div>
+            <label class="lbl">SOC Ende (%)</label>
+            <input class="inp" type="number" id="as_soc_end" step="1" min="0" max="100" placeholder="80">
+          </div>
+          <div>
+            <label class="lbl">KM-Stand Start</label>
+            <input class="inp" type="number" id="as_odo_start" step="1" min="0" placeholder="12500">
+          </div>
+          <div>
+            <label class="lbl">KM-Stand Ende</label>
+            <input class="inp" type="number" id="as_odo_end" step="1" min="0" placeholder="12500">
+          </div>
+        </div>
+      </div>
+
+      <!-- Row 7: Power -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label class="lbl">Wallbox-Leistung (kW)</label>
+          <input class="inp" type="number" id="as_charger_power" step="0.1" min="0" placeholder="11.0">
+        </div>
+        <div>
+          <label class="lbl">Max. Leistung (kW)</label>
+          <input class="inp" type="number" id="as_max_power" step="0.1" min="0" placeholder="11.0">
+        </div>
+      </div>
+
+      <!-- Row 8: Note -->
+      <div>
+        <label class="lbl">Notiz</label>
+        <input class="inp" type="text" id="as_note" placeholder="z.B. Schnelllader Autobahn A9" maxlength="200">
+      </div>
+
+    </div><!-- /grid -->
+
+    <!-- Overlap warning row -->
+    <div id="as_overlap_row" style="display:none;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
+      <button onclick="submitAddSession(true)"
+        style="background:rgba(245,158,11,.15);color:#f59e0b;border:1px solid rgba(245,158,11,.3);
+               border-radius:8px;padding:7px 16px;font-size:.82rem;cursor:pointer">
+        ⚠ Trotzdem speichern
+      </button>
+      <span style="font-size:.75rem;color:var(--mute)">Session überschneidet sich — mit Bestätigung trotzdem anlegen.</span>
+    </div>
+
+    <div id="as_result" style="margin-top:10px"></div>
+
+    <div style="display:flex;gap:10px;align-items:center;margin-top:16px;flex-wrap:wrap">
+      <button class="btn-p" onclick="submitAddSession(false)">💾 Speichern</button>
+      <button class="btn-s" onclick="closeAddSessionModal()">Abbrechen</button>
+    </div>
+  </div>
+</div>
+
+<style>
+.as-err { color: #ef4444; font-size: .82rem; margin: 0; }
+</style>
 
 <!-- ── Session Edit Modal ── -->
 <div class="modal-overlay" id="sessionEditModal" style="display:none" onclick="if(event.target===this)closeSessionEditModal()">
@@ -5847,65 +6015,214 @@ function closeMobileSheet() {
 // ─── Session manuell hinzufügen ──────────────────────────
 
 async function openMobileSessionCreate() {
-  const vehicles = window._allVehicles || await fetch('/api/vehicles').then(r=>r.json()).catch(()=>[]);
+  const vehicles = window._allVehicles || await apiFetch('/api/vehicles').then(r=>r.json()).catch(()=>[]);
   window._allVehicles = vehicles;
   const now = new Date();
   const iso = d => new Date(d - d.getTimezoneOffset()*60000).toISOString().slice(0,16);
-  const vOpts = vehicles.map(v=>`<option value="${v.id}">${v.name||v.id}</option>`).join('');
+  const vOpts = vehicles.length
+    ? vehicles.map(v=>`<option value="${v.id}">${v.name||v.id}</option>`).join('')
+    : '<option value="v0">Fahrzeug v0</option>';
+
+  let defaultLoc = 'home';
+  try {
+    const s = await apiFetch('/api/status').then(r=>r.json());
+    const sl = normalizeLocation(s.effective_location || s.location_status || s.location || '');
+    if (sl === 'home' || sl === 'extern') defaultLoc = sl;
+  } catch(_e){}
+
   openMobileSheet(`
     <div class="m-sheet-title">➕ Ladevorgang hinzufügen</div>
+
     <div class="m-field"><label>Fahrzeug</label>
       <select id="msVehicle">${vOpts}</select></div>
-    <div class="m-field"><label>Start</label>
-      <input type="datetime-local" id="msStart" value="${iso(now)}"></div>
-    <div class="m-field"><label>Ende (optional)</label>
-      <input type="datetime-local" id="msEnd"></div>
+
+    <div class="m-field"><label>Grund</label>
+      <select id="msReason">
+        <option value="">— Kein Grund</option>
+        <option value="Auto offline">Auto offline</option>
+        <option value="Provider-Ausfall">Provider-Ausfall</option>
+        <option value="App/Tracker offline">App/Tracker offline</option>
+        <option value="Nachtrag">Nachtrag</option>
+        <option value="Sonstiges">Sonstiges</option>
+      </select></div>
+
     <div class="m-grid-2">
-      <div class="m-field"><label>kWh geladen</label>
-        <input type="number" id="msKwh" step="0.1" min="0" placeholder="30.5"></div>
-      <div class="m-field"><label>Kosten (€)</label>
-        <input type="number" id="msCost" step="0.01" min="0" placeholder="9.15"></div>
+      <div class="m-field"><label>Start *</label>
+        <input type="datetime-local" id="msStart" value="${iso(now)}" oninput="_msRecalc()"></div>
+      <div class="m-field"><label>Ende</label>
+        <input type="datetime-local" id="msEnd" oninput="_msRecalc()"></div>
     </div>
+
     <div class="m-grid-2">
       <div class="m-field"><label>Standort</label>
         <select id="msLoc">
-          <option value="home">🏠 Zuhause</option>
-          <option value="extern">⚡ Extern</option>
+          <option value="home"${defaultLoc==='home'?' selected':''}>🏠 Zuhause</option>
+          <option value="extern"${defaultLoc==='extern'?' selected':''}>⚡ Extern</option>
           <option value="unknown">— Unbekannt</option>
         </select></div>
+      <div class="m-field"><label>Ladeart</label>
+        <select id="msType">
+          <option value="unknown">— Unbekannt</option>
+          <option value="ac">🔌 AC</option>
+          <option value="dc">⚡ DC</option>
+        </select></div>
+    </div>
+
+    <div style="font-size:11px;color:#4a5c72;margin-bottom:4px">Energie &amp; Kosten</div>
+    <div class="m-grid-2">
+      <div class="m-field"><label>kWh geladen *</label>
+        <input type="number" id="msKwh" step="0.001" min="0" placeholder="22.500"
+          oninput="_msClearCost();_msClearPrice()"></div>
+      <div class="m-field"><label>Preis/kWh (€)</label>
+        <input type="number" id="msPrice" step="0.0001" min="0" placeholder="0.3000"
+          oninput="_msClearCost()"></div>
+    </div>
+    <div class="m-grid-2">
+      <div class="m-field"><label>Kosten gesamt (€)</label>
+        <input type="number" id="msCost" step="0.01" min="0" placeholder="6.75"
+          oninput="_msClearPrice()"></div>
       <div class="m-field"><label>Wallbox (kW)</label>
         <input type="number" id="msPower" step="0.1" min="0" placeholder="11"></div>
     </div>
+    <div id="msAvgPwr" style="font-size:11px;color:#4a5c72;margin-bottom:8px"></div>
+
+    <div style="font-size:11px;color:#4a5c72;margin-bottom:4px">Zählerstände (optional)</div>
+    <div class="m-grid-2">
+      <div class="m-field"><label>Zähler vorher (kWh)</label>
+        <input type="number" id="msMeterOld" step="0.001" min="0" placeholder="1200.000"
+          oninput="_msClearKwh()"></div>
+      <div class="m-field"><label>Zähler nachher (kWh)</label>
+        <input type="number" id="msMeterNew" step="0.001" min="0" placeholder="1225.000"
+          oninput="_msClearKwh()"></div>
+    </div>
+
+    <div style="font-size:11px;color:#4a5c72;margin-bottom:4px">SOC &amp; KM (optional)</div>
+    <div class="m-grid-2">
+      <div class="m-field"><label>SOC Start (%)</label>
+        <input type="number" id="msSocStart" step="1" min="0" max="100" placeholder="20"></div>
+      <div class="m-field"><label>SOC Ende (%)</label>
+        <input type="number" id="msSocEnd" step="1" min="0" max="100" placeholder="80"></div>
+    </div>
+    <div class="m-grid-2">
+      <div class="m-field"><label>KM-Stand Start</label>
+        <input type="number" id="msOdoStart" step="1" min="0" placeholder="12500"></div>
+      <div class="m-field"><label>KM-Stand Ende</label>
+        <input type="number" id="msOdoEnd" step="1" min="0" placeholder="12500"></div>
+    </div>
+
+    <div class="m-field"><label>Notiz</label>
+      <input type="text" id="msNote" placeholder="z.B. Schnelllader A9" maxlength="200"></div>
+
+    <div id="msOverlapRow" style="display:none;margin-bottom:8px">
+      <button onclick="submitMobileSession(true)"
+        style="width:100%;padding:10px;background:rgba(245,158,11,.15);color:#f59e0b;
+               border:1px solid rgba(245,158,11,.3);border-radius:8px;font-size:13px;cursor:pointer">
+        ⚠ Überschneidung — trotzdem speichern
+      </button>
+    </div>
+
     <div class="m-btn-row">
       <button class="m-btn-s" onclick="closeMobileSheet()">Abbrechen</button>
-      <button class="m-btn-p" onclick="submitMobileSession()">💾 Speichern</button>
+      <button class="m-btn-p" onclick="submitMobileSession(false)">💾 Speichern</button>
     </div>
     <div id="msResult" style="margin-top:10px"></div>
   `);
 }
 
-async function submitMobileSession() {
+function _msRecalc() {
+  const mOld = parseFloat(document.getElementById('msMeterOld')?.value);
+  const mNew = parseFloat(document.getElementById('msMeterNew')?.value);
+  if (!isNaN(mOld) && !isNaN(mNew) && mNew >= mOld) {
+    const el = document.getElementById('msKwh');
+    if (el && !el.value) el.value = (mNew - mOld).toFixed(3);
+  }
+  const kwh = parseFloat(document.getElementById('msKwh')?.value);
+  const price = parseFloat(document.getElementById('msPrice')?.value);
+  const costEl = document.getElementById('msCost');
+  if (!isNaN(kwh) && !isNaN(price) && costEl && !costEl.value)
+    costEl.value = (kwh * price).toFixed(2);
+  const cost = parseFloat(document.getElementById('msCost')?.value);
+  const priceEl = document.getElementById('msPrice');
+  if (!isNaN(kwh) && !isNaN(cost) && kwh > 0 && priceEl && !priceEl.value)
+    priceEl.value = (cost / kwh).toFixed(4);
+  const start = document.getElementById('msStart')?.value;
+  const end   = document.getElementById('msEnd')?.value;
+  const avgEl = document.getElementById('msAvgPwr');
+  if (avgEl && start && end && !isNaN(kwh) && kwh > 0) {
+    const diffH = (new Date(end) - new Date(start)) / 3600000;
+    avgEl.textContent = diffH > 0 ? 'Ø ' + (kwh / diffH).toFixed(1) + ' kW' : '';
+  }
+}
+function _msClearCost() { const el=document.getElementById('msCost'); if(el) el.value=''; _msRecalc(); }
+function _msClearPrice(){ const el=document.getElementById('msPrice'); if(el) el.value=''; _msRecalc(); }
+function _msClearKwh() {
+  const mOld=parseFloat(document.getElementById('msMeterOld')?.value);
+  const mNew=parseFloat(document.getElementById('msMeterNew')?.value);
+  if (!isNaN(mOld)&&!isNaN(mNew)&&mNew>=mOld) {
+    const kwhEl=document.getElementById('msKwh');
+    if (kwhEl && kwhEl.value === (mNew-mOld).toFixed(3)) kwhEl.value='';
+  }
+  _msRecalc();
+}
+
+async function submitMobileSession(force) {
+  force = !!force;
+  const res = document.getElementById('msResult');
+  const overlapRow = document.getElementById('msOverlapRow');
+  if (overlapRow) overlapRow.style.display = 'none';
+
   const start_ts = document.getElementById('msStart')?.value;
   const end_ts   = document.getElementById('msEnd')?.value || null;
-  const kwh      = parseFloat(document.getElementById('msKwh')?.value) || null;
-  const cost_eur = parseFloat(document.getElementById('msCost')?.value) || null;
-  const location = document.getElementById('msLoc')?.value || 'home';
-  const vehicle_id = document.getElementById('msVehicle')?.value || 'v0';
-  const charger_power_kw = parseFloat(document.getElementById('msPower')?.value) || null;
-  const res = document.getElementById('msResult');
-  if (!start_ts) { if(res) res.innerHTML='<p style="color:#ef4444">⚠️ Startzeit erforderlich</p>'; return; }
+  const kwhVal   = parseFloat(document.getElementById('msKwh')?.value);
+  const priceVal = parseFloat(document.getElementById('msPrice')?.value);
+  const costVal  = parseFloat(document.getElementById('msCost')?.value);
+  const soc_s    = parseFloat(document.getElementById('msSocStart')?.value);
+  const soc_e    = parseFloat(document.getElementById('msSocEnd')?.value);
+  const odo_s    = parseFloat(document.getElementById('msOdoStart')?.value);
+  const odo_e    = parseFloat(document.getElementById('msOdoEnd')?.value);
+  const mOld     = parseFloat(document.getElementById('msMeterOld')?.value);
+  const mNew     = parseFloat(document.getElementById('msMeterNew')?.value);
+  const pwrVal   = parseFloat(document.getElementById('msPower')?.value);
+
+  if (!start_ts) { if(res) res.innerHTML='<p style="color:#ef4444">⚠ Startzeit erforderlich</p>'; return; }
+  if (isNaN(kwhVal) && (isNaN(mOld)||isNaN(mNew))) {
+    if(res) res.innerHTML='<p style="color:#ef4444">⚠ Bitte kWh oder Zählerstände eingeben</p>'; return;
+  }
+
+  const body = {
+    vehicle_id:    document.getElementById('msVehicle')?.value || 'v0',
+    start_ts, end_ts,
+    location:      document.getElementById('msLoc')?.value || 'home',
+    charger_type:  document.getElementById('msType')?.value || 'unknown',
+    manual_reason: document.getElementById('msReason')?.value || null,
+    manual_note:   document.getElementById('msNote')?.value || null,
+    force,
+  };
+  if (!isNaN(kwhVal))   body.kwh_charged      = kwhVal;
+  if (!isNaN(priceVal)) body.price_per_kwh     = priceVal;
+  if (!isNaN(costVal))  body.cost_eur          = costVal;
+  if (!isNaN(soc_s))    body.soc_start         = soc_s;
+  if (!isNaN(soc_e))    body.soc_end           = soc_e;
+  if (!isNaN(odo_s))    body.odo_start         = odo_s;
+  if (!isNaN(odo_e))    body.odo_end           = odo_e;
+  if (!isNaN(mOld))     body.meter_old         = mOld;
+  if (!isNaN(mNew))     body.meter_new         = mNew;
+  if (!isNaN(pwrVal))   body.charger_power_kw  = pwrVal;
+
   if (res) res.innerHTML='<p style="color:#8892b0">⏳ Speichere…</p>';
   const r = await apiFetch('/api/sessions/manual',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({start_ts,end_ts,kwh_charged:kwh,cost_eur,location,vehicle_id,charger_power_kw})
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
   }).then(x=>x.json()).catch(e=>({ok:false,error:e.message}));
+
   if (r.ok) {
     closeMobileSheet();
-    toast('Ladevorgang #'+r.id+' gespeichert','ok');
+    toast('✅ Ladevorgang #'+r.id+' gespeichert','ok');
     window._allSessions = null;
     if (window._mobileCurrentSection==='sessions') renderMobileSessionCards();
     if (window._mobileCurrentSection==='home') refreshMobileDashboard();
+  } else if (r.warning === 'overlap') {
+    if (res) res.innerHTML=`<p style="color:#f59e0b">⚠ ${r.message||'Überschneidung'}</p>`;
+    if (overlapRow) overlapRow.style.display = 'block';
   } else {
     if (res) res.innerHTML=`<p style="color:#ef4444">❌ ${r.error||'Fehler'}</p>`;
   }

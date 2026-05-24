@@ -272,6 +272,9 @@ def init_db():
         ("meter_home_detection_delta_kwh",   "REAL"),
         ("location_source",      "TEXT DEFAULT 'unknown'"),
         ("location_confidence",  "INTEGER DEFAULT 0"),
+        ("manual_note",          "TEXT"),
+        ("manual_reason",        "TEXT"),
+        ("created_mode",         "TEXT DEFAULT 'auto'"),
     ]:
         try:
             con.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
