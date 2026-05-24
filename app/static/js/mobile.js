@@ -109,11 +109,12 @@ async function refreshMobileDashboard() {
     // Standort
     var locEl = document.getElementById('mobileVehicleLocation');
     if (locEl) {
-      var effLoc = normalizeEffectiveLocation(
-        pv.effective_location, pv.location_status, pv.location
-      );
+      var rawEffLoc = String(pv.effective_location || pv.location_status || '').trim().toLowerCase();
+      var effLoc = rawEffLoc === 'disabled' ? 'disabled' :
+                  normalizeEffectiveLocation(pv.effective_location, pv.location_status, pv.location);
       locEl.textContent = effLoc === 'home' ? '🏠 Zuhause' :
                           effLoc === 'extern' ? '📍 Extern' :
+                          effLoc === 'disabled' ? 'Deaktiviert' :
                           '❓ Unbekannt';
     }
 
@@ -140,7 +141,7 @@ async function refreshMobileDashboard() {
     }
     var now = new Date();
     var monthSessions = sessions.filter(function(s) {
-      var d = new Date(s.start_time || s.date || '');
+      var d = new Date(s.start_ts || s.start_time || s.date || '');
       return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
     });
     var totalKwh = monthSessions.reduce(function(a,s) { return a + (parseFloat(s.kwh_charged)||0); }, 0);
@@ -157,7 +158,7 @@ async function refreshMobileDashboard() {
     if (avg) avg.textContent = avgPrice > 0 ? avgPrice.toFixed(3) + ' €' : '—';
 
     // Letzte 3 Ladevorgänge
-    renderMobileRecentSessions(sessions.slice(-3).reverse());
+    renderMobileRecentSessions(sessions.slice(0, 3));
   } catch(e) {
     console.warn('Mobile dashboard refresh error:', e);
   }
