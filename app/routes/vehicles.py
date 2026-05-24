@@ -307,7 +307,7 @@ def api_vehicle_location_test(vid):
     if not vcfg.get("location_enabled"):
         return jsonify({"ok": False, "status": "disabled",
                         "error": "Standortanzeige ist deaktiviert. Bitte aktivieren und speichern."})
-    ha_entities = [e for e in (vcfg.get("location_ha_entities") or []) if e]
+    ha_entities = normalize_ha_entities(vcfg.get("location_ha_entities"))
     provider_has_loc = (st.get("location_lat") is not None
                         or vcfg.get("location_sensor","").strip())
     if not ha_entities and not provider_has_loc:
@@ -326,6 +326,14 @@ def api_vehicle_location_test(vid):
         st_live = _vehicle_states.setdefault(vid, {})
         st_live["location_status"] = loc["status"]
         st_live["location_source"] = loc["source"]
+        st_live["location_source_detail"] = loc.get("source_detail", "")
+        st_live["location_timestamp"] = loc.get("timestamp", "")
+
+    # Reset the refresh TTL so the next dashboard poll reflects this test result
+    # instead of returning stale cached data.
+    from services.location_service import _location_refresh_ts
+    import time as _time_mod
+    _location_refresh_ts[vid] = _time_mod.time()
 
     has_exact = has_permission(_current_user(), "vehicles:location_exact_view")
     resp = {"ok": True, "status": loc["status"], "source": loc["source"],

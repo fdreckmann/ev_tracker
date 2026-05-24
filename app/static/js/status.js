@@ -26,6 +26,13 @@ window.addEventListener('resize', fitAllStats);
 
 // ── Status polling ────────────────────────────────────────────────────────────
 function _applyLocationToTile(locEl, locStatus, locSrc, meterActive, locTitle) {
+  const rawLoc = locStatus ? String(locStatus).trim().toLowerCase() : '';
+  if (rawLoc === 'disabled') {
+    locEl.textContent = 'Deaktiviert';
+    locEl.title = locTitle || 'Standortanzeige ist deaktiviert';
+    locEl.className = 'sv';
+    return;
+  }
   const loc = normalizeEffectiveLocation(locStatus);
   if (loc === 'home') {
     const meterHint = locSrc === 'meter_delta' ? ' 📊' : '';
@@ -77,15 +84,32 @@ async function refreshStatus() {
     if (locEl) {
       // Prefer direct location endpoint (may have bypassed TTL cache).
       // Fall back to /api/status fields which are always fresh after this fix.
-      let locStatus = s.effective_location || s.location_status || s.location || 'unknown';
-      let locSrc    = s.location_source || '';
+      // Prefer the direct location endpoint; fall back to /api/status fields.
+      // Preserve "disabled" explicitly — normalizeEffectiveLocation maps it to "unknown".
+      let rawLocStatus = (locResp && locResp.status) || s.effective_location || s.location_status || s.location || 'unknown';
+      let locStatus = rawLocStatus;
+      let locSrc    = (locResp && locResp.source) || s.location_source || '';
       let locTitle  = '';
       if (locResp && locResp.ok) {
-        locStatus = normalizeEffectiveLocation(locResp.status, locStatus);
-        locSrc    = locResp.source || locSrc;
-        locTitle  = locResp.source_detail || '';
+        // Only overwrite locStatus if the direct endpoint has a meaningful value
+        const direct = String(locResp.status || '').trim().toLowerCase();
+        if (direct === 'disabled') {
+          locStatus = 'disabled';
+        } else {
+          locStatus = normalizeEffectiveLocation(locResp.status, s.effective_location, s.location_status, s.location);
+        }
+        locSrc   = locResp.source || locSrc;
+        locTitle = locResp.source_detail || '';
       } else if (locResp && locResp.error) {
         locTitle = 'Fehler: ' + locResp.error;
+      } else {
+        // No direct location response — check if /api/status says disabled
+        const fallbackRaw = String(s.effective_location || s.location_status || '').trim().toLowerCase();
+        if (fallbackRaw === 'disabled') {
+          locStatus = 'disabled';
+        } else {
+          locStatus = normalizeEffectiveLocation(s.effective_location, s.location_status, s.location);
+        }
       }
       _applyLocationToTile(locEl, locStatus, locSrc, s.meter_home_det_active, locTitle);
     }
