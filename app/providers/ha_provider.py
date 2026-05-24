@@ -127,17 +127,20 @@ class HomeAssistantProvider(BaseProvider):
         data = self._get_entity(sensor)
         if not data: return "unknown"
         raw = data["state"].lower().strip()
-        # Anything unknown/unavailable from HA must not become "extern"
-        from core.location import normalize_location
+        from core.location import normalize_location, _SKIP_VALUES
         canonical = normalize_location(raw)
         if canonical == "home":
             return "home"
         if canonical == "extern":
             return "extern"
-        # canonical == "unknown": also check raw value against user-defined home_states
+        # Check user-defined home_states first
         home_states = [s.strip().lower() for s in self.config.get("home_states","home").split(",")]
-        if raw in home_states or canonical in home_states:
+        if raw in home_states:
             return "home"
+        # device_tracker zones that are not in home_states and not skip values → extern
+        # (e.g. "not_home", "work", "parking", "office" all mean the car is away)
+        if raw not in _SKIP_VALUES:
+            return "extern"
         return "unknown"
 
     def _charge_type(self, power_kw: float | None) -> str:
