@@ -5752,7 +5752,7 @@ async function loadMobileVehicleCards() {
       const isActive = v.active !== false && !v.archived;
       const soc = v.soc != null ? v.soc : null;
       const charging = v.charging || false;
-      const loc = normalizeLocation(v.location_status || v.location || v.effective_location || '');
+      const loc = normalizeEffectiveLocation(v.effective_location, v.location_status, v.location);
       const locLabel = loc === 'home' ? '🏠 Zuhause' : loc === 'extern' ? '📍 Extern' : '';
       const socColor = soc > 60 ? '#64ffda' : soc > 20 ? '#ffd740' : '#ff5252';
       const socBar = soc != null ? `
@@ -6098,8 +6098,8 @@ async function openMobileVehicleDetail(vid) {
   const isThis = state.vehicle_id===vid || vid==='v0';
   const soc = isThis ? state.soc_current : null;
   const charging = isThis ? (state.charging||state.session_active) : false;
-  const loc = isThis ? normalizeLocation(state.location_status || state.location || '') : 'unknown';
-  const locLabel = loc==='home'?'🏠 Zuhause':loc==='extern'?'📍 Extern':loc==='unknown'?'❓ Unbekannt':(loc||'—');
+  const loc = isThis ? normalizeEffectiveLocation(state.effective_location, state.location_status, state.location) : 'unknown';
+  const locLabel = loc==='home'?'🏠 Zuhause':loc==='extern'?'📍 Extern':'❓ Unbekannt';
   const lastPoll = isThis ? state.last_poll : null;
   const socHtml = soc!=null?`
     <div style="margin:12px 0 16px">

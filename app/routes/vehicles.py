@@ -83,7 +83,7 @@ def _update_vehicle_image_meta(vid: str, mode: str, path: str,
 
 # ── Location Helpers ────────────────────────────────────────────────────────────
 
-from services.location_service import detect_location_status as _detect_location_status
+from services.location_service import detect_location_status as _detect_location_status, normalize_ha_entities
 
 
 # ── Vehicle CRUD Routes ─────────────────────────────────────────────────────────
@@ -204,41 +204,45 @@ def api_vehicle_location(vid):
         return jsonify({"error": "Ungültige Fahrzeug-ID"}), 400
     if not _vehicle_exists(vid):
         return jsonify({"error": "Fahrzeug nicht gefunden"}), 404
+    from services.location_service import refresh_vehicle_location_state
     from services.vehicle_service import build_vehicle_config
-    cfg  = load_config()
+    try:
+        loc = refresh_vehicle_location_state(vid)
+    except Exception as exc:
+        return jsonify({"ok": False, "status": "unknown", "error": str(exc)}), 500
+
+    st = _vehicle_states.get(vid, {})
+    cfg = load_config()
     vcfg = cfg if vid == "v0" else build_vehicle_config(
-        next((v for v in cfg.get("extra_vehicles",[]) if v["id"]==vid), {}), cfg)
-    st   = _vehicle_states.get(vid, {})
-    loc  = _detect_location_status(vid, vcfg, st)
+        next((v for v in cfg.get("extra_vehicles", []) if v["id"] == vid), {}), cfg)
 
-    # Fix A: persist the freshly-computed location into vehicle_states so the
-    # dashboard (/api/status) shows it without waiting for the next tracker poll.
-    if loc["status"] not in ("disabled", "unknown"):
-        with _vehicle_states_lock:
-            st_live = _vehicle_states.setdefault(vid, {})
-            st_live["location_status"] = loc["status"]
-            st_live["location_source"] = loc["source"]
-
+    from services.location_service import normalize_ha_entities
+    ha_entities = normalize_ha_entities(vcfg.get("location_ha_entities"))
     has_exact = has_permission(_current_user(), "vehicles:location_exact_view")
-    ha_entities = vcfg.get("location_ha_entities") or []
+
     resp = {
         "ok": True, "vehicle_id": vid,
-        "status": loc["status"], "source": loc["source"],
-        "source_detail": loc["source_detail"],
+        "status": loc.get("status", "unknown"),
+        "source": loc.get("source", "none"),
+        "source_detail": loc.get("source_detail", ""),
+        "location_timestamp": loc.get("timestamp", ""),
         "last_update": st.get("location_timestamp"),
         "has_exact_location": bool(loc.get("latitude")),
-        # Debug fields (fix H)
+        # Config debug
         "location_enabled": vcfg.get("location_enabled", False),
         "location_mode": vcfg.get("location_mode", "home_external"),
         "home_detection_mode": vcfg.get("home_detection_mode", "any"),
+        "ha_entities_configured": ha_entities,
         "ha_entities_count": len(ha_entities),
-        "ha_entities_configured": [e for e in ha_entities if e],
+        # Detection debug
         "ha_entities_queried": loc.get("ha_entities_queried", 0),
         "ha_home_count": loc.get("ha_home_count", 0),
         "ha_extern_count": loc.get("ha_extern_count", 0),
         "provider_has_latlon": loc.get("provider_has_latlon", False),
         "has_location_sensor": loc.get("has_location_sensor", False),
-        "resolved_status": loc.get("resolved_status", loc["status"]),
+        "resolved_status": loc.get("resolved_status", loc.get("status", "unknown")),
+        "ha_debug": loc.get("ha_debug", []),
+        # Tracker state comparison
         "tracker_location": st.get("location"),
         "tracker_location_status": st.get("location_status"),
     }

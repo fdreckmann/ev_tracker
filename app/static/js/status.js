@@ -25,34 +25,35 @@ function fitAllStats() {
 window.addEventListener('resize', fitAllStats);
 
 // ── Status polling ────────────────────────────────────────────────────────────
-function _applyLocationToTile(locEl, locStatus, locSrc, meterActive) {
-  const loc = normalizeLocation(locStatus);
+function _applyLocationToTile(locEl, locStatus, locSrc, meterActive, locTitle) {
+  const loc = normalizeEffectiveLocation(locStatus);
   if (loc === 'home') {
     const meterHint = locSrc === 'meter_delta' ? ' 📊' : '';
     locEl.textContent = ' Heim' + meterHint;
-    locEl.title = locSrc === 'meter_delta' ? 'Zuhause erkannt über steigenden Wallbox-Zähler' : '';
+    locEl.title = locTitle || (locSrc === 'meter_delta' ? 'Zuhause erkannt über steigenden Wallbox-Zähler' : '');
     locEl.className = 'sv g';
   } else if (loc === 'extern') {
     const conflictHint = locSrc === 'meter_conflict' ? ' ⚠' : '';
     locEl.textContent = ' Extern' + conflictHint;
-    locEl.title = locSrc === 'meter_conflict' ? 'Zähler steigt, aber Standortquelle meldet extern' : '';
+    locEl.title = locTitle || (locSrc === 'meter_conflict' ? 'Zähler steigt, aber Standortquelle meldet extern' : '');
     locEl.className = 'sv w';
   } else {
     const hint = meterActive ? ' 🔍' : '';
     locEl.textContent = '—' + hint;
-    locEl.title = meterActive ? 'Zähler-Heimerkennung aktiv…' : '';
+    locEl.title = locTitle || (meterActive ? 'Zähler-Heimerkennung aktiv…' : '');
     locEl.className = 'sv';
   }
 }
 
 async function refreshStatus() {
   try {
-    // Fetch primary status and location endpoint in parallel (fix B).
-    // The location endpoint also updates vehicle_states so subsequent calls benefit too.
     const vid = window._activeVehicleId || 'v0';
-    const [s, locData] = await Promise.all([
-      fetch('/api/status').then(r => r.json()),
-      fetch(`/api/vehicles/${encodeURIComponent(vid)}/location`).then(r => r.json()).catch(() => null),
+    // /api/status now calls refresh_vehicle_location_state internally (TTL-cached).
+    // We also fetch the location endpoint directly to get ha_debug and bypass the cache
+    // on the first call after page load.
+    const [s, locResp] = await Promise.all([
+      apiFetch(`/api/status?vehicle_id=${encodeURIComponent(vid)}`, {cache: 'no-store'}).then(r => r.json()),
+      apiFetch(`/api/vehicles/${encodeURIComponent(vid)}/location`, {cache: 'no-store'}).then(r => r.json()).catch(() => null),
     ]);
     const dot = $('sDot'), txt = $('sTxt');
 
@@ -74,13 +75,19 @@ async function refreshStatus() {
 
     const locEl = $('dLoc');
     if (locEl) {
-      // Prefer the location endpoint result (fresher, queries HA entities directly).
-      // Fall back to /api/status fields.
-      const locStatus = (locData && locData.ok && locData.status !== 'disabled')
-        ? locData.status
-        : (s.location_status || s.location);
-      const locSrc = (locData && locData.ok) ? (locData.source || '') : (s.location_source || '');
-      _applyLocationToTile(locEl, locStatus, locSrc, s.meter_home_det_active);
+      // Prefer direct location endpoint (may have bypassed TTL cache).
+      // Fall back to /api/status fields which are always fresh after this fix.
+      let locStatus = s.effective_location || s.location_status || s.location || 'unknown';
+      let locSrc    = s.location_source || '';
+      let locTitle  = '';
+      if (locResp && locResp.ok) {
+        locStatus = normalizeEffectiveLocation(locResp.status, locStatus);
+        locSrc    = locResp.source || locSrc;
+        locTitle  = locResp.source_detail || '';
+      } else if (locResp && locResp.error) {
+        locTitle = 'Fehler: ' + locResp.error;
+      }
+      _applyLocationToTile(locEl, locStatus, locSrc, s.meter_home_det_active, locTitle);
     }
 
     const rows = await fetch('/api/sessions').then(r => r.json()).catch(() => []);

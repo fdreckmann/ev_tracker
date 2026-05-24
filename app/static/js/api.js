@@ -71,3 +71,13 @@ function normalizeLocation(val) {
        'outside','remote','roaming','public','charging_away','travel'].indexOf(v) >= 0) return 'extern';
   return 'unknown';
 }
+
+// Returns the first non-unknown, non-disabled value from its arguments.
+// Fixes the pitfall of "unknown" being truthy in || chains.
+function normalizeEffectiveLocation() {
+  for (var i = 0; i < arguments.length; i++) {
+    var n = normalizeLocation(arguments[i]);
+    if (n !== 'unknown') return n;
+  }
+  return 'unknown';
+}

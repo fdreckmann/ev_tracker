@@ -135,16 +135,32 @@ def _compute_tracker_status(st: dict) -> str:
 @main_routes_bp.route("/api/status")
 @require_login
 def api_status():
-    vid = request.args.get("vehicle_id","v0")
+    from core.location import effective_session_location
+    from services.location_service import refresh_vehicle_location_state
+    vid = request.args.get("vehicle_id", "v0")
     st  = _state.vehicle_states.get(vid, _state.vehicle_states.get("v0", {}))
     result = dict(st)
     result["tracker_status"] = _compute_tracker_status(st)
     result["all_vehicles"] = [
-        {"vehicle_id": k, "name": v.get("name",k), "running": v.get("running",False),
-         "charging": v.get("charging",False), "session_active": v.get("session_active",False),
+        {"vehicle_id": k, "name": v.get("name", k), "running": v.get("running", False),
+         "charging": v.get("charging", False), "session_active": v.get("session_active", False),
          "tracker_status": _compute_tracker_status(v)}
         for k, v in _state.vehicle_states.items()
     ]
+    # Refresh location (TTL-cached, so concurrent calls don't hammer HA)
+    try:
+        loc = refresh_vehicle_location_state(vid)
+        result["location_status"]        = loc.get("status", "unknown")
+        result["location_source"]        = loc.get("source", "none")
+        result["location_source_detail"] = loc.get("source_detail", "")
+        result["location_timestamp"]     = loc.get("timestamp", "")
+        result["effective_location"]     = loc.get("status", "unknown")
+    except Exception as _loc_exc:
+        result.setdefault("location_status", "unknown")
+        result["location_error"] = str(_loc_exc)
+        result["effective_location"] = effective_session_location(
+            result.get("location"), result.get("location_status")
+        )
     return jsonify(result)
 
 
@@ -171,20 +187,35 @@ def api_mobile_summary():
     # All vehicles (for vehicle switcher)
     all_vehicles_cfg = get_all_vehicles(include_archived=False)
     from core.location import effective_session_location
+    from services.location_service import refresh_vehicle_location_state
     vehicles_out = []
     for v in all_vehicles_cfg:
         vid = v.get("id", "v0")
         vs = _state.vehicle_states.get(vid, {})
+        # Refresh location for primary vehicle; extras use cached state
+        try:
+            loc = refresh_vehicle_location_state(vid)
+            loc_status  = loc.get("status", "unknown")
+            loc_source  = loc.get("source", "none")
+            loc_detail  = loc.get("source_detail", "")
+            loc_ts      = loc.get("timestamp", "")
+        except Exception:
+            loc_status = vs.get("location_status", "unknown")
+            loc_source = vs.get("location_source", "none")
+            loc_detail = vs.get("location_source_detail", "")
+            loc_ts     = vs.get("location_timestamp", "")
         vehicles_out.append({
             "id": vid,
             "name": v.get("car_name", v.get("name", vid)),
             "charging": vs.get("charging", False),
             "soc": vs.get("soc_current"),
             "location": vs.get("location"),
-            "location_status": vs.get("location_status"),
-            "location_source": vs.get("location_source"),
-            "effective_location": effective_session_location(
-                vs.get("location"), vs.get("location_status")
+            "location_status": loc_status,
+            "location_source": loc_source,
+            "location_source_detail": loc_detail,
+            "location_timestamp": loc_ts,
+            "effective_location": loc_status if loc_status not in ("unknown", "disabled") else effective_session_location(
+                vs.get("location"), loc_status
             ),
             "power_kw": vs.get("power_kw"),
             "session_active": vs.get("session_active", False),
