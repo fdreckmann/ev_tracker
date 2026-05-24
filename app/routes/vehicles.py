@@ -83,7 +83,7 @@ def _update_vehicle_image_meta(vid: str, mode: str, path: str,
 
 # ── Location Helpers ────────────────────────────────────────────────────────────
 
-from services.location_service import detect_location_status as _detect_location_status
+from services.location_service import detect_location_status as _detect_location_status, normalize_ha_entities
 
 
 # ── Vehicle CRUD Routes ─────────────────────────────────────────────────────────
