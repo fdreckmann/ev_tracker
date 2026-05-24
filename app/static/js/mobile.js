@@ -222,13 +222,7 @@ function mobileSessionDetail(sessionId) {
 }
 
 function mobileQuickAddSession() {
-  // Vorhandene Funktion zum Hinzufügen nutzen
-  if (typeof openAddSessionModal === 'function') openAddSessionModal();
-  else if (typeof addSession === 'function') addSession();
-  else {
-    // Fallback: Desktop-Ansicht zeigen
-    switchToDesktopSettings();
-  }
+  if (typeof openMobileSessionCreate === 'function') openMobileSessionCreate();
 }
 
 // =========================================================

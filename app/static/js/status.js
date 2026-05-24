@@ -233,10 +233,10 @@ function renderTbl(el, rows, showDel = true) {
       <td style="font-size:.72rem;color:var(--mute)">${r.price_per_kwh ? fmt(r.price_per_kwh, 4) + ' €/kWh' : '—'}${r.entsoe_spot ? '<br><span style="color:#4a5c72">Spot:' + fmt(r.entsoe_spot, 4) + '</span>' : ''}</td>
       <td class="w" id="cost_${r.id}">
         ${r.cost_eur != null ? fmt(r.cost_eur) + ' €' : '—'}
-        ${r.cost_manual ? '<span title="Manuell" style="color:var(--acc);font-size:.65rem"> ✎</span>' : ''}
+        ${r.cost_manual ? '<span title="Kosten manuell" style="color:var(--acc);font-size:.65rem"> ✎</span>' : ''}
       </td>
       ${hasMeter ? `<td style="font-size:.72rem;color:#a78bfa;font-family:var(--mono)">${fmtMeter(r.meter_old)} → ${fmtMeter(r.meter_new)}</td>` : ''}
-      <td>${locBadge(r.location, r.location_source)}</td>
+      <td>${locBadge(r.location, r.location_source)}${(r.provider==='manual'||r.created_mode==='manual')?' <span title="Manuell erfasst" style="background:rgba(100,200,255,.12);color:#64c8ff;border:1px solid rgba(100,200,255,.25);border-radius:3px;padding:1px 5px;font-size:.6rem;font-family:var(--mono)">✏</span>':''}</td>
       ${showDel ? `<td style="display:flex;gap:4px;padding:8px 4px">
         <button onclick="editCost(${r.id},${r.kwh_charged || 0},${r.price_per_kwh || 0})"
           style="background:rgba(0,180,255,.12);color:#00b4ff;border:1px solid rgba(0,180,255,.25);
