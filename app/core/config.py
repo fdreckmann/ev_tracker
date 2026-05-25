@@ -299,6 +299,18 @@ DEFAULT_CONFIG = {
     "missing_charge_ignore_small_bms":               True,
     "missing_charge_default_consumption_kwh_per_100km": 18.0,
     "missing_charge_show_dashboard_hints":           True,
+
+    # Public charging prices
+    "public_charging_price_enabled":        True,
+    "public_charging_default_contract_id":  None,
+    "public_charging_fallback_ac":          0.45,
+    "public_charging_fallback_dc":          0.75,
+
+    # EnBW live price lookup (unofficial API — disabled by default)
+    "enbw_price_lookup_enabled":    False,
+    "enbw_api_subscription_key":    "",
+    "enbw_api_base_url":            "https://enbw-emp.azure-api.net/emobility-public-api/api/v1",
+    "enbw_price_cache_minutes":     60,
 }
 
 VEHICLE_SPECIFIC_KEYS = {

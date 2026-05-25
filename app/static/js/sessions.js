@@ -291,6 +291,21 @@ async function showSessionDetail(id){
     }
   }
 
+  // Public charging price info (extern sessions)
+  if (s.location === 'extern' && (s.price_source || s.charging_contract_name)) {
+    var priceSrcLabels = {
+      'enbw_live':  '🔴 EnBW Live',
+      'contract':   '📄 Ladeabo',
+      'fallback':   '⚙️ Fallback',
+      'config':     '⚙️ Konfiguration',
+      'manual':     '✏️ Manuell',
+    };
+    var pSrc = s.price_source ? (priceSrcLabels[s.price_source] || s.price_source) : null;
+    if (pSrc) stats.push({l:'Preisquelle', v:pSrc, c: s.price_source==='enbw_live'?'#f87171': s.price_source==='contract'?'#60a5fa':'#94a3b8'});
+    if (s.charging_contract_name) stats.push({l:'Ladeabo', v:escapeHtml(s.charging_contract_name), c:'#60a5fa'});
+    if (s.price_confidence != null && s.price_confidence > 0) stats.push({l:'Preis-Konfidenz', v:s.price_confidence+'%'});
+  }
+
   // Manual session specific fields
   if (isManual) {
     stats.push({l:'Quelle', v:'✏️ Manuell', c:'#64c8ff'});

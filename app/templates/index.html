@@ -188,10 +188,23 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   text-align:left;width:100%}
 .cfg-nav-btn:hover{color:var(--txt);background:var(--brd)}
 .cfg-nav-btn.active{background:var(--brd2);color:#fff}
+/* Grouped sidebar sub-items */
+.cfg-nav-sub{padding-left:22px;font-size:.78rem}
+.cfg-grp-label{font-size:.58rem;font-family:var(--mono);font-weight:700;color:#4a5568;
+  text-transform:uppercase;letter-spacing:.14em;padding:14px 10px 4px;user-select:none}
+.cfg-grp-label:first-child{padding-top:6px}
 .cfg-section{}
 .cfg-sec-title{font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;
   letter-spacing:.12em;margin-bottom:18px;display:flex;align-items:center;gap:10px}
 .cfg-sec-title::after{content:'';flex:1;height:1px;background:var(--brd)}
+/* Mobile config nav */
+@media(max-width:640px){
+  #cfgNav{width:100%!important;border-right:none!important;border-bottom:1px solid var(--brd);
+    max-height:52px;overflow:hidden;transition:max-height .25s}
+  #cfgNav.open{max-height:1200px}
+  #cfgNavToggle{display:flex!important}
+  .cfg-grp-label{display:inline-block;padding:6px 10px 4px}
+}
 
 /* ── Mapping mode tabs ── */
 .tab-btn{
@@ -800,32 +813,58 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   <div style="display:flex;gap:0;min-height:600px;background:var(--surf);border:1px solid var(--brd);border-radius:var(--r);overflow:hidden">
 
     <!-- ── Sidebar ── -->
-    <nav id="cfgNav" style="width:220px;flex-shrink:0;background:var(--bg);border-right:1px solid var(--brd);padding:12px 8px;display:flex;flex-direction:column;gap:2px">
-      <div style="font-size:.6rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.12em;padding:8px 10px 6px">Konfiguration</div>
-      <button class="cfg-nav-btn active" onclick="cfgSection('fahrzeuge',this)">🚗 Fahrzeuge</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('verbindung',this)">🔌 Verbindung</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('preise',this)">💰 Preismodell</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('zaehler',this)">⚡ Zählerstand</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('notifications',this)" data-requires-permission="notifications:view">🔔 Benachrichtigungen</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('missing-charges-cfg',this)">🔍 Fehlende Ladevorg.</button>
-      <div style="height:1px;background:var(--brd);margin:8px 4px"></div>
-      <button class="cfg-nav-btn" onclick="cfgSection('smtp',this)">📧 SMTP</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('reports',this)" data-requires-permission="reports:view">📊 Auto-Berichte</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('abrechnung',this)" data-requires-permission="billing:view">💼 Abrechnung</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('report-archive',this)" data-requires-permission="reports:archive">📁 Report-Archiv</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('tarif',this)" data-requires-permission="tariffs:view">⚡ Stromtarif</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('api-tokens',this)" data-requires-permission="api_tokens:view">🔑 API-Tokens</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('mqtt',this)" data-requires-permission="mqtt:view">📡 MQTT</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('notif-rules',this)" data-requires-permission="notifications:view">🔔 Benachr.-Regeln</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('auth',this)">🔐 Login &amp; Sicherheit</button>
-      <div style="height:1px;background:var(--brd);margin:8px 4px"></div>
-      <button class="cfg-nav-btn" onclick="cfgSection('export-tpl',this)">📋 Export-Vorlagen</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('audit',this)">📜 Audit-Log</button>
-      <div style="height:1px;background:var(--brd);margin:8px 4px"></div>
-      <button class="cfg-nav-btn" onclick="cfgSection('benutzer',this)">👥 Benutzer</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('roles',this)" data-requires-permission="users:manage_permissions">🔐 Rollen &amp; Rechte</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('profil',this)">👤 Mein Profil</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('version-info',this)">ℹ️ Version &amp; Update</button>
+    <nav id="cfgNav" style="width:230px;flex-shrink:0;background:var(--bg);border-right:1px solid var(--brd);padding:4px 8px 16px;display:flex;flex-direction:column;gap:1px;overflow-y:auto">
+
+      <!-- Mobile toggle -->
+      <button id="cfgNavToggle" onclick="document.getElementById('cfgNav').classList.toggle('open')"
+        style="display:none;align-items:center;justify-content:space-between;width:100%;padding:10px 12px;
+               background:none;border:none;color:var(--txt);font-size:.85rem;cursor:pointer">
+        <span id="cfgNavActiveLabel">Einstellungen</span>
+        <span style="font-size:.7rem;color:var(--mute)">▾</span>
+      </button>
+
+      <!-- 1. Mein Konto & Sicherheit -->
+      <div class="cfg-grp-label">Mein Konto</div>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('profil',this)">🔒 Konto &amp; Sicherheit</button>
+
+      <!-- 2. Benutzer & Rollen -->
+      <div class="cfg-grp-label" data-requires-permission="users:view">Benutzer &amp; Rollen</div>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('benutzer',this)" data-requires-permission="users:view">👥 Benutzer</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('roles',this)" data-requires-permission="users:manage_permissions">🔐 Rollen &amp; Rechte</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('audit',this)" data-requires-permission="users:view">📜 Audit-Log</button>
+
+      <!-- 3. Fahrzeuge -->
+      <div class="cfg-grp-label">Fahrzeuge</div>
+      <button class="cfg-nav-btn cfg-nav-sub active" onclick="cfgSection('fahrzeuge',this)">🚗 Fahrzeuge</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('verbindung',this)">🔌 Verbindung</button>
+
+      <!-- 4. Laden & Preise -->
+      <div class="cfg-grp-label">Laden &amp; Preise</div>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('preise',this)">💰 Preismodell</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('zaehler',this)">🔌 Zählerstand</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('tarif',this)" data-requires-permission="tariffs:view">⚡ Stromtarif</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('ladeabos',this)" data-requires-permission="config:read">🪙 Ladeabos</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('abrechnung',this)" data-requires-permission="billing:view">💼 Abrechnung</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('missing-charges-cfg',this)">🔍 Fehlende Ladevorg.</button>
+
+      <!-- 5. Benachrichtigungen -->
+      <div class="cfg-grp-label" data-requires-permission="notifications:view">Benachrichtigungen</div>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('notifications',this)" data-requires-permission="notifications:view">🔔 Einstellungen</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('notif-rules',this)" data-requires-permission="notifications:view">📋 Regeln</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('smtp',this)">📧 SMTP</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('mqtt',this)" data-requires-permission="mqtt:view">📡 MQTT</button>
+
+      <!-- 6. Berichte & Export -->
+      <div class="cfg-grp-label">Berichte &amp; Export</div>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('reports',this)" data-requires-permission="reports:view">📊 Auto-Berichte</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('report-archive',this)" data-requires-permission="reports:archive">📁 Report-Archiv</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('export-tpl',this)">📋 Export-Vorlagen</button>
+
+      <!-- 7. System & Betrieb -->
+      <div class="cfg-grp-label">System &amp; Betrieb</div>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('auth',this)">🔐 OAuth &amp; SSO</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('api-tokens',this)" data-requires-permission="api_tokens:view">🔑 API-Tokens</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('version-info',this)">ℹ️ Version &amp; Update</button>
     </nav>
 
     <!-- ── Content ── -->
@@ -1500,6 +1539,139 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       </div>
 
       <!-- ══════════════════════════════════════════════════════════
+           LADEABOS / ÖFFENTLICHES LADEN
+           ══════════════════════════════════════════════════════════ -->
+      <div id="cfgsec-ladeabos" class="cfg-section" style="display:none">
+        <div class="card">
+          <div class="card-title">⚡ Ladeabos &amp; Öffentliche Preise</div>
+          <p style="font-size:.8rem;color:var(--mute);margin:0 0 16px">
+            Definiere dein Ladeabo (z.B. EnBW M, IONITY Passport), damit der EV Tracker die Kosten externer Ladevorgänge automatisch berechnet.
+            Der Standardvertrag wird bei neuen Extern-Sessions verwendet.
+          </p>
+
+          <!-- Global settings -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:18px;padding:14px;background:#1e2030;border-radius:8px">
+            <div>
+              <label class="cfg-lbl">Öffentliche Preisberechnung</label>
+              <select id="pc_enabled" style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
+                <option value="1">Aktiviert</option>
+                <option value="0">Deaktiviert</option>
+              </select>
+            </div>
+            <div>
+              <label class="cfg-lbl">Fallback AC (€/kWh)</label>
+              <input type="number" id="pc_fallback_ac" step="0.01" min="0" max="5"
+                style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+            </div>
+            <div>
+              <label class="cfg-lbl">Fallback DC (€/kWh)</label>
+              <input type="number" id="pc_fallback_dc" step="0.01" min="0" max="5"
+                style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+            </div>
+          </div>
+          <button class="btn-p" onclick="savePcConfig()" style="margin-bottom:24px">💾 Speichern</button>
+          <span id="pc_save_status" style="font-size:.75rem;color:var(--mute);margin-left:8px"></span>
+
+          <!-- Contract list -->
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <div style="font-size:.85rem;font-weight:600">Meine Ladeabos</div>
+            <button class="btn-s" onclick="showContractForm()" data-requires-permission="config:write">➕ Neues Abo</button>
+          </div>
+          <div id="contract_list" style="display:grid;gap:8px;margin-bottom:18px">
+            <div style="font-size:.78rem;color:var(--mute);text-align:center;padding:16px">Lade…</div>
+          </div>
+
+          <!-- Add/Edit form -->
+          <div id="contract_form" style="display:none;padding:14px;background:#1e2030;border-radius:8px;margin-bottom:18px">
+            <div style="font-size:.82rem;font-weight:600;margin-bottom:12px" id="contract_form_title">Neues Ladeabo</div>
+            <input type="hidden" id="cf_id">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+              <div>
+                <label class="cfg-lbl">Name *</label>
+                <input type="text" id="cf_name" placeholder="z.B. EnBW M"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+              </div>
+              <div>
+                <label class="cfg-lbl">Anbieter (CPO)</label>
+                <input type="text" id="cf_cpo" placeholder="z.B. enbw, ionity, tesla"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+              </div>
+              <div>
+                <label class="cfg-lbl">AC-Preis (€/kWh)</label>
+                <input type="number" id="cf_price_ac" step="0.01" min="0" max="5" placeholder="leer = nicht verfügbar"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+              </div>
+              <div>
+                <label class="cfg-lbl">DC-Preis (€/kWh)</label>
+                <input type="number" id="cf_price_dc" step="0.01" min="0" max="5" placeholder="leer = nicht verfügbar"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+              </div>
+              <div>
+                <label class="cfg-lbl">Einheitspreis (€/kWh, falls AC=DC)</label>
+                <input type="number" id="cf_price_kwh" step="0.01" min="0" max="5" placeholder="optional"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+              </div>
+              <div>
+                <label class="cfg-lbl">Monatliche Grundgebühr (€)</label>
+                <input type="number" id="cf_monthly" step="0.01" min="0" value="0"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+              </div>
+            </div>
+            <div style="margin-bottom:12px">
+              <label class="cfg-lbl">Notizen</label>
+              <input type="text" id="cf_notes" placeholder="Freitext"
+                style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn-p" onclick="saveContractForm()" data-requires-permission="config:write">💾 Speichern</button>
+              <button class="btn-s" onclick="hideContractForm()">Abbrechen</button>
+              <span id="cf_status" style="font-size:.75rem;color:var(--mute);align-self:center"></span>
+            </div>
+          </div>
+
+          <!-- Built-in templates -->
+          <details style="margin-top:8px">
+            <summary style="font-size:.8rem;color:var(--mute);cursor:pointer;padding:6px 0">📋 Vorlagen importieren (gängige Ladeabos)</summary>
+            <div id="builtin_contract_list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-top:10px">
+              <div style="font-size:.78rem;color:var(--mute)">Lade…</div>
+            </div>
+          </details>
+        </div>
+
+        <!-- EnBW Live Price (advanced) -->
+        <div class="card" style="margin-top:12px">
+          <div class="card-title" style="font-size:.9rem">🔴 EnBW Live-Preisabfrage <span style="font-size:.7rem;color:#f59e0b;font-weight:400">(inoffiziell / experimentell)</span></div>
+          <div style="font-size:.78rem;color:#f59e0b;background:#2d1f00;border:1px solid #7c4f00;border-radius:6px;padding:10px;margin-bottom:14px">
+            ⚠️ Diese Funktion nutzt eine <strong>inoffizielle, nicht dokumentierte API</strong> von EnBW. Sie kann sich jederzeit ohne Vorwarnung ändern oder abgeschaltet werden.
+            Nur aktivieren wenn du einen gültigen API-Key hast.
+          </div>
+          <div style="display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center;margin-bottom:12px">
+            <label class="cfg-lbl" style="margin:0">Live-Abfrage aktivieren</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="enbw_enabled" onchange="toggleEnbwSection()">
+              <span style="font-size:.8rem;color:var(--mute)">Nur aktivieren wenn EVSE-IDs in Sessions bekannt sind</span>
+            </label>
+          </div>
+          <div id="enbw_section" style="display:none">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+              <div>
+                <label class="cfg-lbl">API Subscription Key</label>
+                <input type="password" id="enbw_api_key" placeholder="••••••••"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+              </div>
+              <div>
+                <label class="cfg-lbl">Cache-Dauer (Minuten)</label>
+                <input type="number" id="enbw_cache_min" step="5" min="5" max="1440" value="60"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+              </div>
+            </div>
+          </div>
+          <button class="btn-p" onclick="saveEnbwConfig()">💾 Speichern</button>
+          <span id="enbw_save_status" style="font-size:.75rem;color:var(--mute);margin-left:8px"></span>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════════
            API TOKENS
            ══════════════════════════════════════════════════════════ -->
       <div id="cfgsec-api-tokens" class="cfg-section" style="display:none">
@@ -2010,45 +2182,10 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
       <!-- LOGIN & SICHERHEIT -->
       <div id="cfgsec-auth" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">Login &amp; Sicherheit</div>
+        <div class="cfg-sec-title">OAuth &amp; SSO</div>
         <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
-          Schützt die Oberfläche mit Passwort. Ohne Passwort ist der Zugang frei.
+          Social Login via Google oder Microsoft konfigurieren. Passwort, 2FA und Passkeys sind unter <a href="#" onclick="cfgSection('profil',null);return false" style="color:var(--acc2)">Mein Konto &amp; Sicherheit</a>.
         </p>
-        <div id="authStatus" style="margin-bottom:14px;font-size:.78rem;font-family:var(--mono);color:var(--mute)">⏳ Lade…</div>
-
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-          <div><label>Neues Passwort</label>
-            <input type="password" id="authNewPw" placeholder="••••••••" autocomplete="new-password"></div>
-          <div><label>Wiederholen</label>
-            <input type="password" id="authNewPw2" placeholder="••••••••" autocomplete="new-password"></div>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
-          <button class="btn-p" style="font-size:.78rem;padding:7px 16px" onclick="setAuthPassword()">🔑 Passwort setzen</button>
-          <button class="btn-d" style="font-size:.78rem;padding:7px 16px" onclick="disableAuth()">🔓 Passwort entfernen</button>
-        </div>
-
-        <div style="border-top:1px solid var(--brd);padding-top:14px">
-          <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Zwei-Faktor-Authentifizierung (TOTP)</div>
-          <div id="totpStatus" style="font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-bottom:10px">—</div>
-          <div id="smtpRequiredForTotp" style="display:none;padding:10px 14px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px;font-size:.74rem;font-family:var(--mono);color:var(--warn);margin-bottom:12px">
-            ⚠ 2FA kann erst aktiviert werden, nachdem SMTP erfolgreich konfiguriert wurde.
-            <a href="#" onclick="cfgSection('smtp',null);return false" style="color:var(--acc2);margin-left:6px">→ SMTP konfigurieren</a>
-          </div>
-          <div id="totpQrWrap" style="display:none;margin-bottom:12px">
-            <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:8px">
-              Scanne den QR-Code mit Google Authenticator oder Authy:
-            </div>
-            <div id="totpQrImg" style="margin-bottom:8px"></div>
-            <div style="font-size:.7rem;font-family:var(--mono);color:var(--acc2)" id="totpSecret"></div>
-            <div class="warn-box" style="margin-top:10px">
-              ⚠ Speichere den Secret-Code sicher! Er wird nur einmal angezeigt.
-            </div>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn-s" style="font-size:.78rem;padding:7px 16px" id="totpSetupBtn" onclick="setupTotp()">📱 2FA einrichten</button>
-            <button class="btn-d" id="totpDisableBtn" style="font-size:.78rem;padding:7px 16px;display:none" onclick="disableTotp()">❌ 2FA deaktivieren</button>
-          </div>
-        </div>
 
         <div style="border-top:1px solid var(--brd);padding-top:14px;margin-top:14px">
           <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">SSO — Google / Microsoft</div>
@@ -2097,23 +2234,6 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           <span id="oauthSaveInfo" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-left:10px"></span>
         </div>
 
-        <!-- Passkeys -->
-        <div style="border-top:1px solid var(--brd);padding-top:14px;margin-top:14px">
-          <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">Passkeys (biometrisch / Hardware-Key)</div>
-          <div id="passkeyList" style="margin-bottom:12px">
-            <div style="font-size:.73rem;font-family:var(--mono);color:var(--mute)">Lade…</div>
-          </div>
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <button class="btn-s" onclick="registerPasskey()" style="font-size:.78rem">
-              ➕ Passkey hinzufügen
-            </button>
-            <button class="btn-s" onclick="showWebAuthnConfig()" style="font-size:.72rem;background:rgba(255,255,255,.04);border-color:var(--brd);color:var(--mute)" title="WebAuthn RP-ID & Origin prüfen">
-              🔍 Domain-Konfig
-            </button>
-          </div>
-          <span id="passkeyMsg" style="font-size:.73rem;font-family:var(--mono);color:var(--acc);display:block;margin-top:8px"></span>
-          <div id="webauthnConfigInfo" style="display:none;margin-top:10px;padding:10px 14px;background:rgba(0,180,255,.06);border:1px solid rgba(0,180,255,.2);border-radius:8px;font-size:.7rem;font-family:var(--mono);color:var(--mute)"></div>
-        </div>
       </div>
 
       <!-- EXPORT VORLAGEN -->
@@ -2154,32 +2274,38 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <div id="userList"><div class="empty">Lade…</div></div>
       </div>
 
-      <!-- PROFIL -->
+      <!-- PROFIL / KONTO & SICHERHEIT -->
       <div id="cfgsec-profil" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">Mein Profil</div>
+        <div class="cfg-sec-title">Mein Konto &amp; Sicherheit</div>
         <div id="profileInfo" style="font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-bottom:18px">⏳ Lade…</div>
 
-        <div style="margin-bottom:20px">
-          <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Passwort ändern</div>
-          <div style="display:grid;gap:8px">
-            <div><label>Aktuelles Passwort</label><input type="password" id="prof_cur_pw" placeholder="••••••••"></div>
-            <div><label>Neues Passwort</label><input type="password" id="prof_new_pw" placeholder="Mindestens 8 Zeichen" oninput="checkPwStrength(this.value,'prof_pw_strength')">
+        <!-- Passwort ändern -->
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-title" style="font-size:.82rem">🔑 Passwort ändern</div>
+          <div style="display:grid;gap:8px;max-width:480px">
+            <div><label>Aktuelles Passwort</label><input type="password" id="prof_cur_pw" placeholder="••••••••" autocomplete="current-password"></div>
+            <div><label>Neues Passwort</label><input type="password" id="prof_new_pw" placeholder="Mindestens 8 Zeichen" oninput="checkPwStrength(this.value,'prof_pw_strength')" autocomplete="new-password">
             <div id="prof_pw_strength" style="font-size:.7rem;font-family:var(--mono);margin-top:4px;color:var(--mute)"></div></div>
-            <div><label>Wiederholen</label><input type="password" id="prof_new_pw2" placeholder="••••••••"></div>
+            <div><label>Wiederholen</label><input type="password" id="prof_new_pw2" placeholder="••••••••" autocomplete="new-password"></div>
           </div>
-          <button class="btn-p" style="margin-top:10px;font-size:.78rem;padding:7px 16px" onclick="changeMyPassword()">🔑 Passwort ändern</button>
+          <button class="btn-p" style="margin-top:10px;font-size:.78rem;padding:7px 16px" onclick="changeMyPassword()">💾 Passwort ändern</button>
           <span id="profPwInfo" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-left:10px"></span>
         </div>
 
-        <div style="border-top:1px solid var(--brd);padding-top:14px">
-          <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Zwei-Faktor-Authentifizierung</div>
+        <!-- 2FA / TOTP -->
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-title" style="font-size:.82rem">📱 Zwei-Faktor-Authentifizierung (2FA)</div>
           <div id="profTotpStatus" style="font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-bottom:10px">—</div>
+          <div id="smtpRequiredForTotp2" style="display:none;padding:10px 14px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px;font-size:.74rem;font-family:var(--mono);color:var(--warn);margin-bottom:12px">
+            ⚠ 2FA kann erst aktiviert werden, nachdem SMTP erfolgreich konfiguriert wurde.
+            <a href="#" onclick="cfgSection('smtp',null);return false" style="color:var(--acc2);margin-left:6px">→ SMTP konfigurieren</a>
+          </div>
           <div id="profTotpQrWrap" style="display:none;margin-bottom:12px">
-            <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:8px">QR-Code scannen:</div>
+            <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:8px">QR-Code mit Google Authenticator / Authy scannen:</div>
             <div id="profTotpQrImg" style="margin-bottom:8px"></div>
             <div style="font-size:.7rem;font-family:var(--mono);color:var(--acc2);margin-bottom:10px" id="profTotpSecret"></div>
             <div style="display:flex;gap:8px;align-items:center">
-              <input type="text" id="profTotpCode" placeholder="Code eingeben zur Bestätigung" style="flex:1;margin-bottom:0">
+              <input type="text" id="profTotpCode" placeholder="Code eingeben zur Bestätigung" style="flex:1;margin-bottom:0" autocomplete="one-time-code">
               <button class="btn-p" style="font-size:.78rem;padding:7px 14px;white-space:nowrap" onclick="confirmMyTotp()">✓ Bestätigen</button>
             </div>
           </div>
@@ -2187,13 +2313,30 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             <button class="btn-s" style="font-size:.78rem;padding:7px 14px" onclick="setupMyTotp()">📱 2FA einrichten</button>
             <button class="btn-d" id="profTotpDisableBtn" style="font-size:.78rem;padding:7px 14px;display:none" onclick="disableMyTotp()">❌ 2FA deaktivieren</button>
           </div>
+          <!-- Backup Codes -->
+          <div id="backupCodesSection" style="border-top:1px solid var(--brd);padding-top:14px;margin-top:14px;display:none">
+            <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">2FA Backup-Codes</div>
+            <div id="backupCodeCount" style="font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-bottom:10px">—</div>
+            <button class="btn-s" style="font-size:.78rem;padding:7px 14px" onclick="generateBackupCodes()">🔑 Neue Backup-Codes generieren</button>
+          </div>
         </div>
 
-        <!-- Backup Codes -->
-        <div id="backupCodesSection" style="border-top:1px solid var(--brd);padding-top:14px;margin-top:14px;display:none">
-          <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">2FA Backup-Codes</div>
-          <div id="backupCodeCount" style="font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-bottom:10px">—</div>
-          <button class="btn-s" style="font-size:.78rem;padding:7px 14px" onclick="generateBackupCodes()">🔑 Neue Backup-Codes generieren</button>
+        <!-- Passkeys -->
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-title" style="font-size:.82rem">🔐 Passkeys (Fingerabdruck / Face ID / Hardware-Key)</div>
+          <div id="passkeyList" style="margin-bottom:12px">
+            <div style="font-size:.73rem;font-family:var(--mono);color:var(--mute)">Lade…</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <button class="btn-s" onclick="registerPasskey()" style="font-size:.78rem">
+              ➕ Passkey hinzufügen
+            </button>
+            <button class="btn-s" onclick="showWebAuthnConfig()" style="font-size:.72rem;background:rgba(255,255,255,.04);border-color:var(--brd);color:var(--mute)" title="WebAuthn RP-ID & Origin prüfen">
+              🔍 Domain-Konfig
+            </button>
+          </div>
+          <span id="passkeyMsg" style="font-size:.73rem;font-family:var(--mono);color:var(--acc);display:block;margin-top:8px"></span>
+          <div id="webauthnConfigInfo" style="display:none;margin-top:10px;padding:10px 14px;background:rgba(0,180,255,.06);border:1px solid rgba(0,180,255,.2);border-radius:8px;font-size:.7rem;font-family:var(--mono);color:var(--mute)"></div>
         </div>
       </div>
 
@@ -4918,21 +5061,26 @@ async function testVehicleLocation() {
 async function loadAuthStatus(){
   const r = await fetch('/api/auth/status').then(r=>r.json()).catch(()=>null);
   if(!r) return;
+  // authStatus div only present in auth section (legacy mode indicator)
   const el = $('authStatus');
-  const parts = [];
-  if(r.auth_enabled)    parts.push('<span style="color:var(--acc)">🔐 Passwort</span>');
-  if(r.totp_enabled)    parts.push('<span style="color:var(--acc2)">📱 2FA</span>');
-  if(r.google_enabled)  parts.push('<span style="color:#4285F4">Google</span>');
-  if(r.microsoft_enabled) parts.push('<span style="color:#00A4EF">Microsoft</span>');
-  if(r.user_email)      parts.push(`<span style="color:var(--mute)">${r.user_email}</span>`);
-  el.innerHTML = parts.length
-    ? 'Aktiv: ' + parts.join(' · ')
-    : '<span style="color:var(--mute)">🔓 Kein Login — freier Zugang</span>';
-  if(r.totp_enabled) $('totpStatus').innerHTML='<span style="color:var(--acc2)">📱 2FA ist aktiv</span>';
-  else $('totpStatus').textContent='Kein 2FA konfiguriert';
-  $('totpDisableBtn').style.display = r.totp_enabled ? '' : 'none';
-  if(r.google_enabled)    $('googleOauthStatus').innerHTML='<span style="color:var(--acc)">✅ aktiv</span>';
-  if(r.microsoft_enabled) $('msOauthStatus').innerHTML='<span style="color:var(--acc)">✅ aktiv</span>';
+  if(el){
+    const parts = [];
+    if(r.auth_enabled)      parts.push('<span style="color:var(--acc)">🔐 Passwort</span>');
+    if(r.totp_enabled)      parts.push('<span style="color:var(--acc2)">📱 2FA</span>');
+    if(r.google_enabled)    parts.push('<span style="color:#4285F4">Google</span>');
+    if(r.microsoft_enabled) parts.push('<span style="color:#00A4EF">Microsoft</span>');
+    if(r.user_email)        parts.push(`<span style="color:var(--mute)">${r.user_email}</span>`);
+    el.innerHTML = parts.length
+      ? 'Aktiv: ' + parts.join(' · ')
+      : '<span style="color:var(--mute)">🔓 Kein Login — freier Zugang</span>';
+  }
+  // Legacy single-user TOTP elements (may or may not exist)
+  const totpSt = $('totpStatus');
+  if(totpSt) { if(r.totp_enabled) totpSt.innerHTML='<span style="color:var(--acc2)">📱 2FA ist aktiv</span>'; else totpSt.textContent='Kein 2FA konfiguriert'; }
+  const totpDisBtn = $('totpDisableBtn');
+  if(totpDisBtn) totpDisBtn.style.display = r.totp_enabled ? '' : 'none';
+  if(r.google_enabled    && $('googleOauthStatus')) $('googleOauthStatus').innerHTML='<span style="color:var(--acc)">✅ aktiv</span>';
+  if(r.microsoft_enabled && $('msOauthStatus'))     $('msOauthStatus').innerHTML='<span style="color:var(--acc)">✅ aktiv</span>';
   // Show redirect URIs
   const base = ($('oauth_base_url')?.value || window.location.origin).replace(/\/$/,'');
   if($('googleRedirectUri')) $('googleRedirectUri').textContent = base + '/auth/google/callback';
@@ -5661,6 +5809,193 @@ async function recalculateTariff(){
   }
 }
 
+// ── LADEABOS / ÖFFENTLICHES LADEN ────────────────────────────────────────────
+
+async function loadPcConfig(){
+  try{
+    const r = await apiFetch('/api/config').then(r=>r.json());
+    if($('pc_enabled'))   $('pc_enabled').value   = r.public_charging_price_enabled ? '1':'0';
+    if($('pc_fallback_ac')) $('pc_fallback_ac').value = r.public_charging_fallback_ac ?? 0.45;
+    if($('pc_fallback_dc')) $('pc_fallback_dc').value = r.public_charging_fallback_dc ?? 0.75;
+    if($('enbw_enabled'))  $('enbw_enabled').checked = !!r.enbw_price_lookup_enabled;
+    if($('enbw_cache_min')) $('enbw_cache_min').value = r.enbw_price_cache_minutes ?? 60;
+    toggleEnbwSection();
+  }catch(e){ console.warn('loadPcConfig',e); }
+}
+
+async function savePcConfig(){
+  const st = $('pc_save_status');
+  if(st){st.textContent='⏳…';st.style.color='var(--mute)';}
+  try{
+    const body={
+      public_charging_price_enabled: $('pc_enabled').value==='1',
+      public_charging_fallback_ac: parseFloat($('pc_fallback_ac').value)||0.45,
+      public_charging_fallback_dc: parseFloat($('pc_fallback_dc').value)||0.75,
+    };
+    const r=await apiFetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+    if(r.ok||r.saved){if(st){st.textContent='✅ Gespeichert';st.style.color='#6ee7b7';}}
+    else{if(st){st.textContent='❌ '+(r.error||'Fehler');st.style.color='#f87171';}}
+  }catch(e){if(st){st.textContent='❌ '+e.message;st.style.color='#f87171';}}
+}
+
+async function saveEnbwConfig(){
+  const st=$('enbw_save_status');
+  if(st){st.textContent='⏳…';st.style.color='var(--mute)';}
+  try{
+    const body={
+      enbw_price_lookup_enabled: $('enbw_enabled').checked,
+      enbw_price_cache_minutes: parseInt($('enbw_cache_min').value)||60,
+    };
+    const apiKey=$('enbw_api_key')?.value||'';
+    if(apiKey && apiKey!=='********') body.enbw_api_subscription_key=apiKey;
+    const r=await apiFetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+    if(r.ok||r.saved){if(st){st.textContent='✅ Gespeichert';st.style.color='#6ee7b7';}}
+    else{if(st){st.textContent='❌ '+(r.error||'Fehler');st.style.color='#f87171';}}
+  }catch(e){if(st){st.textContent='❌ '+e.message;st.style.color='#f87171';}}
+}
+
+function toggleEnbwSection(){
+  const on=$('enbw_enabled')?.checked;
+  const sec=$('enbw_section');
+  if(sec) sec.style.display=on?'block':'none';
+}
+
+async function loadContracts(){
+  try{
+    const rows=await apiFetch('/api/charging-contracts').then(r=>r.json());
+    const el=$('contract_list');
+    if(!el) return;
+    if(!rows.length){
+      el.innerHTML='<div style="font-size:.78rem;color:var(--mute);text-align:center;padding:16px">Noch keine Ladeabos konfiguriert. Über „Neues Abo" hinzufügen oder eine Vorlage importieren.</div>';
+      return;
+    }
+    el.innerHTML=rows.map(c=>`
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#1e2030;border-radius:8px;border:1px solid ${c.is_default?'#3b82f6':'var(--brd)'}">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.85rem;font-weight:600">${escapeHtml(c.name)} ${c.is_default?'<span style="font-size:.7rem;background:#1e3a5f;color:#60a5fa;padding:1px 6px;border-radius:4px">Standard</span>':''}</div>
+          <div style="font-size:.73rem;color:var(--mute);margin-top:2px">
+            ${c.cpo?'CPO: '+escapeHtml(c.cpo)+' · ':''}
+            ${c.price_ac_kwh!=null?'AC '+c.price_ac_kwh.toFixed(3)+' €/kWh · ':''}
+            ${c.price_dc_kwh!=null?'DC '+c.price_dc_kwh.toFixed(3)+' €/kWh · ':''}
+            ${c.price_kwh!=null?'Einheitspreis '+c.price_kwh.toFixed(3)+' €/kWh · ':''}
+            ${c.monthly_fee_eur?c.monthly_fee_eur.toFixed(2)+' €/Monat':'kein Abo'}
+          </div>
+          ${c.notes?`<div style="font-size:.72rem;color:var(--mute)">${escapeHtml(c.notes)}</div>`:''}
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          ${!c.is_default?`<button class="btn-s" style="font-size:.72rem;padding:4px 8px" onclick="setDefaultContract(${c.id})" data-requires-permission="config:write">⭐ Standard</button>`:''}
+          <button class="btn-s" style="font-size:.72rem;padding:4px 8px" onclick="editContract(${c.id})" data-requires-permission="config:write">✏️</button>
+          <button class="btn-s" style="font-size:.72rem;padding:4px 8px;color:#f87171" onclick="deleteContract(${c.id},'${escapeHtml(c.name)}')" data-requires-permission="config:write">🗑️</button>
+        </div>
+      </div>`).join('');
+    applyPermissions();
+  }catch(e){ const el=$('contract_list'); if(el) el.innerHTML='<div style="color:#f87171;font-size:.78rem">'+e.message+'</div>'; }
+}
+
+async function loadBuiltinContracts(){
+  try{
+    const rows=await apiFetch('/api/charging-contracts/builtin').then(r=>r.json());
+    const el=$('builtin_contract_list');
+    if(!el) return;
+    el.innerHTML=rows.map(c=>`
+      <div style="padding:10px 12px;background:#1e2030;border-radius:8px;border:1px solid var(--brd)">
+        <div style="font-size:.82rem;font-weight:600;margin-bottom:2px">${escapeHtml(c.name)}</div>
+        <div style="font-size:.72rem;color:var(--mute);margin-bottom:6px">${escapeHtml(c.description||'')}
+          ${c.monthly_fee_eur?'<br>'+c.monthly_fee_eur.toFixed(2)+' €/Monat':''}
+          ${c.price_ac_kwh!=null?'<br>AC: '+c.price_ac_kwh.toFixed(3)+' €/kWh':''}
+          ${c.price_dc_kwh!=null?'<br>DC: '+c.price_dc_kwh.toFixed(3)+' €/kWh':''}
+        </div>
+        <button class="btn-s" style="font-size:.72rem;padding:3px 8px" onclick="importBuiltinContract(${JSON.stringify(JSON.stringify(c))})" data-requires-permission="config:write">📥 Importieren</button>
+      </div>`).join('');
+    applyPermissions();
+  }catch(e){ console.warn('loadBuiltinContracts',e); }
+}
+
+async function importBuiltinContract(jsonStr){
+  try{
+    const c=JSON.parse(jsonStr);
+    const r=await apiFetch('/api/charging-contracts',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name:c.name,cpo:c.cpo||'',price_ac_kwh:c.price_ac_kwh,price_dc_kwh:c.price_dc_kwh,monthly_fee_eur:c.monthly_fee_eur||0,notes:c.description||''})
+    }).then(r=>r.json());
+    if(r.id){ loadContracts(); }
+    else{ alert(r.error||'Fehler beim Importieren'); }
+  }catch(e){ alert(e.message); }
+}
+
+function showContractForm(data){
+  const f=$('contract_form');
+  if(!f) return;
+  $('cf_id').value=data?.id||'';
+  $('cf_name').value=data?.name||'';
+  $('cf_cpo').value=data?.cpo||'';
+  $('cf_price_ac').value=data?.price_ac_kwh??'';
+  $('cf_price_dc').value=data?.price_dc_kwh??'';
+  $('cf_price_kwh').value=data?.price_kwh??'';
+  $('cf_monthly').value=data?.monthly_fee_eur??0;
+  $('cf_notes').value=data?.notes||'';
+  $('contract_form_title').textContent=data?.id?'Abo bearbeiten':'Neues Ladeabo';
+  $('cf_status').textContent='';
+  f.style.display='block';
+  $('cf_name').focus();
+}
+
+function hideContractForm(){
+  const f=$('contract_form'); if(f) f.style.display='none';
+}
+
+async function editContract(id){
+  try{
+    const rows=await apiFetch('/api/charging-contracts').then(r=>r.json());
+    const c=rows.find(x=>x.id===id);
+    if(c) showContractForm(c);
+  }catch(e){ alert(e.message); }
+}
+
+async function saveContractForm(){
+  const st=$('cf_status');
+  const id=parseInt($('cf_id').value)||0;
+  const body={
+    name:$('cf_name').value.trim(),
+    cpo:$('cf_cpo').value.trim(),
+    price_ac_kwh:$('cf_price_ac').value!==''?parseFloat($('cf_price_ac').value):null,
+    price_dc_kwh:$('cf_price_dc').value!==''?parseFloat($('cf_price_dc').value):null,
+    price_kwh:$('cf_price_kwh').value!==''?parseFloat($('cf_price_kwh').value):null,
+    monthly_fee_eur:parseFloat($('cf_monthly').value)||0,
+    notes:$('cf_notes').value.trim(),
+    active:true,
+  };
+  if(!body.name){if(st){st.textContent='Name erforderlich';st.style.color='#f87171';} return;}
+  if(st){st.textContent='⏳…';st.style.color='var(--mute)';}
+  try{
+    const url=id?`/api/charging-contracts/${id}`:'/api/charging-contracts';
+    const method=id?'PUT':'POST';
+    const r=await apiFetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+    if(r.id||r.ok){
+      hideContractForm();
+      loadContracts();
+    } else {
+      if(st){st.textContent='❌ '+(r.error||'Fehler');st.style.color='#f87171';}
+    }
+  }catch(e){if(st){st.textContent='❌ '+e.message;st.style.color='#f87171';}}
+}
+
+async function setDefaultContract(id){
+  try{
+    await apiFetch(`/api/charging-contracts/${id}/set-default`,{method:'POST'});
+    loadContracts();
+  }catch(e){ alert(e.message); }
+}
+
+async function deleteContract(id,name){
+  if(!confirm(`Ladeabo „${name}" wirklich löschen?`)) return;
+  try{
+    const r=await apiFetch(`/api/charging-contracts/${id}`,{method:'DELETE'}).then(r=>r.json());
+    if(r.ok) loadContracts();
+    else alert(r.error||'Fehler beim Löschen');
+  }catch(e){ alert(e.message); }
+}
+
 // ── API TOKENS ────────────────────────────────────────────────────────────────
 const _ALL_SCOPES = ['api:read','api:write','vehicles:read','sessions:read','sessions:write',
                      'reports:read','reports:create','meter:read','system:read'];
@@ -6002,26 +6337,36 @@ function cfgSection(id, btn){
   document.querySelectorAll('.cfg-nav-btn').forEach(b=>b.classList.remove('active'));
   if(btn) btn.classList.add('active');
   else {
-    // find by matching text
     document.querySelectorAll('.cfg-nav-btn').forEach(b=>{
       if(b.getAttribute('onclick')&&b.getAttribute('onclick').includes("'"+id+"'"))
         b.classList.add('active');
     });
   }
+  // Update mobile nav label
+  const activeBtn = document.querySelector('.cfg-nav-btn.active');
+  const mobileLabel = $('cfgNavActiveLabel');
+  if(mobileLabel && activeBtn) mobileLabel.textContent = activeBtn.textContent.trim();
+  // Close mobile nav after selection
+  const nav = $('cfgNav');
+  if(nav && window.innerWidth <= 640) nav.classList.remove('open');
+
   // lazy-load data for sections
   if(id==='audit') loadAuditLog();
   if(id==='smtp')  { loadSmtpConfig(); refreshSmtpOAuthStatus(); }
   if(id==='export-tpl') loadExportTemplates();
-  if(id==='auth') { loadAuthStatus(); checkSmtpForTotp(); loadPasskeys(); }
+  // auth now only handles OAuth/SSO (no passkeys/2FA — moved to profil)
+  if(id==='auth') { loadAuthStatus(); }
   if(id==='fahrzeuge') loadVehicleList();
   if(id==='benutzer') loadUserList();
-  if(id==='profil')   loadMyProfile();
+  // profil = Konto & Sicherheit: load profile + passkeys + check SMTP for TOTP
+  if(id==='profil') { loadMyProfile(); loadPasskeys(); checkSmtpForTotp(); }
   if(id==='roles')    loadRolesSection();
   if(id==='zaehler')  loadConfig();
   if(id==='reports'){ loadReportConfig(); }
   if(id==='abrechnung')    { loadBillingConfig(); }
   if(id==='report-archive'){ loadReportArchive(); }
   if(id==='tarif')         { loadTariffConfig(); }
+  if(id==='ladeabos')      { loadPcConfig(); loadContracts(); loadBuiltinContracts(); }
   if(id==='api-tokens')    { loadApiTokens(); renderApiTokenScopeCheckboxes(); }
   if(id==='mqtt')          { loadMqttConfig(); loadNotifChannels(); }
   if(id==='notif-rules')   { loadNotifRules(); }
@@ -6174,9 +6519,16 @@ async function sendSmtpTestMail(){
 async function checkSmtpForTotp(){
   const c=await fetch('/api/config').then(r=>r.json());
   const smtpOk=!!(c.smtp_host&&c.smtp_from_email);
-  const warn=$('smtpRequiredForTotp'), btn=$('totpSetupBtn');
+  // Legacy single-user TOTP warning (in auth section, if still present)
+  const warn=$('smtpRequiredForTotp');
   if(warn) warn.style.display=smtpOk?'none':'';
+  const btn=$('totpSetupBtn');
   if(btn)  btn.disabled=!smtpOk;
+  // Per-user TOTP warning (in profil/konto section)
+  const warn2=$('smtpRequiredForTotp2');
+  if(warn2) warn2.style.display=smtpOk?'none':'';
+  const setupBtn=document.querySelector('[onclick="setupMyTotp()"]');
+  // Don't disable the per-user button — setupMyTotp handles this itself
 }
 
 // ── Export Templates ──────────────────────────────────────────────────────────
