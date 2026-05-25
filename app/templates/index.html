@@ -655,14 +655,19 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   <button onclick="tab('config',this)">Konfiguration</button>
   <button onclick="tab('export',this)">Export</button>
   <button onclick="tab('backup',this)">Backup</button>
-  <button id="notifBellBtn" onclick="toggleNotifCenter()" style="margin-left:auto;position:relative;background:none;border:none;cursor:pointer;padding:6px 10px;font-size:1.1rem" title="Benachrichtigungen">
-    🔔 <span id="notifBadge" style="display:none;position:absolute;top:2px;right:4px;background:#ef4444;color:#fff;border-radius:50%;font-size:.6rem;min-width:16px;height:16px;line-height:16px;text-align:center;font-weight:700">0</span>
-  </button>
-  <a href="/logout" id="navLogout" style="display:none;padding:8px 14px;font-size:.78rem;color:var(--mute);text-decoration:none;border-radius:8px;border:1px solid var(--brd)" title="">Abmelden</a>
+  <a href="/logout" id="navLogout" style="display:none;margin-left:auto;padding:8px 14px;font-size:.78rem;color:var(--mute);text-decoration:none;border-radius:8px;border:1px solid var(--brd)" title="">Abmelden</a>
 </nav>
 
+<!-- Notification Top Hint — only visible when unread notifications exist -->
+<div id="notifTopHint" style="display:none;position:fixed;top:10px;right:14px;z-index:1200">
+  <button id="notifTopBtn" onclick="toggleNotifCenter()" style="background:var(--card);border:1px solid var(--brd);border-radius:20px;padding:4px 12px 4px 10px;cursor:pointer;font-size:.78rem;color:#e0eaf2;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,.4)">
+    🔔 <span id="notifTopText">Benachrichtigungen</span>
+    <span id="notifBadge" style="background:#ef4444;color:#fff;border-radius:50%;font-size:.65rem;min-width:18px;height:18px;line-height:18px;text-align:center;font-weight:700;display:inline-block;padding:0 3px">0</span>
+  </button>
+</div>
+
 <!-- Notification Center Panel -->
-<div id="notifCenter" style="display:none;position:fixed;top:52px;right:12px;width:360px;max-height:70vh;overflow-y:auto;background:var(--card);border:1px solid var(--brd);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.4);z-index:1000;padding:0">
+<div id="notifCenter" style="display:none;position:fixed;top:54px;right:14px;width:min(380px,calc(100vw - 28px));max-height:70vh;overflow-y:auto;background:var(--card);border:1px solid var(--brd);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.4);z-index:1100;padding:0">
   <div style="padding:14px 16px;border-bottom:1px solid var(--brd);display:flex;align-items:center;justify-content:space-between">
     <span style="font-weight:700;font-size:.9rem">🔔 Benachrichtigungen</span>
     <div style="display:flex;gap:8px">
@@ -4707,23 +4712,29 @@ var _updateInfoCache = null;
 
 async function loadUpdateInfo(force) {
   if (_updateInfoCache && !force) return _updateInfoCache;
+  var btn = document.querySelector('[onclick*="loadUpdateInfo(true)"]');
+  var origText = btn ? btn.innerHTML : null;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Prüfe…'; }
   try {
-    const r = await apiFetch('/api/update-info').then(x=>x.json()).catch(()=>null);
-    if (!r) { _showUpdateError(); return null; }
+    var url = force ? '/api/update-info?force=1' : '/api/update-info';
+    const r = await apiFetch(url).then(x=>x.json()).catch(()=>null);
+    if (!r) { _showUpdateError('Netzwerkfehler'); return null; }
     _updateInfoCache = r;
     _renderUpdateInfo(r);
     return r;
   } catch(e) {
-    _showUpdateError();
+    _showUpdateError(String(e));
     return null;
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = origText || '🔄 Jetzt prüfen'; }
   }
 }
 
-function _showUpdateError() {
+function _showUpdateError(detail) {
   const badge = document.getElementById('updateStatusBadge');
   const panel = document.getElementById('updateInfoPanel');
   const errEl = document.getElementById('updateInfoError');
-  if (badge) badge.textContent = '⚠ Nicht erreichbar';
+  if (badge) badge.textContent = '⚠ Nicht erreichbar' + (detail ? ': ' + detail : '');
   if (panel) panel.style.display = 'none';
   if (errEl) errEl.style.display = '';
 }
@@ -4768,13 +4779,22 @@ function _renderUpdateInfo(r) {
     const ru = document.getElementById('uiReleaseUrl');
     if (ru && r.release_url) { ru.href = r.release_url; ru.style.display=''; }
   } else {
-    if (badge) badge.innerHTML = '<span style="color:#3ddc97">✅ Aktuell (v'+escapeHtml(r.current_version)+')</span>';
     if (avail) avail.style.display = 'none';
     if (curr)  curr.style.display  = '';
     const det = document.getElementById('uiCurrentDetail');
-    if (det) det.textContent = 'Neueste Version: v'+(r.latest_version||r.current_version) + (r.release_date ? ' · '+r.release_date : '');
     const ru2 = document.getElementById('uiReleaseUrlCurrent');
     if (ru2 && r.release_url) { ru2.href = r.release_url; }
+    if (r.reason === 'remote_metadata_older_than_current') {
+      if (badge) badge.innerHTML = '<span style="color:#f59e0b">⚠ Remote-Metadaten veraltet: Installiert v'
+        +escapeHtml(r.current_version)+', Remote v'+escapeHtml(r.latest_version||'?')+'</span>';
+      if (det) det.textContent = r.warning || ('Remote: v'+(r.latest_version||'?')+' · Installiert: v'+r.current_version);
+    } else if (r.reason === 'remote_unreachable') {
+      if (badge) badge.innerHTML = '<span style="color:#ef4444">⚠ Remote nicht erreichbar</span>';
+      if (det) det.textContent = 'Update-Server konnte nicht erreicht werden.';
+    } else {
+      if (badge) badge.innerHTML = '<span style="color:#3ddc97">✅ Aktuell (v'+escapeHtml(r.current_version)+')</span>';
+      if (det) det.textContent = 'Neueste Version: v'+(r.latest_version||r.current_version) + (r.release_date ? ' · '+r.release_date : '');
+    }
   }
 }
 
@@ -7141,13 +7161,15 @@ function loadNotifCenter() {
 }
 
 function updateNotifBadge(count) {
+  var hint  = $('notifTopHint');
   var badge = $('notifBadge');
-  if (!badge) return;
+  var text  = $('notifTopText');
   if (count > 0) {
-    badge.style.display = 'inline-block';
-    badge.textContent = count > 99 ? '99+' : count;
+    if (hint)  hint.style.display = '';
+    if (badge) badge.textContent = count > 99 ? '99+' : String(count);
+    if (text)  text.textContent  = count === 1 ? 'Benachrichtigung' : 'Benachrichtigungen';
   } else {
-    badge.style.display = 'none';
+    if (hint) hint.style.display = 'none';
   }
 }
 
@@ -7171,6 +7193,7 @@ function markAllNotifsRead() {
 }
 
 function pollNotifBadge() {
+  if (!hasPermission('notifications:view')) return;
   apiFetch('/api/notifications?limit=1').then(r=>r.json()).then(function(d) {
     updateNotifBadge(d.unread_count || 0);
   }).catch(function(){});
@@ -7179,8 +7202,8 @@ function pollNotifBadge() {
 // Close notif center when clicking outside
 document.addEventListener('click', function(e) {
   var center = $('notifCenter');
-  var bell = $('notifBellBtn');
-  if (_notifCenterOpen && center && bell && !center.contains(e.target) && !bell.contains(e.target)) {
+  var btn    = $('notifTopBtn');
+  if (_notifCenterOpen && center && !center.contains(e.target) && (!btn || !btn.contains(e.target))) {
     _notifCenterOpen = false;
     center.style.display = 'none';
   }
@@ -7217,11 +7240,11 @@ function loadNotifSettings() {
     setChk('n_ev_charging_stopped',    s.notification_event_charging_stopped !== false);
     setChk('n_ev_charging_interrupted',s.notification_event_charging_interrupted !== false);
     setChk('n_ev_missing_charge',      s.notification_event_missing_charge_candidate_created !== false);
-    setChk('n_ev_update_available',    s.notification_event_update_available_new !== false);
+    setChk('n_ev_update_available',    s.notification_event_update_available !== false);
     setChk('n_ev_provider_offline',    s.notification_event_provider_offline !== false);
     setChk('n_ev_auth_expired',        s.notification_event_provider_auth_expired !== false);
-    setChk('n_ev_backup_failed',       s.notification_event_backup_failed_alert !== false);
-    setChk('n_ev_backup_success',      !!s.notification_event_backup_success_alert);
+    setChk('n_ev_backup_failed',       s.notification_event_backup_failed !== false);
+    setChk('n_ev_backup_success',      !!s.notification_event_backup_success);
     setChk('n_ev_security',            s.notification_event_security_login_failed_many !== false);
   });
 }
@@ -7256,11 +7279,11 @@ function saveNotifSettings() {
     notification_event_charging_stopped:             chk('n_ev_charging_stopped'),
     notification_event_charging_interrupted:         chk('n_ev_charging_interrupted'),
     notification_event_missing_charge_candidate_created: chk('n_ev_missing_charge'),
-    notification_event_update_available_new:         chk('n_ev_update_available'),
+    notification_event_update_available:             chk('n_ev_update_available'),
     notification_event_provider_offline:             chk('n_ev_provider_offline'),
     notification_event_provider_auth_expired:        chk('n_ev_auth_expired'),
-    notification_event_backup_failed_alert:          chk('n_ev_backup_failed'),
-    notification_event_backup_success_alert:         chk('n_ev_backup_success'),
+    notification_event_backup_failed:                chk('n_ev_backup_failed'),
+    notification_event_backup_success:               chk('n_ev_backup_success'),
     notification_event_security_login_failed_many:   chk('n_ev_security'),
   };
   apiFetch('/api/notifications/settings', {method:'POST', body: JSON.stringify(payload)})
