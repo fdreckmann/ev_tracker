@@ -1,10 +1,21 @@
 # Changelog
 
+## v2.0.41 — 2026-05-25
+
+### Bugfix: "readonly database" / "Permission denied: /home/evtracker"
+
+- **Dockerfile**: Non-Root-User `evtracker` (UID 10001) erhält beschreibbares Home-Verzeichnis `/home/evtracker`; `ENV HOME=/home/evtracker` gesetzt — behebt `Permission denied` beim Schreiben von Temp-/Cache-Dateien
+- **`_has_users()`** wirft `sqlite3.OperationalError` direkt (statt in `RuntimeError` zu wrappen), damit Aufrufer die Fehlermeldung korrekt auswerten können
+- **`check_auth()`** und **`setup_page()`** verwenden `_db_error_hint()` / `_db_error_message()` — erkennen `readonly database`, `unable to open database file` und `no such table users` und zeigen jeweils den passenden deutschen Fix-Hinweis
+- **`setup_page()`**: Zeigt niemals das Setup-Formular wenn `_has_users()` eine Exception wirft — stattdessen klare Fehlermeldung mit konkretem `chown`-Befehl
+- **`/api/health`**: `db_writable`, `users_table_exists`, `users_count`, `startup_error` — vollständige Diagnose ohne Login
+- **README** — Fehlerbehebungs-Abschnitt mit `chown`-Fix für Unraid und Docker-Compose
+
 ## v2.0.40 — 2026-05-25
 
 ### Bugfix: "First User Setup" trotz vorhandenem Admin / Internal Error
 
-- **`_has_users()`** gibt keine `False` mehr zurück wenn die Datenbank nicht erreichbar ist — wirft stattdessen `RuntimeError`, damit DB-Fehler und "kein Benutzer" klar unterschieden werden
+- **`_has_users()`** gibt keine `False` mehr zurück wenn die Datenbank nicht erreichbar ist — wirft stattdessen Exception, damit DB-Fehler und "kein Benutzer" klar unterschieden werden
 - **`ensure_started_once()`** setzt `_started_once = True` nur noch nach erfolgreichem Startup; bei Fehler wird `_startup_error` gespeichert und erneut geworfen
 - **`check_auth()`** fängt Exceptions von `ensure_started_once()` und `_has_users()` separat ab und zeigt benutzerfreundliche Fehlerseite (`error.html`) statt Internal Server Error
 - **`setup_page()`** behandelt `sqlite3.OperationalError` zusätzlich zu `IntegrityError`

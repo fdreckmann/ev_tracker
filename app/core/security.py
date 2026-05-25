@@ -223,15 +223,21 @@ def _get_secret_key() -> str:
 # ── User helpers ──────────────────────────────────────────────────────────────
 
 def _has_users() -> bool:
+    """Return True if at least one user exists.
+
+    Raises sqlite3.OperationalError (or other DB exceptions) instead of
+    silently returning False — callers must distinguish "no users" from
+    "DB not accessible".
+    """
     import sqlite3 as _sqlite3
     con = None
     try:
         con = _get_db()
         row = con.execute("SELECT COUNT(*) AS c FROM users").fetchone()
         return int(row["c"] if hasattr(row, "keys") else row[0]) > 0
-    except _sqlite3.OperationalError as e:
+    except _sqlite3.OperationalError:
         flask.current_app.logger.exception("Cannot check users table — DB not ready or not readable")
-        raise RuntimeError("Datenbank nicht bereit oder nicht lesbar") from e
+        raise
     except Exception:
         flask.current_app.logger.exception("Cannot check users")
         raise

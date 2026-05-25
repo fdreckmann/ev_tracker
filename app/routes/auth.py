@@ -144,18 +144,40 @@ def logout():
     return redirect(url_for("auth.login_page"))
 
 
+def _db_error_message(e: Exception) -> str:
+    """Return a human-readable German error message for a SQLite exception."""
+    # Use the original SQLite cause if this is a wrapped exception
+    root = getattr(e, "__cause__", None) or e
+    msg = str(root).lower()
+    if "readonly" in msg or "read-only" in msg:
+        return (
+            "Die Datenbank ist schreibgeschützt (readonly). "
+            "Bitte /data-Berechtigungen prüfen:\n"
+            "  chown -R 10001:100 /mnt/user/appdata/ev-tracker\n"
+            "  chmod -R u+rwX,g+rwX /mnt/user/appdata/ev-tracker"
+        )
+    if "unable to open" in msg or "no such file" in msg:
+        return (
+            "Die Datenbankdatei konnte nicht geöffnet werden. "
+            "Bitte prüfen ob /data existiert und für UID 10001 beschreibbar ist."
+        )
+    if "no such table" in msg:
+        return (
+            "Die Datenbanktabelle 'users' existiert nicht. "
+            "Die Datenbank scheint nicht initialisiert — Container neu starten."
+        )
+    return f"Datenbankfehler: {root}"
+
+
 @auth_bp.route("/setup", methods=["GET", "POST"])
 def setup_page():
     try:
         users_exist = _has_users()
     except Exception as e:
-        from flask import render_template as _rt
-        return _rt(
+        return render_template(
             "error.html",
             title="Datenbankfehler",
-            message="Die Datenbank konnte nicht geöffnet oder gelesen werden. "
-                    "Bitte Berechtigungen unter /data prüfen.",
-            hint=str(e),
+            message=_db_error_message(e),
         ), 500
     if users_exist:
         return redirect(url_for("main_routes.index"))
@@ -190,8 +212,8 @@ def setup_page():
             except sqlite3.IntegrityError:
                 error = "E-Mail-Adresse bereits vorhanden"
             except sqlite3.OperationalError as e:
-                log.exception("setup_page: DB error")
-                error = f"Datenbankfehler: {e}"
+                log.exception("setup_page: DB write error")
+                error = _db_error_message(e)
             finally:
                 close_db_if_owned(con)
             if not error:

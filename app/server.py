@@ -1328,6 +1328,29 @@ _AUTH_EXEMPT = {"/login", "/logout", "/setup",
 _AUTH_EXEMPT_PREFIXES = ("/reset-password", "/invite")
 _API_V1_PREFIX = "/api/v1/"
 
+
+def _db_error_hint(e: Exception) -> str:
+    """Human-readable German hint for SQLite access errors."""
+    msg = str(e).lower()
+    if "readonly" in msg or "read-only" in msg:
+        return (
+            "Die Datenbank ist schreibgeschützt (readonly). "
+            "Berechtigungen unter /data prüfen:\n"
+            "  chown -R 10001:100 /mnt/user/appdata/ev-tracker"
+        )
+    if "unable to open" in msg or "no such file or directory" in msg:
+        return (
+            "Die Datenbankdatei konnte nicht geöffnet werden. "
+            "Bitte prüfen ob /data existiert und für UID 10001 beschreibbar ist."
+        )
+    if "no such table" in msg:
+        return (
+            "Datenbanktabelle fehlt — Datenbank nicht initialisiert. "
+            "Container neu starten."
+        )
+    return f"Datenbankfehler: {e}"
+
+
 @app.before_request
 def check_auth():
     # /api/health and static files are always allowed before startup
@@ -1348,8 +1371,7 @@ def check_auth():
         return render_template(
             "error.html",
             title="Startfehler",
-            message="EV Tracker konnte die Datenbank nicht initialisieren. "
-                    "Bitte Berechtigungen prüfen und Container neu starten.",
+            message=_db_error_hint(e),
         ), 500
     if request.path in _AUTH_EXEMPT:
         # If users exist, /setup should redirect to index
@@ -1378,8 +1400,7 @@ def check_auth():
         return render_template(
             "error.html",
             title="Datenbankfehler",
-            message="Die Datenbank konnte nicht geöffnet oder gelesen werden. "
-                    "Bitte Berechtigungen unter /data prüfen.",
+            message=_db_error_hint(e),
         ), 500
     if not has_users:
         if request.path.startswith("/api/"):
