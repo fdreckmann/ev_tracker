@@ -1289,21 +1289,30 @@ def start_tracker():
 
 _started_once = False
 _started_once_lock = threading.Lock()
+_startup_error: "Exception | None" = None
 
 
 def ensure_started_once():
     """Idempotent startup: init DB, start tracker and schedulers exactly once."""
-    global _started_once
+    global _started_once, _startup_error
     with _started_once_lock:
         if _started_once:
             return
-        _started_once = True
-    init_db()
-    start_tracker()
-    if callable(globals().get("schedule_backup")):
-        schedule_backup()
-    if callable(globals().get("schedule_report")):
-        schedule_report()
+        if _startup_error is not None:
+            raise _startup_error
+        try:
+            init_db()
+            start_tracker()
+            if callable(globals().get("schedule_backup")):
+                schedule_backup()
+            if callable(globals().get("schedule_report")):
+                schedule_report()
+            _started_once = True
+            _startup_error = None
+        except Exception as e:
+            _startup_error = e
+            log.exception("EV Tracker startup failed")
+            raise
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -1319,17 +1328,58 @@ _AUTH_EXEMPT = {"/login", "/logout", "/setup",
 _AUTH_EXEMPT_PREFIXES = ("/reset-password", "/invite")
 _API_V1_PREFIX = "/api/v1/"
 
+
+def _db_error_hint(e: Exception) -> str:
+    """Human-readable German hint for SQLite access errors."""
+    msg = str(e).lower()
+    if "readonly" in msg or "read-only" in msg:
+        return (
+            "Die Datenbank ist schreibgeschützt (readonly). "
+            "Berechtigungen unter /data prüfen:\n"
+            "  chown -R 10001:100 /mnt/user/appdata/ev-tracker"
+        )
+    if "unable to open" in msg or "no such file or directory" in msg:
+        return (
+            "Die Datenbankdatei konnte nicht geöffnet werden. "
+            "Bitte prüfen ob /data existiert und für UID 10001 beschreibbar ist."
+        )
+    if "no such table" in msg:
+        return (
+            "Datenbanktabelle fehlt — Datenbank nicht initialisiert. "
+            "Container neu starten."
+        )
+    return f"Datenbankfehler: {e}"
+
+
 @app.before_request
 def check_auth():
+    # /api/health and static files are always allowed before startup
+    if request.path == "/api/health" or request.path.startswith("/static"):
+        return
     # Safety net: ensure DB and background threads are initialised even when
     # the app is started via gunicorn without a post_fork hook (e.g. in tests).
-    ensure_started_once()
-    if request.path.startswith("/static"):
-        return
+    try:
+        ensure_started_once()
+    except Exception as e:
+        log.error("check_auth: startup failed: %s", e)
+        if request.path.startswith("/api/"):
+            return jsonify({
+                "ok": False,
+                "error": "EV Tracker konnte nicht initialisiert werden",
+                "detail": str(e),
+            }), 500
+        return render_template(
+            "error.html",
+            title="Startfehler",
+            message=_db_error_hint(e),
+        ), 500
     if request.path in _AUTH_EXEMPT:
         # If users exist, /setup should redirect to index
-        if request.path == "/setup" and _has_users():
-            return redirect(url_for("main_routes.index"))
+        try:
+            if request.path == "/setup" and _has_users():
+                return redirect(url_for("main_routes.index"))
+        except Exception:
+            pass
         return
     if any(request.path.startswith(p) for p in _AUTH_EXEMPT_PREFIXES):
         return
@@ -1337,7 +1387,22 @@ def check_auth():
     if request.path.startswith(_API_V1_PREFIX):
         return
     # If no users exist, everything redirects to setup
-    if not _has_users():
+    try:
+        has_users = _has_users()
+    except Exception as e:
+        log.error("check_auth: cannot check users: %s", e)
+        if request.path.startswith("/api/"):
+            return jsonify({
+                "ok": False,
+                "error": "Datenbank nicht bereit",
+                "detail": str(e),
+            }), 500
+        return render_template(
+            "error.html",
+            title="Datenbankfehler",
+            message=_db_error_hint(e),
+        ), 500
+    if not has_users:
         if request.path.startswith("/api/"):
             return jsonify({"error": "Setup erforderlich", "setup_required": True}), 503
         return redirect("/setup")

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EV Tracker — {{ title or "Fehler" }}</title>
+<style>
+  :root{--bg:#0b0f14;--card:#111820;--brd:#1e2a35;--accent:#ff4f5a;--mute:#5a7080;--mono:'JetBrains Mono','Fira Mono',monospace}
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:#e0eaf2;font-family:system-ui,sans-serif;
+    min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+  .card{background:var(--card);border:1px solid var(--brd);border-radius:16px;
+    padding:40px 44px;width:100%;max-width:540px}
+  .icon{font-size:2.5rem;text-align:center;margin-bottom:16px}
+  h1{font-size:1.3rem;font-weight:700;color:var(--accent);text-align:center;margin-bottom:12px}
+  .msg{font-size:.85rem;line-height:1.6;color:#a0b8c8;margin-bottom:20px;text-align:center}
+  .hint{background:rgba(255,79,90,.08);border:1px solid rgba(255,79,90,.25);border-radius:8px;
+    padding:14px 18px;font-size:.75rem;font-family:var(--mono);color:#e0eaf2;line-height:1.7;
+    word-break:break-all;margin-bottom:24px}
+  .hint b{color:var(--accent)}
+  .btn{display:block;width:100%;padding:12px;background:#1e2a35;border:1px solid var(--brd);
+    border-radius:8px;color:#e0eaf2;font-size:.85rem;cursor:pointer;text-align:center;
+    text-decoration:none;margin-bottom:10px}
+  .btn:hover{background:#273440}
+  .small{font-size:.7rem;color:var(--mute);text-align:center;margin-top:16px;font-family:var(--mono)}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="icon">⚠️</div>
+  <h1>{{ title or "Fehler" }}</h1>
+  <p class="msg">{{ message or "Ein unerwarteter Fehler ist aufgetreten." }}</p>
+
+  {% if hint %}
+  <div class="hint">{{ hint }}</div>
+  {% else %}
+  <div class="hint">
+    <b>Häufige Ursachen:</b><br>
+    • <b>/data</b> nicht beschreibbar (Berechtigungen prüfen)<br>
+    • Datenbank-Datei fehlt oder ist beschädigt<br>
+    • Container startet als falscher User<br><br>
+    <b>Unraid-Fix:</b><br>
+    <code>chown -R 10001:100 /mnt/user/appdata/ev-tracker</code><br><br>
+    <b>Logs prüfen:</b><br>
+    <code>docker logs ev-tracker --tail 50</code>
+  </div>
+  {% endif %}
+
+  <a href="/" class="btn">↩ Zurück zur App</a>
+  <a href="/api/health" class="btn">🔍 Diagnose anzeigen</a>
+  <p class="small">EV Tracker — /api/health für Details</p>
+</div>
+</body>
+</html>
