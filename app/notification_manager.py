@@ -19,6 +19,10 @@ EVENT_TYPES = [
     "backup_success", "backup_failed",
     "update_available", "update_success", "update_failed",
     "session_cost_high",
+    "charging_interrupted", "missing_charge_detected", "missing_charge_candidate_created",
+    "update_available_new", "provider_offline", "vehicle_offline", "provider_auth_expired",
+    "backup_failed_alert", "backup_success_alert", "high_cost_detected",
+    "billing_missing_price", "location_unknown", "security_login_failed_many", "system_error",
 ]
 
 EVENT_LABELS_DE = {
@@ -41,15 +45,31 @@ EVENT_LABELS_DE = {
     "update_success":               "Update erfolgreich",
     "update_failed":                "Update fehlgeschlagen",
     "session_cost_high":            "Hohe Ladekosten",
+    "charging_interrupted":             "Ladevorgang unterbrochen",
+    "missing_charge_detected":          "Möglicher fehlender Ladevorgang",
+    "missing_charge_candidate_created": "Fehlender Ladevorgang erkannt",
+    "update_available_new":             "Update verfügbar",
+    "provider_offline":                 "Provider nicht erreichbar",
+    "vehicle_offline":                  "Fahrzeug offline",
+    "provider_auth_expired":            "Provider-Anmeldung abgelaufen",
+    "backup_failed_alert":              "Backup fehlgeschlagen",
+    "backup_success_alert":             "Backup erfolgreich",
+    "high_cost_detected":               "Hohe Ladekosten erkannt",
+    "billing_missing_price":            "Fehlender Ladepreis",
+    "location_unknown":                 "Standort unbekannt",
+    "security_login_failed_many":       "Mehrfacher Login-Fehler",
+    "system_error":                     "Systemfehler",
 }
 
-CHANNEL_TYPES = ["email", "mqtt", "ntfy", "gotify", "webhook"]
+CHANNEL_TYPES = ["email", "mqtt", "ntfy", "gotify", "webhook", "ha", "telegram"]
 CHANNEL_LABELS = {
-    "email":   "E-Mail",
-    "mqtt":    "MQTT Event",
-    "ntfy":    "ntfy.sh",
-    "gotify":  "Gotify",
-    "webhook": "Webhook (HTTP)",
+    "email":    "E-Mail",
+    "mqtt":     "MQTT Event",
+    "ntfy":     "ntfy.sh",
+    "gotify":   "Gotify",
+    "webhook":  "Webhook (HTTP)",
+    "ha":       "Home Assistant Notify",
+    "telegram": "Telegram",
 }
 
 _quiet_lock = threading.Lock()
@@ -188,12 +208,32 @@ def _send_mqtt_event(rule: dict, msg: dict, config: dict) -> bool:
         return False
 
 
+def _send_ha_rule(rule: dict, msg: dict, config: dict) -> bool:
+    try:
+        from services.notification_service import _send_ha
+        return _send_ha(config, msg["title"], msg["body"], {}, None)
+    except Exception as e:
+        log.warning("HA rule send error: %s", e)
+        return False
+
+
+def _send_telegram_rule(rule: dict, msg: dict, config: dict) -> bool:
+    try:
+        from services.notification_service import _send_telegram
+        return _send_telegram(config, msg["title"], msg["body"])
+    except Exception as e:
+        log.warning("Telegram rule send error: %s", e)
+        return False
+
+
 _CHANNEL_DISPATCH = {
-    "email":   _send_email,
-    "ntfy":    _send_ntfy,
-    "gotify":  _send_gotify,
-    "webhook": _send_webhook,
-    "mqtt":    _send_mqtt_event,
+    "email":    _send_email,
+    "ntfy":     _send_ntfy,
+    "gotify":   _send_gotify,
+    "webhook":  _send_webhook,
+    "mqtt":     _send_mqtt_event,
+    "ha":       _send_ha_rule,
+    "telegram": _send_telegram_rule,
 }
 
 

@@ -34,6 +34,9 @@ _SECRET_GLOBAL_KEYS: frozenset[str] = frozenset({
     "smtp_ms_client_secret",
     "smtp_ms_refresh_token",
     "smtp_ms_access_token",
+    "notification_ntfy_token",
+    "notification_gotify_token",
+    "notification_telegram_bot_token",
 })
 
 SECRET_KEYS: frozenset[str] = _SECRET_VEHICLE_KEYS | _SECRET_GLOBAL_KEYS

@@ -141,6 +141,7 @@ ALL_PERMISSIONS = {
     "notifications:view":       {"label": "Benachrichtigungen ansehen",     "group": "Benachrichtigungen"},
     "notifications:configure":  {"label": "Benachrichtigungen konfigurieren","group": "Benachrichtigungen"},
     "notifications:test":       {"label": "Testbenachrichtigung senden",    "group": "Benachrichtigungen"},
+    "notifications:manage":     {"label": "Benachrichtigungen verwalten",   "group": "Benachrichtigungen"},
     # Admin-Sonderrecht
     "admin:all":                {"label": "Vollzugriff (Admin)",            "group": "Admin"},
 }
@@ -164,7 +165,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "reports:view", "reports:history", "reports:archive", "reports:send",
         "billing:view",
         "tariffs:view",
-        "notifications:view",
+        "notifications:view", "notifications:manage",
         "mqtt:view",
         "api_tokens:view",
     ],

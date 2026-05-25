@@ -113,4 +113,17 @@ def get_update_info() -> dict:
         "release_url":    remote.get("release_url", ""),
         "update_available": _is_newer(latest, current),
     })
+    if base.get("update_available"):
+        try:
+            from services.notification_service import notify
+            notify(
+                type="update_available_new",
+                severity="info",
+                title=f"EV Tracker Update verfügbar: v{latest}",
+                message=f"Version {current} → {latest}. " + (base.get("title") or ""),
+                dedupe_key=f"update_available:{latest}",
+                action_url=remote.get("release_url", ""),
+            )
+        except Exception:
+            pass
     return base

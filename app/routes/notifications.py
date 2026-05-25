@@ -1,16 +1,18 @@
 """
-Notification rules routes.
+Notification rules routes + inbox API + settings API.
 """
 from datetime import datetime
 
 from flask import Blueprint, jsonify, request
 
 from core.db import _get_db, close_db_if_owned
-from core.config import load_config
+from core.config import load_config, save_config
 from core.security import require_login, has_permission, _current_user, _audit
 
 notifications_bp = Blueprint("notifications", __name__)
 
+
+# ── Existing rules CRUD ───────────────────────────────────────────────────────
 
 @notifications_bp.route("/api/notifications/rules", methods=["GET"])
 @require_login
@@ -121,3 +123,117 @@ def api_notif_events():
         })
     except ImportError:
         return jsonify({"events": [], "channels": []})
+
+
+# ── Inbox API ─────────────────────────────────────────────────────────────────
+
+@notifications_bp.route("/api/notifications", methods=["GET"])
+@require_login
+def api_notifications_list():
+    if not has_permission(_current_user(), "notifications:view"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    limit = min(int(request.args.get("limit", 50)), 200)
+    status = request.args.get("status")  # optional filter
+    con = _get_db()
+    q = "SELECT * FROM notifications"
+    params = []
+    if status:
+        q += " WHERE status=?"
+        params.append(status)
+    q += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+    rows = con.execute(q, params).fetchall()
+    unread = con.execute("SELECT COUNT(*) FROM notifications WHERE is_read=0").fetchone()[0]
+    close_db_if_owned(con)
+    return jsonify({"notifications": [dict(r) for r in rows], "unread_count": unread})
+
+
+@notifications_bp.route("/api/notifications/<int:notif_id>/read", methods=["POST"])
+@require_login
+def api_notification_read(notif_id):
+    if not has_permission(_current_user(), "notifications:view"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    con = _get_db()
+    con.execute("UPDATE notifications SET is_read=1 WHERE id=?", (notif_id,))
+    con.commit()
+    close_db_if_owned(con)
+    return jsonify({"ok": True})
+
+
+@notifications_bp.route("/api/notifications/read-all", methods=["POST"])
+@require_login
+def api_notifications_read_all():
+    if not has_permission(_current_user(), "notifications:view"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    con = _get_db()
+    con.execute("UPDATE notifications SET is_read=1")
+    con.commit()
+    close_db_if_owned(con)
+    return jsonify({"ok": True})
+
+
+@notifications_bp.route("/api/notifications/<int:notif_id>/dismiss", methods=["POST"])
+@require_login
+def api_notification_dismiss(notif_id):
+    if not has_permission(_current_user(), "notifications:manage"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    con = _get_db()
+    con.execute("UPDATE notifications SET status='ignored', is_read=1 WHERE id=?", (notif_id,))
+    con.commit()
+    close_db_if_owned(con)
+    return jsonify({"ok": True})
+
+
+# ── Channel test ──────────────────────────────────────────────────────────────
+
+@notifications_bp.route("/api/notifications/test", methods=["POST"])
+@require_login
+def api_notification_test_channel():
+    if not has_permission(_current_user(), "notifications:test"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    data = request.get_json(force=True) or {}
+    channel = data.get("channel", "")
+    if not channel:
+        return jsonify({"error": "channel fehlt"}), 400
+    cfg = load_config()
+    try:
+        from services.notification_service import send_test
+        result = send_test(channel, cfg)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"ok": False, "message": str(e)})
+
+
+# ── Settings API ──────────────────────────────────────────────────────────────
+
+@notifications_bp.route("/api/notifications/settings", methods=["GET"])
+@require_login
+def api_notification_settings_get():
+    if not has_permission(_current_user(), "notifications:view"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    from core.config import load_config
+    from core.secrets import mask_config
+    cfg = mask_config(load_config())
+    keys = [k for k in cfg if k.startswith("notification_") or k == "notify_service"]
+    return jsonify({k: cfg[k] for k in keys})
+
+
+@notifications_bp.route("/api/notifications/settings", methods=["POST"])
+@require_login
+def api_notification_settings_save():
+    if not has_permission(_current_user(), "notifications:configure"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    from core.config import load_config, save_config
+    from core.secrets import SECRET_MASK
+    data = request.get_json(force=True) or {}
+    cfg = load_config()
+    secret_fields = {"notification_ntfy_token", "notification_gotify_token", "notification_telegram_bot_token"}
+    for k, v in data.items():
+        if not (k.startswith("notification_") or k == "notify_service"):
+            continue
+        if k in secret_fields and v == SECRET_MASK:
+            continue  # don't overwrite with mask
+        cfg[k] = v
+    save_config(cfg)
+    _audit("notification_settings_saved", "", ip=request.remote_addr)
+    return jsonify({"ok": True})
