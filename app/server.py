@@ -1321,6 +1321,9 @@ _API_V1_PREFIX = "/api/v1/"
 
 @app.before_request
 def check_auth():
+    # Safety net: ensure DB and background threads are initialised even when
+    # the app is started via gunicorn without a post_fork hook (e.g. in tests).
+    ensure_started_once()
     if request.path.startswith("/static"):
         return
     if request.path in _AUTH_EXEMPT:
