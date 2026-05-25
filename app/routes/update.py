@@ -6,7 +6,7 @@ restart containers, or access the Docker socket.
 """
 from flask import Blueprint, jsonify
 
-from core.security import require_login
+from core.security import require_login, has_permission, _current_user
 from services.update_service import get_update_info
 
 update_bp = Blueprint("update", __name__)
@@ -16,4 +16,7 @@ update_bp = Blueprint("update", __name__)
 @require_login
 def api_update_info():
     """Return current version and available remote update metadata (read-only)."""
+    user = _current_user()
+    if not has_permission(user, "updates:view") and user.get("role") != "admin":
+        return jsonify({"error": "Keine Berechtigung: updates:view"}), 403
     return jsonify(get_update_info())

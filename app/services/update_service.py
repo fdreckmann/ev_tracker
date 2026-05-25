@@ -117,7 +117,7 @@ def get_update_info() -> dict:
         try:
             from services.notification_service import notify
             notify(
-                type="update_available_new",
+                type="update_available",
                 severity="info",
                 title=f"EV Tracker Update verfügbar: v{latest}",
                 message=f"Version {current} → {latest}. " + (base.get("title") or ""),

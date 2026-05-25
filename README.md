@@ -191,7 +191,7 @@ cat > /boot/config/plugins/dockerMan/templates-user/ev-tracker.xml << 'XMLEOF'
   <ExtraParams>--restart unless-stopped</ExtraParams>
   <Config Name="Web UI Port" Target="8080" Default="8054" Mode="tcp" Type="Port" Display="always" Required="true" Mask="false">8054</Config>
   <Config Name="Daten-Verzeichnis" Target="/data" Default="/mnt/user/appdata/ev-tracker" Mode="rw" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/ev-tracker</Config>
-  <Config Name="Docker Socket" Target="/var/run/docker.sock" Default="/var/run/docker.sock" Mode="rw" Type="Path" Display="always" Required="false" Mask="false">/var/run/docker.sock</Config>
+
   <Config Name="DATA_DIR" Target="DATA_DIR" Default="/data" Type="Variable" Display="advanced" Required="true" Mask="false">/data</Config>
   <Config Name="TZ" Target="TZ" Default="Europe/Berlin" Type="Variable" Display="always" Required="true" Mask="false">Europe/Berlin</Config>
 </Container>
@@ -219,25 +219,73 @@ docker run -d --name ev-tracker \
   --restart unless-stopped \
   -p 8054:8080 \
   -v $(pwd)/data:/data \
-  -v /var/run/docker.sock:/var/run/docker.sock \
   -e DATA_DIR=/data \
   -e TZ=Europe/Berlin \
   19121412/ev-tracker:latest
 ```
 
-> Der Docker Socket `/var/run/docker.sock` ist optional — wird nur für den Auto-Update Button im Web UI benötigt.
+> **Sicherheitshinweis:** Der Docker Socket (`/var/run/docker.sock`) wird **nicht** benötigt und darf nicht gemountet werden. Updates erfolgen ausschließlich über Docker Compose, Unraid, Portainer oder Watchtower — nicht über die Web-UI.
 
 ---
 
-## Update-Kanäle
+## Updates
 
-| Kanal | Beschreibung | Wann |
-|-------|-------------|------|
-| 🟢 `latest` | Stabile Releases | Bei jedem Push auf `main` |
-| 🌙 `nightly` | Automatischer Build | Täglich um 02:00 UTC |
-| 🔧 `dev` | Entwicklungsversion | Manuell |
+Updates erfolgen **ausschließlich über den Container-Daemon** — kein Docker Socket, kein In-App-Update.
 
-Update-Kanal wählbar im Web UI → **Backup Tab** → **Software Update**.
+### Docker Compose
+```bash
+docker compose pull
+docker compose up -d
+docker image prune -f
+```
+
+### Unraid
+Container über die Unraid Docker-GUI aktualisieren (Update-Button neben dem Container).
+
+### Portainer / Watchtower
+Image auf `latest` aktualisieren oder Watchtower für automatische Updates konfigurieren.
+
+Die Web-UI zeigt unter **Konfiguration → Version & Update** ob eine neue Version verfügbar ist und was sich geändert hat — installiert wird dabei nichts.
+
+### Image-Tags
+
+| Tag | Beschreibung |
+|-----|-------------|
+| `latest` | Stabile Releases |
+| `nightly` | Automatischer Build (täglich 02:00 UTC) |
+| `dev` | Entwicklungsversion |
+
+---
+
+## Reverse Proxy / External Mode
+
+Für den Betrieb hinter einem Reverse Proxy (nginx, Traefik, Caddy) die Umgebungsvariable setzen:
+
+```yaml
+environment:
+  EV_TRACKER_EXPOSURE: "external"
+```
+
+**Was `external` aktiviert:**
+- `ProxyFix` — liest `X-Forwarded-Proto`, `X-Forwarded-For`, `Host` korrekt aus
+- Session-Cookies mit `Secure`, `HttpOnly`, `SameSite=Lax`
+- `Strict-Transport-Security` (HSTS)
+- `X-Frame-Options: DENY`
+- `Referrer-Policy: no-referrer`
+
+**Reverse-Proxy muss setzen:**
+```
+X-Forwarded-Proto: https
+X-Forwarded-For: <client-ip>
+Host: <your-domain>
+```
+
+**Intern (kein Reverse Proxy):**
+```yaml
+environment:
+  EV_TRACKER_EXPOSURE: "internal"   # default
+```
+Kein Secure-Cookie-Zwang, kein HSTS. Direkter HTTP-Zugriff im lokalen Netz.
 
 ---
 

@@ -14,18 +14,9 @@ from core.security import (
     _has_users, _get_user_permissions, ALL_PERMISSIONS,
 )
 import core.state as _state
+from core.secrets import mask_config as _mask_config, is_masked as _is_masked, SECRET_MASK as _SECRET_MASK
 
 main_routes_bp = Blueprint("main_routes", __name__)
-
-_SENSITIVE_CONFIG_KEYS = {
-    "smtp_password", "oauth_google_client_secret", "oauth_microsoft_client_secret",
-    "smtp_google_client_secret", "smtp_google_refresh_token", "smtp_google_access_token",
-    "smtp_ms_client_secret", "smtp_ms_refresh_token", "smtp_ms_access_token",
-    "meter_password", "meter_alfen_pass",
-    "ha_token", "entsoe_api_key", "octopus_api_key", "tibber_token", "tariff_ha_token",
-    "mqtt_password", "ntfy_token", "gotify_token",
-}
-from core.security import SECRET_MASK as _SECRET_MASK
 
 
 @main_routes_bp.route("/")
@@ -37,7 +28,9 @@ def index():
     cfg = load_config()
     caps = get_all_capabilities()
     provider_fields = get_config_fields(cfg.get("provider","ha"))
-    resp = make_response(render_template("index.html", cfg=cfg, state=_state,
+    # Never expose secrets in the HTML source — pass a masked copy to the template
+    cfg_safe = _mask_config(cfg)
+    resp = make_response(render_template("index.html", cfg=cfg_safe, state=_state,
                            has_template=_TEMPLATE_PATH.exists(),
                            all_providers=caps,
                            provider_fields=provider_fields,
@@ -55,11 +48,7 @@ def index():
 @main_routes_bp.route("/api/config", methods=["GET"])
 @require_login
 def api_get_config():
-    cfg = dict(load_config())
-    for k in _SENSITIVE_CONFIG_KEYS:
-        if cfg.get(k):
-            cfg[k] = _SECRET_MASK
-    return jsonify(cfg)
+    return jsonify(_mask_config(load_config()))
 
 
 @main_routes_bp.route("/api/config", methods=["POST"])
@@ -84,8 +73,8 @@ def api_save_config():
     for key in accepted_keys:
         if key in data:
             v = data[key]
-            if key in _SENSITIVE_CONFIG_KEYS and v == _SECRET_MASK:
-                continue
+            if _is_masked(v):
+                continue  # never overwrite stored secret with the mask placeholder
             if key in floats and v != "":
                 try: v = float(v)
                 except (ValueError, TypeError): pass
