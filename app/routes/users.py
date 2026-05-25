@@ -11,7 +11,7 @@ from flask import Blueprint, jsonify, request, session, url_for
 from core.db import _get_db, close_db_if_owned
 from core.security import (
     require_login, require_admin, has_permission, _current_user, _audit,
-    _get_user_by_id, _hash_password, _password_ok,
+    _get_user_by_id, _hash_password, _password_ok, _verify_password,
 )
 
 users_bp = Blueprint("users", __name__)
@@ -171,7 +171,7 @@ def api_change_password():
     data    = request.json or {}
     current = data.get("current","")
     new_pw  = data.get("new","")
-    if _hash_password(current) != user["password_hash"]:
+    if not _verify_password(current, user.get("password_hash", "")):
         return jsonify({"ok": False, "error": "Aktuelles Passwort falsch"})
     pw_err = _password_ok(new_pw)
     if pw_err:

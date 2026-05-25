@@ -22,7 +22,7 @@ from core.security import (
     require_login, require_admin,
     _current_user, _audit,
     _has_users, _get_user_by_email, _get_user_by_id,
-    _hash_password, _password_ok, _safe_next,
+    _hash_password, _verify_password, _is_legacy_sha256, _password_ok, _safe_next,
 )
 
 import logging
@@ -60,7 +60,7 @@ def login_page():
                         error = f"Konto gesperrt bis {lu_dt.strftime('%H:%M')} Uhr. Bitte später erneut versuchen."
                 except Exception:
                     pass
-            if not error and _hash_password(pw) != user.get("password_hash", ""):
+            if not error and not _verify_password(pw, user.get("password_hash", "")):
                 # Wrong password — increment failed attempts
                 con = _get_db()
                 new_attempts = (user.get("failed_attempts") or 0) + 1
@@ -115,8 +115,11 @@ def login_page():
                     if not totp_ok:
                         error = "Ungültiger 2FA-Code"
                 if not error:
-                    # Reset failed attempts on success
+                    # Reset failed attempts on success; upgrade legacy SHA-256 hash to werkzeug PBKDF2
                     con = _get_db()
+                    if _is_legacy_sha256(user.get("password_hash", "")):
+                        con.execute("UPDATE users SET password_hash=? WHERE id=?",
+                                    (_hash_password(pw), user["id"]))
                     con.execute("UPDATE users SET failed_attempts=0,locked_until=NULL,last_login_at=? WHERE id=?",
                                 (now_dt.isoformat(), user["id"]))
                     con.commit(); close_db_if_owned(con)

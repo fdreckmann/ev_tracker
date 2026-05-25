@@ -4,7 +4,7 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 
 ![Docker Hub](https://img.shields.io/docker/pulls/19121412/ev-tracker)
 ![GitHub Actions](https://github.com/fdreckmann/ev_tracker/actions/workflows/docker-build.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-2.0.33-blue)
+![Version](https://img.shields.io/badge/version-2.0.35-blue)
 
 ---
 
@@ -42,10 +42,11 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 | Feature | Beschreibung |
 |---------|-------------|
 | ⚡ Auto-Erkennung | Ladevorgänge werden automatisch erkannt und gespeichert |
+| ✏️ Manuell erfassen | Ladevorgänge nachträglich manuell anlegen (Desktop + Mobile) — mit Standort, AC/DC, kWh oder Zählerständen, SOC, KM-Stand, Kosten, Notiz, Grund |
 | 🏠 Standort | Unterscheidet Zuhause / Extern — GPS + Home Assistant Entities + Geofence + Zähler-Fallback |
 | 🔌 AC / DC | Ladertyp-Erkennung via Leistungssensor oder HA Sensor |
 | 💰 Preismodell | Heimtarif fix · dynamisch via Tibber/Octopus/HA/EVCC · Extern via ENTSO-E Spotpreis |
-| ✎ Manuelle Korrektur | Kosten und Standort pro Session überschreibbar |
+| ✎ Manuelle Korrektur | Kosten, Standort, kWh, SOC, KM-Stand und alle weiteren Felder pro Session bearbeitbar |
 | 📊 Dashboard | Live-Status, Charts, Ladekurve, kontextsensitive Ladeinfo |
 | 📱 Mobile App | PWA-fähig, Bottom-Navigation, Cards, Bottom Sheets, installierbar |
 | 🔔 Push | Benachrichtigungen via Home Assistant notify, ntfy, Gotify |
@@ -129,6 +130,7 @@ Preise werden **zeitgewichtet** über den Ladezeitraum gemittelt. Bestehende Hom
 | 📊 Zähler-Fallback | Steigender Wallbox-Zähler bei unbekanntem Standort → automatisch Zuhause |
 | 📜 Historie | Standort-Verlauf mit Zeitstempel (lat/lon nur mit `vehicles:location_exact_view`) |
 | 🏷 Standortquelle | Jede Session speichert die Erkennungsquelle: provider / ha / gps / meter_delta / manual |
+| 🔄 TTL-Cache | Standortabfrage intern gecacht (30 s) — verhindert HA-Stampede bei parallelen JS-Fetches |
 
 ### Benutzerverwaltung & Sicherheit
 
@@ -306,3 +308,41 @@ docker run -d --name ev-tracker -p 8054:8080 \
 | Tarif-APIs | Tibber GraphQL, Octopus Energy REST, ENTSO-E, Home Assistant, EVCC |
 | CI/CD | GitHub Actions → Docker Hub |
 | Hosting | Docker (Unraid, Synology, Proxmox, bare metal …) |
+
+---
+
+## Changelog
+
+### v2.0.35
+- **Security-Hardening**
+  - Docker-Socket-Mount und In-App-Update vollständig entfernt (keine Angriffsfläche mehr)
+  - Passwort-Hashing auf PBKDF2:SHA-256 (werkzeug) migriert; Legacy-SHA-256-Hashes werden beim Login transparent upgradet
+  - `require_login` invalidiert deaktivierte Benutzer-Sessions sofort
+  - Neue `EV_TRACKER_EXPOSURE=external` Umgebungsvariable: aktiviert ProxyFix, `Secure`-Cookies, HSTS, `X-Frame-Options: DENY`
+  - Sicherheitsheader (`X-Content-Type-Options`, `X-Frame-Options`) immer gesetzt
+  - Fahrzeug-Credentials (Tokens, Passwörter) werden in API-Antworten maskiert (`********`)
+  - `escapeHtml()` in api.js; XSS-Fixes in Sessions-Modal und Toast-Notifications
+- **Bugfixes**
+  - Billing-Config `SELECT id` → `SELECT vehicle_id` (Tabelle hat keinen `id`-Spalte)
+  - Neue Fahrzeug-IDs als UUID statt Unix-Timestamp
+  - `refresh_vehicle_location_state()` unterstützt `force=True` zum Umgehen des 30 s-TTL-Cache
+- **Container-Hardening** (`docker-compose.yml`)
+  - `no-new-privileges:true`, `cap_drop: ALL`
+
+### v2.0.34
+- **Manuelles Hinzufügen von Ladevorgängen** (Desktop + Mobile)
+  - Neuer Dialog mit allen relevanten Feldern: Fahrzeug, Start/Ende, Standort, AC/DC, kWh, Preis/kWh, Kosten, Zählerstände, SOC Start/Ende, KM-Stand, Wallbox-kW, Notiz, Grund
+  - Auto-Berechnung: kWh aus Zählerständen, Kosten aus kWh × Preis, Ø-Leistung aus Dauer + kWh
+  - Überschneidungsprüfung mit Warnung und „Trotzdem speichern"-Option
+  - Manuell erfasste Sessions im Export, Reports und Dashboard vollständig sichtbar
+  - Badge „✏ Manuell" in der Session-Liste; Detailansicht zeigt Quelle, Grund und Notiz
+  - `PATCH /api/sessions/<id>` auf alle Felder erweitert (SOC, KM, Standort, Ladeart, Zähler, Notiz)
+  - Neue DB-Spalten: `manual_note`, `manual_reason`, `created_mode`
+- **Standorterkennung Bugfixes**
+  - `device_tracker`-Entities in HA: `not_home`/Zonen-Namen werden korrekt als „Extern" erkannt
+  - `location_ha_entities` als String konfiguriert (Legacy-Format) wird jetzt korrekt als Liste geparst
+  - Dashboard-Standort-Kachel zeigt „Deaktiviert" statt „—" wenn Standorterkennung abgeschaltet ist
+  - Nach Standort-Test wird TTL-Cache sofort aktualisiert (kein 30 s-Delay bis Dashboard übernimmt)
+- **Mobile Bugfixes**
+  - Monatsstatistik nutzt korrektes Datumsfeld (`start_ts`) — vorher immer 0 Sessions
+  - Letzte 3 Ladevorgänge in korrekter Reihenfolge (neueste zuerst)

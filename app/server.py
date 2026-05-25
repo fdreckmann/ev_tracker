@@ -161,6 +161,22 @@ app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 app.secret_key = _get_secret_key()
 
+_EXTERNAL_MODE = os.getenv("EV_TRACKER_EXPOSURE", "internal").lower() == "external"
+if _EXTERNAL_MODE:
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+    app.config["SESSION_COOKIE_SECURE"]   = True
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+@app.after_request
+def _security_headers(resp):
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    if _EXTERNAL_MODE:
+        resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return resp
+
 @app.teardown_appcontext
 def _close_db(exc):
     db = g.pop("_db", None)
@@ -1714,87 +1730,7 @@ def schedule_backup():
     _backup_timer=Timer(secs,run); _backup_timer.daemon=True; _backup_timer.start()
     log.info("Nächstes Backup: %s",(datetime.now()+timedelta(seconds=secs)).strftime("%d.%m.%Y %H:%M"))
 
-# ── Update via Docker Hub ────────────────────────────────────────────────────
-DOCKER_HUB_REPO = "19121412/ev-tracker"
-DOCKER_SOCKET   = "/var/run/docker.sock"
-
-def get_dockerhub_digest(tag: str) -> str | None:
-    """Fetch latest digest from Docker Hub for given tag."""
-    try:
-        # Get token
-        r = requests.get(
-            f"https://auth.docker.io/token?service=registry.docker.io&scope=repository:{DOCKER_HUB_REPO}:pull",
-            timeout=10)
-        token = r.json().get("token")
-        # Get manifest digest
-        r2 = requests.get(
-            f"https://registry-1.docker.io/v2/{DOCKER_HUB_REPO}/manifests/{tag}",
-            headers={"Authorization": f"Bearer {token}",
-                     "Accept": "application/vnd.docker.distribution.manifest.v2+json"},
-            timeout=10)
-        return r2.headers.get("Docker-Content-Digest","")
-    except Exception as e:
-        log.warning("Docker Hub check error: %s", e)
-        return None
-
-def get_local_digest(tag: str) -> str | None:
-    """Get local image digest via Docker socket."""
-    if not os.path.exists(DOCKER_SOCKET):
-        return None
-    try:
-        import socket, json as _json
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.connect(DOCKER_SOCKET)
-        req = f"GET /images/{DOCKER_HUB_REPO}:{tag}/json HTTP/1.0\r\nHost: localhost\r\n\r\n"
-        sock.send(req.encode())
-        resp = b""
-        while chunk := sock.recv(4096): resp += chunk
-        sock.close()
-        body = resp.split(b"\r\n\r\n", 1)[-1]
-        data = _json.loads(body)
-        digests = data.get("RepoDigests", [])
-        for d in digests:
-            if "@" in d: return d.split("@")[1]
-        return None
-    except Exception as e:
-        log.warning("Docker socket error: %s", e)
-        return None
-
-def docker_socket_request(method: str, path: str, body: dict = None) -> dict:
-    """Make HTTP request to Docker socket using HTTP/1.0 so connection closes after response."""
-    import socket as _socket, json as _json
-    sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
-    sock.settimeout(30)
-    sock.connect(DOCKER_SOCKET)
-    body_bytes = _json.dumps(body).encode() if body else b""
-    headers = (
-        f"{method} {path} HTTP/1.0\r\n"
-        f"Host: localhost\r\n"
-        f"Content-Type: application/json\r\n"
-        f"Content-Length: {len(body_bytes)}\r\n"
-        f"\r\n"
-    )
-    sock.send(headers.encode() + body_bytes)
-    resp = b""
-    while True:
-        chunk = sock.recv(4096)
-        if not chunk: break
-        resp += chunk
-    sock.close()
-    header, _, body_raw = resp.partition(b"\r\n\r\n")
-    status = int(header.split(b" ")[1])
-    try: data = _json.loads(body_raw)
-    except Exception: data = {}
-    return {"status": status, "data": data}
-
-_update_log: list[str] = []
-_update_running = False
-
-def _ulog(msg: str):
-    _update_log.append(msg)
-    if len(_update_log) > 200:
-        _update_log.pop(0)
-    log.info("Update: %s", msg)
+_cleanup_tokens_lock = False
 
 def _cleanup_expired_tokens():
     now = time.time()
@@ -1802,10 +1738,6 @@ def _cleanup_expired_tokens():
         expired = [k for k, v in list(d.items()) if isinstance(v, dict) and v.get("expires", 0) < now]
         for k in expired:
             d.pop(k, None)
-    # Also trim _update_log to last 500 entries
-    global _update_log
-    if len(_update_log) > 500:
-        _update_log = _update_log[-500:]
 
 _last_token_cleanup = 0.0
 
@@ -1816,227 +1748,6 @@ def _before_request_cleanup():
     if now - _last_token_cleanup > 300:
         _last_token_cleanup = now
         _cleanup_expired_tokens()
-
-def docker_pull_and_restart(tag: str):
-    """Pull new image in background, then stop/remove/recreate container."""
-    global _update_running
-    if not os.path.exists(DOCKER_SOCKET):
-        return False, "Docker Socket nicht gefunden"
-
-    # Find container by image name (works regardless of container name on Unraid)
-    try:
-        containers = docker_socket_request("GET", "/containers/json?all=1")
-        container_id = None
-        container_name = None
-        clist = containers.get("data", [])
-        if not isinstance(clist, list):
-            clist = []
-        for c in clist:
-            img = c.get("Image", "")
-            if DOCKER_HUB_REPO in img:
-                container_id = c["Id"]
-                names = c.get("Names", [])
-                container_name = names[0].lstrip("/") if names else "ev-tracker"
-                break
-        if not container_id:
-            # Fallback: search by container name keywords
-            for c in clist:
-                names = c.get("Names", [])
-                if any("ev" in n.lower() and "track" in n.lower() for n in names):
-                    container_id = c["Id"]
-                    container_name = names[0].lstrip("/") if names else "ev-tracker"
-                    break
-        if not container_id:
-            return False, f"Container für Image '{DOCKER_HUB_REPO}' nicht gefunden — {len(clist)} Container auf dem Host"
-
-        inspect = docker_socket_request("GET", f"/containers/{container_id}/json")
-        if inspect["status"] != 200:
-            return False, "Container-Konfiguration nicht lesbar"
-
-        old_cfg     = inspect["data"]
-        host_config = old_cfg.get("HostConfig", {})
-        env         = old_cfg.get("Config", {}).get("Env", [])
-        labels      = old_cfg.get("Config", {}).get("Labels", {})
-    except Exception as e:
-        return False, str(e)
-
-    _update_running = True
-    _update_log.clear()
-
-    def pull_and_recreate():
-        global _update_running
-        import time as _time
-        import socket as _socket, json as _json
-        _ulog(f"Starte Pull für {DOCKER_HUB_REPO}:{tag}")
-        try:
-            # Use HTTP/1.0 so Docker closes connection after response (avoids keep-alive hang)
-            sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
-            sock.settimeout(600)
-            sock.connect(DOCKER_SOCKET)
-            req = (f"POST /images/create?fromImage={DOCKER_HUB_REPO}&tag={tag} HTTP/1.0\r\n"
-                   f"Host: localhost\r\nContent-Length: 0\r\n\r\n")
-            sock.send(req.encode())
-            buf = b""
-            while True:
-                chunk = sock.recv(8192)
-                if not chunk: break
-                buf += chunk
-            sock.close()
-            # parse status from first line: "HTTP/1.0 200 OK"
-            first_line = buf.split(b"\r\n")[0]
-            parts = first_line.split(b" ")
-            status = int(parts[1]) if len(parts) > 1 else 0
-            _ulog(f"Pull HTTP-Status {status}")
-            if status not in (200, 204):
-                _ulog(f"FEHLER: Pull fehlgeschlagen — HTTP {status}")
-                _update_running = False
-                return
-            # Check response body for error JSON lines
-            body_part = buf.split(b"\r\n\r\n", 1)[-1].decode(errors="replace")
-            for line in body_part.splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    j = _json.loads(line)
-                    if "error" in j:
-                        _ulog(f"FEHLER vom Docker-Daemon: {j['error']}")
-                        _update_running = False
-                        return
-                    if "status" in j:
-                        _ulog(j["status"])
-                except Exception:
-                    pass
-        except Exception as e:
-            _ulog(f"FEHLER beim Pull: {e}")
-            _update_running = False
-            return
-
-        _ulog("Pull abgeschlossen — baue Recreate-Konfiguration")
-
-        # Build full create body from inspect so ports/volumes/networks are preserved
-        old_config = old_cfg.get("Config", {})
-        nets       = old_cfg.get("NetworkSettings", {}).get("Networks", {})
-        clean_nets = {}
-        for net_name, net_cfg in nets.items():
-            clean_nets[net_name] = {
-                k: v for k, v in net_cfg.items()
-                if k in ("IPAMConfig", "Links", "Aliases", "NetworkID", "EndpointID",
-                         "Gateway", "IPAddress", "IPPrefixLen", "IPv6Gateway",
-                         "GlobalIPv6Address", "GlobalIPv6PrefixLen", "MacAddress",
-                         "DriverOpts")
-            }
-        create_body = {
-            "Image":        f"{DOCKER_HUB_REPO}:{tag}",
-            "Env":          old_config.get("Env", []),
-            "Labels":       old_config.get("Labels", {}),
-            "ExposedPorts": old_config.get("ExposedPorts", {}),
-            "Volumes":      old_config.get("Volumes", {}),
-            "WorkingDir":   old_config.get("WorkingDir", ""),
-            "HostConfig":   host_config,
-            "NetworkingConfig": {"EndpointsConfig": clean_nets},
-        }
-        if old_config.get("Cmd"):        create_body["Cmd"]        = old_config["Cmd"]
-        if old_config.get("Entrypoint"): create_body["Entrypoint"] = old_config["Entrypoint"]
-
-        # --- Helper-Container-Ansatz ---
-        # Wir können Stop/Remove/Recreate NICHT aus unserem eigenen Thread heraus
-        # ausführen, da der Thread stirbt sobald Docker unseren Container stoppt.
-        # Lösung: Helper-Container aus dem neu gezogenen Image starten, der die
-        # Sequenz unabhängig von unserem Prozess durchführt.
-        import base64 as _b64
-        create_b64 = _b64.b64encode(_json.dumps(create_body).encode()).decode()
-
-        helper_py = (
-            "import socket,json,time,os,base64\n"
-            "SOCK='/var/run/docker.sock'\n"
-            "def req(m,p,b=None):\n"
-            "  s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);s.connect(SOCK)\n"
-            "  d=json.dumps(b).encode() if b else b''\n"
-            "  h=f'{m} {p} HTTP/1.0\\r\\nHost: localhost\\r\\n'\n"
-            "  if d: h+=f'Content-Type: application/json\\r\\nContent-Length: {len(d)}\\r\\n'\n"
-            "  s.send((h+'\\r\\n').encode()+d)\n"
-            "  r=b''\n"
-            "  while True:\n"
-            "    c=s.recv(8192)\n"
-            "    if not c: break\n"
-            "    r+=c\n"
-            "  s.close()\n"
-            "  st=int(r.split(b' ')[1]);body=r.split(b'\\r\\n\\r\\n',1)[-1]\n"
-            "  try: return st,json.loads(body)\n"
-            "  except: return st,{}\n"
-            "time.sleep(5)\n"
-            "cid=os.environ['OLD_CID'];cname=os.environ['NEW_NAME']\n"
-            "cb=json.loads(base64.b64decode(os.environ['CB64']).decode())\n"
-            "req('POST',f'/containers/{cid}/stop?t=10')\n"
-            "time.sleep(4)\n"
-            "req('DELETE',f'/containers/{cid}?force=1')\n"
-            "time.sleep(1)\n"
-            "st,resp=req('POST',f'/containers/create?name={cname}',cb)\n"
-            "nid=resp.get('Id') if isinstance(resp,dict) else None\n"
-            "if nid: req('POST',f'/containers/{nid}/start')\n"
-            "req('DELETE','/containers/ev-tracker-updater?force=1')\n"
-        )
-
-        # Vorhandenen alten Helper-Container bereinigen
-        docker_socket_request("DELETE", "/containers/ev-tracker-updater?force=1")
-
-        helper_resp = docker_socket_request("POST", "/containers/create?name=ev-tracker-updater", {
-            "Image":      f"{DOCKER_HUB_REPO}:{tag}",
-            "Entrypoint": [],
-            "Cmd":        ["python3", "-c", helper_py],
-            "Env":        [f"OLD_CID={container_id}",
-                           f"NEW_NAME={container_name}",
-                           f"CB64={create_b64}"],
-            "HostConfig": {"Binds": [f"{DOCKER_SOCKET}:{DOCKER_SOCKET}"],
-                           "AutoRemove": True},
-        })
-        helper_id = (helper_resp.get("data") or {}).get("Id")
-        if helper_id:
-            start = docker_socket_request("POST", f"/containers/{helper_id}/start")
-            if start["status"] in (200, 204, 304):
-                _ulog(f"Helper-Container gestartet ({helper_id[:12]}) — "
-                      f"Container '{container_name}' wird in ~10s auf {tag} neu gestartet")
-            else:
-                _ulog(f"FEHLER: Helper-Container konnte nicht gestartet werden: "
-                      f"HTTP {start['status']} — {start.get('data','')}")
-        else:
-            err = (helper_resp.get("data") or {}).get("message") or str(helper_resp.get("data",""))
-            _ulog(f"FEHLER: Helper-Container konnte nicht erstellt werden: {err}")
-        _update_running = False
-
-    threading.Thread(target=pull_and_recreate, daemon=True).start()
-    return True, "Update läuft im Hintergrund · Seite lädt neu sobald der Container bereit ist"
-
-def get_update_info():
-    cfg = load_config()
-    tag = cfg.get("update_channel", "latest")
-    remote = get_dockerhub_digest(tag)
-    local  = get_local_digest(tag)
-    if not remote:
-        return {"ok": False, "error": "Docker Hub nicht erreichbar"}
-    up_to_date = (remote == local) if local else False
-    has_socket = os.path.exists(DOCKER_SOCKET)
-    return {
-        "ok":          True,
-        "up_to_date":  up_to_date,
-        "local_digest": (local or "unbekannt")[:19],
-        "remote_digest": remote[:19],
-        "tag":         tag,
-        "has_socket":  has_socket,
-        "update_count": 0 if up_to_date else 1,
-    }
-
-def fetch_remote_version(tag: str) -> dict:
-    """Fetch version.json from GitHub to get remote version number and changelog."""
-    try:
-        url = f"https://raw.githubusercontent.com/fdreckmann/ev_tracker/{'main' if tag == 'latest' else 'dev'}/version.json"
-        r = requests.get(url, timeout=8)
-        if r.status_code == 200:
-            return r.json()
-    except Exception:
-        pass
-    return {}
 
 # ── SMTP ─────────────────────────────────────────────────────────────────────
 

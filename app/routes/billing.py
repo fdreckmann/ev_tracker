@@ -38,7 +38,7 @@ def api_billing_config_save(vehicle_id):
     data    = request.get_json(force=True) or {}
     now_iso = datetime.utcnow().isoformat()
     con     = _get_db()
-    existing = con.execute("SELECT id FROM billing_config WHERE vehicle_id=?", (vehicle_id,)).fetchone()
+    existing = con.execute("SELECT vehicle_id FROM billing_config WHERE vehicle_id=?", (vehicle_id,)).fetchone()
     recipients = json.dumps(data.get("recipients", []))
     fields = {
         "vehicle_id":                  vehicle_id,

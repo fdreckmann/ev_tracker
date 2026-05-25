@@ -7,7 +7,11 @@ services:
       - "8054:8080"
     volumes:
       - /mnt/user/appdata/ev-tracker:/data
-      - /var/run/docker.sock:/var/run/docker.sock  # für Auto-Update
     environment:
       DATA_DIR: "/data"
       TZ: "Europe/Berlin"
+      # EV_TRACKER_EXPOSURE: "external"  # Uncomment when running behind a reverse proxy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

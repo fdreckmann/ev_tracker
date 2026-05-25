@@ -641,11 +641,6 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     </div>
   </div>
   <div style="display:flex;gap:10px;align-items:center">
-    <div id="updateBadge" style="display:none;background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.4);
-      border-radius:999px;padding:7px 14px;font-size:.75rem;font-family:var(--mono);color:#f59e0b;
-      cursor:pointer;animation:pulse 2s infinite" onclick="tab('update',$('navUpdate'));checkUpdate()">
-      ⬆ Update verfügbar
-    </div>
     <div class="pill">
       <span class="dot" id="sDot"></span>
       <span id="sTxt" style="font-family:var(--mono)">Verbinde…</span>
@@ -660,7 +655,6 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   <button onclick="tab('config',this)">Konfiguration</button>
   <button onclick="tab('export',this)">Export</button>
   <button onclick="tab('backup',this)">Backup</button>
-  <button onclick="tab('update',this)" id="navUpdate">Update</button>
   <a href="/logout" id="navLogout" style="display:none;margin-left:auto;padding:8px 14px;font-size:.78rem;color:var(--mute);text-decoration:none;border-radius:8px;border:1px solid var(--brd)" title="">Abmelden</a>
 </nav>
 
@@ -2255,87 +2249,6 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
 </div>
 
-<!-- ══════════════════════════════════════════════════════
-     UPDATE
-══════════════════════════════════════════════════════ -->
-<div class="panel" id="panel-update">
-
-  <div style="display:grid;grid-template-columns:1fr 340px;gap:18px;align-items:start">
-
-    <!-- Update card -->
-    <div class="card" style="margin-bottom:0">
-      <div class="card-title">Software Update</div>
-
-      <div style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-bottom:16px">
-        Installierte Version: <span style="color:#fff;font-weight:bold">v{{ app_version }}</span>
-      </div>
-
-      <!-- Channel selector -->
-      <div style="margin-bottom:16px">
-        <label style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:8px">Update-Kanal</label>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button id="ch_latest"  onclick="setChannel('latest')"  class="btn-s" style="font-size:.78rem;padding:7px 16px">🟢 Latest (stabil)</button>
-          <button id="ch_nightly" onclick="setChannel('nightly')" class="btn-s" style="font-size:.78rem;padding:7px 16px">🌙 Nightly (täglich)</button>
-          <button id="ch_dev"     onclick="setChannel('dev')"     class="btn-s" style="font-size:.78rem;padding:7px 16px">🔧 Dev</button>
-        </div>
-        <div id="channelInfo" style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-top:8px"></div>
-      </div>
-
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
-        <button class="btn-s" onclick="checkUpdate()">🔍 Auf Updates prüfen</button>
-        <button class="btn-p" id="updateBtn" onclick="doUpdate()" style="display:none">⬆ Update installieren</button>
-      </div>
-      <div id="updateInfo" style="font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-bottom:10px">—</div>
-
-      <!-- Remote version preview (shown when update available) -->
-      <div id="remoteVersionWrap" style="display:none;margin-bottom:14px;padding:14px;background:rgba(0,210,120,.06);border:1px solid rgba(0,210,120,.2);border-radius:10px">
-        <div style="font-size:.72rem;font-family:var(--mono);color:var(--acc);font-weight:bold;margin-bottom:8px">
-          Verfügbar: <span id="remoteVersionLabel">—</span>
-        </div>
-        <ul id="remoteChangelogList" style="margin:0;padding-left:16px;list-style:none"></ul>
-      </div>
-
-      <!-- Progress bar -->
-      <div id="updateProgressWrap" style="display:none;margin-bottom:12px">
-        <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-bottom:6px" id="updateProgressLabel">Docker Pull läuft…</div>
-        <div style="background:var(--brd);border-radius:6px;height:8px;overflow:hidden">
-          <div id="updateProgressBar" style="height:100%;width:0%;background:var(--accent);border-radius:6px;transition:width .4s ease"></div>
-        </div>
-        <!-- Live log -->
-        <div id="updateLogBox" style="margin-top:10px;background:var(--bg);border:1px solid var(--brd);border-radius:8px;padding:10px;max-height:160px;overflow-y:auto;font-size:.7rem;font-family:var(--mono);color:var(--mute)"></div>
-      </div>
-
-      <div class="warn-box">
-        ℹ Benötigt Docker Socket Mount: <code>-v /var/run/docker.sock:/var/run/docker.sock</code><br>
-        Daten in <code>/data</code> bleiben beim Update erhalten.
-      </div>
-    </div>
-
-    <!-- Changelog -->
-    <div class="card" style="margin-bottom:0">
-      <div class="card-title">Versionshistorie</div>
-      {% for entry in changelog %}
-      <div style="margin-bottom:16px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-          <span style="font-size:.78rem;font-family:var(--mono);font-weight:bold;color:#fff">v{{ entry.version }}</span>
-          {% if entry.date %}<span style="font-size:.65rem;font-family:var(--mono);color:var(--mute)">{{ entry.date }}</span>{% endif %}
-          {% if loop.first %}<span style="background:rgba(0,210,120,.15);border:1px solid rgba(0,210,120,.3);border-radius:4px;font-size:.65rem;padding:1px 7px;color:var(--acc)">aktuell</span>{% endif %}
-        </div>
-        <ul style="margin:0;padding-left:16px;list-style:none">
-          {% for c in entry.changes %}
-          <li style="font-size:.73rem;font-family:var(--mono);color:var(--mute);padding:2px 0;line-height:1.5">
-            <span style="color:var(--acc2);margin-right:6px">›</span>{{ c }}
-          </li>
-          {% endfor %}
-        </ul>
-      </div>
-      {% if not loop.last %}<div style="height:1px;background:var(--brd);margin-bottom:16px"></div>{% endif %}
-      {% endfor %}
-    </div>
-
-  </div>
-
-</div>
 
 <!-- ── User Modal ── -->
 <div class="modal-overlay" id="userModal" style="display:none" onclick="if(event.target===this)closeUserModal()">
@@ -4321,177 +4234,14 @@ async function saveSigDraw(){
 // close on Escape
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
 
-// ── Update ───────────────────────────────────────────────────────────────────
-let _updateChannel = '{{ cfg.update_channel or "latest" }}';
-
-const CHANNEL_INFO = {
-  'latest':  '🟢 Stabile Releases — empfohlen für den Produktiveinsatz',
-  'nightly': '🌙 Täglicher automatischer Build — neueste Features, weniger getestet',
-  'dev':     '🔧 Entwicklungsversion — instabil, nur zum Testen',
-};
-
-function setChannel(ch){
-  _updateChannel = ch;
-  ['latest','nightly','dev'].forEach(c=>{
-    const btn=$('ch_'+c);
-    if(btn) btn.style.background = c===ch ? 'var(--accent)' : '';
-    if(btn) btn.style.color = c===ch ? '#041810' : '';
-  });
-  $('channelInfo').textContent = CHANNEL_INFO[ch]||'';
-  // save to config
-  apiFetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({update_channel:ch})}).then(r=>r.json()).then(r=>{
-      if(!r.ok) toast('❌ Kanal konnte nicht gespeichert werden','err');
-    }).catch(()=>toast('❌ Netzwerkfehler beim Speichern','err'));
-  $('updateInfo').textContent='—';
-  $('updateBtn').style.display='none';
-}
-
-async function checkUpdate(){
-  $('updateInfo').textContent='⏳ Prüfe Docker Hub…';
-  $('updateBtn').style.display='none';
-  $('remoteVersionWrap').style.display='none';
-  const r = await fetch('/api/update/check').then(r=>r.json());
-  if(!r.ok){
-    $('updateInfo').innerHTML=`<span style="color:var(--danger)">❌ ${r.error}</span>`;
-    return;
-  }
-  if(r.up_to_date){
-    $('updateInfo').innerHTML=`<span style="color:var(--acc)">✅ Aktuell · ${r.tag} · ${r.local_digest}</span>`;
-    $('updateBadge').style.display='none';
-    return;
-  }
-  $('updateInfo').innerHTML=`<span style="color:var(--warn)">⬆ Neues Image verfügbar · ${r.tag} · lokal: ${r.local_digest} → remote: ${r.remote_digest}</span>`;
-  // Show remote version + changelog if available
-  if(r.remote_version){
-    $('remoteVersionLabel').textContent = 'v' + r.remote_version;
-    const ul = $('remoteChangelogList');
-    ul.innerHTML = '';
-    // remote_changelog is [{version, date, changes:[]}]
-    // Only show entries newer than installed version
-    const installed = '{{ app_version }}';
-    const newer = (r.remote_changelog||[]).filter(entry=>{
-      if(!entry.version) return false;
-      // simple string compare works for semver x.y.z
-      return entry.version > installed;
-    });
-    const toShow = newer.length ? newer : (r.remote_changelog||[]).slice(0,3);
-    toShow.forEach(entry=>{
-      // Version heading
-      const heading = document.createElement('li');
-      heading.style.cssText='font-size:.74rem;font-family:var(--mono);font-weight:bold;color:#fff;padding:6px 0 2px;';
-      heading.textContent = `v${entry.version}${entry.date ? '  ·  '+entry.date : ''}`;
-      ul.appendChild(heading);
-      // Change items
-      (entry.changes||[]).forEach(c=>{
-        const li=document.createElement('li');
-        li.style.cssText='font-size:.72rem;font-family:var(--mono);color:var(--mute);padding:1px 0 1px 8px;line-height:1.5';
-        li.innerHTML=`<span style="color:var(--acc2);margin-right:5px">›</span>${c}`;
-        ul.appendChild(li);
-      });
-    });
-    $('remoteVersionWrap').style.display='';
-  }
-  if(r.has_socket){ $('updateBtn').style.display=''; $('updateBadge').style.display=''; }
-  else $('updateInfo').innerHTML+='<br><span style="color:var(--mute);font-size:.7rem">⚠ Docker Socket nicht gemountet — manuelles Update nötig</span>';
-}
-
-async function doUpdate(){
-  if(!confirm(`Update auf ${_updateChannel} installieren?\n\nDer Container wird kurz neu gestartet.`)) return;
-  const btn=$('updateBtn');
-  btn.disabled=true; btn.textContent='⏳ Update läuft…';
-  $('updateInfo').textContent='';
-
-  // show progress bar + log
-  const wrap=$('updateProgressWrap'), bar=$('updateProgressBar'), lbl=$('updateProgressLabel');
-  const logBox=$('updateLogBox');
-  wrap.style.display='block'; logBox.innerHTML='';
-  bar.style.width='5%'; lbl.textContent='Starte Update…';
-
-  let r;
-  try {
-    r = await fetch('/api/update/pull',{method:'POST',headers:{'X-CSRF-Token':csrfToken}}).then(res=>res.json());
-  } catch(_) {
-    bar.style.width='100%'; lbl.textContent='✅ Fertig!';
-    $('updateInfo').innerHTML='<span style="color:var(--acc)">✅ Update erfolgreich — Seite lädt in 5s neu…</span>';
-    setTimeout(()=>location.reload(), 5000);
-    return;
-  }
-  if(!r.ok){
-    bar.style.width='0%'; wrap.style.display='none';
-    $('updateInfo').innerHTML=`<span style="color:var(--danger)">❌ ${r.output||r.error||'Unbekannter Fehler'}</span>`;
-    btn.disabled=false; btn.textContent='⬆ Update installieren';
-    return;
-  }
-  bar.style.width='15%'; lbl.textContent='Docker Pull läuft…';
-  $('updateInfo').innerHTML='<span style="color:var(--mute)">⏳ Pull läuft im Hintergrund…</span>';
-  $('updateBadge').style.display='none';
-
-  // Poll log endpoint for live output
-  let lastCount=0, restarting=false;
-  const pollLog=async()=>{
-    try{
-      const lg=await fetch('/api/update/log',{cache:'no-store'}).then(r=>r.json());
-      const lines=lg.lines||[];
-      for(let i=lastCount;i<lines.length;i++){
-        const d=document.createElement('div');
-        const txt=lines[i];
-        d.style.color=txt.startsWith('FEHLER')?'var(--danger)':txt.includes('abgeschlossen')||txt.includes('Fertig')?'var(--acc)':'var(--mute)';
-        d.textContent='› '+txt;
-        logBox.appendChild(d);
-        logBox.scrollTop=logBox.scrollHeight;
-      }
-      lastCount=lines.length;
-      // Update progress based on log content
-      const allText=lines.join(' ');
-      if(allText.includes('Pull abgeschlossen')) bar.style.width='75%';
-      else if(allText.includes('Image wird')) bar.style.width='40%';
-      if(allText.includes('FEHLER')){
-        bar.style.width='0%'; lbl.textContent='❌ Fehler aufgetreten';
-        $('updateInfo').innerHTML=`<span style="color:var(--danger)">❌ Fehler — Details im Log</span>`;
-        btn.disabled=false; btn.textContent='⬆ Update installieren';
-        return;
-      }
-      if(allText.includes('Container gestartet')){
-        restarting=true;
-        bar.style.width='90%'; lbl.textContent='Container neu gestartet — warte auf Server…';
-      }
-    }catch(_){}
-    if(restarting){
-      // Now poll until server comes back
-      const pollBack=async()=>{
-        try{
-          await fetch('/api/status',{cache:'no-store'});
-          bar.style.width='100%'; lbl.textContent='✅ Fertig!';
-          $('updateInfo').innerHTML='<span style="color:var(--acc)">✅ Update erfolgreich — Seite lädt neu…</span>';
-          setTimeout(()=>location.reload(), 1500);
-        }catch(_){ setTimeout(pollBack, 2000); }
-      };
-      setTimeout(pollBack, 3000);
-    } else {
-      setTimeout(pollLog, 1500);
-    }
-  };
-  setTimeout(pollLog, 2000);
-}
-
 // auto-check on load (silent)
 setTimeout(async ()=>{
-  try{
-    setChannel(_updateChannel);
-    const r=await fetch('/api/update/check').then(r=>r.json());
-    if(r.ok && !r.up_to_date){
-      const verStr = r.remote_version ? ` → v${r.remote_version}` : ` (${r.tag})`;
-      $('updateBadge').style.display='';
-      $('updateBadge').textContent='⬆ Update verfügbar' + verStr;
-    }
-  }catch(e){}
   // Show logout button if auth active
   try{
     const a=await fetch('/api/auth/status').then(r=>r.json());
     if(a.auth_enabled) $('navLogout').style.display='';
   }catch(e){}
-}, 3000);
+}, 1000);
 
 // Show/hide nav items based on role
 (async function(){
@@ -6348,34 +6098,6 @@ async function openMobileSystemStatus() {
 
 // ─── Update prüfen ───────────────────────────────────────
 
-async function openMobileUpdateCheck() {
-  openMobileSheet(`
-    <div class="m-sheet-title">🔄 Update</div>
-    <div id="msUpdateResult" class="m-info-block">
-      <div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value">⏳ Prüfe…</span></div>
-    </div>
-    <div id="msUpdateActions"></div>
-    <button class="m-btn-s" style="width:100%;margin-top:8px" onclick="closeMobileSheet()">Schließen</button>
-  `);
-  try {
-    const r = await fetch('/api/update/check').then(x=>x.json()).catch(e=>({error:e.message}));
-    const el=document.getElementById('msUpdateResult');
-    const acts=document.getElementById('msUpdateActions');
-    if(!el) return;
-    if(r.update_available) {
-      el.innerHTML=`
-        <div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:#ffd740">⬆ Update verfügbar</span></div>
-        <div class="m-info-row"><span class="m-info-label">Aktuell</span><span class="m-info-value">${r.current_version||'—'}</span></div>
-        <div class="m-info-row"><span class="m-info-label">Neu</span><span class="m-info-value" style="color:#64ffda">${r.latest_version||'—'}</span></div>`;
-      if(acts) acts.innerHTML=`<button class="m-btn-p" style="width:100%;margin-top:8px" onclick="closeMobileSheet();tab('update',document.getElementById('navUpdate'))">⬆ Zum Update</button>`;
-    } else {
-      el.innerHTML=`<div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:#64ffda">✅ Aktuell (${r.current_version||'—'})</span></div>`;
-    }
-  } catch(e) {
-    const el=document.getElementById('msUpdateResult');
-    if(el) el.innerHTML=`<div class="m-info-row"><span class="m-info-label">Fehler</span><span class="m-info-value" style="color:#ef4444">${e.message}</span></div>`;
-  }
-}
 
 // ─── Backup erstellen ────────────────────────────────────
 
@@ -6549,11 +6271,7 @@ function _applyExportPermissions() {
 
 
 function _applyUpdatePermissions() {
-  if (!hasPermission('updates:start')) {
-    document.querySelectorAll('[onclick*="startUpdate"], [onclick*="doUpdate"]').forEach(btn => {
-      btn.style.display = 'none';
-    });
-  }
+  // Update feature removed
 }
 
 function _applyBackupPermissions() {

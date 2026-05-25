@@ -216,16 +216,21 @@ def detect_location_status(vid: str, cfg: dict, vehicle_state: dict) -> dict:
     return result
 
 
-def refresh_vehicle_location_state(vid: str) -> dict:
+def refresh_vehicle_location_state(vid: str, force: bool = False) -> dict:
     """Detect location for `vid`, write into _state.vehicle_states, and return result.
 
     Uses a 30-second TTL: if called more often (e.g. concurrent JS fetches),
     the second call within the TTL window returns the cached vehicle_states value
     instantly without making extra HA requests.
 
+    Pass force=True to bypass the TTL and always re-detect (e.g. after test endpoint writes).
+
     Always writes location_status / location_source / location_timestamp to
     vehicle_states so /api/status always reflects the current state.
     """
+    if force:
+        _location_refresh_ts.pop(vid, None)
+
     now = _time.time()
     last_ts = _location_refresh_ts.get(vid, 0)
 

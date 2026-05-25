@@ -6,7 +6,7 @@ Usage:
         require_login, require_admin, require_permission,
         has_permission, _current_user, _audit,
         ALL_PERMISSIONS, DEFAULT_ROLE_PERMISSIONS,
-        _hash_password, _password_ok, _get_secret_key,
+        _hash_password, _verify_password, _password_ok, _get_secret_key,
         _has_users, _get_user_by_email, _get_user_by_id,
         _get_user_permissions, _safe_next,
     )
@@ -17,6 +17,7 @@ import secrets
 from datetime import datetime
 
 import flask
+from werkzeug.security import generate_password_hash, check_password_hash
 
 SECRET_MASK = "********"
 from flask import g, jsonify, redirect, request, session, url_for
@@ -173,7 +174,25 @@ DEFAULT_ROLE_PERMISSIONS = {
 # ── Password helpers ──────────────────────────────────────────────────────────
 
 def _hash_password(pw: str) -> str:
-    return hashlib.sha256(pw.encode()).hexdigest()
+    """Return a secure PBKDF2/SHA-256 hash (werkzeug)."""
+    return generate_password_hash(pw, method="pbkdf2:sha256", salt_length=16)
+
+
+def _is_legacy_sha256(stored: str) -> bool:
+    """Returns True if stored hash looks like a bare hex SHA-256 (no salt, legacy)."""
+    return len(stored) == 64 and all(c in "0123456789abcdef" for c in stored.lower())
+
+
+def _verify_password(pw: str, stored_hash: str) -> bool:
+    """Verify password against stored hash — supports both legacy SHA-256 and werkzeug hashes."""
+    if not stored_hash:
+        return False
+    if _is_legacy_sha256(stored_hash):
+        return secrets.compare_digest(hashlib.sha256(pw.encode()).hexdigest(), stored_hash)
+    try:
+        return check_password_hash(stored_hash, pw)
+    except Exception:
+        return False
 
 
 def _password_ok(pw: str) -> "str | None":
@@ -236,10 +255,18 @@ def _current_user():
 def require_login(f):
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
-        if not session.get("user_id"):
+        uid = session.get("user_id")
+        if not uid:
             if request.path.startswith("/api/"):
                 return jsonify({"error": "Nicht eingeloggt", "login_required": True}), 401
             return redirect(url_for("auth.login_page", next=request.path))
+        # Verify user still exists and is active on every request
+        user = _get_user_by_id(uid)
+        if not user or user.get("status") == "disabled":
+            session.clear()
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "Konto deaktiviert oder nicht mehr vorhanden", "login_required": True}), 401
+            return redirect(url_for("auth.login_page"))
         return f(*args, **kwargs)
     return wrapper
 

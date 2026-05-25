@@ -5,6 +5,7 @@ import json
 import os
 import re
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -107,7 +108,7 @@ def api_add_vehicle():
     data = request.json or {}
     cfg  = load_config()
     extras = list(cfg.get("extra_vehicles", []))
-    vid = f"v{int(time.time())}"
+    vid = f"v_{uuid.uuid4().hex[:12]}"
     data["id"] = vid
     data.setdefault("active", True)
     data.setdefault("archived", False)
@@ -410,7 +411,7 @@ def api_delete_vehicle(vid):
         con = _get_db()
         sess_count   = con.execute("SELECT COUNT(*) FROM sessions WHERE vehicle_id=?", (vid,)).fetchone()[0]
         rep_count    = con.execute("SELECT COUNT(*) FROM reports  WHERE vehicle_id=?", (vid,)).fetchone()[0]
-        billing_row  = con.execute("SELECT id FROM billing_config WHERE vehicle_id=?", (vid,)).fetchone()
+        billing_row  = con.execute("SELECT 1 FROM billing_config WHERE vehicle_id=?", (vid,)).fetchone()
         close_db_if_owned(con)
         if (sess_count or rep_count or billing_row) and not allow_del_sessions:
             return jsonify({
