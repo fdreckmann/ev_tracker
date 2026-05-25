@@ -3,7 +3,6 @@ import json
 from pathlib import Path
 
 _here = Path(__file__).parent
-# Docker: version.json copied alongside app code; dev: one level up at project root
 _vfile = next(
     (p for p in (_here / "version.json", _here.parent / "version.json") if p.exists()),
     None,
@@ -11,7 +10,11 @@ _vfile = next(
 try:
     _data = json.loads(_vfile.read_text())
     APP_VERSION = _data["version"]
-    CHANGELOG   = _data.get("changelog", [])
+    BUILD_DATE  = _data.get("build", "")
+    CHANNEL     = _data.get("channel", "stable")
+    CHANGELOG   = []  # Legacy — kept for import compatibility
 except Exception:
     APP_VERSION = "unknown"
+    BUILD_DATE  = ""
+    CHANNEL     = "stable"
     CHANGELOG   = []

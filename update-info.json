@@ -1,0 +1,25 @@
+{
+  "latest_version": "2.0.37",
+  "release_date": "2026-05-25",
+  "channel": "stable",
+  "title": "Sichere Update-Anzeige + CHANGELOG",
+  "summary": [
+    "Neuer read-only Update-Check via /api/update-info (kein In-App-Update, kein Docker-Socket)",
+    "Konfigurationssektion 'Version & Update' mit Release-Notizen und Docker-Update-Anleitung",
+    "CHANGELOG.md eingeführt, README.md auf stabile Installationsdokumentation reduziert",
+    "version.json vereinfacht, Semver-Vergleich mit Pre-Release-Unterstützung",
+    "EV_TRACKER_UPDATE_CHECK_ENABLED=false deaktiviert Remote-Check vollständig"
+  ],
+  "fixes": [],
+  "breaking_changes": [],
+  "migration_notes": [
+    "Kein automatisches In-App-Update mehr verfügbar — Updates via docker compose pull",
+    "EV_TRACKER_UPDATE_CHECK_ENABLED=false deaktiviert den Remote-Check bei Bedarf"
+  ],
+  "update_instructions": [
+    "docker compose pull",
+    "docker compose up -d",
+    "Oder über Unraid/Portainer: Container auf 'latest' aktualisieren"
+  ],
+  "release_url": "https://github.com/fdreckmann/ev_tracker/releases/latest"
+}
