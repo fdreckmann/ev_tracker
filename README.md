@@ -228,26 +228,74 @@ docker run -d --name ev-tracker \
 
 ---
 
-## Fehlerbehebung
+## Benutzer & Berechtigungen (PUID / PGID)
 
-### "First User Setup" erscheint obwohl Admin bereits existiert
+Der Container läuft **nicht als Root**. Der effektive User wird über `PUID` und `PGID` gesteuert — das `/data`-Volume muss demselben User gehören.
 
-Der Container läuft als nicht-Root-Benutzer (UID 10001). Wenn das `/data`-Volume einem anderen Benutzer gehört, kann die Datenbank nicht gelesen werden — was fälschlicherweise als "kein Benutzer vorhanden" angezeigt wird.
+### Werte setzen (empfohlen: `.env`-Datei)
 
-**Diagnose:** `/api/health` aufrufen — zeigt `db_error`, `db_writable` und `startup_error`.
-
-**Fix auf Unraid:**
 ```bash
-chown -R 10001:100 /mnt/user/appdata/ev-tracker
+cp .env.example .env
+# .env anpassen:
+PUID=10001   # Standard
+PGID=100
+```
+
+```yaml
+# docker-compose.yml — liest automatisch aus .env:
+user: "${PUID:-10001}:${PGID:-100}"
+```
+
+### Für Unraid (nobody:users = 99:100)
+
+Unraid verwaltet Appdata standardmäßig als `nobody:users` (UID 99, GID 100). `.env` anpassen:
+
+```
+PUID=99
+PGID=100
+```
+
+Oder direkt in `docker-compose.yml`:
+
+```yaml
+user: "99:100"
+```
+
+### /data-Berechtigungen anpassen (falls nötig)
+
+Der Eigentümer des `/data`-Verzeichnisses muss mit PUID:PGID übereinstimmen.
+
+**Unraid (Appdata-Pfad):**
+```bash
+chown -R 99:100 /mnt/user/appdata/ev-tracker
 chmod -R u+rwX,g+rwX /mnt/user/appdata/ev-tracker
 ```
 
-**Fix mit Docker Compose (allgemein):**
+**Standard (UID 10001):**
+```bash
+chown -R 10001:100 /mnt/user/appdata/ev-tracker
+```
+
+**Docker named volume:**
 ```bash
 docker run --rm -v ev-tracker_data:/data alpine chown -R 10001:100 /data
 ```
 
-Danach Container neu starten. Der Entrypoint korrigiert die Berechtigungen beim Start automatisch, sofern der Container Root-Zugriff hat.
+---
+
+## Fehlerbehebung
+
+### "First User Setup" erscheint obwohl Admin bereits existiert
+
+Ursache: Der Container kann `/data` nicht lesen oder schreiben — der Eigentümer stimmt nicht mit PUID:PGID überein.
+
+**Diagnose:** `/api/health` aufrufen — zeigt `db_writable`, `users_table_exists`, `users_count` und `startup_error` ohne Login.
+
+Lösung: PUID/PGID korrekt setzen (siehe oben) und `/data`-Berechtigungen anpassen.
+
+### "attempt to write a readonly database" / "Permission denied"
+
+Gleiche Ursache wie oben. Die App zeigt eine Fehlerseite mit dem konkreten Fix-Hinweis statt dem Setup-Formular.
 
 ---
 

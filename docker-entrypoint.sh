@@ -1,15 +1,23 @@
 #!/bin/sh
-# Entrypoint: fix /data ownership so the non-root evtracker user can access it,
-# then exec gunicorn as that user.
+# Entrypoint supports two privilege modes:
+#
+#   A) user: set in compose (recommended) — container starts as PUID:PGID,
+#      entrypoint just execs gunicorn directly. cap_drop: ALL is safe.
+#
+#   B) root start (no user: in compose) — entrypoint fixes /data ownership
+#      via chown, then drops to PUID:PGID using gosu. Requires CAP_SETUID +
+#      CAP_SETGID (remove cap_drop: ALL or add cap_add: [SETUID, SETGID]).
 set -e
 
 DATA_DIR="${DATA_DIR:-/data}"
 
-# If /data is not writable by the current user (likely because the host volume
-# is owned by root), fix ownership. This runs as root before USER directive.
-if [ ! -w "$DATA_DIR" ]; then
-    chown -R evtracker:users "$DATA_DIR" 2>/dev/null || true
+if [ "$(id -u)" = "0" ]; then
+    # Mode B: running as root — chown /data, then drop to PUID:PGID
+    PUID="${PUID:-10001}"
+    PGID="${PGID:-100}"
+    chown -R "$PUID:$PGID" "$DATA_DIR" 2>/dev/null || true
+    exec gosu "$PUID:$PGID" gunicorn server:app -c gunicorn.conf.py "$@"
 fi
 
-# Drop privileges and start gunicorn
-exec gosu evtracker gunicorn server:app -c gunicorn.conf.py "$@"
+# Mode A: already non-root (user: set in compose or equivalent)
+exec gunicorn server:app -c gunicorn.conf.py "$@"
