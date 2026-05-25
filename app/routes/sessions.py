@@ -252,6 +252,23 @@ def api_manual_session_create():
     session_data = dict(row) if row else {}
     close_db_if_owned(con)
 
+    # If this session was created from a missing-charge candidate, finalise the link
+    candidate_id = data.get("missing_charge_candidate_id") or data.get("candidate_id")
+    if candidate_id:
+        try:
+            candidate_id = int(candidate_id)
+            link_con = _get_db()
+            link_con.execute(
+                "UPDATE missing_charge_candidates SET status='accepted', accepted_session_id=?, updated_at=? WHERE id=?",
+                (sid, datetime.utcnow().isoformat(timespec="seconds"), candidate_id),
+            )
+            link_con.commit()
+            close_db_if_owned(link_con)
+            _audit("missing_charge_candidate_accepted",
+                   f"candidate_id={candidate_id} session_id={sid}", ip=request.remote_addr)
+        except Exception:
+            pass
+
     _audit("session_manual_created",
            f"session_id={sid} vehicle_id={vehicle_id} kwh={kwh:.2f} location={location}",
            ip=request.remote_addr)

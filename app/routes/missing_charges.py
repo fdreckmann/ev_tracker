@@ -122,14 +122,16 @@ def api_accept_missing_charge(cid):
         return jsonify({"error": "Nicht gefunden"}), 404
     candidate = _row_to_dict(row, cur)
     now = datetime.utcnow().isoformat(timespec="seconds")
+    # Mark as in_review — becomes 'accepted' only when the manual session is actually saved.
+    # This prevents ghost acceptances if the user closes the dialog without saving.
     con.execute(
-        "UPDATE missing_charge_candidates SET status='accepted',updated_at=? WHERE id=?",
+        "UPDATE missing_charge_candidates SET status='in_review',updated_at=? WHERE id=?",
         (now, cid),
     )
     con.commit()
     close_db_if_owned(con)
-    _audit("missing_charge_candidate_accepted", f"candidate_id={cid}", ip=request.remote_addr)
-    return jsonify({"ok": True, "prefill": candidate})
+    _audit("missing_charge_candidate_in_review", f"candidate_id={cid}", ip=request.remote_addr)
+    return jsonify({"ok": True, "prefill": candidate, "candidate_id": cid})
 
 
 @missing_charges_bp.route("/api/missing-charges/check", methods=["POST"])

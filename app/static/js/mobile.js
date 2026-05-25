@@ -235,7 +235,7 @@ function buildSessionCard(s, compact) {
     '<div class="session-card-details">' +
       '<span>⚡ '+kwh+' kWh</span>' +
       (dur ? '<span>⏱ '+dur+'</span>' : '') +
-      (loc ? '<span>📍 '+loc+'</span>' : '') +
+      (loc ? '<span>📍 '+escapeHtml(loc)+'</span>' : '') +
     '</div>' +
   '</div>';
 }
@@ -307,11 +307,11 @@ async function doMobileExport() {
         if (resultEl) resultEl.innerHTML = '<p style="color:#64ffda">✅ Export erfolgreich</p>';
       } else {
         var j = await r.json();
-        if (resultEl) resultEl.innerHTML = '<p style="color:#ff5252">❌ '+(j.error||'Fehler')+'</p>';
+        if (resultEl) resultEl.innerHTML = '<p style="color:#ff5252">❌ '+escapeHtml(j.error||'Fehler')+'</p>';
       }
     }
   } catch(e) {
-    if (resultEl) resultEl.innerHTML = '<p style="color:#ff5252">❌ '+e.message+'</p>';
+    if (resultEl) resultEl.innerHTML = '<p style="color:#ff5252">❌ '+escapeHtml(e.message)+'</p>';
   }
 }
 
@@ -332,7 +332,7 @@ async function doMobileExportPreview() {
     }).then(function(x) { return x.json(); });
 
     if (!r.ok) {
-      if (resultEl) resultEl.innerHTML = '<p style="color:#ff5252">❌ '+(r.error||'Fehler')+'</p>';
+      if (resultEl) resultEl.innerHTML = '<p style="color:#ff5252">❌ '+escapeHtml(r.error||'Fehler')+'</p>';
       return;
     }
 
@@ -372,7 +372,7 @@ async function doMobileExportPreview() {
 
     if (resultEl) resultEl.innerHTML = html;
   } catch(e) {
-    if (resultEl) resultEl.innerHTML = '<p style="color:#ff5252">❌ '+e.message+'</p>';
+    if (resultEl) resultEl.innerHTML = '<p style="color:#ff5252">❌ '+escapeHtml(e.message)+'</p>';
   }
 }
 

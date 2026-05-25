@@ -112,11 +112,11 @@ DEFAULT_CONFIG = {
     "notification_event_charging_stopped":            True,
     "notification_event_charging_interrupted":        True,
     "notification_event_missing_charge_candidate_created": True,
-    "notification_event_update_available_new":        True,
+    "notification_event_update_available":        True,
     "notification_event_provider_offline":            True,
     "notification_event_provider_auth_expired":       True,
-    "notification_event_backup_failed_alert":         True,
-    "notification_event_backup_success_alert":        False,
+    "notification_event_backup_failed":         True,
+    "notification_event_backup_success":        False,
     "notification_event_security_login_failed_many":  True,
 
     # System

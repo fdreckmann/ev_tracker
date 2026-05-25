@@ -318,6 +318,11 @@ def accept_invite_page(token):
 
 @auth_bp.route("/api/auth/setup", methods=["POST"])
 def api_auth_setup():
+    # If any users exist this is a privileged operation — require admin
+    if _has_users():
+        user = _current_user()
+        if not user or user.get("role") != "admin":
+            return jsonify({"error": "Keine Berechtigung: admin erforderlich"}), 403
     data = request.json or {}
     cfg  = load_config()
     if "password" in data and data["password"]:
@@ -332,8 +337,12 @@ def api_auth_setup():
 
 
 @auth_bp.route("/api/auth/totp/setup", methods=["POST"])
+@require_login
 def api_totp_setup():
     import pyotp
+    user = _current_user()
+    if not user or user.get("role") != "admin":
+        return jsonify({"error": "Keine Berechtigung: admin erforderlich"}), 403
     secret = pyotp.random_base32()
     cfg = load_config()
     cfg["auth_totp_secret"] = secret
@@ -345,7 +354,11 @@ def api_totp_setup():
 
 
 @auth_bp.route("/api/auth/totp/disable", methods=["POST"])
+@require_login
 def api_totp_disable():
+    user = _current_user()
+    if not user or user.get("role") != "admin":
+        return jsonify({"error": "Keine Berechtigung: admin erforderlich"}), 403
     cfg = load_config()
     cfg["auth_totp_secret"] = ""
     save_config(cfg)

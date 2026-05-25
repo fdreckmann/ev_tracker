@@ -288,9 +288,10 @@ def init_db():
         ("meter_home_detection_delta_kwh",   "REAL"),
         ("location_source",      "TEXT DEFAULT 'unknown'"),
         ("location_confidence",  "INTEGER DEFAULT 0"),
-        ("manual_note",          "TEXT"),
-        ("manual_reason",        "TEXT"),
-        ("created_mode",         "TEXT DEFAULT 'auto'"),
+        ("manual_note",                  "TEXT"),
+        ("manual_reason",                "TEXT"),
+        ("created_mode",                 "TEXT DEFAULT 'auto'"),
+        ("missing_charge_candidate_id",  "INTEGER"),
     ]:
         try:
             con.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
@@ -549,6 +550,13 @@ def init_db():
     )""")
     con.execute("""CREATE INDEX IF NOT EXISTS idx_mcc_vehicle_status
                    ON missing_charge_candidates(vehicle_id, status)""")
+    for _col, _typedef in [
+        ("accepted_session_id", "INTEGER"),
+    ]:
+        try:
+            con.execute(f"ALTER TABLE missing_charge_candidates ADD COLUMN {_col} {_typedef}")
+        except Exception:
+            pass
     con.execute("""CREATE TABLE IF NOT EXISTS notifications (
         id                   INTEGER PRIMARY KEY AUTOINCREMENT,
         type                 TEXT NOT NULL,

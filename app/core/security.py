@@ -99,10 +99,9 @@ ALL_PERMISSIONS = {
     "backup:download":          {"label": "Backup herunterladen",           "group": "Backup"},
     "backup:restore":           {"label": "Backup wiederherstellen",        "group": "Backup"},
     "backup:delete":            {"label": "Backup löschen",                 "group": "Backup"},
-    # Updates
-    "updates:view":             {"label": "Updates ansehen",                "group": "Updates"},
+    # Updates (read-only; no in-app update installation)
+    "updates:view":             {"label": "Update-Info ansehen",            "group": "Updates"},
     "updates:check":            {"label": "Updates prüfen",                 "group": "Updates"},
-    "updates:start":            {"label": "Update starten",                 "group": "Updates"},
     "updates:history":          {"label": "Update-Historie ansehen",        "group": "Updates"},
     # Audit/Sicherheit
     "audit:view":               {"label": "Audit-Log ansehen",              "group": "Sicherheit"},
@@ -168,6 +167,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "notifications:view", "notifications:manage",
         "mqtt:view",
         "api_tokens:view",
+        "updates:view",
     ],
     "readonly": [
         "dashboard:view", "vehicles:view", "sessions:view",

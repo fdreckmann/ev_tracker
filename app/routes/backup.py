@@ -43,7 +43,7 @@ def api_backup_create():
         out = create_backup("manual")
         try:
             from services.notification_service import notify
-            notify(type="backup_success_alert", severity="info",
+            notify(type="backup_success", severity="info",
                    title="Backup erfolgreich",
                    message=f"Backup wurde erstellt: {out.name}")
         except Exception:
@@ -52,7 +52,7 @@ def api_backup_create():
     except Exception as e:
         try:
             from services.notification_service import notify
-            notify(type="backup_failed_alert", severity="warning",
+            notify(type="backup_failed", severity="warning",
                    title="Backup fehlgeschlagen",
                    message=str(e))
         except Exception:
