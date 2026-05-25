@@ -4,7 +4,7 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 
 ![Docker Hub](https://img.shields.io/docker/pulls/19121412/ev-tracker)
 ![GitHub Actions](https://github.com/fdreckmann/ev_tracker/actions/workflows/docker-build.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-2.0.35-blue)
+![Version](https://img.shields.io/badge/version-2.0.36-blue)
 
 ---
 
@@ -312,6 +312,33 @@ docker run -d --name ev-tracker -p 8054:8080 \
 ---
 
 ## Changelog
+
+### v2.0.36
+- **Fehlende Ladevorgänge automatisch erkennen**
+  - Nach jedem Provider-Poll wird ein Fahrzeug-Snapshot gespeichert (SOC, Kilometerstand, Standort)
+  - Wenn das Fahrzeug offline war und SOC danach gestiegen ist (oder nicht genug gefallen bei gefahrener Strecke), wird ein Kandidat erstellt
+  - Energieschätzung: SOC-Delta × Batteriekapazität + Fahrverbrauch (konfigurierbar, default 18 kWh/100 km)
+  - Vorschläge enthalten: Zeitraum, SOC Start/Ende, km, geschätzte kWh, Standort-Vorschlag, Ladetyp-Vorschlag, Konfidenz
+  - Konfidenz-Score: 50 %–95 % je nach verfügbaren Daten
+  - Plausibilitätsregeln: min. SOC-Anstieg 3 %, min. 2 kWh, min. 30 min Lücke, keine bestehende Session im Zeitraum
+  - Doppelte Vorschläge werden verhindert (gleiche Snapshot-IDs oder ignorierter Zeitraum)
+- **API-Endpunkte**
+  - `GET /api/missing-charges` — offene Vorschläge
+  - `GET /api/missing-charges/<id>` — Vorschlag-Detail
+  - `POST /api/missing-charges/<id>/accept` — akzeptieren + Vorausfüll-Daten zurückgeben
+  - `POST /api/missing-charges/<id>/dismiss` — einmalig ignorieren
+  - `POST /api/missing-charges/<id>/ignore` — dauerhaft ignorieren (gleicher Zeitraum wird nicht erneut vorgeschlagen)
+  - `POST /api/missing-charges/check` — manuelle Neuberechnung
+- **Desktop-UI**
+  - Dashboard-Hinweiskarte wenn offene Kandidaten vorhanden
+  - Sektion „Mögliche fehlende Ladevorgänge" im Ladevorgänge-Tab
+  - „Übernehmen" öffnet den manuellen Ladevorgang-Dialog vorausgefüllt
+  - Konfig-Sektion unter Konfiguration → Fehlende Ladevorg.
+- **Mobile-UI**
+  - Kompakter Hinweis im Mobile-Dashboard mit „Übernehmen" / „Ignorieren"
+- **Neue DB-Tabellen**: `vehicle_snapshots`, `missing_charge_candidates`
+- **Neue Permissions**: `missing_charges:view`, `missing_charges:manage`
+- **Konfigurierbar**: Mindest-Lücke, SOC-Schwelle, kWh-Schwelle, Verbrauch kWh/100 km, Batterie kWh pro Fahrzeug
 
 ### v2.0.35
 - **Security-Hardening**

@@ -506,6 +506,50 @@ def init_db():
     )""")
     con.execute("""CREATE INDEX IF NOT EXISTS idx_vlh_vehicle_ts ON vehicle_location_history(vehicle_id, timestamp)""")
 
+    con.execute("""CREATE TABLE IF NOT EXISTS vehicle_snapshots (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        vehicle_id      TEXT NOT NULL,
+        ts              TEXT NOT NULL,
+        soc             REAL,
+        odometer_km     REAL,
+        range_km        REAL,
+        location_status TEXT,
+        latitude        REAL,
+        longitude       REAL,
+        provider        TEXT,
+        raw_available   INTEGER DEFAULT 1,
+        created_at      TEXT NOT NULL
+    )""")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_vsnap_vehicle_ts
+                   ON vehicle_snapshots(vehicle_id, ts)""")
+
+    con.execute("""CREATE TABLE IF NOT EXISTS missing_charge_candidates (
+        id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+        vehicle_id                  TEXT NOT NULL,
+        snapshot_before_id          INTEGER,
+        snapshot_after_id           INTEGER,
+        start_ts                    TEXT,
+        end_ts                      TEXT,
+        soc_start                   REAL,
+        soc_end                     REAL,
+        odo_start                   REAL,
+        odo_end                     REAL,
+        driven_km                   REAL,
+        estimated_kwh               REAL,
+        estimated_consumption_kwh   REAL,
+        estimated_battery_delta_kwh REAL,
+        estimated_avg_power_kw      REAL,
+        suggested_charger_type      TEXT,
+        suggested_location          TEXT,
+        confidence                  INTEGER DEFAULT 50,
+        reason                      TEXT,
+        status                      TEXT DEFAULT 'open',
+        created_at                  TEXT,
+        updated_at                  TEXT
+    )""")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_mcc_vehicle_status
+                   ON missing_charge_candidates(vehicle_id, status)""")
+
     # Seed default roles
     now_iso = datetime.utcnow().isoformat()
     default_roles = [
@@ -1137,6 +1181,21 @@ def tracker_loop(vehicle_id: str = "v0"):
                     }, load_config(), db_path=DB_PATH)
                 except Exception: pass
                 session_id=None; peak_power=None
+
+            # ── Snapshot + Missing-Charge Detection ───────────────────────────
+            try:
+                from services.missing_charge_service import save_snapshot, check_for_missing_charge
+                _snap_id = save_snapshot(
+                    vehicle_id, soc, odo,
+                    getattr(state, "range_km", None),
+                    st.get("location_status", "unknown"),
+                    provider_id, con,
+                )
+                if _snap_id:
+                    check_for_missing_charge(vehicle_id, _snap_id, vcfg, con)
+            except Exception as _mce:
+                log.debug("Missing-charge snapshot error [%s]: %s", vehicle_id, _mce)
+
             close_db_if_owned(con)
 
         except Exception as e:

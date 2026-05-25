@@ -159,6 +159,34 @@ async function refreshMobileDashboard() {
 
     // Letzte 3 Ladevorgänge
     renderMobileRecentSessions(sessions.slice(0, 3));
+
+    // Missing-charge hint
+    try {
+      var mc = await apiFetch('/api/missing-charges?status=open').then(function(r){return r.json();}).catch(()=>[]);
+      var mcEl = document.getElementById('mobileMissingChargeHint');
+      if (mcEl) {
+        if (mc && mc.length > 0) {
+          var c = mc[0];
+          var fmtTs = function(ts){
+            if(!ts) return '—';
+            return new Date(ts).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+          };
+          mcEl.style.display = '';
+          mcEl.innerHTML = '<div style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.35);border-radius:10px;padding:12px 14px;margin:10px 0">' +
+            '<div style="font-size:.75rem;color:#f59e0b;font-weight:600;margin-bottom:4px">⚠ Fehlender Ladevorgang möglich</div>' +
+            '<div style="font-size:.78rem;color:#cdd6f4;margin-bottom:8px">' +
+            'SOC ' + (c.soc_start!=null?c.soc_start.toFixed(0):'?') + '% → ' + (c.soc_end!=null?c.soc_end.toFixed(0):'?') + '% · ' +
+            'ca. ' + (c.estimated_kwh!=null?c.estimated_kwh.toFixed(1):'?') + ' kWh</div>' +
+            '<div style="display:flex;gap:8px">' +
+            '<button onclick="mobileMissingChargeAccept(' + c.id + ')" style="flex:1;background:rgba(61,220,151,.15);color:#3ddc97;border:1px solid rgba(61,220,151,.3);border-radius:7px;padding:7px 10px;font-size:.75rem;cursor:pointer">✏ Übernehmen</button>' +
+            '<button onclick="mobileMissingChargeDismiss(' + c.id + ')" style="flex:1;background:none;color:#8892b0;border:1px solid #2a3050;border-radius:7px;padding:7px 10px;font-size:.75rem;cursor:pointer">Ignorieren</button>' +
+            '</div></div>';
+        } else {
+          mcEl.style.display = 'none';
+          mcEl.innerHTML = '';
+        }
+      }
+    } catch(_mce) {}
   } catch(e) {
     console.warn('Mobile dashboard refresh error:', e);
   }
@@ -438,3 +466,49 @@ window.addEventListener('resize', function() {
     mobileNavTo(_mobileCurrentSection || 'home');
   }
 });
+
+// ─── Missing-charge mobile handlers ─────────────────────────────────────────
+
+async function mobileMissingChargeAccept(id) {
+  var r = await apiFetch('/api/missing-charges/'+id+'/accept',{method:'POST'}).then(function(x){return x.json();}).catch(function(){return {ok:false};});
+  if (!r.ok) { toast('Fehler: '+(r.error||'unbekannt'), 'err'); return; }
+  var c = r.prefill;
+  // Switch to desktop view and open add-session modal pre-filled
+  if (typeof openMobileSessionCreate === 'function') {
+    openMobileSessionCreate();
+    setTimeout(function(){
+      var el = function(id){ return document.getElementById(id); };
+      if(el('ms_start'))     el('ms_start').value     = c.start_ts ? c.start_ts.replace('T',' ').substring(0,16) : '';
+      if(el('ms_end'))       el('ms_end').value       = c.end_ts   ? c.end_ts.replace('T',' ').substring(0,16)   : '';
+      if(el('ms_kwh'))       el('ms_kwh').value       = c.estimated_kwh!=null ? c.estimated_kwh.toFixed(2) : '';
+      if(el('ms_soc_start')) el('ms_soc_start').value = c.soc_start!=null ? c.soc_start.toFixed(0) : '';
+      if(el('ms_soc_end'))   el('ms_soc_end').value   = c.soc_end!=null   ? c.soc_end.toFixed(0)   : '';
+      if(el('ms_odo_start')) el('ms_odo_start').value = c.odo_start!=null ? Math.round(c.odo_start) : '';
+      if(el('ms_odo_end'))   el('ms_odo_end').value   = c.odo_end!=null   ? Math.round(c.odo_end)   : '';
+      if(el('ms_location')&&c.suggested_location)      el('ms_location').value      = c.suggested_location;
+      if(el('ms_charger_type')&&c.suggested_charger_type) el('ms_charger_type').value = c.suggested_charger_type;
+      if(el('ms_reason'))    el('ms_reason').value    = 'Offline-Abweichung erkannt';
+      if(el('ms_note'))      el('ms_note').value      = 'Kandidat #'+id+': '+(c.reason||'');
+    }, 200);
+  } else if (typeof openCandidateAcceptDialog === 'function') {
+    // Fall back to desktop dialog via re-accept (already accepted, just prefill)
+    openAddSessionModal();
+    setTimeout(function(){
+      if(typeof $==='function'){
+        if($('as_start'))    $('as_start').value    = c.start_ts ? c.start_ts.replace('T',' ').substring(0,16) : '';
+        if($('as_end'))      $('as_end').value      = c.end_ts   ? c.end_ts.replace('T',' ').substring(0,16)   : '';
+        if($('as_kwh'))      $('as_kwh').value      = c.estimated_kwh!=null ? c.estimated_kwh.toFixed(2) : '';
+        if($('as_location')&&c.suggested_location)  $('as_location').value = c.suggested_location;
+        if($('as_charger_type')&&c.suggested_charger_type) $('as_charger_type').value = c.suggested_charger_type;
+        if($('as_reason'))   $('as_reason').value   = 'Offline-Abweichung erkannt';
+        if($('as_note'))     $('as_note').value      = 'Kandidat #'+id+': '+(c.reason||'');
+      }
+    }, 200);
+  }
+}
+
+async function mobileMissingChargeDismiss(id) {
+  var r = await apiFetch('/api/missing-charges/'+id+'/dismiss',{method:'POST'}).then(function(x){return x.json();}).catch(function(){return {ok:false};});
+  if (r.ok) { toast('Vorschlag ignoriert'); refreshMobileDashboard(); }
+  else toast('Fehler: '+(r.error||'unbekannt'), 'err');
+}
