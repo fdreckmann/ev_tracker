@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.0.42 — 2026-05-25
+
+### Unraid-kompatibles User-Mapping (PUID / PGID)
+
+- **`docker-compose.yml`**: `user: "${PUID:-10001}:${PGID:-100}"` — Container startet direkt als PUID:PGID ohne Root-Umweg; `cap_drop: ALL` bleibt aktiv
+- **`docker-entrypoint.sh`**: Erkennt automatisch ob er als Root oder Non-Root startet
+  - Non-Root (via `user:` in compose, empfohlen): exec gunicorn direkt, kein gosu nötig
+  - Root (ohne `user:`, Legacy): chown /data auf PUID:PGID, dann gosu-Drop
+- **`.env.example`**: Neu — dokumentiert PUID/PGID-Defaults; Unraid-Empfehlung `PUID=99 PGID=100`
+- **README**: Neuer Abschnitt „Benutzer & Berechtigungen" mit Unraid-Setup, `.env`-Anleitung und Berechtigungs-Fixes
+- Non-Root-Security-Verbesserung bleibt erhalten; Unraid-User müssen nur `.env` mit `PUID=99` anlegen
+
 ## v2.0.41 — 2026-05-25
 
 ### Bugfix: "readonly database" / "Permission denied: /home/evtracker"

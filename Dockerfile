@@ -11,9 +11,10 @@ COPY app/ .
 COPY version.json .
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
-# Create non-root user with a writable home directory.
-# /data ownership is fixed at runtime by the entrypoint
-# (existing volumes may be owned by root from prior versions).
+# Create non-root user (UID 10001) with a writable home.
+# At runtime the effective user is determined by either:
+#   - user: "PUID:PGID" in docker-compose.yml  (recommended, Mode A)
+#   - PUID/PGID env vars with root start + gosu (Mode B)
 RUN useradd -r -u 10001 -g users -d /home/evtracker evtracker \
     && mkdir -p /data /home/evtracker \
     && chown -R evtracker:users /app /home/evtracker
@@ -26,5 +27,4 @@ ENV HOME=/home/evtracker
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/health')" || exit 1
 
-# Entrypoint runs as root, fixes /data permissions, then drops to evtracker
 ENTRYPOINT ["docker-entrypoint.sh"]

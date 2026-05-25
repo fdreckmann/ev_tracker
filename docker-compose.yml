@@ -3,6 +3,11 @@ services:
     image: 19121412/ev-tracker:latest
     container_name: ev-tracker
     restart: unless-stopped
+    # User-Mapping: Container läuft als PUID:PGID statt als root.
+    # Standard: 10001:100 (eigener evtracker-User)
+    # Unraid:    99:100   (nobody:users — entspricht dem Unraid-Standard)
+    # Wert aus .env-Datei oder Host-Umgebungsvariablen lesen (siehe .env.example).
+    user: "${PUID:-10001}:${PGID:-100}"
     ports:
       - "8054:8080"
     volumes:
@@ -10,7 +15,7 @@ services:
     environment:
       DATA_DIR: "/data"
       TZ: "Europe/Berlin"
-      # EV_TRACKER_EXPOSURE: "external"  # Uncomment when running behind a reverse proxy
+      # EV_TRACKER_EXPOSURE: "external"  # Kommentar entfernen wenn hinter Reverse Proxy
     security_opt:
       - no-new-privileges:true
     cap_drop:
