@@ -10,7 +10,6 @@ from routes.billing import billing_bp
 from routes.sessions import sessions_bp
 from routes.users import users_bp
 from routes.backup import backup_bp
-from routes.update import update_bp
 from routes.tariff import tariff_bp
 from routes.signatures import signatures_bp
 from routes.export_templates import export_templates_bp
@@ -42,7 +41,6 @@ def register_blueprints(app):
     app.register_blueprint(export_templates_bp)
     app.register_blueprint(pdf_export_bp)
     app.register_blueprint(backup_bp)
-    app.register_blueprint(update_bp)
     app.register_blueprint(users_bp)
     app.register_blueprint(smtp_bp)
     app.register_blueprint(audit_routes_bp)
@@ -55,4 +53,3 @@ def register_blueprints(app):
     app.register_blueprint(admin_bp)
     app.register_blueprint(billing_bp)
     app.register_blueprint(api_v1_bp)
-

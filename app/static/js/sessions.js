@@ -233,10 +233,10 @@ async function submitAddSession(force) {
     if (typeof refreshStatus === 'function') refreshStatus();
   } else if (r.warning === 'overlap') {
     _addSessionOverlapData = r.overlapping_sessions;
-    res.innerHTML = '<p class="as-err">⚠ ' + (r.message || 'Überschneidung mit bestehender Session.') + '</p>';
+    res.innerHTML = '<p class="as-err">⚠ ' + escapeHtml(r.message || 'Überschneidung mit bestehender Session.') + '</p>';
     $('as_overlap_row').style.display = 'flex';
   } else {
-    res.innerHTML = '<p class="as-err">❌ ' + (r.error || 'Unbekannter Fehler') + '</p>';
+    res.innerHTML = '<p class="as-err">❌ ' + escapeHtml(r.error || 'Unbekannter Fehler') + '</p>';
   }
 }
 
@@ -297,8 +297,8 @@ async function showSessionDetail(id){
     var kwhSrcLabels = {manual:'Manuell eingegeben', meter:'Zähler', soc:'SOC-Berechnung'};
     if (s.kwh_source) stats.push({l:'kWh-Quelle', v:kwhSrcLabels[s.kwh_source]||s.kwh_source});
     if (s.cost_manual) stats.push({l:'Kosten manuell', v:'Ja'});
-    if (s.manual_reason) stats.push({l:'Grund', v:s.manual_reason, c:'#f59e0b'});
-    if (s.manual_note)   stats.push({l:'Notiz', v:s.manual_note});
+    if (s.manual_reason) stats.push({l:'Grund', v:escapeHtml(s.manual_reason), c:'#f59e0b'});
+    if (s.manual_note)   stats.push({l:'Notiz', v:escapeHtml(s.manual_note)});
   }
 
   $('modalStats').innerHTML = stats.map(function(x){return '<div class="stat"><div class="sl">'+x.l+'</div><div class="sv" style="font-size:1.1rem'+(x.c?';color:'+x.c:'')+'">'+x.v+'</div></div>';}).join('');

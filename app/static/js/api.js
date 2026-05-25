@@ -7,11 +7,18 @@
 /* jshint esversion:6 */
 var $ = function(id) { return document.getElementById(id); };
 
+function escapeHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 function toast(msg, type) {
   type = type || 'ok';
   var el = document.createElement('div');
   el.className = 'toast ' + type;
-  el.innerHTML = (type === 'ok' ? '✅' : '❌') + ' ' + msg;
+  var icon = document.createTextNode((type === 'ok' ? '✅' : '❌') + ' ');
+  el.appendChild(icon);
+  var txt = document.createTextNode(msg);
+  el.appendChild(txt);
   document.getElementById('toasts').appendChild(el);
   setTimeout(function() { el.remove(); }, 3500);
 }

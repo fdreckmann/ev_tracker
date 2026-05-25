@@ -4,7 +4,7 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 
 ![Docker Hub](https://img.shields.io/docker/pulls/19121412/ev-tracker)
 ![GitHub Actions](https://github.com/fdreckmann/ev_tracker/actions/workflows/docker-build.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-2.0.34-blue)
+![Version](https://img.shields.io/badge/version-2.0.35-blue)
 
 ---
 
@@ -312,6 +312,22 @@ docker run -d --name ev-tracker -p 8054:8080 \
 ---
 
 ## Changelog
+
+### v2.0.35
+- **Security-Hardening**
+  - Docker-Socket-Mount und In-App-Update vollständig entfernt (keine Angriffsfläche mehr)
+  - Passwort-Hashing auf PBKDF2:SHA-256 (werkzeug) migriert; Legacy-SHA-256-Hashes werden beim Login transparent upgradet
+  - `require_login` invalidiert deaktivierte Benutzer-Sessions sofort
+  - Neue `EV_TRACKER_EXPOSURE=external` Umgebungsvariable: aktiviert ProxyFix, `Secure`-Cookies, HSTS, `X-Frame-Options: DENY`
+  - Sicherheitsheader (`X-Content-Type-Options`, `X-Frame-Options`) immer gesetzt
+  - Fahrzeug-Credentials (Tokens, Passwörter) werden in API-Antworten maskiert (`********`)
+  - `escapeHtml()` in api.js; XSS-Fixes in Sessions-Modal und Toast-Notifications
+- **Bugfixes**
+  - Billing-Config `SELECT id` → `SELECT vehicle_id` (Tabelle hat keinen `id`-Spalte)
+  - Neue Fahrzeug-IDs als UUID statt Unix-Timestamp
+  - `refresh_vehicle_location_state()` unterstützt `force=True` zum Umgehen des 30 s-TTL-Cache
+- **Container-Hardening** (`docker-compose.yml`)
+  - `no-new-privileges:true`, `cap_drop: ALL`
 
 ### v2.0.34
 - **Manuelles Hinzufügen von Ladevorgängen** (Desktop + Mobile)

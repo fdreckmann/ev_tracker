@@ -5,10 +5,15 @@ Provides vehicle config helpers and tracker function accessors.
 from __future__ import annotations
 
 from core.config import load_config, VEHICLE_SPECIFIC_KEYS
+from core.secrets import mask_vehicle
 
 
-def get_all_vehicles(cfg=None, include_archived: bool = False) -> list[dict]:
-    """Returns primary vehicle (v0) plus extra vehicles. Archived excluded by default."""
+def get_all_vehicles(cfg=None, include_archived: bool = False, mask_secrets: bool = True) -> list[dict]:
+    """Returns primary vehicle (v0) plus extra vehicles. Archived excluded by default.
+
+    Secrets (credentials) are masked by default for API responses.
+    Pass mask_secrets=False only for internal server-side use.
+    """
     if cfg is None:
         cfg = load_config()
     primary = {
@@ -22,7 +27,10 @@ def get_all_vehicles(cfg=None, include_archived: bool = False) -> list[dict]:
     extras = cfg.get("extra_vehicles", [])
     if not include_archived:
         extras = [v for v in extras if not v.get("archived", False)]
-    return [primary] + extras
+    vehicles = [primary] + extras
+    if mask_secrets:
+        vehicles = [mask_vehicle(v) for v in vehicles]
+    return vehicles
 
 
 def build_vehicle_config(vehicle: dict, cfg=None) -> dict:
