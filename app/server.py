@@ -31,6 +31,15 @@ import core.state as _core_state
 from version import APP_VERSION
 
 CHANGELOG = [
+    {"version":"2.0.45","changes":[
+        "Einstellungsmenü neu strukturiert: 8 logische Gruppen (Mein Konto, Benutzer & Rollen, Fahrzeuge, Laden & Preise, Benachrichtigungen, Berichte & Export, System & Betrieb)",
+        "2FA/TOTP nur noch unter 'Mein Konto & Sicherheit' — doppelter Eintrag entfernt",
+        "Passkeys nur noch unter 'Mein Konto & Sicherheit' — nicht mehr unter Login & Sicherheit",
+        "Passwort ändern nur noch unter 'Mein Konto & Sicherheit'",
+        "'Login & Sicherheit' umbenannt zu 'OAuth & SSO' (enthält nur noch Google/Microsoft-Konfiguration)",
+        "Mobile-Responsive Sidebar: klappt auf kleinen Bildschirmen aus/ein",
+        "Sidebar-Gruppen-Labels verbessern Übersichtlichkeit",
+    ]},
     {"version":"2.0.44","changes":[
         "Ladeabos: Neue Verwaltung für Ladeabos (EnBW M/L, IONITY Passport, Tesla, u.a.) in den Einstellungen",
         "Extern-Sessions: Kostenberechnung nutzt automatisch das konfigurierte Standard-Ladeabo",

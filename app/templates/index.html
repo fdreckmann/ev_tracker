@@ -188,10 +188,23 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   text-align:left;width:100%}
 .cfg-nav-btn:hover{color:var(--txt);background:var(--brd)}
 .cfg-nav-btn.active{background:var(--brd2);color:#fff}
+/* Grouped sidebar sub-items */
+.cfg-nav-sub{padding-left:22px;font-size:.78rem}
+.cfg-grp-label{font-size:.58rem;font-family:var(--mono);font-weight:700;color:#4a5568;
+  text-transform:uppercase;letter-spacing:.14em;padding:14px 10px 4px;user-select:none}
+.cfg-grp-label:first-child{padding-top:6px}
 .cfg-section{}
 .cfg-sec-title{font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;
   letter-spacing:.12em;margin-bottom:18px;display:flex;align-items:center;gap:10px}
 .cfg-sec-title::after{content:'';flex:1;height:1px;background:var(--brd)}
+/* Mobile config nav */
+@media(max-width:640px){
+  #cfgNav{width:100%!important;border-right:none!important;border-bottom:1px solid var(--brd);
+    max-height:52px;overflow:hidden;transition:max-height .25s}
+  #cfgNav.open{max-height:1200px}
+  #cfgNavToggle{display:flex!important}
+  .cfg-grp-label{display:inline-block;padding:6px 10px 4px}
+}
 
 /* ── Mapping mode tabs ── */
 .tab-btn{
@@ -800,33 +813,58 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   <div style="display:flex;gap:0;min-height:600px;background:var(--surf);border:1px solid var(--brd);border-radius:var(--r);overflow:hidden">
 
     <!-- ── Sidebar ── -->
-    <nav id="cfgNav" style="width:220px;flex-shrink:0;background:var(--bg);border-right:1px solid var(--brd);padding:12px 8px;display:flex;flex-direction:column;gap:2px">
-      <div style="font-size:.6rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.12em;padding:8px 10px 6px">Konfiguration</div>
-      <button class="cfg-nav-btn active" onclick="cfgSection('fahrzeuge',this)">🚗 Fahrzeuge</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('verbindung',this)">🔌 Verbindung</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('preise',this)">💰 Preismodell</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('zaehler',this)">⚡ Zählerstand</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('notifications',this)" data-requires-permission="notifications:view">🔔 Benachrichtigungen</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('missing-charges-cfg',this)">🔍 Fehlende Ladevorg.</button>
-      <div style="height:1px;background:var(--brd);margin:8px 4px"></div>
-      <button class="cfg-nav-btn" onclick="cfgSection('smtp',this)">📧 SMTP</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('reports',this)" data-requires-permission="reports:view">📊 Auto-Berichte</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('abrechnung',this)" data-requires-permission="billing:view">💼 Abrechnung</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('report-archive',this)" data-requires-permission="reports:archive">📁 Report-Archiv</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('tarif',this)" data-requires-permission="tariffs:view">⚡ Stromtarif</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('ladeabos',this)" data-requires-permission="config:read">🔌 Ladeabos</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('api-tokens',this)" data-requires-permission="api_tokens:view">🔑 API-Tokens</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('mqtt',this)" data-requires-permission="mqtt:view">📡 MQTT</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('notif-rules',this)" data-requires-permission="notifications:view">🔔 Benachr.-Regeln</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('auth',this)">🔐 Login &amp; Sicherheit</button>
-      <div style="height:1px;background:var(--brd);margin:8px 4px"></div>
-      <button class="cfg-nav-btn" onclick="cfgSection('export-tpl',this)">📋 Export-Vorlagen</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('audit',this)">📜 Audit-Log</button>
-      <div style="height:1px;background:var(--brd);margin:8px 4px"></div>
-      <button class="cfg-nav-btn" onclick="cfgSection('benutzer',this)">👥 Benutzer</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('roles',this)" data-requires-permission="users:manage_permissions">🔐 Rollen &amp; Rechte</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('profil',this)">👤 Mein Profil</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('version-info',this)">ℹ️ Version &amp; Update</button>
+    <nav id="cfgNav" style="width:230px;flex-shrink:0;background:var(--bg);border-right:1px solid var(--brd);padding:4px 8px 16px;display:flex;flex-direction:column;gap:1px;overflow-y:auto">
+
+      <!-- Mobile toggle -->
+      <button id="cfgNavToggle" onclick="document.getElementById('cfgNav').classList.toggle('open')"
+        style="display:none;align-items:center;justify-content:space-between;width:100%;padding:10px 12px;
+               background:none;border:none;color:var(--txt);font-size:.85rem;cursor:pointer">
+        <span id="cfgNavActiveLabel">Einstellungen</span>
+        <span style="font-size:.7rem;color:var(--mute)">▾</span>
+      </button>
+
+      <!-- 1. Mein Konto & Sicherheit -->
+      <div class="cfg-grp-label">Mein Konto</div>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('profil',this)">🔒 Konto &amp; Sicherheit</button>
+
+      <!-- 2. Benutzer & Rollen -->
+      <div class="cfg-grp-label" data-requires-permission="users:view">Benutzer &amp; Rollen</div>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('benutzer',this)" data-requires-permission="users:view">👥 Benutzer</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('roles',this)" data-requires-permission="users:manage_permissions">🔐 Rollen &amp; Rechte</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('audit',this)" data-requires-permission="users:view">📜 Audit-Log</button>
+
+      <!-- 3. Fahrzeuge -->
+      <div class="cfg-grp-label">Fahrzeuge</div>
+      <button class="cfg-nav-btn cfg-nav-sub active" onclick="cfgSection('fahrzeuge',this)">🚗 Fahrzeuge</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('verbindung',this)">🔌 Verbindung</button>
+
+      <!-- 4. Laden & Preise -->
+      <div class="cfg-grp-label">Laden &amp; Preise</div>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('preise',this)">💰 Preismodell</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('zaehler',this)">🔌 Zählerstand</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('tarif',this)" data-requires-permission="tariffs:view">⚡ Stromtarif</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('ladeabos',this)" data-requires-permission="config:read">🪙 Ladeabos</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('abrechnung',this)" data-requires-permission="billing:view">💼 Abrechnung</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('missing-charges-cfg',this)">🔍 Fehlende Ladevorg.</button>
+
+      <!-- 5. Benachrichtigungen -->
+      <div class="cfg-grp-label" data-requires-permission="notifications:view">Benachrichtigungen</div>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('notifications',this)" data-requires-permission="notifications:view">🔔 Einstellungen</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('notif-rules',this)" data-requires-permission="notifications:view">📋 Regeln</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('smtp',this)">📧 SMTP</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('mqtt',this)" data-requires-permission="mqtt:view">📡 MQTT</button>
+
+      <!-- 6. Berichte & Export -->
+      <div class="cfg-grp-label">Berichte &amp; Export</div>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('reports',this)" data-requires-permission="reports:view">📊 Auto-Berichte</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('report-archive',this)" data-requires-permission="reports:archive">📁 Report-Archiv</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('export-tpl',this)">📋 Export-Vorlagen</button>
+
+      <!-- 7. System & Betrieb -->
+      <div class="cfg-grp-label">System &amp; Betrieb</div>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('auth',this)">🔐 OAuth &amp; SSO</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('api-tokens',this)" data-requires-permission="api_tokens:view">🔑 API-Tokens</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('version-info',this)">ℹ️ Version &amp; Update</button>
     </nav>
 
     <!-- ── Content ── -->
@@ -2144,45 +2182,10 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
       <!-- LOGIN & SICHERHEIT -->
       <div id="cfgsec-auth" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">Login &amp; Sicherheit</div>
+        <div class="cfg-sec-title">OAuth &amp; SSO</div>
         <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
-          Schützt die Oberfläche mit Passwort. Ohne Passwort ist der Zugang frei.
+          Social Login via Google oder Microsoft konfigurieren. Passwort, 2FA und Passkeys sind unter <a href="#" onclick="cfgSection('profil',null);return false" style="color:var(--acc2)">Mein Konto &amp; Sicherheit</a>.
         </p>
-        <div id="authStatus" style="margin-bottom:14px;font-size:.78rem;font-family:var(--mono);color:var(--mute)">⏳ Lade…</div>
-
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-          <div><label>Neues Passwort</label>
-            <input type="password" id="authNewPw" placeholder="••••••••" autocomplete="new-password"></div>
-          <div><label>Wiederholen</label>
-            <input type="password" id="authNewPw2" placeholder="••••••••" autocomplete="new-password"></div>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
-          <button class="btn-p" style="font-size:.78rem;padding:7px 16px" onclick="setAuthPassword()">🔑 Passwort setzen</button>
-          <button class="btn-d" style="font-size:.78rem;padding:7px 16px" onclick="disableAuth()">🔓 Passwort entfernen</button>
-        </div>
-
-        <div style="border-top:1px solid var(--brd);padding-top:14px">
-          <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Zwei-Faktor-Authentifizierung (TOTP)</div>
-          <div id="totpStatus" style="font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-bottom:10px">—</div>
-          <div id="smtpRequiredForTotp" style="display:none;padding:10px 14px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px;font-size:.74rem;font-family:var(--mono);color:var(--warn);margin-bottom:12px">
-            ⚠ 2FA kann erst aktiviert werden, nachdem SMTP erfolgreich konfiguriert wurde.
-            <a href="#" onclick="cfgSection('smtp',null);return false" style="color:var(--acc2);margin-left:6px">→ SMTP konfigurieren</a>
-          </div>
-          <div id="totpQrWrap" style="display:none;margin-bottom:12px">
-            <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:8px">
-              Scanne den QR-Code mit Google Authenticator oder Authy:
-            </div>
-            <div id="totpQrImg" style="margin-bottom:8px"></div>
-            <div style="font-size:.7rem;font-family:var(--mono);color:var(--acc2)" id="totpSecret"></div>
-            <div class="warn-box" style="margin-top:10px">
-              ⚠ Speichere den Secret-Code sicher! Er wird nur einmal angezeigt.
-            </div>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn-s" style="font-size:.78rem;padding:7px 16px" id="totpSetupBtn" onclick="setupTotp()">📱 2FA einrichten</button>
-            <button class="btn-d" id="totpDisableBtn" style="font-size:.78rem;padding:7px 16px;display:none" onclick="disableTotp()">❌ 2FA deaktivieren</button>
-          </div>
-        </div>
 
         <div style="border-top:1px solid var(--brd);padding-top:14px;margin-top:14px">
           <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">SSO — Google / Microsoft</div>
@@ -2231,23 +2234,6 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           <span id="oauthSaveInfo" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-left:10px"></span>
         </div>
 
-        <!-- Passkeys -->
-        <div style="border-top:1px solid var(--brd);padding-top:14px;margin-top:14px">
-          <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">Passkeys (biometrisch / Hardware-Key)</div>
-          <div id="passkeyList" style="margin-bottom:12px">
-            <div style="font-size:.73rem;font-family:var(--mono);color:var(--mute)">Lade…</div>
-          </div>
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <button class="btn-s" onclick="registerPasskey()" style="font-size:.78rem">
-              ➕ Passkey hinzufügen
-            </button>
-            <button class="btn-s" onclick="showWebAuthnConfig()" style="font-size:.72rem;background:rgba(255,255,255,.04);border-color:var(--brd);color:var(--mute)" title="WebAuthn RP-ID & Origin prüfen">
-              🔍 Domain-Konfig
-            </button>
-          </div>
-          <span id="passkeyMsg" style="font-size:.73rem;font-family:var(--mono);color:var(--acc);display:block;margin-top:8px"></span>
-          <div id="webauthnConfigInfo" style="display:none;margin-top:10px;padding:10px 14px;background:rgba(0,180,255,.06);border:1px solid rgba(0,180,255,.2);border-radius:8px;font-size:.7rem;font-family:var(--mono);color:var(--mute)"></div>
-        </div>
       </div>
 
       <!-- EXPORT VORLAGEN -->
@@ -2288,32 +2274,38 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <div id="userList"><div class="empty">Lade…</div></div>
       </div>
 
-      <!-- PROFIL -->
+      <!-- PROFIL / KONTO & SICHERHEIT -->
       <div id="cfgsec-profil" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">Mein Profil</div>
+        <div class="cfg-sec-title">Mein Konto &amp; Sicherheit</div>
         <div id="profileInfo" style="font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-bottom:18px">⏳ Lade…</div>
 
-        <div style="margin-bottom:20px">
-          <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Passwort ändern</div>
-          <div style="display:grid;gap:8px">
-            <div><label>Aktuelles Passwort</label><input type="password" id="prof_cur_pw" placeholder="••••••••"></div>
-            <div><label>Neues Passwort</label><input type="password" id="prof_new_pw" placeholder="Mindestens 8 Zeichen" oninput="checkPwStrength(this.value,'prof_pw_strength')">
+        <!-- Passwort ändern -->
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-title" style="font-size:.82rem">🔑 Passwort ändern</div>
+          <div style="display:grid;gap:8px;max-width:480px">
+            <div><label>Aktuelles Passwort</label><input type="password" id="prof_cur_pw" placeholder="••••••••" autocomplete="current-password"></div>
+            <div><label>Neues Passwort</label><input type="password" id="prof_new_pw" placeholder="Mindestens 8 Zeichen" oninput="checkPwStrength(this.value,'prof_pw_strength')" autocomplete="new-password">
             <div id="prof_pw_strength" style="font-size:.7rem;font-family:var(--mono);margin-top:4px;color:var(--mute)"></div></div>
-            <div><label>Wiederholen</label><input type="password" id="prof_new_pw2" placeholder="••••••••"></div>
+            <div><label>Wiederholen</label><input type="password" id="prof_new_pw2" placeholder="••••••••" autocomplete="new-password"></div>
           </div>
-          <button class="btn-p" style="margin-top:10px;font-size:.78rem;padding:7px 16px" onclick="changeMyPassword()">🔑 Passwort ändern</button>
+          <button class="btn-p" style="margin-top:10px;font-size:.78rem;padding:7px 16px" onclick="changeMyPassword()">💾 Passwort ändern</button>
           <span id="profPwInfo" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-left:10px"></span>
         </div>
 
-        <div style="border-top:1px solid var(--brd);padding-top:14px">
-          <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Zwei-Faktor-Authentifizierung</div>
+        <!-- 2FA / TOTP -->
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-title" style="font-size:.82rem">📱 Zwei-Faktor-Authentifizierung (2FA)</div>
           <div id="profTotpStatus" style="font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-bottom:10px">—</div>
+          <div id="smtpRequiredForTotp2" style="display:none;padding:10px 14px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px;font-size:.74rem;font-family:var(--mono);color:var(--warn);margin-bottom:12px">
+            ⚠ 2FA kann erst aktiviert werden, nachdem SMTP erfolgreich konfiguriert wurde.
+            <a href="#" onclick="cfgSection('smtp',null);return false" style="color:var(--acc2);margin-left:6px">→ SMTP konfigurieren</a>
+          </div>
           <div id="profTotpQrWrap" style="display:none;margin-bottom:12px">
-            <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:8px">QR-Code scannen:</div>
+            <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:8px">QR-Code mit Google Authenticator / Authy scannen:</div>
             <div id="profTotpQrImg" style="margin-bottom:8px"></div>
             <div style="font-size:.7rem;font-family:var(--mono);color:var(--acc2);margin-bottom:10px" id="profTotpSecret"></div>
             <div style="display:flex;gap:8px;align-items:center">
-              <input type="text" id="profTotpCode" placeholder="Code eingeben zur Bestätigung" style="flex:1;margin-bottom:0">
+              <input type="text" id="profTotpCode" placeholder="Code eingeben zur Bestätigung" style="flex:1;margin-bottom:0" autocomplete="one-time-code">
               <button class="btn-p" style="font-size:.78rem;padding:7px 14px;white-space:nowrap" onclick="confirmMyTotp()">✓ Bestätigen</button>
             </div>
           </div>
@@ -2321,13 +2313,30 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             <button class="btn-s" style="font-size:.78rem;padding:7px 14px" onclick="setupMyTotp()">📱 2FA einrichten</button>
             <button class="btn-d" id="profTotpDisableBtn" style="font-size:.78rem;padding:7px 14px;display:none" onclick="disableMyTotp()">❌ 2FA deaktivieren</button>
           </div>
+          <!-- Backup Codes -->
+          <div id="backupCodesSection" style="border-top:1px solid var(--brd);padding-top:14px;margin-top:14px;display:none">
+            <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">2FA Backup-Codes</div>
+            <div id="backupCodeCount" style="font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-bottom:10px">—</div>
+            <button class="btn-s" style="font-size:.78rem;padding:7px 14px" onclick="generateBackupCodes()">🔑 Neue Backup-Codes generieren</button>
+          </div>
         </div>
 
-        <!-- Backup Codes -->
-        <div id="backupCodesSection" style="border-top:1px solid var(--brd);padding-top:14px;margin-top:14px;display:none">
-          <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">2FA Backup-Codes</div>
-          <div id="backupCodeCount" style="font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-bottom:10px">—</div>
-          <button class="btn-s" style="font-size:.78rem;padding:7px 14px" onclick="generateBackupCodes()">🔑 Neue Backup-Codes generieren</button>
+        <!-- Passkeys -->
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-title" style="font-size:.82rem">🔐 Passkeys (Fingerabdruck / Face ID / Hardware-Key)</div>
+          <div id="passkeyList" style="margin-bottom:12px">
+            <div style="font-size:.73rem;font-family:var(--mono);color:var(--mute)">Lade…</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <button class="btn-s" onclick="registerPasskey()" style="font-size:.78rem">
+              ➕ Passkey hinzufügen
+            </button>
+            <button class="btn-s" onclick="showWebAuthnConfig()" style="font-size:.72rem;background:rgba(255,255,255,.04);border-color:var(--brd);color:var(--mute)" title="WebAuthn RP-ID & Origin prüfen">
+              🔍 Domain-Konfig
+            </button>
+          </div>
+          <span id="passkeyMsg" style="font-size:.73rem;font-family:var(--mono);color:var(--acc);display:block;margin-top:8px"></span>
+          <div id="webauthnConfigInfo" style="display:none;margin-top:10px;padding:10px 14px;background:rgba(0,180,255,.06);border:1px solid rgba(0,180,255,.2);border-radius:8px;font-size:.7rem;font-family:var(--mono);color:var(--mute)"></div>
         </div>
       </div>
 
@@ -5052,21 +5061,26 @@ async function testVehicleLocation() {
 async function loadAuthStatus(){
   const r = await fetch('/api/auth/status').then(r=>r.json()).catch(()=>null);
   if(!r) return;
+  // authStatus div only present in auth section (legacy mode indicator)
   const el = $('authStatus');
-  const parts = [];
-  if(r.auth_enabled)    parts.push('<span style="color:var(--acc)">🔐 Passwort</span>');
-  if(r.totp_enabled)    parts.push('<span style="color:var(--acc2)">📱 2FA</span>');
-  if(r.google_enabled)  parts.push('<span style="color:#4285F4">Google</span>');
-  if(r.microsoft_enabled) parts.push('<span style="color:#00A4EF">Microsoft</span>');
-  if(r.user_email)      parts.push(`<span style="color:var(--mute)">${r.user_email}</span>`);
-  el.innerHTML = parts.length
-    ? 'Aktiv: ' + parts.join(' · ')
-    : '<span style="color:var(--mute)">🔓 Kein Login — freier Zugang</span>';
-  if(r.totp_enabled) $('totpStatus').innerHTML='<span style="color:var(--acc2)">📱 2FA ist aktiv</span>';
-  else $('totpStatus').textContent='Kein 2FA konfiguriert';
-  $('totpDisableBtn').style.display = r.totp_enabled ? '' : 'none';
-  if(r.google_enabled)    $('googleOauthStatus').innerHTML='<span style="color:var(--acc)">✅ aktiv</span>';
-  if(r.microsoft_enabled) $('msOauthStatus').innerHTML='<span style="color:var(--acc)">✅ aktiv</span>';
+  if(el){
+    const parts = [];
+    if(r.auth_enabled)      parts.push('<span style="color:var(--acc)">🔐 Passwort</span>');
+    if(r.totp_enabled)      parts.push('<span style="color:var(--acc2)">📱 2FA</span>');
+    if(r.google_enabled)    parts.push('<span style="color:#4285F4">Google</span>');
+    if(r.microsoft_enabled) parts.push('<span style="color:#00A4EF">Microsoft</span>');
+    if(r.user_email)        parts.push(`<span style="color:var(--mute)">${r.user_email}</span>`);
+    el.innerHTML = parts.length
+      ? 'Aktiv: ' + parts.join(' · ')
+      : '<span style="color:var(--mute)">🔓 Kein Login — freier Zugang</span>';
+  }
+  // Legacy single-user TOTP elements (may or may not exist)
+  const totpSt = $('totpStatus');
+  if(totpSt) { if(r.totp_enabled) totpSt.innerHTML='<span style="color:var(--acc2)">📱 2FA ist aktiv</span>'; else totpSt.textContent='Kein 2FA konfiguriert'; }
+  const totpDisBtn = $('totpDisableBtn');
+  if(totpDisBtn) totpDisBtn.style.display = r.totp_enabled ? '' : 'none';
+  if(r.google_enabled    && $('googleOauthStatus')) $('googleOauthStatus').innerHTML='<span style="color:var(--acc)">✅ aktiv</span>';
+  if(r.microsoft_enabled && $('msOauthStatus'))     $('msOauthStatus').innerHTML='<span style="color:var(--acc)">✅ aktiv</span>';
   // Show redirect URIs
   const base = ($('oauth_base_url')?.value || window.location.origin).replace(/\/$/,'');
   if($('googleRedirectUri')) $('googleRedirectUri').textContent = base + '/auth/google/callback';
@@ -6323,20 +6337,29 @@ function cfgSection(id, btn){
   document.querySelectorAll('.cfg-nav-btn').forEach(b=>b.classList.remove('active'));
   if(btn) btn.classList.add('active');
   else {
-    // find by matching text
     document.querySelectorAll('.cfg-nav-btn').forEach(b=>{
       if(b.getAttribute('onclick')&&b.getAttribute('onclick').includes("'"+id+"'"))
         b.classList.add('active');
     });
   }
+  // Update mobile nav label
+  const activeBtn = document.querySelector('.cfg-nav-btn.active');
+  const mobileLabel = $('cfgNavActiveLabel');
+  if(mobileLabel && activeBtn) mobileLabel.textContent = activeBtn.textContent.trim();
+  // Close mobile nav after selection
+  const nav = $('cfgNav');
+  if(nav && window.innerWidth <= 640) nav.classList.remove('open');
+
   // lazy-load data for sections
   if(id==='audit') loadAuditLog();
   if(id==='smtp')  { loadSmtpConfig(); refreshSmtpOAuthStatus(); }
   if(id==='export-tpl') loadExportTemplates();
-  if(id==='auth') { loadAuthStatus(); checkSmtpForTotp(); loadPasskeys(); }
+  // auth now only handles OAuth/SSO (no passkeys/2FA — moved to profil)
+  if(id==='auth') { loadAuthStatus(); }
   if(id==='fahrzeuge') loadVehicleList();
   if(id==='benutzer') loadUserList();
-  if(id==='profil')   loadMyProfile();
+  // profil = Konto & Sicherheit: load profile + passkeys + check SMTP for TOTP
+  if(id==='profil') { loadMyProfile(); loadPasskeys(); checkSmtpForTotp(); }
   if(id==='roles')    loadRolesSection();
   if(id==='zaehler')  loadConfig();
   if(id==='reports'){ loadReportConfig(); }
@@ -6496,9 +6519,16 @@ async function sendSmtpTestMail(){
 async function checkSmtpForTotp(){
   const c=await fetch('/api/config').then(r=>r.json());
   const smtpOk=!!(c.smtp_host&&c.smtp_from_email);
-  const warn=$('smtpRequiredForTotp'), btn=$('totpSetupBtn');
+  // Legacy single-user TOTP warning (in auth section, if still present)
+  const warn=$('smtpRequiredForTotp');
   if(warn) warn.style.display=smtpOk?'none':'';
+  const btn=$('totpSetupBtn');
   if(btn)  btn.disabled=!smtpOk;
+  // Per-user TOTP warning (in profil/konto section)
+  const warn2=$('smtpRequiredForTotp2');
+  if(warn2) warn2.style.display=smtpOk?'none':'';
+  const setupBtn=document.querySelector('[onclick="setupMyTotp()"]');
+  // Don't disable the per-user button — setupMyTotp handles this itself
 }
 
 // ── Export Templates ──────────────────────────────────────────────────────────
