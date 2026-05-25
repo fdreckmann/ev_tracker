@@ -31,6 +31,16 @@ import core.state as _core_state
 from version import APP_VERSION
 
 CHANGELOG = [
+    {"version":"2.0.44","changes":[
+        "Ladeabos: Neue Verwaltung für Ladeabos (EnBW M/L, IONITY Passport, Tesla, u.a.) in den Einstellungen",
+        "Extern-Sessions: Kostenberechnung nutzt automatisch das konfigurierte Standard-Ladeabo",
+        "Preisquellen-Tracking: price_source, price_confidence und charging_contract_name werden pro Session gespeichert",
+        "Session-Detail: Zeigt Preisquelle und Ladeabo für Extern-Ladevorgänge an",
+        "Vorlagen für 10 gängige Ladenetzwerke (EnBW S/M/L, IONITY, Tesla, Allego, Aral, Maingau, REWE)",
+        "EnBW Live-Preisabfrage (experimentell): optionale inoffizielle API-Abfrage wenn EVSE-ID bekannt",
+        "Fallback-Preise für AC/DC extern konfigurierbar (Vorgabe: 0.45/0.75 €/kWh)",
+        "Neue DB-Spalten: charging_contract_id, charging_contract_name, price_source, price_confidence, cpo, evse_id, station_name",
+    ]},
     {"version":"2.0.0","changes":[
         "Export-Lokalisierung vollständig: alle Spaltenüberschriften und Labels auf Deutsch/Englisch",
         "Platzhalter-Ersetzung erweitert: {{total_sessions}}, {{total_km}}, {{avg_charge_power_kw}} u.v.m.",
@@ -579,6 +589,39 @@ def init_db():
     con.execute("CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at)")
     con.execute("CREATE INDEX IF NOT EXISTS idx_notifications_vehicle ON notifications(vehicle_id)")
     con.execute("CREATE INDEX IF NOT EXISTS idx_notifications_dedupe ON notifications(dedupe_key, created_at)")
+
+    # Charging contracts (public charging price agreements)
+    con.execute("""CREATE TABLE IF NOT EXISTS charging_contracts (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        name            TEXT NOT NULL,
+        cpo             TEXT DEFAULT '',
+        price_ac_kwh    REAL,
+        price_dc_kwh    REAL,
+        price_kwh       REAL,
+        monthly_fee_eur REAL DEFAULT 0.0,
+        active          INTEGER DEFAULT 1,
+        is_default      INTEGER DEFAULT 0,
+        notes           TEXT DEFAULT '',
+        created_at      TEXT,
+        updated_at      TEXT
+    )""")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_cc_active ON charging_contracts(active)")
+
+    # Session migrations: public charging fields
+    for _col, _typedef in [
+        ("charging_contract_id",   "INTEGER"),
+        ("charging_contract_name", "TEXT"),
+        ("price_source",           "TEXT DEFAULT 'config'"),
+        ("price_confidence",       "INTEGER DEFAULT 0"),
+        ("cpo",                    "TEXT"),
+        ("evse_id",                "TEXT"),
+        ("station_name",           "TEXT"),
+        ("price_hint",             "TEXT"),
+    ]:
+        try:
+            con.execute(f"ALTER TABLE sessions ADD COLUMN {_col} {_typedef}")
+        except sqlite3.OperationalError:
+            pass
 
     # Seed default roles
     now_iso = datetime.utcnow().isoformat()
@@ -1175,6 +1218,26 @@ def tracker_loop(vehicle_id: str = "v0"):
                                 "provider": tariff_prov_name, "error": str(_tp_err)},
                                 cfg, db_path=DB_PATH)
                         except Exception: pass
+                # Public charging price for extern sessions
+                _pc_contract_id = None
+                _pc_contract_name = None
+                _pc_price_source = tariff_price_src
+                _pc_price_conf = 0
+                if not cost_manual and _effective_location == "extern":
+                    try:
+                        from services.public_charging_price_service import resolve_public_charging_price
+                        _pc = resolve_public_charging_price(session_id, charger_type, cfg, con)
+                        if _pc and _pc.get("price_per_kwh") is not None:
+                            effective_price = _pc["price_per_kwh"]
+                            _pc_contract_id   = _pc.get("contract_id")
+                            _pc_contract_name = _pc.get("contract_name")
+                            _pc_price_source  = _pc.get("source", "config")
+                            _pc_price_conf    = _pc.get("confidence", 0)
+                            log.info("[%s] Öffentlicher Ladepreis %.4f €/kWh via %s",
+                                     vehicle_id, effective_price, _pc_price_source)
+                    except Exception as _pc_err:
+                        log.debug("[%s] Public charging price: %s", vehicle_id, _pc_err)
+
                 if kwh is not None and not cost_manual:
                     cost = round(kwh * effective_price, 2)
                 end_ts_str = datetime.now().isoformat(timespec="seconds")
@@ -1188,14 +1251,19 @@ def tracker_loop(vehicle_id: str = "v0"):
                     max_power_kw=?,meter_new=?,kwh_source=?,
                     meter_delta_kwh=CASE WHEN ? IS NOT NULL AND ? IS NOT NULL THEN ?-? ELSE NULL END,
                     meter_skipped_reason=?,meter_used=?,
-                    location_source=COALESCE(location_source,?),location_confidence=COALESCE(location_confidence,?)
+                    location_source=COALESCE(location_source,?),location_confidence=COALESCE(location_confidence,?),
+                    charging_contract_id=COALESCE(charging_contract_id,?),
+                    charging_contract_name=COALESCE(charging_contract_name,?),
+                    price_source=?,price_confidence=?
                     WHERE id=?""",
                     (end_ts_str,odo,soc,kwh,cost,effective_price,
-                     tariff_prov_name,tariff_price_src,peak_power,
+                     tariff_prov_name,_pc_price_source,peak_power,
                      meter_end_val,kwh_source,
                      meter_start_val, meter_end_val, meter_end_val, meter_start_val,
                      meter_skipped_reason, meter_used,
                      _fin_loc_src, _fin_loc_conf,
+                     _pc_contract_id, _pc_contract_name,
+                     _pc_price_source, _pc_price_conf,
                      session_id))
                 con.commit(); session_active=False
                 st.update(session_active=False,session_id=None)

@@ -54,6 +54,8 @@ _SECRET_GLOBAL_KEYS: frozenset[str] = frozenset({
     # Legacy single-user auth
     "auth_password_hash",
     "auth_totp_secret",
+    # EnBW live price API
+    "enbw_api_subscription_key",
 })
 
 SECRET_KEYS: frozenset[str] = _SECRET_VEHICLE_KEYS | _SECRET_GLOBAL_KEYS

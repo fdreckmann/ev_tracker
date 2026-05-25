@@ -814,6 +814,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <button class="cfg-nav-btn" onclick="cfgSection('abrechnung',this)" data-requires-permission="billing:view">💼 Abrechnung</button>
       <button class="cfg-nav-btn" onclick="cfgSection('report-archive',this)" data-requires-permission="reports:archive">📁 Report-Archiv</button>
       <button class="cfg-nav-btn" onclick="cfgSection('tarif',this)" data-requires-permission="tariffs:view">⚡ Stromtarif</button>
+      <button class="cfg-nav-btn" onclick="cfgSection('ladeabos',this)" data-requires-permission="config:read">🔌 Ladeabos</button>
       <button class="cfg-nav-btn" onclick="cfgSection('api-tokens',this)" data-requires-permission="api_tokens:view">🔑 API-Tokens</button>
       <button class="cfg-nav-btn" onclick="cfgSection('mqtt',this)" data-requires-permission="mqtt:view">📡 MQTT</button>
       <button class="cfg-nav-btn" onclick="cfgSection('notif-rules',this)" data-requires-permission="notifications:view">🔔 Benachr.-Regeln</button>
@@ -1496,6 +1497,139 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <div class="card" id="tariff_prices_card" style="display:none">
           <div class="card-title">📈 Aktuelle Preise</div>
           <div id="tariff_prices_body" style="font-size:.75rem;font-family:var(--mono)"></div>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════════
+           LADEABOS / ÖFFENTLICHES LADEN
+           ══════════════════════════════════════════════════════════ -->
+      <div id="cfgsec-ladeabos" class="cfg-section" style="display:none">
+        <div class="card">
+          <div class="card-title">⚡ Ladeabos &amp; Öffentliche Preise</div>
+          <p style="font-size:.8rem;color:var(--mute);margin:0 0 16px">
+            Definiere dein Ladeabo (z.B. EnBW M, IONITY Passport), damit der EV Tracker die Kosten externer Ladevorgänge automatisch berechnet.
+            Der Standardvertrag wird bei neuen Extern-Sessions verwendet.
+          </p>
+
+          <!-- Global settings -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:18px;padding:14px;background:#1e2030;border-radius:8px">
+            <div>
+              <label class="cfg-lbl">Öffentliche Preisberechnung</label>
+              <select id="pc_enabled" style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
+                <option value="1">Aktiviert</option>
+                <option value="0">Deaktiviert</option>
+              </select>
+            </div>
+            <div>
+              <label class="cfg-lbl">Fallback AC (€/kWh)</label>
+              <input type="number" id="pc_fallback_ac" step="0.01" min="0" max="5"
+                style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+            </div>
+            <div>
+              <label class="cfg-lbl">Fallback DC (€/kWh)</label>
+              <input type="number" id="pc_fallback_dc" step="0.01" min="0" max="5"
+                style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+            </div>
+          </div>
+          <button class="btn-p" onclick="savePcConfig()" style="margin-bottom:24px">💾 Speichern</button>
+          <span id="pc_save_status" style="font-size:.75rem;color:var(--mute);margin-left:8px"></span>
+
+          <!-- Contract list -->
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <div style="font-size:.85rem;font-weight:600">Meine Ladeabos</div>
+            <button class="btn-s" onclick="showContractForm()" data-requires-permission="config:write">➕ Neues Abo</button>
+          </div>
+          <div id="contract_list" style="display:grid;gap:8px;margin-bottom:18px">
+            <div style="font-size:.78rem;color:var(--mute);text-align:center;padding:16px">Lade…</div>
+          </div>
+
+          <!-- Add/Edit form -->
+          <div id="contract_form" style="display:none;padding:14px;background:#1e2030;border-radius:8px;margin-bottom:18px">
+            <div style="font-size:.82rem;font-weight:600;margin-bottom:12px" id="contract_form_title">Neues Ladeabo</div>
+            <input type="hidden" id="cf_id">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+              <div>
+                <label class="cfg-lbl">Name *</label>
+                <input type="text" id="cf_name" placeholder="z.B. EnBW M"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+              </div>
+              <div>
+                <label class="cfg-lbl">Anbieter (CPO)</label>
+                <input type="text" id="cf_cpo" placeholder="z.B. enbw, ionity, tesla"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+              </div>
+              <div>
+                <label class="cfg-lbl">AC-Preis (€/kWh)</label>
+                <input type="number" id="cf_price_ac" step="0.01" min="0" max="5" placeholder="leer = nicht verfügbar"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+              </div>
+              <div>
+                <label class="cfg-lbl">DC-Preis (€/kWh)</label>
+                <input type="number" id="cf_price_dc" step="0.01" min="0" max="5" placeholder="leer = nicht verfügbar"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+              </div>
+              <div>
+                <label class="cfg-lbl">Einheitspreis (€/kWh, falls AC=DC)</label>
+                <input type="number" id="cf_price_kwh" step="0.01" min="0" max="5" placeholder="optional"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+              </div>
+              <div>
+                <label class="cfg-lbl">Monatliche Grundgebühr (€)</label>
+                <input type="number" id="cf_monthly" step="0.01" min="0" value="0"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+              </div>
+            </div>
+            <div style="margin-bottom:12px">
+              <label class="cfg-lbl">Notizen</label>
+              <input type="text" id="cf_notes" placeholder="Freitext"
+                style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn-p" onclick="saveContractForm()" data-requires-permission="config:write">💾 Speichern</button>
+              <button class="btn-s" onclick="hideContractForm()">Abbrechen</button>
+              <span id="cf_status" style="font-size:.75rem;color:var(--mute);align-self:center"></span>
+            </div>
+          </div>
+
+          <!-- Built-in templates -->
+          <details style="margin-top:8px">
+            <summary style="font-size:.8rem;color:var(--mute);cursor:pointer;padding:6px 0">📋 Vorlagen importieren (gängige Ladeabos)</summary>
+            <div id="builtin_contract_list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-top:10px">
+              <div style="font-size:.78rem;color:var(--mute)">Lade…</div>
+            </div>
+          </details>
+        </div>
+
+        <!-- EnBW Live Price (advanced) -->
+        <div class="card" style="margin-top:12px">
+          <div class="card-title" style="font-size:.9rem">🔴 EnBW Live-Preisabfrage <span style="font-size:.7rem;color:#f59e0b;font-weight:400">(inoffiziell / experimentell)</span></div>
+          <div style="font-size:.78rem;color:#f59e0b;background:#2d1f00;border:1px solid #7c4f00;border-radius:6px;padding:10px;margin-bottom:14px">
+            ⚠️ Diese Funktion nutzt eine <strong>inoffizielle, nicht dokumentierte API</strong> von EnBW. Sie kann sich jederzeit ohne Vorwarnung ändern oder abgeschaltet werden.
+            Nur aktivieren wenn du einen gültigen API-Key hast.
+          </div>
+          <div style="display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center;margin-bottom:12px">
+            <label class="cfg-lbl" style="margin:0">Live-Abfrage aktivieren</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="enbw_enabled" onchange="toggleEnbwSection()">
+              <span style="font-size:.8rem;color:var(--mute)">Nur aktivieren wenn EVSE-IDs in Sessions bekannt sind</span>
+            </label>
+          </div>
+          <div id="enbw_section" style="display:none">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+              <div>
+                <label class="cfg-lbl">API Subscription Key</label>
+                <input type="password" id="enbw_api_key" placeholder="••••••••"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+              </div>
+              <div>
+                <label class="cfg-lbl">Cache-Dauer (Minuten)</label>
+                <input type="number" id="enbw_cache_min" step="5" min="5" max="1440" value="60"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+              </div>
+            </div>
+          </div>
+          <button class="btn-p" onclick="saveEnbwConfig()">💾 Speichern</button>
+          <span id="enbw_save_status" style="font-size:.75rem;color:var(--mute);margin-left:8px"></span>
         </div>
       </div>
 
@@ -5661,6 +5795,193 @@ async function recalculateTariff(){
   }
 }
 
+// ── LADEABOS / ÖFFENTLICHES LADEN ────────────────────────────────────────────
+
+async function loadPcConfig(){
+  try{
+    const r = await apiFetch('/api/config').then(r=>r.json());
+    if($('pc_enabled'))   $('pc_enabled').value   = r.public_charging_price_enabled ? '1':'0';
+    if($('pc_fallback_ac')) $('pc_fallback_ac').value = r.public_charging_fallback_ac ?? 0.45;
+    if($('pc_fallback_dc')) $('pc_fallback_dc').value = r.public_charging_fallback_dc ?? 0.75;
+    if($('enbw_enabled'))  $('enbw_enabled').checked = !!r.enbw_price_lookup_enabled;
+    if($('enbw_cache_min')) $('enbw_cache_min').value = r.enbw_price_cache_minutes ?? 60;
+    toggleEnbwSection();
+  }catch(e){ console.warn('loadPcConfig',e); }
+}
+
+async function savePcConfig(){
+  const st = $('pc_save_status');
+  if(st){st.textContent='⏳…';st.style.color='var(--mute)';}
+  try{
+    const body={
+      public_charging_price_enabled: $('pc_enabled').value==='1',
+      public_charging_fallback_ac: parseFloat($('pc_fallback_ac').value)||0.45,
+      public_charging_fallback_dc: parseFloat($('pc_fallback_dc').value)||0.75,
+    };
+    const r=await apiFetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+    if(r.ok||r.saved){if(st){st.textContent='✅ Gespeichert';st.style.color='#6ee7b7';}}
+    else{if(st){st.textContent='❌ '+(r.error||'Fehler');st.style.color='#f87171';}}
+  }catch(e){if(st){st.textContent='❌ '+e.message;st.style.color='#f87171';}}
+}
+
+async function saveEnbwConfig(){
+  const st=$('enbw_save_status');
+  if(st){st.textContent='⏳…';st.style.color='var(--mute)';}
+  try{
+    const body={
+      enbw_price_lookup_enabled: $('enbw_enabled').checked,
+      enbw_price_cache_minutes: parseInt($('enbw_cache_min').value)||60,
+    };
+    const apiKey=$('enbw_api_key')?.value||'';
+    if(apiKey && apiKey!=='********') body.enbw_api_subscription_key=apiKey;
+    const r=await apiFetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+    if(r.ok||r.saved){if(st){st.textContent='✅ Gespeichert';st.style.color='#6ee7b7';}}
+    else{if(st){st.textContent='❌ '+(r.error||'Fehler');st.style.color='#f87171';}}
+  }catch(e){if(st){st.textContent='❌ '+e.message;st.style.color='#f87171';}}
+}
+
+function toggleEnbwSection(){
+  const on=$('enbw_enabled')?.checked;
+  const sec=$('enbw_section');
+  if(sec) sec.style.display=on?'block':'none';
+}
+
+async function loadContracts(){
+  try{
+    const rows=await apiFetch('/api/charging-contracts').then(r=>r.json());
+    const el=$('contract_list');
+    if(!el) return;
+    if(!rows.length){
+      el.innerHTML='<div style="font-size:.78rem;color:var(--mute);text-align:center;padding:16px">Noch keine Ladeabos konfiguriert. Über „Neues Abo" hinzufügen oder eine Vorlage importieren.</div>';
+      return;
+    }
+    el.innerHTML=rows.map(c=>`
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#1e2030;border-radius:8px;border:1px solid ${c.is_default?'#3b82f6':'var(--brd)'}">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.85rem;font-weight:600">${escapeHtml(c.name)} ${c.is_default?'<span style="font-size:.7rem;background:#1e3a5f;color:#60a5fa;padding:1px 6px;border-radius:4px">Standard</span>':''}</div>
+          <div style="font-size:.73rem;color:var(--mute);margin-top:2px">
+            ${c.cpo?'CPO: '+escapeHtml(c.cpo)+' · ':''}
+            ${c.price_ac_kwh!=null?'AC '+c.price_ac_kwh.toFixed(3)+' €/kWh · ':''}
+            ${c.price_dc_kwh!=null?'DC '+c.price_dc_kwh.toFixed(3)+' €/kWh · ':''}
+            ${c.price_kwh!=null?'Einheitspreis '+c.price_kwh.toFixed(3)+' €/kWh · ':''}
+            ${c.monthly_fee_eur?c.monthly_fee_eur.toFixed(2)+' €/Monat':'kein Abo'}
+          </div>
+          ${c.notes?`<div style="font-size:.72rem;color:var(--mute)">${escapeHtml(c.notes)}</div>`:''}
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          ${!c.is_default?`<button class="btn-s" style="font-size:.72rem;padding:4px 8px" onclick="setDefaultContract(${c.id})" data-requires-permission="config:write">⭐ Standard</button>`:''}
+          <button class="btn-s" style="font-size:.72rem;padding:4px 8px" onclick="editContract(${c.id})" data-requires-permission="config:write">✏️</button>
+          <button class="btn-s" style="font-size:.72rem;padding:4px 8px;color:#f87171" onclick="deleteContract(${c.id},'${escapeHtml(c.name)}')" data-requires-permission="config:write">🗑️</button>
+        </div>
+      </div>`).join('');
+    applyPermissions();
+  }catch(e){ const el=$('contract_list'); if(el) el.innerHTML='<div style="color:#f87171;font-size:.78rem">'+e.message+'</div>'; }
+}
+
+async function loadBuiltinContracts(){
+  try{
+    const rows=await apiFetch('/api/charging-contracts/builtin').then(r=>r.json());
+    const el=$('builtin_contract_list');
+    if(!el) return;
+    el.innerHTML=rows.map(c=>`
+      <div style="padding:10px 12px;background:#1e2030;border-radius:8px;border:1px solid var(--brd)">
+        <div style="font-size:.82rem;font-weight:600;margin-bottom:2px">${escapeHtml(c.name)}</div>
+        <div style="font-size:.72rem;color:var(--mute);margin-bottom:6px">${escapeHtml(c.description||'')}
+          ${c.monthly_fee_eur?'<br>'+c.monthly_fee_eur.toFixed(2)+' €/Monat':''}
+          ${c.price_ac_kwh!=null?'<br>AC: '+c.price_ac_kwh.toFixed(3)+' €/kWh':''}
+          ${c.price_dc_kwh!=null?'<br>DC: '+c.price_dc_kwh.toFixed(3)+' €/kWh':''}
+        </div>
+        <button class="btn-s" style="font-size:.72rem;padding:3px 8px" onclick="importBuiltinContract(${JSON.stringify(JSON.stringify(c))})" data-requires-permission="config:write">📥 Importieren</button>
+      </div>`).join('');
+    applyPermissions();
+  }catch(e){ console.warn('loadBuiltinContracts',e); }
+}
+
+async function importBuiltinContract(jsonStr){
+  try{
+    const c=JSON.parse(jsonStr);
+    const r=await apiFetch('/api/charging-contracts',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name:c.name,cpo:c.cpo||'',price_ac_kwh:c.price_ac_kwh,price_dc_kwh:c.price_dc_kwh,monthly_fee_eur:c.monthly_fee_eur||0,notes:c.description||''})
+    }).then(r=>r.json());
+    if(r.id){ loadContracts(); }
+    else{ alert(r.error||'Fehler beim Importieren'); }
+  }catch(e){ alert(e.message); }
+}
+
+function showContractForm(data){
+  const f=$('contract_form');
+  if(!f) return;
+  $('cf_id').value=data?.id||'';
+  $('cf_name').value=data?.name||'';
+  $('cf_cpo').value=data?.cpo||'';
+  $('cf_price_ac').value=data?.price_ac_kwh??'';
+  $('cf_price_dc').value=data?.price_dc_kwh??'';
+  $('cf_price_kwh').value=data?.price_kwh??'';
+  $('cf_monthly').value=data?.monthly_fee_eur??0;
+  $('cf_notes').value=data?.notes||'';
+  $('contract_form_title').textContent=data?.id?'Abo bearbeiten':'Neues Ladeabo';
+  $('cf_status').textContent='';
+  f.style.display='block';
+  $('cf_name').focus();
+}
+
+function hideContractForm(){
+  const f=$('contract_form'); if(f) f.style.display='none';
+}
+
+async function editContract(id){
+  try{
+    const rows=await apiFetch('/api/charging-contracts').then(r=>r.json());
+    const c=rows.find(x=>x.id===id);
+    if(c) showContractForm(c);
+  }catch(e){ alert(e.message); }
+}
+
+async function saveContractForm(){
+  const st=$('cf_status');
+  const id=parseInt($('cf_id').value)||0;
+  const body={
+    name:$('cf_name').value.trim(),
+    cpo:$('cf_cpo').value.trim(),
+    price_ac_kwh:$('cf_price_ac').value!==''?parseFloat($('cf_price_ac').value):null,
+    price_dc_kwh:$('cf_price_dc').value!==''?parseFloat($('cf_price_dc').value):null,
+    price_kwh:$('cf_price_kwh').value!==''?parseFloat($('cf_price_kwh').value):null,
+    monthly_fee_eur:parseFloat($('cf_monthly').value)||0,
+    notes:$('cf_notes').value.trim(),
+    active:true,
+  };
+  if(!body.name){if(st){st.textContent='Name erforderlich';st.style.color='#f87171';} return;}
+  if(st){st.textContent='⏳…';st.style.color='var(--mute)';}
+  try{
+    const url=id?`/api/charging-contracts/${id}`:'/api/charging-contracts';
+    const method=id?'PUT':'POST';
+    const r=await apiFetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+    if(r.id||r.ok){
+      hideContractForm();
+      loadContracts();
+    } else {
+      if(st){st.textContent='❌ '+(r.error||'Fehler');st.style.color='#f87171';}
+    }
+  }catch(e){if(st){st.textContent='❌ '+e.message;st.style.color='#f87171';}}
+}
+
+async function setDefaultContract(id){
+  try{
+    await apiFetch(`/api/charging-contracts/${id}/set-default`,{method:'POST'});
+    loadContracts();
+  }catch(e){ alert(e.message); }
+}
+
+async function deleteContract(id,name){
+  if(!confirm(`Ladeabo „${name}" wirklich löschen?`)) return;
+  try{
+    const r=await apiFetch(`/api/charging-contracts/${id}`,{method:'DELETE'}).then(r=>r.json());
+    if(r.ok) loadContracts();
+    else alert(r.error||'Fehler beim Löschen');
+  }catch(e){ alert(e.message); }
+}
+
 // ── API TOKENS ────────────────────────────────────────────────────────────────
 const _ALL_SCOPES = ['api:read','api:write','vehicles:read','sessions:read','sessions:write',
                      'reports:read','reports:create','meter:read','system:read'];
@@ -6022,6 +6343,7 @@ function cfgSection(id, btn){
   if(id==='abrechnung')    { loadBillingConfig(); }
   if(id==='report-archive'){ loadReportArchive(); }
   if(id==='tarif')         { loadTariffConfig(); }
+  if(id==='ladeabos')      { loadPcConfig(); loadContracts(); loadBuiltinContracts(); }
   if(id==='api-tokens')    { loadApiTokens(); renderApiTokenScopeCheckboxes(); }
   if(id==='mqtt')          { loadMqttConfig(); loadNotifChannels(); }
   if(id==='notif-rules')   { loadNotifRules(); }
