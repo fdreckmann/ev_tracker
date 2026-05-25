@@ -31,6 +31,17 @@ import core.state as _core_state
 from version import APP_VERSION
 
 CHANGELOG = [
+    {"version":"2.0.46","changes":[
+        "Einstellungsmenü weiter bereinigt: Bezeichnungen an Benutzersprache angepasst",
+        "Laden & Preise → Laden & Kosten, Preismodell → Kostenberechnung, Stromtarif → Zuhause-Strom, Ladeabos → Ladekarten & Abos, Zählerstand → Zähler & Wallbox",
+        "Verbindung → Provider & API, Regeln → Ereignisse & Regeln",
+        "Neuer Bereich 'Kanäle' unter Benachrichtigungen: Hub für SMTP, MQTT, Push-Kanäle mit Status-Übersicht",
+        "OAuth & SSO von System & Betrieb nach Benutzer & Rollen verschoben (Login & SSO)",
+        "API-Tokens von System & Betrieb nach Mein Konto verschoben",
+        "Neuer Backup-Bereich in Sidebar (verlinkt auf Backup-Tab)",
+        "System & Betrieb enthält jetzt nur noch Version & Update",
+        "SMTP und MQTT nicht mehr als eigenständige Nav-Punkte — nur über Kanäle erreichbar",
+    ]},
     {"version":"2.0.45","changes":[
         "Einstellungsmenü neu strukturiert: 8 logische Gruppen (Mein Konto, Benutzer & Rollen, Fahrzeuge, Laden & Preise, Benachrichtigungen, Berichte & Export, System & Betrieb)",
         "2FA/TOTP nur noch unter 'Mein Konto & Sicherheit' — doppelter Eintrag entfernt",
