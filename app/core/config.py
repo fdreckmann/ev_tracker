@@ -253,6 +253,15 @@ DEFAULT_CONFIG = {
     "vehicle_default_image_key":   "",
     "vehicle_image_source":        "",
     "vehicle_image_attribution":   "",
+
+    # Missing-charge detection
+    "missing_charge_detection_enabled":              True,
+    "missing_charge_min_gap_minutes":                30,
+    "missing_charge_min_soc_gain_percent":           3.0,
+    "missing_charge_min_kwh":                        2.0,
+    "missing_charge_ignore_small_bms":               True,
+    "missing_charge_default_consumption_kwh_per_100km": 18.0,
+    "missing_charge_show_dashboard_hints":           True,
 }
 
 VEHICLE_SPECIFIC_KEYS = {
@@ -284,6 +293,8 @@ VEHICLE_SPECIFIC_KEYS = {
     "tronity_client_id","tronity_client_secret","tronity_vehicle_id",
     "enode_client_id","enode_client_secret","enode_user_id","enode_vehicle_id",
     "smartcar_access_token","smartcar_vehicle_id",
+    # Per-vehicle missing-charge settings
+    "usable_battery_kwh","default_consumption_kwh_per_100km",
 }
 
 _config_cache: dict = {"data": None, "ts": 0.0}

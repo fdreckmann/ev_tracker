@@ -49,6 +49,9 @@ ALL_PERMISSIONS = {
     "sessions:manual_add":      {"label": "Manuell hinzufügen",             "group": "Ladevorgänge"},
     "sessions:validate":        {"label": "Ladevorgang validieren",         "group": "Ladevorgänge"},
     "sessions:ignore_warnings": {"label": "Warnungen ignorieren",           "group": "Ladevorgänge"},
+    # Missing-charge candidates
+    "missing_charges:view":     {"label": "Fehlende Ladevorgänge anzeigen", "group": "Ladevorgänge"},
+    "missing_charges:manage":   {"label": "Fehlende Ladevorgänge verwalten","group": "Ladevorgänge"},
     # Analyse
     "analytics:view":           {"label": "Analyse ansehen",                "group": "Analyse"},
     # Export
@@ -148,6 +151,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "dashboard:view", "vehicles:view", "vehicles:switch", "vehicles:location_view",
         "vehicles:create", "vehicles:edit", "vehicles:image_manage", "vehicles:location_configure",
         "sessions:view", "sessions:create", "sessions:edit", "sessions:manual_add",
+        "missing_charges:view", "missing_charges:manage",
         "analytics:view",
         "export:view", "export:create", "export:preview", "export:download", "export:pdf",
         "export:templates_view", "export:signature_use",
@@ -166,6 +170,7 @@ DEFAULT_ROLE_PERMISSIONS = {
     ],
     "readonly": [
         "dashboard:view", "vehicles:view", "sessions:view",
+        "missing_charges:view",
         "analytics:view", "export:view", "export:preview", "export:download",
         "reports:view", "billing:view",
     ],
