@@ -64,7 +64,7 @@ def api_health():
     except Exception:
         db_writable = False
 
-    overall_ok = db_ok and data_ok and startup_error is None
+    overall_ok = db_ok and data_ok and db_writable and startup_error is None
     result = {
         "ok": overall_ok,
         "version": APP_VERSION,
@@ -73,6 +73,8 @@ def api_health():
         "db_writable": db_writable,
         "users_table_exists": users_table_exists,
     }
+    if not db_writable:
+        result["message"] = "/data oder Datenbank ist nicht beschreibbar."
     if users_count is not None:
         result["users_count"] = users_count
     if db_error:

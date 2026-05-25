@@ -286,16 +286,37 @@ def api_update_cost(sid):
     data = request.get_json(force=True) or {}
     if "cost_eur" not in data:
         return jsonify({"ok": False, "error": "cost_eur fehlt"}), 400
-    cost = float(data["cost_eur"]); price_kwh = data.get("price_per_kwh")
-    con=sqlite3.connect(DB_PATH); cur=con.cursor()
+    try:
+        cost = float(data["cost_eur"])
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "cost_eur muss eine Zahl sein"}), 400
+    if cost < 0:
+        return jsonify({"ok": False, "error": "cost_eur darf nicht negativ sein"}), 400
+    price_kwh_raw = data.get("price_per_kwh")
+    price_kwh = None
+    if price_kwh_raw is not None:
+        try:
+            price_kwh = float(price_kwh_raw)
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "price_per_kwh muss eine Zahl sein"}), 400
+        if price_kwh < 0:
+            return jsonify({"ok": False, "error": "price_per_kwh darf nicht negativ sein"}), 400
+    con = _get_db()
+    row = con.execute("SELECT id, kwh_charged FROM sessions WHERE id=?", (sid,)).fetchone()
+    if not row:
+        close_db_if_owned(con)
+        return jsonify({"ok": False, "error": "Session nicht gefunden"}), 404
     if price_kwh is not None:
-        row=cur.execute("SELECT kwh_charged FROM sessions WHERE id=?",(sid,)).fetchone()
-        if row and row[0]: cost=round(float(row[0])*float(price_kwh),2)
-        cur.execute("UPDATE sessions SET cost_eur=?,price_per_kwh=?,cost_manual=1 WHERE id=?",(cost,float(price_kwh),sid))
+        kwh = row["kwh_charged"] if isinstance(row, dict) else row[1]
+        if kwh:
+            cost = round(float(kwh) * price_kwh, 2)
+        con.execute("UPDATE sessions SET cost_eur=?,price_per_kwh=?,cost_manual=1 WHERE id=?",
+                    (cost, price_kwh, sid))
     else:
-        cur.execute("UPDATE sessions SET cost_eur=?,cost_manual=1 WHERE id=?",(cost,sid))
-    con.commit(); close_db_if_owned(con)
-    return jsonify({"ok":True,"cost_eur":cost})
+        con.execute("UPDATE sessions SET cost_eur=?,cost_manual=1 WHERE id=?", (cost, sid))
+    con.commit()
+    close_db_if_owned(con)
+    return jsonify({"ok": True, "cost_eur": cost})
 
 
 @sessions_bp.route("/api/sessions/<int:sid>", methods=["PATCH"])
@@ -316,12 +337,103 @@ def api_patch_session(sid):
     if not fields:
         return jsonify({"ok": False, "error": "Keine gültigen Felder"}), 400
 
-    if "location" in fields and fields["location"] not in ("home", "extern", "unknown"):
-        return jsonify({"ok": False, "error": "Ungültiger Standort"}), 400
-    if "charger_type" in fields and fields["charger_type"] not in ("ac", "dc", "unknown"):
-        return jsonify({"ok": False, "error": "Ungültige Ladeart"}), 400
+    # ── Load existing session (404 if not found) ──────────────────────────────
+    con = _get_db()
+    existing = con.execute("SELECT * FROM sessions WHERE id=?", (sid,)).fetchone()
+    if not existing:
+        close_db_if_owned(con)
+        return jsonify({"ok": False, "error": "Session nicht gefunden"}), 404
+    existing = dict(existing)
 
-    # Auto-compute cost when kWh + price both updated but cost not explicit
+    # ── Enum validation ───────────────────────────────────────────────────────
+    if "location" in fields and fields["location"] not in ("home", "extern", "unknown"):
+        close_db_if_owned(con)
+        return jsonify({"ok": False, "error": "location muss home, extern oder unknown sein"}), 400
+    if "charger_type" in fields and fields["charger_type"] not in ("ac", "dc", "unknown"):
+        close_db_if_owned(con)
+        return jsonify({"ok": False, "error": "charger_type muss ac, dc oder unknown sein"}), 400
+
+    # ── Numeric range validation ──────────────────────────────────────────────
+    def _fv(key):
+        """Get float value from fields or existing row."""
+        if key in fields:
+            try:
+                return float(fields[key])
+            except (TypeError, ValueError):
+                return None
+        v = existing.get(key)
+        return float(v) if v is not None else None
+
+    for key in ("kwh_charged", "cost_eur", "price_per_kwh", "charger_power_kw", "max_power_kw"):
+        if key in fields:
+            try:
+                val = float(fields[key])
+            except (TypeError, ValueError):
+                close_db_if_owned(con)
+                return jsonify({"ok": False, "error": f"{key} muss eine Zahl sein"}), 400
+            if val < 0:
+                close_db_if_owned(con)
+                return jsonify({"ok": False, "error": f"{key} darf nicht negativ sein"}), 400
+
+    for key in ("soc_start", "soc_end"):
+        if key in fields:
+            try:
+                val = float(fields[key])
+            except (TypeError, ValueError):
+                close_db_if_owned(con)
+                return jsonify({"ok": False, "error": f"{key} muss eine Zahl sein"}), 400
+            if not (0 <= val <= 100):
+                close_db_if_owned(con)
+                return jsonify({"ok": False, "error": f"{key} muss zwischen 0 und 100 liegen"}), 400
+
+    odo_start = _fv("odo_start")
+    odo_end   = _fv("odo_end")
+    if odo_start is not None and odo_end is not None and odo_end < odo_start:
+        close_db_if_owned(con)
+        return jsonify({"ok": False, "error": "odo_end darf nicht kleiner als odo_start sein"}), 400
+
+    # ── Timestamp validation ──────────────────────────────────────────────────
+    start_ts = fields.get("start_ts") or existing.get("start_ts")
+    end_ts   = fields.get("end_ts")   or existing.get("end_ts")
+    if start_ts and end_ts:
+        try:
+            if end_ts <= start_ts:
+                close_db_if_owned(con)
+                return jsonify({"ok": False, "error": "end_ts muss nach start_ts liegen"}), 400
+        except TypeError:
+            pass
+
+    # ── Meter validation + delta recalculation ────────────────────────────────
+    meter_old = _fv("meter_old")
+    meter_new = _fv("meter_new")
+    if meter_old is not None and meter_new is not None:
+        if meter_new < meter_old:
+            close_db_if_owned(con)
+            return jsonify({"ok": False, "error": "meter_new darf nicht kleiner als meter_old sein"}), 400
+        fields["meter_delta_kwh"] = round(meter_new - meter_old, 3)
+        fields["meter_used"] = 1
+    elif "meter_old" in fields and meter_new is None:
+        # Only meter_old changed — fetch current meter_new and recalculate
+        cur_new = existing.get("meter_new")
+        if cur_new is not None:
+            try:
+                delta = float(cur_new) - float(fields["meter_old"])
+                if delta >= 0:
+                    fields["meter_delta_kwh"] = round(delta, 3)
+            except (TypeError, ValueError):
+                pass
+    elif "meter_new" in fields and meter_old is None:
+        cur_old = existing.get("meter_old")
+        if cur_old is not None:
+            try:
+                delta = float(fields["meter_new"]) - float(cur_old)
+                if delta >= 0:
+                    fields["meter_delta_kwh"] = round(delta, 3)
+                    fields["meter_used"] = 1
+            except (TypeError, ValueError):
+                pass
+
+    # ── Auto-compute cost ─────────────────────────────────────────────────────
     if "kwh_charged" in fields and "price_per_kwh" in fields and "cost_eur" not in fields:
         try:
             fields["cost_eur"] = round(float(fields["kwh_charged"]) * float(fields["price_per_kwh"]), 2)
@@ -331,19 +443,8 @@ def api_patch_session(sid):
     if "cost_eur" in fields or "price_per_kwh" in fields:
         fields["cost_manual"] = 1
 
-    # Keep meter_delta_kwh in sync
-    if "meter_old" in fields and "meter_new" in fields:
-        try:
-            delta = float(fields["meter_new"]) - float(fields["meter_old"])
-            if delta >= 0:
-                fields["meter_delta_kwh"] = round(delta, 3)
-                fields["meter_used"] = 1
-        except (ValueError, TypeError):
-            pass
-
     set_clause = ", ".join(f"{k}=?" for k in fields)
     values = list(fields.values()) + [sid]
-    con = _get_db()
     con.execute(f"UPDATE sessions SET {set_clause} WHERE id=?", values)
     con.commit()
     _audit("session_edited", f"session_id={sid} fields={list(fields.keys())}", ip=request.remote_addr)
@@ -354,4 +455,7 @@ def api_patch_session(sid):
 @sessions_bp.route("/api/stats/monthly")
 @require_login
 def api_monthly_stats():
+    user = _current_user()
+    if not has_permission(user, "sessions:view") and not has_permission(user, "analytics:view"):
+        return jsonify({"error": "Keine Berechtigung: sessions:view oder analytics:view"}), 403
     return jsonify(_get_monthly_stats())

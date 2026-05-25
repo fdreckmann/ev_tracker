@@ -1,5 +1,57 @@
 # Changelog
 
+## v2.0.43 — 2026-05-25
+
+### Update-Check, Notification-UI, Permissions, Session-Validierung
+
+**Update-Check (Punkt 1)**
+- `update-info.json` auf aktuelle Version 2.0.42 aktualisiert
+- `GET /api/update-info?force=1` — erzwingt Neuladen, ignoriert Server-Cache
+- Neue Felder: `reason`, `cache_hit`, `remote_url`, `warning`
+- `reason`-Werte: `update_available` · `current_is_latest` · `remote_metadata_older_than_current` · `remote_unreachable` · `invalid_remote_json` · `version_compare_failed` · `update_check_disabled`
+- Wenn Remote älter als installierte Version: `warning` + `reason=remote_metadata_older_than_current`
+- `Cache-Control: no-store` auf `/api/update-info`
+- UI: Button „Jetzt prüfen" deaktiviert sich während Prüfung, zeigt „⏳ Prüfe…"
+- UI: zeigt spezifische Hinweise je nach reason (veraltet, nicht erreichbar, aktuell)
+
+**Notification-Bell (Punkt 2)**
+- Permanente 🔔-Glocke aus Navigation entfernt
+- Stattdessen: `#notifTopHint` fixed oben rechts, nur sichtbar wenn unread_count > 0
+- `updateNotifBadge(count)` zeigt/verbirgt den Hinweis
+- `pollNotifBadge()` pollt nur wenn `hasPermission('notifications:view')` — kein 403-Spam
+
+**Notification Event-Namen (Punkt 3)**
+- `notification_event_update_available_new` → `notification_event_update_available`
+- `notification_event_backup_failed_alert` → `notification_event_backup_failed`
+- `notification_event_backup_success_alert` → `notification_event_backup_success`
+
+**Docker/Unraid (Punkt 4)**
+- `docker-entrypoint.sh`: nach chown in Mode B prüft `gosu PUID test -w $DATA_DIR` — exit 1 mit klarer Meldung wenn nicht schreibbar
+- Mode A: prüft ebenfalls Schreibbarkeit vor Start
+
+**Health (Punkt 5)**
+- `/api/health`: `overall_ok` jetzt `db_ok AND data_ok AND db_writable AND startup_error IS NULL`
+- Bei `db_writable=false`: HTTP 503 + `message: "/data oder Datenbank ist nicht beschreibbar."`
+
+**Signatur-Permissions (Punkt 6)**
+- `GET /api/signature` → `signature:view`
+- `GET /api/signature/image` → `signature:view`
+- `POST /api/signature/upload` → `signature:upload`
+- `POST /api/signature/draw` → `signature:draw`
+- `DELETE /api/signature` → `signature:delete`
+
+**Session-Permissions (Punkt 7)**
+- `GET /api/stats/monthly` → `sessions:view` oder `analytics:view`
+
+**PATCH /api/sessions/<id> Validierung (Punkt 8)**
+- 404 wenn Session nicht existiert
+- `kwh_charged`, `cost_eur`, `price_per_kwh` ≥ 0
+- `soc_start`, `soc_end` zwischen 0 und 100
+- `odo_end` ≥ `odo_start`
+- `meter_new` ≥ `meter_old`; `meter_delta_kwh` automatisch neu berechnet
+- `end_ts` > `start_ts`
+- `api_update_cost`: 404, negative Kosten → 400, Typ-Fehler → 400
+
 ## v2.0.42 — 2026-05-25
 
 ### Unraid-kompatibles User-Mapping (PUID / PGID)

@@ -32,7 +32,6 @@ def _parse_version(v: str) -> tuple[int, ...]:
 
     Handles: 1.2.3, 1.2.3-beta, 1.2.3-rc1.
     Pre-release suffixes sort before the release version.
-    Returns a tuple of ints; pre-release presence reduces the last element.
     """
     import re
     v = str(v).strip()
@@ -55,11 +54,22 @@ def _is_newer(remote: str, current: str) -> bool:
         return False
 
 
-def fetch_remote_info() -> dict:
-    """Fetch update metadata from GitHub with caching. Never raises."""
+def _is_older(remote: str, current: str) -> bool:
+    """Return True if remote is strictly older than current."""
+    try:
+        return _parse_version(remote) < _parse_version(current)
+    except Exception:
+        return False
+
+
+def fetch_remote_info(force: bool = False) -> tuple[dict, bool]:
+    """Fetch update metadata from GitHub with caching.
+
+    Returns (data, cache_hit). Never raises.
+    """
     now = time.time()
-    if _cache["data"] is not None and now - _cache["ts"] < _CACHE_TTL:
-        return _cache["data"]
+    if not force and _cache["data"] is not None and now - _cache["ts"] < _CACHE_TTL:
+        return _cache["data"], True
 
     try:
         resp = requests.get(_REMOTE_URL, timeout=_REQUEST_TIMEOUT)
@@ -67,13 +77,16 @@ def fetch_remote_info() -> dict:
         data = resp.json()
         _cache["data"] = data
         _cache["ts"] = now
-        return data
+        return data, False
     except Exception as exc:
         log.warning("Update-Check fehlgeschlagen: %s", exc)
-        return {}
+        # Return stale cache if available rather than empty dict
+        if _cache["data"] is not None:
+            return _cache["data"], True
+        return {}, False
 
 
-def get_update_info() -> dict:
+def get_update_info(force: bool = False) -> dict:
     """Return the full update-info dict for the /api/update-info endpoint."""
     from version import APP_VERSION, BUILD_DATE, CHANNEL
 
@@ -85,20 +98,45 @@ def get_update_info() -> dict:
         "channel": CHANNEL,
         "update_available": False,
         "checked_at": datetime.utcnow().isoformat(timespec="seconds"),
+        "remote_url": _REMOTE_URL,
+        "cache_hit": False,
+        "reason": None,
     }
 
     if not _is_enabled():
         base["ok"] = True
         base["error"] = None
         base["update_check_disabled"] = True
+        base["reason"] = "update_check_disabled"
         return base
 
-    remote = fetch_remote_info()
+    try:
+        remote, cache_hit = fetch_remote_info(force=force)
+    except Exception as exc:
+        log.warning("fetch_remote_info raised unexpectedly: %s", exc)
+        remote, cache_hit = {}, False
+
+    base["cache_hit"] = cache_hit
+
     if not remote:
         base["error"] = "Update-Informationen konnten nicht geladen werden."
+        base["reason"] = "remote_unreachable"
         return base
 
     latest = remote.get("latest_version", "")
+    if not latest:
+        base["error"] = "Remote-Metadaten enthalten keine Versionsnummer."
+        base["reason"] = "invalid_remote_json"
+        return base
+
+    try:
+        update_available = _is_newer(latest, current)
+        remote_older = _is_older(latest, current)
+    except Exception:
+        base["error"] = "Versionsvergleich fehlgeschlagen."
+        base["reason"] = "version_compare_failed"
+        return base
+
     base.update({
         "ok": True,
         "error": None,
@@ -111,9 +149,11 @@ def get_update_info() -> dict:
         "migration_notes":  remote.get("migration_notes", []),
         "update_instructions": remote.get("update_instructions", []),
         "release_url":    remote.get("release_url", ""),
-        "update_available": _is_newer(latest, current),
+        "update_available": update_available,
     })
-    if base.get("update_available"):
+
+    if update_available:
+        base["reason"] = "update_available"
         try:
             from services.notification_service import notify
             notify(
@@ -126,4 +166,13 @@ def get_update_info() -> dict:
             )
         except Exception:
             pass
+    elif remote_older:
+        base["reason"] = "remote_metadata_older_than_current"
+        base["warning"] = (
+            f"Remote-Update-Informationen sind älter als die installierte Version. "
+            f"Installiert: v{current}, Remote: v{latest}"
+        )
+    else:
+        base["reason"] = "current_is_latest"
+
     return base

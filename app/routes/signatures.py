@@ -32,6 +32,8 @@ def _normalize_signature_image(img, padding=None):
 @signatures_bp.route("/api/signature")
 @require_login
 def api_signature_info():
+    if not has_permission(_current_user(), "signature:view"):
+        return jsonify({"error": "Keine Berechtigung: signature:view"}), 403
     cfg = load_config()
     sig = cfg.get("signature") or {}
     exists = SIGNATURE_PATH.exists()
@@ -47,6 +49,8 @@ def api_signature_info():
 @signatures_bp.route("/api/signature/image")
 @require_login
 def api_signature_image():
+    if not has_permission(_current_user(), "signature:view"):
+        return jsonify({"error": "Keine Berechtigung: signature:view"}), 403
     if not SIGNATURE_PATH.exists():
         return jsonify({"error": "Keine Unterschrift"}), 404
     return send_file(str(SIGNATURE_PATH), mimetype="image/png")
@@ -55,6 +59,8 @@ def api_signature_image():
 @signatures_bp.route("/api/signature/upload", methods=["POST"])
 @require_login
 def api_signature_upload():
+    if not has_permission(_current_user(), "signature:upload"):
+        return jsonify({"error": "Keine Berechtigung: signature:upload"}), 403
     if "file" not in request.files:
         return jsonify({"ok": False, "error": "Keine Datei"}), 400
     f = request.files["file"]
@@ -83,6 +89,8 @@ def api_signature_upload():
 @signatures_bp.route("/api/signature/draw", methods=["POST"])
 @require_login
 def api_signature_draw():
+    if not has_permission(_current_user(), "signature:draw"):
+        return jsonify({"error": "Keine Berechtigung: signature:draw"}), 403
     import base64 as _b64, io as _io
     body = request.get_json(force=True) or {}
     image_data = body.get("image_data", "")
@@ -107,6 +115,8 @@ def api_signature_draw():
 @signatures_bp.route("/api/signature", methods=["DELETE"])
 @require_login
 def api_signature_delete():
+    if not has_permission(_current_user(), "signature:delete"):
+        return jsonify({"error": "Keine Berechtigung: signature:delete"}), 403
     if SIGNATURE_PATH.exists():
         SIGNATURE_PATH.unlink()
     cfg = load_config()
