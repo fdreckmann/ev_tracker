@@ -826,33 +826,34 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <!-- 1. Mein Konto & Sicherheit -->
       <div class="cfg-grp-label">Mein Konto</div>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('profil',this)">🔒 Konto &amp; Sicherheit</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('api-tokens',this)" data-requires-permission="api_tokens:view">🔑 API-Tokens</button>
 
       <!-- 2. Benutzer & Rollen -->
       <div class="cfg-grp-label" data-requires-permission="users:view">Benutzer &amp; Rollen</div>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('benutzer',this)" data-requires-permission="users:view">👥 Benutzer</button>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('roles',this)" data-requires-permission="users:manage_permissions">🔐 Rollen &amp; Rechte</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('auth',this)" data-requires-permission="admin:all">🔑 Login &amp; SSO</button>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('audit',this)" data-requires-permission="users:view">📜 Audit-Log</button>
 
       <!-- 3. Fahrzeuge -->
       <div class="cfg-grp-label">Fahrzeuge</div>
       <button class="cfg-nav-btn cfg-nav-sub active" onclick="cfgSection('fahrzeuge',this)">🚗 Fahrzeuge</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('verbindung',this)">🔌 Verbindung</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('verbindung',this)">🔌 Provider &amp; API</button>
 
-      <!-- 4. Laden & Preise -->
-      <div class="cfg-grp-label">Laden &amp; Preise</div>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('preise',this)">💰 Preismodell</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('zaehler',this)">🔌 Zählerstand</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('tarif',this)" data-requires-permission="tariffs:view">⚡ Stromtarif</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('ladeabos',this)" data-requires-permission="config:read">🪙 Ladeabos</button>
+      <!-- 4. Laden & Kosten -->
+      <div class="cfg-grp-label">Laden &amp; Kosten</div>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('preise',this)">💰 Kostenberechnung</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('zaehler',this)">🔌 Zähler &amp; Wallbox</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('tarif',this)" data-requires-permission="tariffs:view">⚡ Zuhause-Strom</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('ladeabos',this)" data-requires-permission="config:read">🪙 Ladekarten &amp; Abos</button>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('abrechnung',this)" data-requires-permission="billing:view">💼 Abrechnung</button>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('missing-charges-cfg',this)">🔍 Fehlende Ladevorg.</button>
 
       <!-- 5. Benachrichtigungen -->
       <div class="cfg-grp-label" data-requires-permission="notifications:view">Benachrichtigungen</div>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('notifications',this)" data-requires-permission="notifications:view">🔔 Einstellungen</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('notif-rules',this)" data-requires-permission="notifications:view">📋 Regeln</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('smtp',this)">📧 SMTP</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('mqtt',this)" data-requires-permission="mqtt:view">📡 MQTT</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('kanaele',this)" data-requires-permission="notifications:view">📡 Kanäle</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('notif-rules',this)" data-requires-permission="notifications:view">📋 Ereignisse &amp; Regeln</button>
 
       <!-- 6. Berichte & Export -->
       <div class="cfg-grp-label">Berichte &amp; Export</div>
@@ -860,10 +861,12 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('report-archive',this)" data-requires-permission="reports:archive">📁 Report-Archiv</button>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('export-tpl',this)">📋 Export-Vorlagen</button>
 
-      <!-- 7. System & Betrieb -->
+      <!-- 7. Backup -->
+      <div class="cfg-grp-label" data-requires-permission="backup:view">Backup</div>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="tab('backup',null);document.getElementById('cfgNav').classList.remove('open')" data-requires-permission="backup:view">💾 Backup &amp; Wiederherstellung</button>
+
+      <!-- 8. System & Betrieb -->
       <div class="cfg-grp-label">System &amp; Betrieb</div>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('auth',this)">🔐 OAuth &amp; SSO</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('api-tokens',this)" data-requires-permission="api_tokens:view">🔑 API-Tokens</button>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('version-info',this)">ℹ️ Version &amp; Update</button>
     </nav>
 
@@ -916,7 +919,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         {% endif %}{% endfor %}
 
         <div style="margin-top:18px">
-          <div class="cfg-sec-title">Verbindung konfigurieren</div>
+          <div class="cfg-sec-title">Provider &amp; API</div>
           <div class="form-grid" id="providerFields"></div>
           <div style="margin-top:14px">
             <button class="btn-g" onclick="testConn()">🔗 Verbindung testen</button>
@@ -933,7 +936,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
       <!-- PREISMODELL -->
       <div id="cfgsec-preise" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">Preismodell</div>
+        <div class="cfg-sec-title">Kostenberechnung</div>
         <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:16px;line-height:1.7">
            <strong style="color:#fff">Zuhause:</strong> Fixer Tarif<br>
            <strong style="color:#fff">Extern AC:</strong> ENTSO-E Spot × AC-Faktor<br>
@@ -981,7 +984,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
       <!-- ZÄHLERSTAND -->
       <div id="cfgsec-zaehler" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">Zählerstand-Quelle</div>
+        <div class="cfg-sec-title">Zähler &amp; Wallbox</div>
         <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
           Wird beim Start und Ende jeder Ladesession automatisch abgelesen.
         </p>
@@ -1400,7 +1403,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
            ══════════════════════════════════════════════════════════ -->
       <div id="cfgsec-tarif" class="cfg-section" style="display:none">
         <div class="card">
-          <div class="card-title">⚡ Stromtarif-Konfiguration</div>
+          <div class="card-title">⚡ Zuhause-Strom &amp; Tarif</div>
           <div style="display:flex;flex-direction:column;gap:16px">
             <div>
               <label class="cfg-lbl">Tarif-Provider</label>
@@ -1543,7 +1546,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
            ══════════════════════════════════════════════════════════ -->
       <div id="cfgsec-ladeabos" class="cfg-section" style="display:none">
         <div class="card">
-          <div class="card-title">⚡ Ladeabos &amp; Öffentliche Preise</div>
+          <div class="card-title">🪙 Ladekarten &amp; Abos</div>
           <p style="font-size:.8rem;color:var(--mute);margin:0 0 16px">
             Definiere dein Ladeabo (z.B. EnBW M, IONITY Passport), damit der EV Tracker die Kosten externer Ladevorgänge automatisch berechnet.
             Der Standardvertrag wird bei neuen Extern-Sessions verwendet.
@@ -1710,6 +1713,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
            MQTT
            ══════════════════════════════════════════════════════════ -->
       <div id="cfgsec-mqtt" class="cfg-section" style="display:none">
+        <div class="cfg-sec-title">MQTT <a href="#" onclick="cfgSection('kanaele',null);return false" style="font-size:.65rem;font-weight:400;color:var(--acc2);margin-left:12px;text-transform:none;letter-spacing:0">← Kanäle</a></div>
         <div class="card">
           <div class="card-title">📡 MQTT-Konfiguration</div>
           <div style="display:flex;flex-direction:column;gap:16px">
@@ -1789,7 +1793,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
            ══════════════════════════════════════════════════════════ -->
       <div id="cfgsec-notif-rules" class="cfg-section" style="display:none">
         <div class="card">
-          <div class="card-title">🔔 Benachrichtigungs-Regeln</div>
+          <div class="card-title">📋 Ereignisse &amp; Regeln</div>
           <!-- Create rule form -->
           <div style="padding:14px;background:#1e2030;border-radius:8px;margin-bottom:18px">
             <div style="font-size:.82rem;font-weight:600;margin-bottom:10px;color:var(--txt)">Neue Regel</div>
@@ -1858,7 +1862,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
       <!-- BENACHRICHTIGUNGEN (zentral) -->
       <div id="cfgsec-notifications" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">Benachrichtigungen</div>
+        <div class="cfg-sec-title">Benachrichtigungen — Einstellungen</div>
 
         <!-- HA Notify -->
         <div class="card" style="margin-bottom:14px">
@@ -2031,8 +2035,49 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       </div>
 
       <!-- SMTP -->
+      <!-- KANÄLE HUB -->
+      <div id="cfgsec-kanaele" class="cfg-section" style="display:none">
+        <div class="cfg-sec-title">Kanäle &amp; Integrationen</div>
+        <p style="font-size:.78rem;color:var(--mute);margin:0 0 18px">Übertragungskanäle für Benachrichtigungen konfigurieren — Push-Dienste, E-Mail und Protokolle.</p>
+
+        <!-- Push-Kanäle -->
+        <div class="card" style="margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+            <div>
+              <div class="card-title" style="margin-bottom:4px">📱 Push-Kanäle</div>
+              <div style="font-size:.75rem;color:var(--mute)">ntfy · Gotify · Telegram · Home Assistant Notify</div>
+            </div>
+            <button class="btn-s" style="font-size:.78rem" onclick="cfgSection('notifications',null)">Konfigurieren →</button>
+          </div>
+          <div id="kanaele_push_status" style="font-size:.73rem;font-family:var(--mono);color:var(--mute);margin-top:8px">⏳ Lade…</div>
+        </div>
+
+        <!-- E-Mail / SMTP -->
+        <div class="card" style="margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+            <div>
+              <div class="card-title" style="margin-bottom:4px">📧 E-Mail (SMTP)</div>
+              <div id="kanaele_smtp_status" style="font-size:.75rem;color:var(--mute)">⏳ Lade…</div>
+            </div>
+            <button class="btn-s" style="font-size:.78rem" onclick="cfgSection('smtp',null)">Konfigurieren →</button>
+          </div>
+        </div>
+
+        <!-- MQTT -->
+        <div class="card" style="margin-bottom:12px" data-requires-permission="mqtt:view">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+            <div>
+              <div class="card-title" style="margin-bottom:4px">📡 MQTT</div>
+              <div id="kanaele_mqtt_status" style="font-size:.75rem;color:var(--mute)">⏳ Lade…</div>
+            </div>
+            <button class="btn-s" style="font-size:.78rem" onclick="cfgSection('mqtt',null)" data-requires-permission="mqtt:view">Konfigurieren →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SMTP -->
       <div id="cfgsec-smtp" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">SMTP E-Mail Konfiguration</div>
+        <div class="cfg-sec-title">E-Mail (SMTP) <a href="#" onclick="cfgSection('kanaele',null);return false" style="font-size:.65rem;font-weight:400;color:var(--acc2);margin-left:12px;text-transform:none;letter-spacing:0">← Kanäle</a></div>
         <div id="smtpStatusBadge" style="margin-bottom:14px;padding:8px 14px;border-radius:8px;font-size:.75rem;font-family:var(--mono);background:rgba(74,92,114,.15);border:1px solid var(--brd);color:var(--mute);display:inline-block">
           ⏳ Status unbekannt
         </div>
@@ -2182,9 +2227,9 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
       <!-- LOGIN & SICHERHEIT -->
       <div id="cfgsec-auth" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">OAuth &amp; SSO</div>
+        <div class="cfg-sec-title">Login &amp; SSO</div>
         <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
-          Social Login via Google oder Microsoft konfigurieren. Passwort, 2FA und Passkeys sind unter <a href="#" onclick="cfgSection('profil',null);return false" style="color:var(--acc2)">Mein Konto &amp; Sicherheit</a>.
+          Social Login via Google oder Microsoft (OAuth2) konfigurieren. Eigenes Passwort, 2FA und Passkeys: <a href="#" onclick="cfgSection('profil',null);return false" style="color:var(--acc2)">Mein Konto &amp; Sicherheit</a>.
         </p>
 
         <div style="border-top:1px solid var(--brd);padding-top:14px;margin-top:14px">
@@ -6371,6 +6416,45 @@ function cfgSection(id, btn){
   if(id==='mqtt')          { loadMqttConfig(); loadNotifChannels(); }
   if(id==='notif-rules')   { loadNotifRules(); }
   if(id==='notifications') { loadNotifSettings(); }
+  if(id==='kanaele')       { loadKanaeleStatus(); }
+}
+
+async function loadKanaeleStatus(){
+  try{
+    const cfg = await apiFetch('/api/config').then(r=>r.json());
+    // SMTP status
+    const smtpEl = $('kanaele_smtp_status');
+    if(smtpEl){
+      if(cfg.smtp_host && cfg.smtp_from_email){
+        smtpEl.innerHTML = `<span style="color:#6ee7b7">✅ Konfiguriert</span> · ${escapeHtml(cfg.smtp_host)} · <span style="color:var(--mute)">${escapeHtml(cfg.smtp_from_email)}</span>`;
+      } else {
+        smtpEl.innerHTML = '<span style="color:var(--mute)">— Nicht konfiguriert</span>';
+      }
+    }
+    // MQTT status
+    const mqttEl = $('kanaele_mqtt_status');
+    if(mqttEl){
+      if(cfg.mqtt_host){
+        const mqttEnabled = cfg.mqtt_enabled !== false;
+        mqttEl.innerHTML = `<span style="color:${mqttEnabled?'#6ee7b7':'#f59e0b'}">${mqttEnabled?'✅ Aktiv':'⚠️ Konfiguriert (deaktiviert)'}</span> · ${escapeHtml(cfg.mqtt_host)}:${cfg.mqtt_port||1883}`;
+      } else {
+        mqttEl.innerHTML = '<span style="color:var(--mute)">— Nicht konfiguriert</span>';
+      }
+    }
+    // Push status
+    const pushEl = $('kanaele_push_status');
+    if(pushEl){
+      const active = [];
+      if(cfg.notification_ha_enabled) active.push('🏠 Home Assistant');
+      if(cfg.notification_ntfy_enabled || cfg.ntfy_topic) active.push('📢 ntfy');
+      if(cfg.notification_gotify_enabled || cfg.gotify_server) active.push('📲 Gotify');
+      if(cfg.notification_telegram_enabled) active.push('✈️ Telegram');
+      pushEl.innerHTML = active.length
+        ? '<span style="color:#6ee7b7">Aktiv: </span>' + active.join(' · ')
+        : '<span style="color:var(--mute)">Kein Push-Kanal konfiguriert</span>';
+    }
+    applyPermissions();
+  } catch(e){ console.warn('loadKanaeleStatus', e); }
 }
 
 // ── SMTP ─────────────────────────────────────────────────────────────────────
