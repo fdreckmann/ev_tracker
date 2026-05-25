@@ -1,5 +1,19 @@
 # Changelog
 
+## v2.0.40 — 2026-05-25
+
+### Bugfix: "First User Setup" trotz vorhandenem Admin / Internal Error
+
+- **`_has_users()`** gibt keine `False` mehr zurück wenn die Datenbank nicht erreichbar ist — wirft stattdessen `RuntimeError`, damit DB-Fehler und "kein Benutzer" klar unterschieden werden
+- **`ensure_started_once()`** setzt `_started_once = True` nur noch nach erfolgreichem Startup; bei Fehler wird `_startup_error` gespeichert und erneut geworfen
+- **`check_auth()`** fängt Exceptions von `ensure_started_once()` und `_has_users()` separat ab und zeigt benutzerfreundliche Fehlerseite (`error.html`) statt Internal Server Error
+- **`setup_page()`** behandelt `sqlite3.OperationalError` zusätzlich zu `IntegrityError`
+- **`/api/health`** erweitert: `db_writable`, `users_table_exists`, `users_count`, `startup_error` — erlaubt Diagnose ohne Login
+- **`error.html`** — neue Fehlerseite mit Hinweisen zur Berechtigungsbehebung (Unraid / Docker)
+- **README** — Abschnitt „Fehlerbehebung" mit `chown`-Fix für Unraid und allgemeine Docker-Lösung
+
+---
+
 ## v2.0.37 — 2026-05-25
 
 ### Sichere Update-Anzeige (read-only)

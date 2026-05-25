@@ -223,13 +223,21 @@ def _get_secret_key() -> str:
 # ── User helpers ──────────────────────────────────────────────────────────────
 
 def _has_users() -> bool:
+    import sqlite3 as _sqlite3
+    con = None
     try:
         con = _get_db()
-        count = con.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-        close_db_if_owned(con)
-        return count > 0
+        row = con.execute("SELECT COUNT(*) AS c FROM users").fetchone()
+        return int(row["c"] if hasattr(row, "keys") else row[0]) > 0
+    except _sqlite3.OperationalError as e:
+        flask.current_app.logger.exception("Cannot check users table — DB not ready or not readable")
+        raise RuntimeError("Datenbank nicht bereit oder nicht lesbar") from e
     except Exception:
-        return False
+        flask.current_app.logger.exception("Cannot check users")
+        raise
+    finally:
+        if con is not None:
+            close_db_if_owned(con)
 
 
 def _get_user_by_email(email: str):

@@ -19,20 +19,67 @@ health_bp = Blueprint("health", __name__)
 @health_bp.route("/api/health")
 def api_health():
     """Public health check — no auth required."""
+    import os as _os
     db_ok = True
+    db_error = None
+    users_table_exists = False
+    users_count = None
+    db_writable = False
+    startup_error = None
+
+    # Check startup error from server module
+    try:
+        import server as _srv
+        _se = getattr(_srv, "_startup_error", None)
+        if _se is not None:
+            startup_error = str(_se)
+    except Exception:
+        pass
+
     try:
         _c = sqlite3.connect(DB_PATH)
+        _c.row_factory = sqlite3.Row
         _c.execute("SELECT 1")
+        # Check users table
+        tbl = _c.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
+        ).fetchone()
+        users_table_exists = tbl is not None
+        if users_table_exists:
+            row = _c.execute("SELECT COUNT(*) AS c FROM users").fetchone()
+            users_count = int(row["c"])
         _c.close()
-    except Exception:
+    except Exception as e:
         db_ok = False
+        db_error = str(e)
+
     data_ok = DATA_DIR.exists()
-    return jsonify({
-        "ok": db_ok and data_ok,
+
+    # Check /data writability
+    try:
+        _test = DATA_DIR / ".write_test"
+        _test.write_text("ok")
+        _test.unlink()
+        db_writable = True
+    except Exception:
+        db_writable = False
+
+    overall_ok = db_ok and data_ok and startup_error is None
+    result = {
+        "ok": overall_ok,
         "version": APP_VERSION,
         "db": "ok" if db_ok else "error",
         "data_dir": "ok" if data_ok else "error",
-    }), 200 if (db_ok and data_ok) else 503
+        "db_writable": db_writable,
+        "users_table_exists": users_table_exists,
+    }
+    if users_count is not None:
+        result["users_count"] = users_count
+    if db_error:
+        result["db_error"] = db_error
+    if startup_error:
+        result["startup_error"] = startup_error
+    return jsonify(result), 200 if overall_ok else 503
 
 
 @health_bp.route("/api/system/status")

@@ -228,6 +228,29 @@ docker run -d --name ev-tracker \
 
 ---
 
+## Fehlerbehebung
+
+### "First User Setup" erscheint obwohl Admin bereits existiert
+
+Der Container läuft als nicht-Root-Benutzer (UID 10001). Wenn das `/data`-Volume einem anderen Benutzer gehört, kann die Datenbank nicht gelesen werden — was fälschlicherweise als "kein Benutzer vorhanden" angezeigt wird.
+
+**Diagnose:** `/api/health` aufrufen — zeigt `db_error`, `db_writable` und `startup_error`.
+
+**Fix auf Unraid:**
+```bash
+chown -R 10001:100 /mnt/user/appdata/ev-tracker
+chmod -R u+rwX,g+rwX /mnt/user/appdata/ev-tracker
+```
+
+**Fix mit Docker Compose (allgemein):**
+```bash
+docker run --rm -v ev-tracker_data:/data alpine chown -R 10001:100 /data
+```
+
+Danach Container neu starten. Der Entrypoint korrigiert die Berechtigungen beim Start automatisch, sofern der Container Root-Zugriff hat.
+
+---
+
 ## Updates
 
 Updates erfolgen **ausschließlich über den Container-Daemon** — kein Docker Socket, kein In-App-Update.

@@ -146,7 +146,18 @@ def logout():
 
 @auth_bp.route("/setup", methods=["GET", "POST"])
 def setup_page():
-    if _has_users():
+    try:
+        users_exist = _has_users()
+    except Exception as e:
+        from flask import render_template as _rt
+        return _rt(
+            "error.html",
+            title="Datenbankfehler",
+            message="Die Datenbank konnte nicht geöffnet oder gelesen werden. "
+                    "Bitte Berechtigungen unter /data prüfen.",
+            hint=str(e),
+        ), 500
+    if users_exist:
         return redirect(url_for("main_routes.index"))
     error = None
     cfg = load_config()
@@ -178,6 +189,9 @@ def setup_page():
                 con.commit()
             except sqlite3.IntegrityError:
                 error = "E-Mail-Adresse bereits vorhanden"
+            except sqlite3.OperationalError as e:
+                log.exception("setup_page: DB error")
+                error = f"Datenbankfehler: {e}"
             finally:
                 close_db_if_owned(con)
             if not error:
