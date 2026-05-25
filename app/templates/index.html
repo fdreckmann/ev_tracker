@@ -803,6 +803,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <button class="cfg-nav-btn" onclick="cfgSection('benutzer',this)">👥 Benutzer</button>
       <button class="cfg-nav-btn" onclick="cfgSection('roles',this)" data-requires-permission="users:manage_permissions">🔐 Rollen &amp; Rechte</button>
       <button class="cfg-nav-btn" onclick="cfgSection('profil',this)">👤 Mein Profil</button>
+      <button class="cfg-nav-btn" onclick="cfgSection('version-info',this)">ℹ️ Version &amp; Update</button>
     </nav>
 
     <!-- ── Content ── -->
@@ -1998,6 +1999,61 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           <div id="backupCodeCount" style="font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-bottom:10px">—</div>
           <button class="btn-s" style="font-size:.78rem;padding:7px 14px" onclick="generateBackupCodes()">🔑 Neue Backup-Codes generieren</button>
         </div>
+      </div>
+
+      <!-- VERSION & UPDATE INFO -->
+      <div id="cfgsec-version-info" class="cfg-section" style="display:none">
+        <div class="cfg-sec-title">Version &amp; Update</div>
+
+        <!-- Current version -->
+        <div class="card" style="margin-bottom:14px">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <div>
+              <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Installiert</div>
+              <div style="font-size:1.2rem;font-weight:700;color:#64ffda">v{{ app_version }}</div>
+            </div>
+            <div id="updateStatusBadge" style="font-size:.75rem;font-family:var(--mono);color:var(--mute)">⏳ Prüfe…</div>
+          </div>
+        </div>
+
+        <!-- Remote info (populated by JS) -->
+        <div id="updateInfoPanel" style="display:none">
+          <div id="updateInfoAvailable" style="display:none;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:10px;padding:16px;margin-bottom:14px">
+            <div style="font-size:.82rem;color:#f59e0b;font-weight:600;margin-bottom:8px" id="uiTitle">—</div>
+            <div id="uiSummary"></div>
+            <div id="uiFixes"></div>
+            <div id="uiBreaking"></div>
+            <div id="uiMigration"></div>
+            <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(245,158,11,.2)">
+              <div style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-bottom:8px;font-weight:600">UPDATE DURCHFÜHREN</div>
+              <div id="uiInstructions" style="font-size:.78rem;font-family:var(--mono);color:var(--text);margin-bottom:10px"></div>
+              <div style="font-size:.72rem;color:var(--mute);font-style:italic;margin-bottom:10px">
+                Die App installiert keine Updates selbst. Updates erfolgen über Docker, Unraid, Portainer oder Watchtower.
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <a id="uiReleaseUrl" href="#" target="_blank" rel="noopener noreferrer"
+                  style="background:rgba(100,255,218,.12);color:#64ffda;border:1px solid rgba(100,255,218,.3);border-radius:8px;padding:7px 16px;font-size:.78rem;text-decoration:none;display:inline-block">
+                  📋 Release Notes öffnen
+                </a>
+              </div>
+            </div>
+          </div>
+
+          <div id="updateInfoCurrent" style="display:none;background:rgba(61,220,151,.06);border:1px solid rgba(61,220,151,.2);border-radius:10px;padding:14px;margin-bottom:14px">
+            <div style="font-size:.82rem;color:#3ddc97;font-weight:600">✅ EV Tracker ist aktuell</div>
+            <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-top:4px" id="uiCurrentDetail">—</div>
+            <div style="margin-top:10px">
+              <a id="uiReleaseUrlCurrent" href="#" target="_blank" rel="noopener noreferrer"
+                style="font-size:.75rem;color:var(--mute);text-decoration:none">📋 Release Notes</a>
+            </div>
+          </div>
+        </div>
+
+        <div id="updateInfoError" style="display:none;font-size:.78rem;font-family:var(--mono);color:var(--mute);padding:12px;background:var(--bg);border-radius:8px;border:1px solid var(--brd)">
+          ⚠ Update-Informationen konnten nicht geladen werden.
+        </div>
+
+        <button class="btn-s" style="font-size:.78rem;margin-top:8px" onclick="loadUpdateInfo(true)">🔄 Jetzt prüfen</button>
       </div>
       <!-- Backup Codes Modal -->
       <div id="backupCodesModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
@@ -4454,6 +4510,92 @@ function saveMissingChargeConfig(){
     }).catch(()=>{ document.getElementById('missingChargeCfgResult').textContent='❌ Netzwerkfehler'; });
 }
 
+// ── Update Info ───────────────────────────────────────────────────────────────
+
+var _updateInfoCache = null;
+
+async function loadUpdateInfo(force) {
+  if (_updateInfoCache && !force) return _updateInfoCache;
+  try {
+    const r = await apiFetch('/api/update-info').then(x=>x.json()).catch(()=>null);
+    if (!r) { _showUpdateError(); return null; }
+    _updateInfoCache = r;
+    _renderUpdateInfo(r);
+    return r;
+  } catch(e) {
+    _showUpdateError();
+    return null;
+  }
+}
+
+function _showUpdateError() {
+  const badge = document.getElementById('updateStatusBadge');
+  const panel = document.getElementById('updateInfoPanel');
+  const errEl = document.getElementById('updateInfoError');
+  if (badge) badge.textContent = '⚠ Nicht erreichbar';
+  if (panel) panel.style.display = 'none';
+  if (errEl) errEl.style.display = '';
+}
+
+function _renderUpdateInfo(r) {
+  const badge = document.getElementById('updateStatusBadge');
+  const panel = document.getElementById('updateInfoPanel');
+  const errEl = document.getElementById('updateInfoError');
+  const avail = document.getElementById('updateInfoAvailable');
+  const curr  = document.getElementById('updateInfoCurrent');
+
+  if (errEl) errEl.style.display = 'none';
+  if (panel) panel.style.display = '';
+
+  if (!r.ok) {
+    if (badge) badge.textContent = '⚠ Prüfung fehlgeschlagen';
+    if (panel) panel.style.display = 'none';
+    if (errEl) errEl.style.display = '';
+    return;
+  }
+
+  if (r.update_available) {
+    if (badge) badge.innerHTML = '<span style="color:#f59e0b">⬆ Update: v'+escapeHtml(r.current_version)+' → v'+escapeHtml(r.latest_version)+'</span>';
+    if (avail) avail.style.display = '';
+    if (curr)  curr.style.display  = 'none';
+    // Title
+    const title = document.getElementById('uiTitle');
+    if (title) title.textContent = 'v'+r.latest_version+': '+(r.title||'');
+    // Summary
+    _renderList('uiSummary', r.summary, '✨', '#64ffda', 'Was ist neu');
+    _renderList('uiFixes',   r.fixes,   '🔧', '#a78bfa', 'Bugfixes');
+    _renderList('uiBreaking', r.breaking_changes, '⚠️', '#ef4444', 'Breaking Changes');
+    _renderList('uiMigration', r.migration_notes, 'ℹ️', '#94a3b8', 'Migration');
+    // Instructions
+    const instr = document.getElementById('uiInstructions');
+    if (instr && r.update_instructions && r.update_instructions.length) {
+      instr.innerHTML = r.update_instructions.map(function(l){
+        return '<div style="margin-bottom:3px">› <code style="background:var(--bg);padding:1px 4px;border-radius:3px">'+escapeHtml(l)+'</code></div>';
+      }).join('');
+    }
+    // Release URL
+    const ru = document.getElementById('uiReleaseUrl');
+    if (ru && r.release_url) { ru.href = r.release_url; ru.style.display=''; }
+  } else {
+    if (badge) badge.innerHTML = '<span style="color:#3ddc97">✅ Aktuell (v'+escapeHtml(r.current_version)+')</span>';
+    if (avail) avail.style.display = 'none';
+    if (curr)  curr.style.display  = '';
+    const det = document.getElementById('uiCurrentDetail');
+    if (det) det.textContent = 'Neueste Version: v'+(r.latest_version||r.current_version) + (r.release_date ? ' · '+r.release_date : '');
+    const ru2 = document.getElementById('uiReleaseUrlCurrent');
+    if (ru2 && r.release_url) { ru2.href = r.release_url; }
+  }
+}
+
+function _renderList(elId, items, icon, color, title) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (!items || !items.length) { el.innerHTML=''; return; }
+  el.innerHTML = '<div style="margin-top:10px"><div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;margin-bottom:6px">'+escapeHtml(title)+'</div>'
+    + items.map(function(x){ return '<div style="font-size:.78rem;color:'+color+';margin-bottom:3px">'+icon+' '+escapeHtml(x)+'</div>'; }).join('')
+    + '</div>';
+}
+
 // auto-check on load (silent)
 setTimeout(async ()=>{
   // Show logout button if auth active
@@ -4461,7 +4603,9 @@ setTimeout(async ()=>{
     const a=await fetch('/api/auth/status').then(r=>r.json());
     if(a.auth_enabled) $('navLogout').style.display='';
   }catch(e){}
-}, 1000);
+  // Load update info silently for badge
+  loadUpdateInfo(false);
+}, 1500);
 
 // Show/hide nav items based on role
 (async function(){

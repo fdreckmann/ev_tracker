@@ -26,12 +26,14 @@ from routes.email_reports import email_reports_bp
 from routes.main_routes import main_routes_bp
 from routes.auth import auth_bp
 from routes.missing_charges import missing_charges_bp
+from routes.update import update_bp
 
 
 def register_blueprints(app):
     """Register all route blueprints on the Flask app."""
     app.register_blueprint(auth_bp)
     app.register_blueprint(missing_charges_bp)
+    app.register_blueprint(update_bp)
     app.register_blueprint(main_routes_bp)
     app.register_blueprint(health_bp)
     app.register_blueprint(vehicles_bp)

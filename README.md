@@ -4,7 +4,7 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 
 ![Docker Hub](https://img.shields.io/docker/pulls/19121412/ev-tracker)
 ![GitHub Actions](https://github.com/fdreckmann/ev_tracker/actions/workflows/docker-build.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-2.0.36-blue)
+![Version](https://img.shields.io/badge/version-2.0.37-blue)
 
 ---
 
@@ -51,7 +51,7 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 | 📱 Mobile App | PWA-fähig, Bottom-Navigation, Cards, Bottom Sheets, installierbar |
 | 🔔 Push | Benachrichtigungen via Home Assistant notify, ntfy, Gotify |
 | 💾 Backup | Manuell + automatisch per Cron-Zeitplan |
-| ⬆ Auto-Update | Update direkt im Web UI — Latest, Nightly oder Dev Kanal |
+| ⬆ Update-Check | Verfügbare Updates werden angezeigt; Update via Docker-Pull (kein In-App-Update) |
 | 👥 Multi-User | Mehrere Benutzer mit Rollen und granularen Berechtigungen |
 | 🔐 Auth | E-Mail/Passwort, TOTP 2FA, Google/Microsoft OAuth, Passkeys (FIDO2) |
 | 🚗 Mehrfahrzeuge | Beliebig viele Fahrzeuge parallel tracken |
@@ -313,63 +313,4 @@ docker run -d --name ev-tracker -p 8054:8080 \
 
 ## Changelog
 
-### v2.0.36
-- **Fehlende Ladevorgänge automatisch erkennen**
-  - Nach jedem Provider-Poll wird ein Fahrzeug-Snapshot gespeichert (SOC, Kilometerstand, Standort)
-  - Wenn das Fahrzeug offline war und SOC danach gestiegen ist (oder nicht genug gefallen bei gefahrener Strecke), wird ein Kandidat erstellt
-  - Energieschätzung: SOC-Delta × Batteriekapazität + Fahrverbrauch (konfigurierbar, default 18 kWh/100 km)
-  - Vorschläge enthalten: Zeitraum, SOC Start/Ende, km, geschätzte kWh, Standort-Vorschlag, Ladetyp-Vorschlag, Konfidenz
-  - Konfidenz-Score: 50 %–95 % je nach verfügbaren Daten
-  - Plausibilitätsregeln: min. SOC-Anstieg 3 %, min. 2 kWh, min. 30 min Lücke, keine bestehende Session im Zeitraum
-  - Doppelte Vorschläge werden verhindert (gleiche Snapshot-IDs oder ignorierter Zeitraum)
-- **API-Endpunkte**
-  - `GET /api/missing-charges` — offene Vorschläge
-  - `GET /api/missing-charges/<id>` — Vorschlag-Detail
-  - `POST /api/missing-charges/<id>/accept` — akzeptieren + Vorausfüll-Daten zurückgeben
-  - `POST /api/missing-charges/<id>/dismiss` — einmalig ignorieren
-  - `POST /api/missing-charges/<id>/ignore` — dauerhaft ignorieren (gleicher Zeitraum wird nicht erneut vorgeschlagen)
-  - `POST /api/missing-charges/check` — manuelle Neuberechnung
-- **Desktop-UI**
-  - Dashboard-Hinweiskarte wenn offene Kandidaten vorhanden
-  - Sektion „Mögliche fehlende Ladevorgänge" im Ladevorgänge-Tab
-  - „Übernehmen" öffnet den manuellen Ladevorgang-Dialog vorausgefüllt
-  - Konfig-Sektion unter Konfiguration → Fehlende Ladevorg.
-- **Mobile-UI**
-  - Kompakter Hinweis im Mobile-Dashboard mit „Übernehmen" / „Ignorieren"
-- **Neue DB-Tabellen**: `vehicle_snapshots`, `missing_charge_candidates`
-- **Neue Permissions**: `missing_charges:view`, `missing_charges:manage`
-- **Konfigurierbar**: Mindest-Lücke, SOC-Schwelle, kWh-Schwelle, Verbrauch kWh/100 km, Batterie kWh pro Fahrzeug
-
-### v2.0.35
-- **Security-Hardening**
-  - Docker-Socket-Mount und In-App-Update vollständig entfernt (keine Angriffsfläche mehr)
-  - Passwort-Hashing auf PBKDF2:SHA-256 (werkzeug) migriert; Legacy-SHA-256-Hashes werden beim Login transparent upgradet
-  - `require_login` invalidiert deaktivierte Benutzer-Sessions sofort
-  - Neue `EV_TRACKER_EXPOSURE=external` Umgebungsvariable: aktiviert ProxyFix, `Secure`-Cookies, HSTS, `X-Frame-Options: DENY`
-  - Sicherheitsheader (`X-Content-Type-Options`, `X-Frame-Options`) immer gesetzt
-  - Fahrzeug-Credentials (Tokens, Passwörter) werden in API-Antworten maskiert (`********`)
-  - `escapeHtml()` in api.js; XSS-Fixes in Sessions-Modal und Toast-Notifications
-- **Bugfixes**
-  - Billing-Config `SELECT id` → `SELECT vehicle_id` (Tabelle hat keinen `id`-Spalte)
-  - Neue Fahrzeug-IDs als UUID statt Unix-Timestamp
-  - `refresh_vehicle_location_state()` unterstützt `force=True` zum Umgehen des 30 s-TTL-Cache
-- **Container-Hardening** (`docker-compose.yml`)
-  - `no-new-privileges:true`, `cap_drop: ALL`
-
-### v2.0.34
-- **Manuelles Hinzufügen von Ladevorgängen** (Desktop + Mobile)
-  - Neuer Dialog mit allen relevanten Feldern: Fahrzeug, Start/Ende, Standort, AC/DC, kWh, Preis/kWh, Kosten, Zählerstände, SOC Start/Ende, KM-Stand, Wallbox-kW, Notiz, Grund
-  - Auto-Berechnung: kWh aus Zählerständen, Kosten aus kWh × Preis, Ø-Leistung aus Dauer + kWh
-  - Überschneidungsprüfung mit Warnung und „Trotzdem speichern"-Option
-  - Manuell erfasste Sessions im Export, Reports und Dashboard vollständig sichtbar
-  - Badge „✏ Manuell" in der Session-Liste; Detailansicht zeigt Quelle, Grund und Notiz
-  - `PATCH /api/sessions/<id>` auf alle Felder erweitert (SOC, KM, Standort, Ladeart, Zähler, Notiz)
-  - Neue DB-Spalten: `manual_note`, `manual_reason`, `created_mode`
-- **Standorterkennung Bugfixes**
-  - `device_tracker`-Entities in HA: `not_home`/Zonen-Namen werden korrekt als „Extern" erkannt
-  - `location_ha_entities` als String konfiguriert (Legacy-Format) wird jetzt korrekt als Liste geparst
-  - Dashboard-Standort-Kachel zeigt „Deaktiviert" statt „—" wenn Standorterkennung abgeschaltet ist
-  - Nach Standort-Test wird TTL-Cache sofort aktualisiert (kein 30 s-Delay bis Dashboard übernimmt)
-- **Mobile Bugfixes**
-  - Monatsstatistik nutzt korrektes Datumsfeld (`start_ts`) — vorher immer 0 Sessions
-  - Letzte 3 Ladevorgänge in korrekter Reihenfolge (neueste zuerst)
+Alle Versionen und Änderungen: **[CHANGELOG.md](CHANGELOG.md)**
