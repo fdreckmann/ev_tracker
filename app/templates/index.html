@@ -655,8 +655,25 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   <button onclick="tab('config',this)">Konfiguration</button>
   <button onclick="tab('export',this)">Export</button>
   <button onclick="tab('backup',this)">Backup</button>
-  <a href="/logout" id="navLogout" style="display:none;margin-left:auto;padding:8px 14px;font-size:.78rem;color:var(--mute);text-decoration:none;border-radius:8px;border:1px solid var(--brd)" title="">Abmelden</a>
+  <button id="notifBellBtn" onclick="toggleNotifCenter()" style="margin-left:auto;position:relative;background:none;border:none;cursor:pointer;padding:6px 10px;font-size:1.1rem" title="Benachrichtigungen">
+    🔔 <span id="notifBadge" style="display:none;position:absolute;top:2px;right:4px;background:#ef4444;color:#fff;border-radius:50%;font-size:.6rem;min-width:16px;height:16px;line-height:16px;text-align:center;font-weight:700">0</span>
+  </button>
+  <a href="/logout" id="navLogout" style="display:none;padding:8px 14px;font-size:.78rem;color:var(--mute);text-decoration:none;border-radius:8px;border:1px solid var(--brd)" title="">Abmelden</a>
 </nav>
+
+<!-- Notification Center Panel -->
+<div id="notifCenter" style="display:none;position:fixed;top:52px;right:12px;width:360px;max-height:70vh;overflow-y:auto;background:var(--card);border:1px solid var(--brd);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.4);z-index:1000;padding:0">
+  <div style="padding:14px 16px;border-bottom:1px solid var(--brd);display:flex;align-items:center;justify-content:space-between">
+    <span style="font-weight:700;font-size:.9rem">🔔 Benachrichtigungen</span>
+    <div style="display:flex;gap:8px">
+      <button onclick="markAllNotifsRead()" class="btn-s" style="font-size:.7rem;padding:3px 8px">Alle gelesen</button>
+      <button onclick="toggleNotifCenter()" style="background:none;border:none;cursor:pointer;color:var(--mute);font-size:1.1rem">✕</button>
+    </div>
+  </div>
+  <div id="notifCenterBody" style="padding:10px">
+    <span style="color:var(--mute);font-size:.8rem">Lade…</span>
+  </div>
+</div>
 
 <!-- ══════════════════════════════════════════════════════
      DASHBOARD
@@ -784,7 +801,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <button class="cfg-nav-btn" onclick="cfgSection('verbindung',this)">🔌 Verbindung</button>
       <button class="cfg-nav-btn" onclick="cfgSection('preise',this)">💰 Preismodell</button>
       <button class="cfg-nav-btn" onclick="cfgSection('zaehler',this)">⚡ Zählerstand</button>
-      <button class="cfg-nav-btn" onclick="cfgSection('notify',this)">🔔 Benachrichtigungen</button>
+      <button class="cfg-nav-btn" onclick="cfgSection('notifications',this)" data-requires-permission="notifications:view">🔔 Benachrichtigungen</button>
       <button class="cfg-nav-btn" onclick="cfgSection('missing-charges-cfg',this)">🔍 Fehlende Ladevorg.</button>
       <div style="height:1px;background:var(--brd);margin:8px 4px"></div>
       <button class="cfg-nav-btn" onclick="cfgSection('smtp',this)">📧 SMTP</button>
@@ -1660,6 +1677,180 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <div class="btn-row">
           <button class="btn-p" onclick="saveConfig()">💾 Speichern</button>
         </div>
+      </div>
+
+      <!-- BENACHRICHTIGUNGEN (zentral) -->
+      <div id="cfgsec-notifications" class="cfg-section" style="display:none">
+        <div class="cfg-sec-title">Benachrichtigungen</div>
+
+        <!-- HA Notify -->
+        <div class="card" style="margin-bottom:14px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div class="card-title" style="margin:0">🏠 Home Assistant Notify</div>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="n_ha_enabled" onchange="saveNotifSettings()">
+              <span style="font-size:.8rem">Aktiv</span>
+            </label>
+          </div>
+          <div class="form-grid">
+            <div class="fg full"><label>Notify Service</label>
+              <input type="text" id="n_ha_service" placeholder="notify.mobile_app_mein_iphone" oninput="debounceSaveNotifSettings()">
+              <span class="hint">Vollständiger Service-Name aus HA, z.B. notify.mobile_app_pixel_7_pro</span></div>
+            <div class="fg full"><label>Target (optional)</label>
+              <input type="text" id="n_ha_target" placeholder="Optional: Zielgerät" oninput="debounceSaveNotifSettings()"></div>
+          </div>
+          <div class="btn-row">
+            <button class="btn-g" onclick="testNotifChannel('ha')">🧪 Test senden</button>
+          </div>
+        </div>
+
+        <!-- ntfy -->
+        <div class="card" style="margin-bottom:14px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div class="card-title" style="margin:0">📢 ntfy</div>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="n_ntfy_enabled" onchange="saveNotifSettings()">
+              <span style="font-size:.8rem">Aktiv</span>
+            </label>
+          </div>
+          <div class="form-grid">
+            <div class="fg"><label>Server URL</label>
+              <input type="text" id="n_ntfy_url" placeholder="https://ntfy.sh" oninput="debounceSaveNotifSettings()"></div>
+            <div class="fg"><label>Topic</label>
+              <input type="text" id="n_ntfy_topic" placeholder="ev-tracker-alerts" oninput="debounceSaveNotifSettings()"></div>
+            <div class="fg full"><label>Token (optional, für private Topics)</label>
+              <input type="password" id="n_ntfy_token" placeholder="•••• (unverändert lassen)" oninput="debounceSaveNotifSettings()"></div>
+          </div>
+          <div class="btn-row">
+            <button class="btn-g" onclick="testNotifChannel('ntfy')">🧪 Test senden</button>
+          </div>
+        </div>
+
+        <!-- Telegram -->
+        <div class="card" style="margin-bottom:14px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div class="card-title" style="margin:0">✈️ Telegram</div>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="n_tg_enabled" onchange="saveNotifSettings()">
+              <span style="font-size:.8rem">Aktiv</span>
+            </label>
+          </div>
+          <div class="form-grid">
+            <div class="fg full"><label>Bot Token</label>
+              <input type="password" id="n_tg_token" placeholder="•••• (unverändert lassen)" oninput="debounceSaveNotifSettings()"></div>
+            <div class="fg full"><label>Chat ID</label>
+              <input type="text" id="n_tg_chat_id" placeholder="123456789" oninput="debounceSaveNotifSettings()"></div>
+          </div>
+          <div class="btn-row">
+            <button class="btn-g" onclick="testNotifChannel('telegram')">🧪 Test senden</button>
+          </div>
+        </div>
+
+        <!-- Gotify -->
+        <div class="card" style="margin-bottom:14px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div class="card-title" style="margin:0">🔔 Gotify</div>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="n_gotify_enabled" onchange="saveNotifSettings()">
+              <span style="font-size:.8rem">Aktiv</span>
+            </label>
+          </div>
+          <div class="form-grid">
+            <div class="fg"><label>Server URL</label>
+              <input type="text" id="n_gotify_url" placeholder="https://gotify.example.com" oninput="debounceSaveNotifSettings()"></div>
+            <div class="fg"><label>App Token</label>
+              <input type="password" id="n_gotify_token" placeholder="•••• (unverändert lassen)" oninput="debounceSaveNotifSettings()"></div>
+          </div>
+          <div class="btn-row">
+            <button class="btn-g" onclick="testNotifChannel('gotify')">🧪 Test senden</button>
+          </div>
+        </div>
+
+        <!-- E-Mail -->
+        <div class="card" style="margin-bottom:14px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div class="card-title" style="margin:0">📧 E-Mail</div>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="n_email_enabled" onchange="saveNotifSettings()">
+              <span style="font-size:.8rem">Aktiv</span>
+            </label>
+          </div>
+          <div class="form-grid">
+            <div class="fg full"><label>Empfänger-Adresse</label>
+              <input type="email" id="n_email_to" placeholder="admin@example.com" oninput="debounceSaveNotifSettings()">
+              <span class="hint">SMTP-Konfiguration unter „SMTP E-Mail"</span></div>
+          </div>
+          <div class="btn-row">
+            <button class="btn-g" onclick="testNotifChannel('email')">🧪 Test senden</button>
+          </div>
+        </div>
+
+        <!-- Quiet Hours -->
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-title">🌙 Ruhezeiten</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="n_quiet_enabled" onchange="saveNotifSettings()">
+              <span style="font-size:.82rem">Ruhezeiten aktiv</span>
+            </label>
+          </div>
+          <div class="form-grid">
+            <div class="fg"><label>Von</label>
+              <input type="time" id="n_quiet_start" value="22:00" oninput="debounceSaveNotifSettings()"></div>
+            <div class="fg"><label>Bis</label>
+              <input type="time" id="n_quiet_end" value="07:00" oninput="debounceSaveNotifSettings()"></div>
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.82rem;margin-top:10px">
+            <input type="checkbox" id="n_quiet_allow_critical" onchange="saveNotifSettings()">
+            <span>Kritische Meldungen trotzdem senden</span>
+          </label>
+        </div>
+
+        <!-- Spam protection -->
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-title">🛡️ Spam-Schutz</div>
+          <div class="form-grid">
+            <div class="fg"><label>Mindest-Schwere</label>
+              <select id="n_min_severity" onchange="saveNotifSettings()">
+                <option value="info">Info (alle)</option>
+                <option value="warning">Warnung und höher</option>
+                <option value="critical">Nur kritisch</option>
+              </select></div>
+            <div class="fg"><label>Dedupe-Fenster (Stunden)</label>
+              <input type="number" id="n_dedupe_hours" min="0" max="168" placeholder="6" oninput="debounceSaveNotifSettings()"></div>
+            <div class="fg full"><label>Max. Pushes pro Stunde</label>
+              <input type="number" id="n_rate_limit" min="1" max="100" placeholder="20" oninput="debounceSaveNotifSettings()"></div>
+          </div>
+        </div>
+
+        <!-- Per-event toggles -->
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-title">🎛️ Ereignis-Typen</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:.82rem">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="n_ev_charging_started" onchange="saveNotifSettings()"> Ladevorgang gestartet</label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="n_ev_charging_stopped" onchange="saveNotifSettings()"> Ladevorgang beendet</label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="n_ev_charging_interrupted" onchange="saveNotifSettings()"> Ladeabbruch erkannt</label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="n_ev_missing_charge" onchange="saveNotifSettings()"> Fehlende Ladung erkannt</label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="n_ev_update_available" onchange="saveNotifSettings()"> Update verfügbar</label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="n_ev_provider_offline" onchange="saveNotifSettings()"> Provider offline</label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="n_ev_auth_expired" onchange="saveNotifSettings()"> Auth abgelaufen</label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="n_ev_backup_failed" onchange="saveNotifSettings()"> Backup fehlgeschlagen</label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="n_ev_backup_success" onchange="saveNotifSettings()"> Backup erfolgreich</label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input type="checkbox" id="n_ev_security" onchange="saveNotifSettings()"> Sicherheitswarnungen</label>
+          </div>
+        </div>
+
+        <div id="notifSettingsResult" style="margin-top:8px;font-size:.78rem;font-family:var(--mono);color:var(--mute)"></div>
       </div>
 
       <!-- SMTP -->
@@ -4605,6 +4796,9 @@ setTimeout(async ()=>{
   }catch(e){}
   // Load update info silently for badge
   loadUpdateInfo(false);
+  // Poll notification badge
+  pollNotifBadge();
+  setInterval(pollNotifBadge, 60000);
 }, 1500);
 
 // Show/hide nav items based on role
@@ -5811,6 +6005,7 @@ function cfgSection(id, btn){
   if(id==='api-tokens')    { loadApiTokens(); renderApiTokenScopeCheckboxes(); }
   if(id==='mqtt')          { loadMqttConfig(); loadNotifChannels(); }
   if(id==='notif-rules')   { loadNotifRules(); }
+  if(id==='notifications') { loadNotifSettings(); }
 }
 
 // ── SMTP ─────────────────────────────────────────────────────────────────────
@@ -6906,6 +7101,189 @@ async function saveUserRoles() {
   } finally {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Speichern'; }
   }
+}
+
+// ── Notification Center ───────────────────────────────────────────────────────
+var _notifCenterOpen = false;
+var _notifDebounce = null;
+
+function toggleNotifCenter() {
+  _notifCenterOpen = !_notifCenterOpen;
+  $('notifCenter').style.display = _notifCenterOpen ? 'block' : 'none';
+  if (_notifCenterOpen) loadNotifCenter();
+}
+
+function loadNotifCenter() {
+  apiFetch('/api/notifications?limit=30').then(r=>r.json()).then(function(d) {
+    updateNotifBadge(d.unread_count || 0);
+    var html = '';
+    var items = d.notifications || [];
+    if (!items.length) {
+      html = '<p style="color:var(--mute);font-size:.8rem;text-align:center;padding:20px">Keine Benachrichtigungen</p>';
+    } else {
+      items.forEach(function(n) {
+        var bg = n.is_read ? 'transparent' : 'rgba(99,102,241,.08)';
+        var sev = n.severity === 'critical' ? '#ef4444' : n.severity === 'warning' ? '#f59e0b' : '#6366f1';
+        var icon = n.severity === 'critical' ? '🔴' : n.severity === 'warning' ? '🟡' : '🔵';
+        html += '<div style="background:' + bg + ';border-left:3px solid ' + sev + ';border-radius:6px;padding:10px 12px;margin-bottom:8px;cursor:pointer" onclick="markNotifRead(' + n.id + ',this)">';
+        html += '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">';
+        html += '<div style="flex:1"><div style="font-size:.8rem;font-weight:600;margin-bottom:3px">' + icon + ' ' + escapeHtml(n.title) + '</div>';
+        html += '<div style="font-size:.73rem;color:var(--mute)">' + escapeHtml(n.message || '') + '</div>';
+        html += '<div style="font-size:.65rem;color:var(--mute);margin-top:4px">' + (n.created_at || '').replace('T',' ').slice(0,16) + '</div></div>';
+        html += '<button onclick="dismissNotif(' + n.id + ',event)" style="background:none;border:none;cursor:pointer;color:var(--mute);font-size:.9rem;padding:0 2px" title="Schließen">✕</button>';
+        html += '</div></div>';
+      });
+    }
+    $('notifCenterBody').innerHTML = html;
+  }).catch(function() {
+    $('notifCenterBody').innerHTML = '<p style="color:var(--mute);font-size:.8rem">Fehler beim Laden</p>';
+  });
+}
+
+function updateNotifBadge(count) {
+  var badge = $('notifBadge');
+  if (!badge) return;
+  if (count > 0) {
+    badge.style.display = 'inline-block';
+    badge.textContent = count > 99 ? '99+' : count;
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function markNotifRead(id, el) {
+  apiFetch('/api/notifications/' + id + '/read', {method:'POST'});
+  if (el) el.style.background = 'transparent';
+}
+
+function dismissNotif(id, ev) {
+  if (ev) ev.stopPropagation();
+  apiFetch('/api/notifications/' + id + '/dismiss', {method:'POST'}).then(function() {
+    loadNotifCenter();
+  });
+}
+
+function markAllNotifsRead() {
+  apiFetch('/api/notifications/read-all', {method:'POST'}).then(function() {
+    loadNotifCenter();
+    updateNotifBadge(0);
+  });
+}
+
+function pollNotifBadge() {
+  apiFetch('/api/notifications?limit=1').then(r=>r.json()).then(function(d) {
+    updateNotifBadge(d.unread_count || 0);
+  }).catch(function(){});
+}
+
+// Close notif center when clicking outside
+document.addEventListener('click', function(e) {
+  var center = $('notifCenter');
+  var bell = $('notifBellBtn');
+  if (_notifCenterOpen && center && bell && !center.contains(e.target) && !bell.contains(e.target)) {
+    _notifCenterOpen = false;
+    center.style.display = 'none';
+  }
+});
+
+// ── Notification Settings ─────────────────────────────────────────────────────
+function loadNotifSettings() {
+  apiFetch('/api/notifications/settings').then(r=>r.json()).then(function(s) {
+    function setChk(id, val) { var el=$(id); if(el) el.checked = !!val; }
+    function setVal(id, val) { var el=$(id); if(el) el.value = val || ''; }
+    setChk('n_ha_enabled',    s.notification_ha_enabled);
+    setVal('n_ha_service',    s.notification_ha_service || s.notify_service);
+    setVal('n_ha_target',     s.notification_ha_target);
+    setChk('n_ntfy_enabled',  s.notification_ntfy_enabled);
+    setVal('n_ntfy_url',      s.notification_ntfy_url || 'https://ntfy.sh');
+    setVal('n_ntfy_topic',    s.notification_ntfy_topic);
+    setVal('n_ntfy_token',    s.notification_ntfy_token || '');
+    setChk('n_tg_enabled',    s.notification_telegram_enabled);
+    setVal('n_tg_token',      s.notification_telegram_bot_token || '');
+    setVal('n_tg_chat_id',    s.notification_telegram_chat_id);
+    setChk('n_gotify_enabled', s.notification_gotify_enabled);
+    setVal('n_gotify_url',    s.notification_gotify_url);
+    setVal('n_gotify_token',  s.notification_gotify_token || '');
+    setChk('n_email_enabled', s.notification_email_enabled);
+    setVal('n_email_to',      s.notification_email_to);
+    setChk('n_quiet_enabled', s.notification_quiet_hours_enabled);
+    setVal('n_quiet_start',   s.notification_quiet_hours_start || '22:00');
+    setVal('n_quiet_end',     s.notification_quiet_hours_end || '07:00');
+    setChk('n_quiet_allow_critical', s.notification_quiet_hours_allow_critical !== false);
+    setVal('n_min_severity',  s.notification_min_severity || 'info');
+    setVal('n_dedupe_hours',  s.notification_dedupe_window_hours != null ? s.notification_dedupe_window_hours : 6);
+    setVal('n_rate_limit',    s.notification_rate_limit_per_hour != null ? s.notification_rate_limit_per_hour : 20);
+    setChk('n_ev_charging_started',    s.notification_event_charging_started !== false);
+    setChk('n_ev_charging_stopped',    s.notification_event_charging_stopped !== false);
+    setChk('n_ev_charging_interrupted',s.notification_event_charging_interrupted !== false);
+    setChk('n_ev_missing_charge',      s.notification_event_missing_charge_candidate_created !== false);
+    setChk('n_ev_update_available',    s.notification_event_update_available_new !== false);
+    setChk('n_ev_provider_offline',    s.notification_event_provider_offline !== false);
+    setChk('n_ev_auth_expired',        s.notification_event_provider_auth_expired !== false);
+    setChk('n_ev_backup_failed',       s.notification_event_backup_failed_alert !== false);
+    setChk('n_ev_backup_success',      !!s.notification_event_backup_success_alert);
+    setChk('n_ev_security',            s.notification_event_security_login_failed_many !== false);
+  });
+}
+
+function saveNotifSettings() {
+  function chk(id) { var el=$(id); return el ? el.checked : false; }
+  function val(id) { var el=$(id); return el ? el.value : ''; }
+  var payload = {
+    notification_ha_enabled:             chk('n_ha_enabled'),
+    notification_ha_service:             val('n_ha_service'),
+    notification_ha_target:              val('n_ha_target'),
+    notification_ntfy_enabled:           chk('n_ntfy_enabled'),
+    notification_ntfy_url:               val('n_ntfy_url') || 'https://ntfy.sh',
+    notification_ntfy_topic:             val('n_ntfy_topic'),
+    notification_ntfy_token:             val('n_ntfy_token') || '********',
+    notification_gotify_enabled:         chk('n_gotify_enabled'),
+    notification_gotify_url:             val('n_gotify_url'),
+    notification_gotify_token:           val('n_gotify_token') || '********',
+    notification_telegram_enabled:       chk('n_tg_enabled'),
+    notification_telegram_bot_token:     val('n_tg_token') || '********',
+    notification_telegram_chat_id:       val('n_tg_chat_id'),
+    notification_email_enabled:          chk('n_email_enabled'),
+    notification_email_to:               val('n_email_to'),
+    notification_quiet_hours_enabled:    chk('n_quiet_enabled'),
+    notification_quiet_hours_start:      val('n_quiet_start') || '22:00',
+    notification_quiet_hours_end:        val('n_quiet_end') || '07:00',
+    notification_quiet_hours_allow_critical: chk('n_quiet_allow_critical'),
+    notification_min_severity:           val('n_min_severity') || 'info',
+    notification_dedupe_window_hours:    parseFloat(val('n_dedupe_hours')) || 6,
+    notification_rate_limit_per_hour:    parseInt(val('n_rate_limit')) || 20,
+    notification_event_charging_started:             chk('n_ev_charging_started'),
+    notification_event_charging_stopped:             chk('n_ev_charging_stopped'),
+    notification_event_charging_interrupted:         chk('n_ev_charging_interrupted'),
+    notification_event_missing_charge_candidate_created: chk('n_ev_missing_charge'),
+    notification_event_update_available_new:         chk('n_ev_update_available'),
+    notification_event_provider_offline:             chk('n_ev_provider_offline'),
+    notification_event_provider_auth_expired:        chk('n_ev_auth_expired'),
+    notification_event_backup_failed_alert:          chk('n_ev_backup_failed'),
+    notification_event_backup_success_alert:         chk('n_ev_backup_success'),
+    notification_event_security_login_failed_many:   chk('n_ev_security'),
+  };
+  apiFetch('/api/notifications/settings', {method:'POST', body: JSON.stringify(payload)})
+    .then(r=>r.json()).then(function(d) {
+      var el = $('notifSettingsResult');
+      if (el) { el.textContent = d.ok ? '✅ Gespeichert' : '❌ Fehler'; setTimeout(function(){el.textContent='';},2500); }
+    });
+}
+
+var _notifSaveTimeout = null;
+function debounceSaveNotifSettings() {
+  clearTimeout(_notifSaveTimeout);
+  _notifSaveTimeout = setTimeout(saveNotifSettings, 800);
+}
+
+function testNotifChannel(channel) {
+  toast('Sende Testbenachrichtigung über ' + channel + '…', 'ok');
+  apiFetch('/api/notifications/test', {
+    method:'POST',
+    body: JSON.stringify({channel: channel, message: 'Test'})
+  }).then(r=>r.json()).then(function(d) {
+    toast(d.ok ? ('✅ ' + (d.message||'Gesendet')) : ('❌ ' + (d.message||'Fehler')), d.ok ? 'ok' : 'err');
+  }).catch(function(){ toast('❌ Netzwerkfehler', 'err'); });
 }
 </script>
 

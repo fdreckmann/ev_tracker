@@ -41,8 +41,22 @@ def api_backup_create():
         return jsonify({"error": "Keine Berechtigung: backup:create"}), 403
     try:
         out = create_backup("manual")
+        try:
+            from services.notification_service import notify
+            notify(type="backup_success_alert", severity="info",
+                   title="Backup erfolgreich",
+                   message=f"Backup wurde erstellt: {out.name}")
+        except Exception:
+            pass
         return jsonify({"ok": True, "name": out.name, "size": out.stat().st_size})
     except Exception as e:
+        try:
+            from services.notification_service import notify
+            notify(type="backup_failed_alert", severity="warning",
+                   title="Backup fehlgeschlagen",
+                   message=str(e))
+        except Exception:
+            pass
         return jsonify({"ok": False, "error": str(e)})
 
 

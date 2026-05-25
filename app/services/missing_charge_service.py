@@ -229,4 +229,23 @@ def check_for_missing_charge(vehicle_id: str, new_snap_id: int, cfg: dict, con) 
     except Exception:
         pass
 
+    try:
+        from services.notification_service import notify
+        st_label = prev_ts[:16] if prev_ts else "?"
+        en_label = new_ts[:16] if new_ts else "?"
+        notify(
+            type="missing_charge_candidate_created",
+            severity="warning",
+            title="Möglicher fehlender Ladevorgang erkannt",
+            message=f"Das Fahrzeug war von {st_label} bis {en_label} offline. SOC stieg von {prev_soc:.0f}% auf {new_soc:.0f}%. Geschätzte Ladung: {estimated_kwh:.1f} kWh.",
+            vehicle_id=vehicle_id,
+            data={"candidate_id": cand_id, "vehicle_id": vehicle_id,
+                  "start_ts": prev_ts, "end_ts": new_ts,
+                  "estimated_kwh": estimated_kwh, "soc_start": prev_soc, "soc_end": new_soc},
+            dedupe_key=f"missing_charge:{vehicle_id}:{prev_ts}:{new_ts}",
+            action_url="/",
+        )
+    except Exception as _ne:
+        log.debug("notify missing_charge error: %s", _ne)
+
     return cand_id

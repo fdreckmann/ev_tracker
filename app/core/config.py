@@ -81,6 +81,43 @@ DEFAULT_CONFIG = {
 
     # Notifications
     "notify_service":       "",
+    # Central notification channels
+    "notification_ha_enabled":           False,
+    "notification_ha_service":           "",
+    "notification_ha_target":            "",
+    "notification_ntfy_enabled":         False,
+    "notification_ntfy_url":             "https://ntfy.sh",
+    "notification_ntfy_topic":           "",
+    "notification_ntfy_token":           "",
+    "notification_ntfy_priority":        "",
+    "notification_gotify_enabled":       False,
+    "notification_gotify_url":           "",
+    "notification_gotify_token":         "",
+    "notification_telegram_enabled":     False,
+    "notification_telegram_bot_token":   "",
+    "notification_telegram_chat_id":     "",
+    "notification_email_enabled":        False,
+    "notification_email_to":             "",
+    # Quiet hours (global)
+    "notification_quiet_hours_enabled":          False,
+    "notification_quiet_hours_start":            "22:00",
+    "notification_quiet_hours_end":              "07:00",
+    "notification_quiet_hours_allow_critical":   True,
+    # Spam protection
+    "notification_min_severity":         "info",
+    "notification_dedupe_window_hours":  6,
+    "notification_rate_limit_per_hour":  20,
+    # Per-event-type toggles (True = enabled)
+    "notification_event_charging_started":            True,
+    "notification_event_charging_stopped":            True,
+    "notification_event_charging_interrupted":        True,
+    "notification_event_missing_charge_candidate_created": True,
+    "notification_event_update_available_new":        True,
+    "notification_event_provider_offline":            True,
+    "notification_event_provider_auth_expired":       True,
+    "notification_event_backup_failed_alert":         True,
+    "notification_event_backup_success_alert":        False,
+    "notification_event_security_login_failed_many":  True,
 
     # System
     "poll_interval":        60,

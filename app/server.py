@@ -549,6 +549,28 @@ def init_db():
     )""")
     con.execute("""CREATE INDEX IF NOT EXISTS idx_mcc_vehicle_status
                    ON missing_charge_candidates(vehicle_id, status)""")
+    con.execute("""CREATE TABLE IF NOT EXISTS notifications (
+        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+        type                 TEXT NOT NULL,
+        severity             TEXT NOT NULL DEFAULT 'info',
+        vehicle_id           TEXT,
+        title                TEXT NOT NULL,
+        message              TEXT,
+        data_json            TEXT,
+        dedupe_key           TEXT,
+        status               TEXT DEFAULT 'pending',
+        created_at           TEXT NOT NULL,
+        sent_at              TEXT,
+        error                TEXT,
+        channel_results_json TEXT,
+        is_read              INTEGER DEFAULT 0,
+        action_url           TEXT,
+        action_payload       TEXT
+    )""")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_notifications_status ON notifications(status)")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at)")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_notifications_vehicle ON notifications(vehicle_id)")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_notifications_dedupe ON notifications(dedupe_key, created_at)")
 
     # Seed default roles
     now_iso = datetime.utcnow().isoformat()
