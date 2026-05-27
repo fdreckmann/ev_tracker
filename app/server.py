@@ -324,6 +324,8 @@ def init_db():
         ("price_confidence",    "REAL DEFAULT 0"),
         ("charging_contract_id",   "TEXT"),
         ("charging_contract_name", "TEXT"),
+        ("meter_source_start",  "TEXT"),
+        ("meter_source_end",    "TEXT"),
     ]
     for col, typedef in _ALL_SESSION_COLS:
         try:
@@ -995,6 +997,19 @@ def tracker_loop(vehicle_id: str = "v0"):
                 name=vcfg.get("car_name", vehicle_id),
             )
 
+            # Auto-cache provider-supplied vehicle image (daemon thread — non-blocking)
+            if getattr(state, "image_url", None):
+                _img_url    = state.image_url
+                _img_source = state.image_source or provider_id
+                _img_cfg    = dict(vcfg)
+                def _do_cache_image(vid=vehicle_id, url=_img_url, src=_img_source, cfg=_img_cfg):
+                    try:
+                        from services.vehicle_image_service import cache_provider_image
+                        cache_provider_image(vid, url, src, cfg)
+                    except Exception as _cie:
+                        log.debug("Auto-image cache failed for %s: %s", vid, _cie)
+                threading.Thread(target=_do_cache_image, daemon=True).start()
+
             # Update location status
             try:
                 if getattr(state, 'lat', None) is not None:
@@ -1094,19 +1109,22 @@ def tracker_loop(vehicle_id: str = "v0"):
                 # Set wallbox power for home sessions
                 sess_charger_kw = (cfg.get("home_charger_power_kw") or None) if _effective_location == "home" else None
                 _loc_src = st.get("location_source", "unknown") if _effective_location != "unknown" else "unknown"
+                _meter_src_start = vcfg.get("meter_source", "none") or "none"
                 cur.execute("""INSERT INTO sessions
                     (start_ts,odo_start,soc_start,location,charger_type,
                      max_power_kw,price_per_kwh,entsoe_spot,provider,meter_old,vehicle_id,charger_power_kw,
                      meter_home_detection_start_value,meter_home_detection_start_ts,
                      location_source,location_confidence,
-                     price_source,price_confidence,charging_contract_id,charging_contract_name)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     price_source,price_confidence,charging_contract_id,charging_contract_name,
+                     meter_source_start)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (datetime.now().isoformat(timespec="seconds"),
                      odo_start,soc_start,_effective_location,charger_type,power_kw,price_kwh,spot,
                      provider_id,meter_start_val,vehicle_id,sess_charger_kw,
                      mhd_start_val, mhd_start_ts,
                      _loc_src, 0 if _effective_location == "unknown" else 80,
-                     _price_source, _price_conf, _price_contract_id, _price_contract_name))
+                     _price_source, _price_conf, _price_contract_id, _price_contract_name,
+                     _meter_src_start))
                 con.commit(); session_id=cur.lastrowid; session_active=True
                 st["session_id"]=session_id
                 try:
@@ -1275,7 +1293,22 @@ def tracker_loop(vehicle_id: str = "v0"):
                 meter_end_val = None
                 meter_skipped_reason = None
                 meter_used = 0
-                if _meter_scope == "disabled":
+                _meter_src_end = vcfg.get("meter_source", "none") or "none"
+                # Check if meter source changed since session start
+                _sess_row = cur.execute(
+                    "SELECT meter_source_start FROM sessions WHERE id=?", (session_id,)).fetchone()
+                _meter_src_start_db = _sess_row[0] if _sess_row else None
+                _meter_source_changed = (
+                    _meter_src_start_db is not None
+                    and _meter_src_start_db != "none"
+                    and _meter_src_end != "none"
+                    and _meter_src_start_db != _meter_src_end
+                )
+                if _meter_source_changed:
+                    meter_skipped_reason = "meter_source_changed"
+                    log.warning("[%s] Zählerquelle während Session geändert (%s→%s) — kein Zählerdelta",
+                                vehicle_id, _meter_src_start_db, _meter_src_end)
+                elif _meter_scope == "disabled":
                     meter_skipped_reason = "disabled"
                 elif _meter_scope == "home_only" and _effective_location != "home":
                     meter_skipped_reason = "external_charging" if _effective_location == "extern" else "unknown_location"
@@ -1358,7 +1391,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                     tariff_provider=?,tariff_price_source=?,
                     max_power_kw=?,meter_new=?,kwh_source=?,
                     meter_delta_kwh=CASE WHEN ? IS NOT NULL AND ? IS NOT NULL THEN ?-? ELSE NULL END,
-                    meter_skipped_reason=?,meter_used=?,
+                    meter_skipped_reason=?,meter_used=?,meter_source_end=?,
                     location_source=COALESCE(location_source,?),location_confidence=COALESCE(location_confidence,?),
                     charging_contract_id=COALESCE(charging_contract_id,?),
                     charging_contract_name=COALESCE(charging_contract_name,?),
@@ -1368,7 +1401,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                      tariff_prov_name,_pc_price_source,peak_power,
                      meter_end_val,kwh_source,
                      meter_start_val, meter_end_val, meter_end_val, meter_start_val,
-                     meter_skipped_reason, meter_used,
+                     meter_skipped_reason, meter_used, _meter_src_end,
                      _fin_loc_src, _fin_loc_conf,
                      _pc_contract_id, _pc_contract_name,
                      _pc_price_source, _pc_price_conf,

@@ -85,6 +85,13 @@ def api_save_config():
     save_config(cfg)
     if any(str(k).startswith("smtp_") for k in data):
         _audit("smtp_config_updated", ip=request.remote_addr)
+    # Invalidate meter status cache if meter config changed
+    if any(str(k).startswith("meter_") for k in data):
+        try:
+            from routes.connections import _meter_status_cache
+            _meter_status_cache.clear()
+        except Exception:
+            pass
     return jsonify({"ok":True})
 
 

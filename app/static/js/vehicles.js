@@ -17,7 +17,9 @@ async function loadVehicleList() {
     var row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:12px 14px';
     var _eh = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'').replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});};
+    var thumbSrc = '/api/vehicles/'+encodeURIComponent(v.id)+'/image/file';
     row.innerHTML =
+      '<img src="'+thumbSrc+'" style="width:36px;height:36px;border-radius:50%;object-fit:cover;flex-shrink:0;background:var(--bg2)" onerror="this.style.display=\'none\'">' +
       '<div style="flex:1;min-width:0">' +
         '<div style="font-weight:700;font-size:.85rem;color:#fff">'+_eh(v.name||'')+'</div>' +
         '<div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-top:3px">'+_eh(v.provider||'ha')+' · ID: '+_eh(v.id)+(isV0?' · Primär':'')+'</div>' +
@@ -236,10 +238,22 @@ async function refreshVehicleModalImage() {
   if(!_editingVehicleId) return;
   var preview = $('vmImagePreview');
   if(!preview) return;
+  // Check for manual/auto/no image first
+  var meta = await fetch('/api/vehicles/'+encodeURIComponent(_editingVehicleId)+'/image').then(function(x){return x.json();}).catch(function(){return null;});
+  if(meta && (meta.has_manual || meta.has_auto)) {
+    var url = '/api/vehicles/'+encodeURIComponent(_editingVehicleId)+'/image/file';
+    preview.src = url + '?t='+Date.now();
+    var srcLabel = $('vmImageSourceLabel');
+    if(srcLabel) srcLabel.textContent = meta.has_manual ? 'Manuell hochgeladen' : 'Automatisch (Provider)';
+    return;
+  }
+  // Fall back to suggest endpoint for silhouette
   var r = await fetch('/api/vehicles/'+encodeURIComponent(_editingVehicleId)+'/image/suggest').then(function(x){return x.json();}).catch(function(){return null;});
   if(!r) return;
   var url = r.resolved_url || '/static/vehicle_images/placeholder_car.svg';
   preview.src = url + (url.indexOf('?')<0 ? '?t='+Date.now() : '&t='+Date.now());
+  var srcLabel = $('vmImageSourceLabel');
+  if(srcLabel) srcLabel.textContent = 'Silhouette';
 }
 
 async function suggestVehicleImage() {

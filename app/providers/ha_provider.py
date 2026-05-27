@@ -213,13 +213,41 @@ class HomeAssistantProvider(BaseProvider):
 
             chg_type = self._charge_type(power_kw)
 
+            # vehicle image URL from optional image entity
+            image_url = None
+            image_source = None
+            img_entity_id = self.config.get("vehicle_image_entity", "").strip()
+            if img_entity_id:
+                img_data = self._get_entity(img_entity_id)
+                if img_data:
+                    attrs = img_data.get("attributes", {})
+                    raw_url = (
+                        attrs.get("entity_picture")
+                        or attrs.get("entity_picture_local")
+                        or attrs.get("picture")
+                        or attrs.get("image")
+                        or attrs.get("url")
+                    )
+                    if not raw_url:
+                        state_val = img_data.get("state", "")
+                        if isinstance(state_val, str) and state_val.startswith("http"):
+                            raw_url = state_val
+                    if raw_url and isinstance(raw_url, str):
+                        if raw_url.startswith("/"):
+                            ha_base = self.config.get("ha_url", "").rstrip("/")
+                            raw_url = ha_base + raw_url
+                        if raw_url.startswith("http"):
+                            image_url = raw_url
+                            image_source = "ha"
+
             debug["ha_reachable"] = True
             debug["token_valid"] = True
             setattr(self, "_last_debug", debug)
 
             return VehicleState(
                 charging=charging, soc=soc, odometer=odo,
-                charge_power=power_kw, location=location, charge_type=chg_type
+                charge_power=power_kw, location=location, charge_type=chg_type,
+                image_url=image_url, image_source=image_source,
             )
         except Exception as e:
             setattr(self, "_last_debug", {"ha_reachable": False, "error": str(e)})
@@ -318,4 +346,6 @@ class HomeAssistantProvider(BaseProvider):
              "hint":"Ladeleistung ab der DC erkannt wird (Standard: 22 kW)"},
             {"id":"ha_connected_means_charging","label":"'connected'/'plugged_in' = Laden",     "type":"checkbox", "required":False,
              "hint":"Standard: nein — angesteckt gilt nicht automatisch als Ladevorgang"},
+            {"id":"vehicle_image_entity",       "label":"Fahrzeugbild Entity (optional)",     "type":"text",     "placeholder":"image.mein_auto", "required":False,
+             "hint":"Entity-ID einer HA image- oder camera-Entity — Bild wird automatisch übernommen"},
         ]
