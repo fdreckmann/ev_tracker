@@ -122,9 +122,15 @@ def api_export():
     }
     include_sig_param = request.args.get("include_signature")
     if include_sig_param is not None:
-        include_signature = include_sig_param.lower() == "true"
+        include_signature = include_sig_param.lower() in ("true", "1", "yes")
     else:
         include_signature = bool(cfg.get("export_include_signature", False))
+    _tmpl_hash = (cfg.get("active_template") or {}).get("hash")
+    _map_hash = cfg.get("template_mapping_hash")
+    if _tmpl_hash and _map_hash and _tmpl_hash != _map_hash:
+        import logging as _log_mod
+        _log_mod.getLogger(__name__).warning(
+            "Template hash mismatch: template=%s mapping=%s", _tmpl_hash, _map_hash)
     sig_mapping = cfg.get("signature_mapping") or {}
     # Backward compat: "cell" → "anchor_cell" in signature_mapping
     if sig_mapping and "cell" in sig_mapping and "anchor_cell" not in sig_mapping:
@@ -190,7 +196,11 @@ def api_export_preview():
         "price_per_kwh":     cfg.get("price_per_kwh_home", 0.30),
         "meter_start_value": cfg.get("template_meter_start", 0.0),
     }
-    include_signature = bool(body.get("include_signature", False))
+    _inc_sig_param = body.get("include_signature")
+    if _inc_sig_param is not None:
+        include_signature = bool(_inc_sig_param)
+    else:
+        include_signature = bool(cfg.get("export_include_signature", False))
     sig_mapping       = cfg.get("signature_mapping") or {}
     if sig_mapping and "cell" in sig_mapping and "anchor_cell" not in sig_mapping:
         sig_mapping = dict(sig_mapping)

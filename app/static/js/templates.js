@@ -77,15 +77,16 @@ function showAnalysisPanel(a){
   // Confidence bar
   const pct = Math.round((a.confidence||0)*100);
   const col = pct>=80?'var(--acc)':pct>=60?'#eab308':'var(--danger)';
+  var _eh2 = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'').replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});};
   $('analysisConfidence').innerHTML =
     `<span style="color:${col};font-weight:600">${pct}% Konfidenz</span>` +
-    (a.sheet ? `<span style="color:var(--mute);margin-left:10px">Sheet: ${a.sheet}</span>` : '') +
-    (a.start_row ? `<span style="color:var(--mute);margin-left:10px">Startzeile: ${a.start_row}</span>` : '');
+    (a.sheet ? `<span style="color:var(--mute);margin-left:10px">Sheet: ${_eh2(a.sheet)}</span>` : '') +
+    (a.start_row ? `<span style="color:var(--mute);margin-left:10px">Startzeile: ${_eh2(String(a.start_row))}</span>` : '');
 
   // Warnings
   const warnings = a.warnings||[];
   $('analysisWarnings').innerHTML = warnings.length
-    ? `<div style="color:#f59e0b;font-size:.72rem;font-family:var(--mono)">${warnings.map(w=>`⚠ ${w}`).join('<br>')}</div>`
+    ? `<div style="color:#f59e0b;font-size:.72rem;font-family:var(--mono)">${warnings.map(w=>`⚠ ${_eh2(w)}`).join('<br>')}</div>`
     : '';
 
   // Suggestions summary

@@ -1964,61 +1964,14 @@ _RESTORE_BLOCKED_FILES = {"sessions.db-wal", "sessions.db-shm",
 _BACKUP_MAX_UPLOAD_BYTES = 200 * 1024 * 1024  # 200 MB
 
 def restore_backup(zip_path):
-    """Zip-Slip-safe restore: validate all paths + symlinks, then extract allowed files."""
-    # Reject oversized files
-    if Path(zip_path).stat().st_size > _BACKUP_MAX_UPLOAD_BYTES:
-        raise ValueError(f"ZIP zu groß (max. {_BACKUP_MAX_UPLOAD_BYTES//1024//1024} MB)")
-
-    # Create a safety backup before overwriting anything
+    """Restore — delegates to backup_service for the secure, chunked implementation."""
+    from services.backup_service import _restore_backup_impl as _svc_restore
+    # Pre-restore safety backup
     try:
         create_backup("pre_restore")
     except Exception as e:
         log.warning("Sicherheits-Backup vor Restore fehlgeschlagen: %s", e)
-
-    data_dir_resolved = DATA_DIR.resolve()
-
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        members = zf.infolist()
-
-        # Phase 1: validate every entry before extracting anything
-        for info in members:
-            member = info.filename
-            if member.endswith("/"):
-                continue
-            # Reject symlinks (external_attr bit 0xA0000000 on Unix)
-            if (info.external_attr >> 16) & 0xFFFF == 0xA1ED:
-                raise ValueError(f"Symlink im ZIP nicht erlaubt: {member!r}")
-            # Reject absolute paths and path-traversal components
-            parts = member.replace("\\", "/").split("/")
-            if any(p in ("", "..") for p in parts):
-                raise ValueError(f"Unsicherer ZIP-Eintrag: {member!r}")
-            dest = (DATA_DIR / member).resolve()
-            if not str(dest).startswith(str(data_dir_resolved) + "/") and \
-               str(dest) != str(data_dir_resolved):
-                raise ValueError(f"Pfad außerhalb DATA_DIR: {member!r}")
-
-        # Phase 2: extract only allowed paths, skip everything else
-        for info in members:
-            member = info.filename
-            if member.endswith("/"):
-                continue
-            if member.startswith("backups/"):
-                continue
-            basename = member.rsplit("/", 1)[-1]
-            if basename in _RESTORE_BLOCKED_FILES:
-                log.debug("Restore: WAL/SHM-Datei blockiert %r", member)
-                continue
-            is_allowed = (
-                member in _RESTORE_ALLOWED_FILES or
-                any(member.startswith(d) for d in _RESTORE_ALLOWED_DIRS)
-            )
-            if not is_allowed:
-                log.debug("Restore: übersprungen %r (nicht in Allowlist)", member)
-                continue
-            dest = DATA_DIR / member
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            with zf.open(info) as src, open(dest, "wb") as dst:
-                dst.write(src.read())
+    _svc_restore(Path(zip_path), DATA_DIR)
 
 def parse_cron_next(cron_expr):
     now=datetime.now(); expr=cron_expr.strip().lower()

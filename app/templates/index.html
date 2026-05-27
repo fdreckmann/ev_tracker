@@ -2531,7 +2531,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     <div class="drop-zone" id="dropZone"
          data-requires-permission="templates:upload"
          onclick="document.getElementById('tplFile').click()"
-         ondragover="ev.preventDefault();this.classList.add('drag')"
+         ondragover="event.preventDefault();this.classList.add('drag')"
          ondragleave="this.classList.remove('drag')"
          ondrop="handleDrop(event)">
       <div class="dz-icon">📊</div>

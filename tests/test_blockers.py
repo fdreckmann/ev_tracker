@@ -2,7 +2,7 @@
 Tests for production blockers (v2.0.53 go-live fixes).
 Covers: DB migration, export param validation, API v1 validation,
         config atomic save, XLSX upload validation, backup restore,
-        export template roundtrip.
+        export template roundtrip, vehicle_id validation, template hash.
 """
 import hashlib
 import json
@@ -221,69 +221,11 @@ class TestConfigAtomicSave:
 
 # ─── 12. Backup Restore Robustness ───────────────────────────────────────────
 
-def _restore_backup_base(zip_path, data_dir):
-    """Call the base restore implementation (not the server.py wrapper)."""
-    import sys
-    from pathlib import Path as _P
-    sys.path.insert(0, str(_P(__file__).parent.parent / "app"))
-    import importlib
-    import services.backup_service as _bs
-    # Call the actual implementation (top of module), not the server wrapper
-    import inspect
-    for name, fn in inspect.getmembers(_bs, inspect.isfunction):
-        sig = inspect.signature(fn)
-        params = list(sig.parameters)
-        if name == "restore_backup" and len(params) >= 2 and params[0] == "zip_path" and params[1] == "data_dir":
-            return fn(zip_path, data_dir)
-    # Fallback: call directly
-    raise RuntimeError("Could not find base restore_backup implementation")
-
-
 class TestBackupRestoreRobustness:
     def _do_restore(self, zip_path, data_dir):
-        """Call the real 2-arg restore implementation."""
-        import sys
-        from pathlib import Path as _P
-        sys.path.insert(0, str(_P(__file__).parent.parent / "app"))
-        # Import and call the module-level function directly before the alias overwrites it
-        import importlib, importlib.util, types
-        spec = importlib.util.spec_from_file_location(
-            "_bs_impl",
-            str(_P(__file__).parent.parent / "app" / "services" / "backup_service.py"))
-        # We need to invoke the ORIGINAL function, so we'll re-execute just that part
-        from services import backup_service as _bs
-        # The real implementation is at module top; call it via qualified lookup
-        fn = getattr(_bs, "__dict__", {})
-        # Simplest: just call it by locating via source
-        import zipfile as _zf
-        if not _zf.is_zipfile(zip_path):
-            raise ValueError(f"Keine gültige ZIP-Datei: {zip_path.name}")
-        # Re-use the implementation logic inline for test isolation
-        _ALLOWED_FILES = {"config.json", "sessions.db", "template.xlsx", "update_history.json"}
-        _ALLOWED_DIRS = {"templates/", "signatures/", "vehicles/", "uploads/"}
-        _MAX_SINGLE = 200 * 1024 * 1024
-        data_dir_resolved = data_dir.resolve()
-        with _zf.ZipFile(zip_path, "r") as zf:
-            for info in zf.infolist():
-                if info.filename.endswith("/"): continue
-                parts = info.filename.replace("\\", "/").split("/")
-                if any(p in ("", "..") for p in parts):
-                    raise ValueError(f"Unsicherer ZIP-Eintrag: {info.filename!r}")
-                dest = (data_dir / info.filename).resolve()
-                if not str(dest).startswith(str(data_dir_resolved)):
-                    raise ValueError(f"Pfad außerhalb DATA_DIR: {info.filename!r}")
-                unix_mode = (info.external_attr >> 16) & 0xFFFF
-                if unix_mode and (unix_mode & 0xA000) == 0xA000:
-                    raise ValueError(f"Symlink abgelehnt: {info.filename!r}")
-            for member in zf.namelist():
-                if member.endswith("/"): continue
-                is_allowed = (member in _ALLOWED_FILES or
-                              any(member.startswith(d) for d in _ALLOWED_DIRS))
-                if not is_allowed: continue
-                dest = data_dir / member
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                with zf.open(member) as src, open(dest, "wb") as dst:
-                    dst.write(src.read())
+        """Call the real 2-arg restore implementation from backup_service."""
+        from services.backup_service import _restore_backup_impl
+        _restore_backup_impl(zip_path, data_dir)
 
     def test_invalid_zip_rejected(self, tmp_path):
         bad_zip = tmp_path / "bad.zip"
@@ -400,3 +342,152 @@ class TestExportTemplateRoundtrip:
         assert "column_mapping" in full
         assert "cell_mapping" in full
         assert full["cell_mapping"].get("C5") == "fahrer"
+
+
+# ─── 13. Vehicle ID Validation ────────────────────────────────────────────────
+
+class TestVehicleIdValidation:
+    def test_v0_always_valid(self, app):
+        from routes.api_v1 import _vehicle_id_valid
+        with app.app_context():
+            assert _vehicle_id_valid("v0") is True
+
+    def test_unknown_vehicle_invalid(self, app):
+        from routes.api_v1 import _vehicle_id_valid
+        with app.app_context():
+            assert _vehicle_id_valid("v99") is False
+
+    def test_path_traversal_rejected(self, app):
+        from routes.api_v1 import _vehicle_id_valid
+        with app.app_context():
+            assert _vehicle_id_valid("../../etc/passwd") is False
+            assert _vehicle_id_valid("v0/../../secret") is False
+
+    def test_known_extra_vehicle_valid(self, app):
+        from routes.api_v1 import _vehicle_id_valid
+        from core.config import load_config, save_config
+        with app.app_context():
+            cfg = load_config()
+            cfg["extra_vehicles"] = [{"id": "v2", "name": "Extra", "provider": "manual"}]
+            save_config(cfg)
+            assert _vehicle_id_valid("v2") is True
+
+    def test_api_v1_rejects_unknown_vehicle(self, app, client):
+        """POST /api/v1/sessions with unknown vehicle_id must return 400."""
+        token = _make_api_token(app)
+        rv = client.post("/api/v1/sessions",
+                         headers={"Authorization": f"Bearer {token}"},
+                         json={"start_ts": "2026-05-10T10:00:00",
+                               "end_ts": "2026-05-10T11:00:00",
+                               "kwh_charged": 10.0,
+                               "vehicle_id": "nonexistent_vehicle"})
+        assert rv.status_code == 400
+
+    def test_manual_session_rejects_unknown_vehicle(self, authed_client):
+        """POST /api/sessions/manual with unknown vehicle_id must return 400."""
+        rv = authed_client.post("/api/sessions/manual",
+                                json={"start_ts": "2026-05-10T10:00:00",
+                                      "end_ts": "2026-05-10T11:00:00",
+                                      "kwh_charged": 10.0,
+                                      "vehicle_id": "nonexistent_vehicle"})
+        assert rv.status_code == 400
+
+
+# ─── 14. Template Hash Invalidation ──────────────────────────────────────────
+
+class TestTemplateHash:
+    def test_upload_sets_hash(self, authed_client):
+        """Uploading a template must set active_template.hash in config."""
+        try:
+            import openpyxl
+        except ImportError:
+            import pytest; pytest.skip("openpyxl not available")
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws["A1"] = "Test"
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        rv = authed_client.post("/api/template",
+                                content_type="multipart/form-data",
+                                data={"file": (buf, "test.xlsx")})
+        assert rv.status_code == 200
+        from core.config import load_config
+        with authed_client.application.app_context():
+            cfg = load_config()
+        tpl = cfg.get("active_template") or {}
+        assert tpl.get("hash") is not None
+        assert len(tpl["hash"]) == 16
+
+    def test_upload_invalidates_mapping_hash(self, authed_client):
+        """Uploading a template must set template_mapping_hash to None."""
+        try:
+            import openpyxl
+        except ImportError:
+            import pytest; pytest.skip("openpyxl not available")
+        wb = openpyxl.Workbook()
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        authed_client.post("/api/template",
+                           content_type="multipart/form-data",
+                           data={"file": (buf, "test2.xlsx")})
+        from core.config import load_config
+        with authed_client.application.app_context():
+            cfg = load_config()
+        assert cfg.get("template_mapping_hash") is None
+
+    def test_mapping_post_stores_hash(self, authed_client):
+        """POST /api/template/mapping must save current template hash."""
+        try:
+            import openpyxl
+        except ImportError:
+            import pytest; pytest.skip("openpyxl not available")
+        wb = openpyxl.Workbook()
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        authed_client.post("/api/template",
+                           content_type="multipart/form-data",
+                           data={"file": (buf, "hash_test.xlsx")})
+        rv = authed_client.post("/api/template/mapping",
+                                json={"column_mapping": {"1": "date"},
+                                      "cell_mapping": {},
+                                      "start_row": 2,
+                                      "header_row": 1,
+                                      "sheet": ""})
+        assert rv.status_code == 200
+        from core.config import load_config
+        with authed_client.application.app_context():
+            cfg = load_config()
+        tpl_hash = (cfg.get("active_template") or {}).get("hash")
+        map_hash = cfg.get("template_mapping_hash")
+        assert tpl_hash is not None
+        assert map_hash == tpl_hash
+
+    def test_mapping_get_returns_hashes(self, authed_client):
+        """GET /api/template/mapping must return mapping_hash and template_hash."""
+        rv = authed_client.get("/api/template/mapping")
+        assert rv.status_code == 200
+        body = rv.get_json()
+        assert "mapping_hash" in body
+        assert "template_hash" in body
+
+
+# ─── 15. No writes to /data ───────────────────────────────────────────────────
+
+class TestNoDataDirWrites:
+    def test_config_write_goes_to_tmp_path(self, app, tmp_path):
+        """save_config must write to the patched path, NOT /data/config.json."""
+        from core.config import load_config, save_config, CONFIG_FILE
+        real_data_config = Path("/data/config.json")
+        with app.app_context():
+            cfg = load_config()
+            cfg["_isolation_test"] = "yes"
+            save_config(cfg)
+            # Patched path should have our key
+            assert CONFIG_FILE.read_text().find("_isolation_test") != -1
+            # /data/config.json should NOT be touched
+            if real_data_config.exists():
+                content = real_data_config.read_text()
+                assert "_isolation_test" not in content

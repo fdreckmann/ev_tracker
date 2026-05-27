@@ -56,7 +56,9 @@ def api_upload_template():
         raise
     cfg = load_config()
     _fname = f.filename
-    cfg["active_template"] = {"source": "upload", "template_id": None, "name": _fname}
+    _hash = hashlib.sha256(TEMPLATE_PATH.read_bytes()).hexdigest()[:16]
+    cfg["active_template"] = {"source": "upload", "template_id": None, "name": _fname, "hash": _hash}
+    cfg["template_mapping_hash"] = None  # invalidate: new template, no mapping yet
     save_config(cfg)
     return jsonify({"ok": True, "filename": _fname, "size": TEMPLATE_PATH.stat().st_size})
 
@@ -391,6 +393,7 @@ def api_template_mapping():
         cfg["template_header_row"]     = body.get("header_row")
         cfg["template_sheet"]          = body.get("sheet") or ""
         cfg["signature_mapping"]       = body.get("signature_mapping") or {}
+        cfg["template_mapping_hash"] = (cfg.get("active_template") or {}).get("hash")
         save_config(cfg)
         return jsonify({"ok": True})
     return jsonify({
@@ -400,4 +403,6 @@ def api_template_mapping():
         "header_row":        cfg.get("template_header_row"),
         "sheet":             cfg.get("template_sheet", ""),
         "signature_mapping": cfg.get("signature_mapping") or {},
+        "mapping_hash":      cfg.get("template_mapping_hash"),
+        "template_hash":     (cfg.get("active_template") or {}).get("hash"),
     })

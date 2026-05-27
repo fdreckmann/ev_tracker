@@ -14,6 +14,18 @@ from version import APP_VERSION
 api_v1_bp = Blueprint("api_v1", __name__)
 
 
+def _vehicle_id_valid(vid: str) -> bool:
+    """Check if vehicle_id exists (v0 or in extra_vehicles). Also guards path traversal."""
+    if not vid or not isinstance(vid, str):
+        return False
+    if vid == "v0":
+        return True
+    if any(c in vid for c in ('/', '\\', '..', '\x00')):
+        return False
+    cfg = load_config()
+    return any(v.get("id") == vid for v in cfg.get("extra_vehicles", []))
+
+
 def _validate_session_payload(data: dict, partial: bool = False) -> "str | None":
     """Validate session payload fields. Returns error string or None."""
     def _float(v):
@@ -74,6 +86,10 @@ def _validate_session_payload(data: dict, partial: bool = False) -> "str | None"
         mn_ = _float(data["meter_new"])
         if mo_ is not None and mn_ is not None and mn_ < mo_:
             return "meter_new darf nicht kleiner als meter_old sein"
+
+    if "vehicle_id" in data and data["vehicle_id"] is not None:
+        if not _vehicle_id_valid(str(data["vehicle_id"])):
+            return f"vehicle_id unbekannt: {data['vehicle_id']!r}"
 
     if "charger_type" in data:
         try:

@@ -190,6 +190,14 @@ def api_manual_session_create():
 
     # ── Vehicle / Location / Charger ─────────────────────────────────────────
     vehicle_id = (data.get("vehicle_id") or "v0").strip()
+    # Validate vehicle_id exists and has no path traversal characters
+    def _vehicle_id_valid_local(vid):
+        if vid == "v0": return True
+        if not vid or any(c in vid for c in ('/', '\\', '..', '\x00')): return False
+        from core.config import load_config as _lc
+        return any(v.get("id") == vid for v in _lc().get("extra_vehicles", []))
+    if not _vehicle_id_valid_local(vehicle_id):
+        return jsonify({"ok": False, "error": f"Unbekannte vehicle_id: {vehicle_id!r}"}), 400
 
     location = (data.get("location") or "home").strip()
     if location not in ("home", "extern", "unknown"):

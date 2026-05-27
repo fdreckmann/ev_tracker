@@ -41,8 +41,9 @@ _MAX_SINGLE_FILE       = 200 * 1024 * 1024   # 200 MB per file
 _CHUNK_SIZE            = 64 * 1024            # 64 KB read chunks
 
 
-def restore_backup(zip_path: Path, data_dir: Path, pre_restore_fn=None) -> None:
-    """Zip-Slip-safe restore with size limits. Calls pre_restore_fn() before extraction."""
+def _restore_backup_impl(zip_path: Path, data_dir: Path, pre_restore_fn=None) -> None:
+    """Zip-Slip-safe restore with size limits. Calls pre_restore_fn() before extraction.
+    This is the canonical 2-arg implementation used by both routes and tests."""
     if not zipfile.is_zipfile(zip_path):
         raise ValueError(f"Keine gültige ZIP-Datei: {zip_path.name}")
 
@@ -168,9 +169,10 @@ def restore_backup_via_server(zip_path):
     return _srv_restore_backup(zip_path)
 
 
-# Backward-compat alias: routes that call restore_backup(zip_path) get the server wrapper.
-# The base implementation restore_backup(zip_path, data_dir) at module top is the safe core.
-restore_backup = restore_backup_via_server
+def restore_backup(zip_path):
+    """1-arg wrapper for routes: restore to DATA_DIR using the real implementation."""
+    from core.db import DATA_DIR as _DATA_DIR
+    _restore_backup_impl(Path(zip_path), _DATA_DIR)
 
 
 def parse_cron_next(cron_expr):
