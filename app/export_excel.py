@@ -1,10 +1,23 @@
 import os, sys, sqlite3, shutil, json, re
+import re as _re_formula
 from datetime import datetime
 from pathlib import Path
 import openpyxl
 from openpyxl.cell.cell import MergedCell
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+
+
+def _adjust_formula_rows(formula, delta):
+    """Adjust relative row references in an Excel formula by delta rows."""
+    if not isinstance(formula, str) or not formula.startswith("=") or delta == 0:
+        return formula
+    def _sub(m):
+        col_abs, col_let, row_abs, row_num = m.group(1), m.group(2), m.group(3), int(m.group(4))
+        if not row_abs:
+            row_num += delta
+        return f"{col_abs}{col_let}{row_abs}{row_num}"
+    return _re_formula.sub(r'(\$?)([A-Za-z]+)(\$?)(\d+)', _sub, formula)
 
 try:
     from template_fields import TABLE_FIELDS, HEADER_FIELDS
@@ -730,19 +743,29 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
             enriched.append(s)
         sessions = enriched
 
-    # Detect footer_start_row: first row at or after ds that contains a formula cell.
-    # This protects SUM formulas, signature lines, and other footer content.
+    # Detect footer_start_row: first row at or after ds that is a footer indicator.
+    # A row is a footer if it has a non-empty cell in an unmapped column (plain text footer)
+    # or a formula cell in a mapped column.
     footer_start_row = (max_row or ds) + 1
     for _fr in range(ds, (max_row or 0) + 1):
+        _row_is_footer = False
         for _fc in range(1, (ws.max_column or 20) + 1):
             try:
                 _fv = ws.cell(row=_fr, column=_fc).value
+                if _fv is None:
+                    continue
+                if _fc not in col_map:
+                    # Non-empty cell in unmapped column = footer indicator
+                    _row_is_footer = True
+                    break
                 if isinstance(_fv, str) and _fv.startswith("="):
-                    footer_start_row = _fr
+                    # Formula in mapped column = footer indicator
+                    _row_is_footer = True
                     break
             except Exception:
                 pass
-        if footer_start_row <= (max_row or 0):
+        if _row_is_footer:
+            footer_start_row = _fr
             break
 
     template_data_rows = max(footer_start_row - ds, 0)
@@ -764,7 +787,19 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
                 }
             except Exception:
                 pass
+        # Capture template data row (row ds) formulas before insertion shifts rows
+        tformulas = {}
+        for ci in col_map:
+            try:
+                c = ws.cell(row=ds, column=ci)
+                if isinstance(c.value, str) and c.value.startswith("="):
+                    tformulas[ci] = c.value
+            except Exception:
+                pass
+        old_last_data = footer_start_row - 1  # before insertion
         ws.insert_rows(footer_start_row, n_extra)
+        # After insert_rows, footer is now at footer_start_row + n_extra
+        new_footer_start = footer_start_row + n_extra
         for _ei in range(n_extra):
             _r = footer_start_row + _ei
             for ci, _st in _rstyles.items():
@@ -775,6 +810,29 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
                     if _st["border"]:    _cell.border    = _st["border"]
                     if _st["alignment"]: _cell.alignment = _st["alignment"]
                     if _st["number_format"]: _cell.number_format = _st["number_format"]
+                except Exception:
+                    pass
+            # Apply formula patterns from template data row with adjusted row references
+            for ci, formula in tformulas.items():
+                try:
+                    cell = ws.cell(row=_r, column=ci)
+                    adjusted = _adjust_formula_rows(formula, _r - ds)
+                    cell.value = adjusted
+                except Exception:
+                    pass
+        # Extend SUM/range formulas in footer rows to cover new data rows
+        _new_last = old_last_data + n_extra
+        for _sr in range(new_footer_start, (ws.max_row or 0) + 1):
+            for _sc in range(1, (ws.max_column or 20) + 1):
+                try:
+                    _cell = ws.cell(row=_sr, column=_sc)
+                    if not (isinstance(_cell.value, str) and _cell.value.startswith("=")):
+                        continue
+                    _cell.value = _re_formula.sub(
+                        rf'([A-Za-z]+\$?){old_last_data}(?=[,):+\-*/\s]|$)',
+                        lambda m: m.group(1) + str(_new_last),
+                        _cell.value
+                    )
                 except Exception:
                     pass
         max_row = ws.max_row or 0

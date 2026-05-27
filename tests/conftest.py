@@ -35,14 +35,32 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setattr(_db, "DB_PATH", db_path)
     monkeypatch.setattr(_db, "DATA_DIR", tmp_path)
 
-    # Patch config path
-    if hasattr(_cfg_mod, "_CONFIG_PATH"):
-        monkeypatch.setattr(_cfg_mod, "_CONFIG_PATH", cfg_path)
+    # Patch config path — core.config uses CONFIG_FILE (not _CONFIG_PATH)
+    monkeypatch.setattr(_cfg_mod, "CONFIG_FILE", cfg_path)
+    # Also reset the config cache so next load_config() reads the patched file
+    _cfg_mod._config_cache["data"] = None
+    _cfg_mod._config_cache["ts"] = 0
 
-    # Patch export_excel DB path
+    # Patch export_excel DB path and dirs
     try:
         import export_excel as _xl
         monkeypatch.setattr(_xl, "DB_PATH", db_path)
+        monkeypatch.setattr(_xl, "DATA_DIR", tmp_path)
+    except Exception:
+        pass
+
+    # Patch template and signature paths
+    try:
+        import routes.templates_routes as _tpl_routes
+        monkeypatch.setattr(_tpl_routes, "TEMPLATE_PATH", tmp_path / "template.xlsx")
+        monkeypatch.setattr(_tpl_routes, "SIGNATURE_PATH", tmp_path / "signatures" / "default_signature.png")
+        monkeypatch.setattr(_tpl_routes, "SIGNATURE_DIR", tmp_path / "signatures")
+    except Exception:
+        pass
+
+    try:
+        import routes.export as _exp_routes
+        monkeypatch.setattr(_exp_routes, "_SIGNATURE_PATH", tmp_path / "signatures" / "default_signature.png")
     except Exception:
         pass
 

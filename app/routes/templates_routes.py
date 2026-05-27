@@ -1,6 +1,7 @@
 """
 Export template (XLSX) routes: upload, gallery, preview, render, analyze, mapping.
 """
+import hashlib
 import json
 from io import BytesIO
 
