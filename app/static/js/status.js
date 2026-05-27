@@ -171,17 +171,6 @@ async function refreshStatus() {
       }
     }
 
-    const spotEl = $('dSpot');
-    if (spotEl) {
-      if (s.entsoe_spot != null) {
-        spotEl.textContent = Number(s.entsoe_spot * 1000).toFixed(2) + ' €/MWh';
-        spotEl.className = 'sv g';
-      } else {
-        spotEl.textContent = s.entsoe_ok === false && (s.location_status || s.location) === 'extern' ? 'Kein Key' : '—';
-        spotEl.className = 'sv';
-      }
-    }
-
     if (s.charging) {
       $('dSt').textContent = 'Laden'; $('dSt').className = 'sv w';
       $('dStSub').textContent = 'Session #' + (s.session_id || '?');
@@ -271,7 +260,7 @@ function renderTbl(el, rows, showDel = true) {
       <td>${fmt(r.soc_start, 0)}% → ${fmt(r.soc_end, 0)}%</td>
       <td>${typeBadge(r.charger_type, r.max_power_kw)}</td>
       <td class="g">${fmt(r.kwh_charged)} kWh</td>
-      <td style="font-size:.72rem;color:var(--mute)">${r.price_per_kwh ? fmt(r.price_per_kwh, 4) + ' €/kWh' : '—'}${r.entsoe_spot ? '<br><span style="color:#4a5c72">Spot:' + fmt(r.entsoe_spot, 4) + '</span>' : ''}</td>
+      <td style="font-size:.72rem;color:var(--mute)">${r.price_per_kwh ? fmt(r.price_per_kwh, 4) + ' €/kWh' : '—'}</td>
       <td class="w" id="cost_${r.id}">
         ${r.cost_eur != null ? fmt(r.cost_eur) + ' €' : '—'}
         ${r.cost_manual ? '<span title="Kosten manuell" style="color:var(--acc);font-size:.65rem"> ✎</span>' : ''}

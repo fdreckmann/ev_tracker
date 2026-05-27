@@ -272,3 +272,149 @@ class TestVehicleImageValidation:
         assert resp.status_code == 400
         body = resp.get_json()
         assert body.get("ok") is False
+
+    def test_svg_file_rejected(self, authed_client, tmp_path, monkeypatch):
+        """SVG must be rejected even with correct MIME type."""
+        import routes.vehicles as _vr
+        monkeypatch.setattr(_vr, "_VEH_IMG_DIR", tmp_path / "vehicles")
+
+        svg_bytes = b'<svg xmlns="http://www.w3.org/2000/svg"><circle r="10"/></svg>'
+        resp = authed_client.post(
+            "/api/vehicles/v0/image",
+            data={"file": (io.BytesIO(svg_bytes), "car.svg", "image/svg+xml")},
+            content_type="multipart/form-data",
+        )
+        # Must be rejected: PIL cannot open SVG as a valid raster image
+        assert resp.status_code == 400
+
+    def test_broken_image_rejected(self, authed_client, tmp_path, monkeypatch):
+        """Truncated/corrupt image bytes must be rejected."""
+        import routes.vehicles as _vr
+        monkeypatch.setattr(_vr, "_VEH_IMG_DIR", tmp_path / "vehicles")
+
+        broken = io.BytesIO(b"\x89PNG\r\n\x1a\nNOT_VALID_DATA")
+        resp = authed_client.post(
+            "/api/vehicles/v0/image",
+            data={"file": (broken, "corrupt.png", "image/png")},
+            content_type="multipart/form-data",
+        )
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body.get("ok") is False
+
+
+# ── HA Provider additional edge cases ────────────────────────────────────────
+
+class TestHAProviderImageEdgeCases:
+
+    def _make_provider(self, extra_config=None):
+        import sys
+        from pathlib import Path as P
+        sys.path.insert(0, str(P(__file__).parent.parent / "app"))
+        from providers.ha_provider import HomeAssistantProvider
+        cfg = {
+            "ha_url": "http://ha.local:8123",
+            "ha_token": "test-token",
+            "charging_sensor": "",
+            "soc_sensor": "",
+            "vehicle_image_entity": "image.car",
+        }
+        if extra_config:
+            cfg.update(extra_config)
+        return HomeAssistantProvider(cfg)
+
+    def test_state_with_http_url_used_as_image(self):
+        """When entity state is an http URL, it should be used as image_url."""
+        prov = self._make_provider()
+        entity_data = {
+            "state": "https://example.com/car.png",
+            "attributes": {},
+        }
+        with patch.object(prov, "_get_entity", return_value=entity_data):
+            with patch.object(prov, "_location", return_value="unknown"):
+                state = prov.get_state()
+        assert state.image_url == "https://example.com/car.png"
+        assert state.image_source == "ha"
+
+    def test_unavailable_state_produces_no_image(self):
+        """State 'unavailable' must not produce an image_url."""
+        prov = self._make_provider()
+        entity_data = {
+            "state": "unavailable",
+            "attributes": {},
+        }
+        with patch.object(prov, "_get_entity", return_value=entity_data):
+            with patch.object(prov, "_location", return_value="unknown"):
+                state = prov.get_state()
+        assert state.image_url is None
+
+    def test_unknown_state_produces_no_image(self):
+        """State 'unknown' must not produce an image_url."""
+        prov = self._make_provider()
+        entity_data = {
+            "state": "unknown",
+            "attributes": {},
+        }
+        with patch.object(prov, "_get_entity", return_value=entity_data):
+            with patch.object(prov, "_location", return_value="unknown"):
+                state = prov.get_state()
+        assert state.image_url is None
+
+
+# ── Image priority (resolve_vehicle_image_url) ─────────────────────────────
+
+class TestVehicleImagePriority:
+
+    def _import_resolve(self):
+        import sys
+        from pathlib import Path as P
+        sys.path.insert(0, str(P(__file__).parent.parent / "app"))
+        from services.vehicle_image_service import resolve_vehicle_image_url
+        return resolve_vehicle_image_url
+
+    def test_manual_wins_over_auto(self, tmp_path, monkeypatch):
+        """car.webp (manual) takes priority over auto.webp."""
+        import core.db as _db
+        monkeypatch.setattr(_db, "DATA_DIR", tmp_path)
+        veh_dir = tmp_path / "vehicles" / "v0"
+        veh_dir.mkdir(parents=True, exist_ok=True)
+        (veh_dir / "car.webp").write_bytes(b"manual")
+        (veh_dir / "auto.webp").write_bytes(b"auto")
+
+        resolve = self._import_resolve()
+        url = resolve({"id": "v0"})
+        assert url == "/api/vehicles/v0/image/file"
+        # Both exist — car.webp wins; the file endpoint checks car.webp first
+
+    def test_auto_wins_over_silhouette(self, tmp_path, monkeypatch):
+        """auto.webp takes priority over any silhouette key."""
+        import core.db as _db
+        monkeypatch.setattr(_db, "DATA_DIR", tmp_path)
+        veh_dir = tmp_path / "vehicles" / "v0"
+        veh_dir.mkdir(parents=True, exist_ok=True)
+        (veh_dir / "auto.webp").write_bytes(b"auto")
+
+        resolve = self._import_resolve()
+        url = resolve({"id": "v0", "default_image_key": "silhouette_suv"})
+        assert url == "/api/vehicles/v0/image/file"
+
+    def test_silhouette_key_wins_over_placeholder(self, tmp_path, monkeypatch):
+        """A saved default_image_key is used when no webp files exist."""
+        import core.db as _db
+        monkeypatch.setattr(_db, "DATA_DIR", tmp_path)
+
+        resolve = self._import_resolve()
+        url = resolve({"id": "v0", "default_image_key": "silhouette_suv"})
+        assert "silhouette_suv" in url
+        assert url.endswith(".svg")
+
+    def test_placeholder_when_nothing(self, tmp_path, monkeypatch):
+        """Placeholder returned when no webp, no key, no match."""
+        import core.db as _db
+        monkeypatch.setattr(_db, "DATA_DIR", tmp_path)
+        import services.vehicle_image_service as _svc
+        monkeypatch.setattr(_svc, "_manifest_cache", {"version": 1, "silhouettes": [], "models": []})
+
+        resolve = self._import_resolve()
+        url = resolve({"id": "v0", "name": "", "brand": "", "model": ""})
+        assert "placeholder" in url or "silhouette" in url
