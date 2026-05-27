@@ -5992,19 +5992,28 @@ async function loadContracts(){
 
 async function loadBuiltinContracts(){
   try{
-    const rows=await apiFetch('/api/charging-contracts/builtin').then(r=>r.json());
+    const [builtins, existing] = await Promise.all([
+      apiFetch('/api/charging-contracts/builtin').then(r=>r.json()),
+      apiFetch('/api/charging-contracts').then(r=>r.json()).catch(()=>[]),
+    ]);
+    const importedNames = new Set((existing||[]).map(c=>c.name));
     const el=$('builtin_contract_list');
     if(!el) return;
-    el.innerHTML=rows.map(c=>`
-      <div style="padding:10px 12px;background:#1e2030;border-radius:8px;border:1px solid var(--brd)">
+    el.innerHTML=builtins.map(c=>{
+      const imported=importedNames.has(c.name);
+      const btn=imported
+        ? `<span style="font-size:.72rem;color:var(--acc);font-weight:600">✓ Importiert</span>`
+        : `<button class="btn-s" style="font-size:.72rem;padding:3px 8px" onclick="importBuiltinContract(${JSON.stringify(JSON.stringify(c))})" data-requires-permission="public_charging:manage_contracts">📥 Importieren</button>`;
+      return `<div style="padding:10px 12px;background:#1e2030;border-radius:8px;border:1px solid ${imported?'var(--acc)':'var(--brd)'}">
         <div style="font-size:.82rem;font-weight:600;margin-bottom:2px">${escapeHtml(c.name)}</div>
         <div style="font-size:.72rem;color:var(--mute);margin-bottom:6px">${escapeHtml(c.description||'')}
           ${c.monthly_fee_eur?'<br>'+c.monthly_fee_eur.toFixed(2)+' €/Monat':''}
           ${c.price_ac_kwh!=null?'<br>AC: '+c.price_ac_kwh.toFixed(3)+' €/kWh':''}
           ${c.price_dc_kwh!=null?'<br>DC: '+c.price_dc_kwh.toFixed(3)+' €/kWh':''}
         </div>
-        <button class="btn-s" style="font-size:.72rem;padding:3px 8px" onclick="importBuiltinContract(${JSON.stringify(JSON.stringify(c))})" data-requires-permission="public_charging:manage_contracts">📥 Importieren</button>
-      </div>`).join('');
+        ${btn}
+      </div>`;
+    }).join('');
     applyPermissions();
   }catch(e){ console.warn('loadBuiltinContracts',e); }
 }
@@ -6012,13 +6021,20 @@ async function loadBuiltinContracts(){
 async function importBuiltinContract(jsonStr){
   try{
     const c=JSON.parse(jsonStr);
-    const r=await apiFetch('/api/charging-contracts',{
+    const res=await apiFetch('/api/charging-contracts',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({name:c.name,cpo:c.cpo||'',price_ac_kwh:c.price_ac_kwh,price_dc_kwh:c.price_dc_kwh,monthly_fee_eur:c.monthly_fee_eur||0,notes:c.description||''})
-    }).then(r=>r.json());
-    if(r.id){ loadContracts(); }
-    else{ alert(r.error||'Fehler beim Importieren'); }
-  }catch(e){ alert(e.message); }
+    });
+    const r=await res.json();
+    if(r.id){
+      const dflt=r.is_default?' (als Standard gesetzt)':'';
+      toast(`✓ ${escapeHtml(c.name)} importiert${dflt}`);
+      await loadContracts();
+      await loadBuiltinContracts();
+    } else {
+      toast(r.error||'Fehler beim Importieren','err');
+    }
+  }catch(e){ toast(e.message,'err'); }
 }
 
 function showContractForm(data){

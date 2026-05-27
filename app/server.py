@@ -785,11 +785,19 @@ def fetch_entsoe_spot(api_key: str):
     except Exception as e:
         log.warning("ENTSO-E error: %s", e); return None
 
-def calc_extern_price(cfg, charger_type, spot):
+def calc_extern_price(cfg, charger_type, spot=None):
+    """Legacy wrapper — use pricing_service.resolve_session_price() for new code."""
+    try:
+        from services.pricing_service import resolve_session_price
+        from core.db import _get_db, close_db_if_owned
+        con = _get_db()
+        pr = resolve_session_price("extern", charger_type, cfg, con)
+        close_db_if_owned(con)
+        if pr["price_per_kwh"] is not None:
+            return pr["price_per_kwh"]
+    except Exception:
+        pass
     is_dc = charger_type == "dc"
-    if spot is not None:
-        markup = cfg.get("entsoe_dc_markup" if is_dc else "entsoe_ac_markup", 6.0 if is_dc else 3.0)
-        return round(spot * markup, 4)
     return cfg.get("price_per_kwh_dc" if is_dc else "price_per_kwh_ac", 0.75 if is_dc else 0.45)
 
 def ha_notify(cfg, title, message):
@@ -2198,9 +2206,10 @@ def _build_report_html(sessions, period_info, cfg, lang="de"):
     plabel     = period_info.get("label_de" if is_de else "label_en", "")
     loc_filter = cfg.get("report_email_location_filter", "all")
     loc_lbl, veh_lbl = _report_filter_labels(cfg, is_de)
+    from services.pricing_service import get_session_duration_seconds
     total_kwh  = sum(s.get("kwh_charged") or 0 for s in sessions)
     total_cost = sum(s.get("cost_eur")    or 0 for s in sessions)
-    total_secs = sum(s.get("duration_sec") or 0 for s in sessions)
+    total_secs = sum(get_session_duration_seconds(s) or 0 for s in sessions)
     home_kwh   = sum((s.get("kwh_charged") or 0) for s in sessions if s.get("location") == "home")
     ext_kwh    = sum((s.get("kwh_charged") or 0) for s in sessions if s.get("location") == "extern")
     total_h    = total_secs / 3600

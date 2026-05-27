@@ -340,6 +340,8 @@ def api_patch_session(sid):
     if not has_permission(_current_user(), "sessions:edit"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: sessions:edit"}), 403
     data = request.get_json(force=True) or {}
+    # Track which cost fields the user explicitly sent (before filtering)
+    _user_sent_cost_fields = {"price_per_kwh", "cost_eur"} & set(data.keys())
     allowed = {
         "kwh_charged", "price_per_kwh", "cost_eur", "charger_power_kw",
         "start_ts", "end_ts", "soc_start", "soc_end",
@@ -454,7 +456,8 @@ def api_patch_session(sid):
         except (ValueError, TypeError):
             pass
 
-    if "cost_eur" in fields or "price_per_kwh" in fields:
+    if _user_sent_cost_fields:
+        # User explicitly provided price/cost → mark as manual
         fields["cost_manual"] = 1
     elif existing.get("cost_manual", 0) == 0:
         # Re-price automatically when location, charger_type, or kwh changes and no manual override
