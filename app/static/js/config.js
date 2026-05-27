@@ -47,18 +47,8 @@ async function loadProviderFields(pid) {
 
 async function saveConfig() {
   const cfg = {
-    provider:             $('c_provider')?.value || 'ha',
-    car_name:             $('c_car').value,
-    notify_service:       $('c_notify')?.value.trim() || '',
-    battery_capacity_kwh: parseFloat($('c_bat').value),
-    price_per_kwh_home:   parseFloat($('c_price_home').value),
-    price_per_kwh_ac:     parseFloat($('c_price_ac').value),
-    price_per_kwh_dc:     parseFloat($('c_price_dc').value),
-    dc_threshold_kw:      parseFloat($('c_dc_thresh').value),
-    entsoe_api_key:       $('c_entsoe_key').value.trim(),
-    entsoe_ac_markup:     parseFloat($('c_ac_markup').value),
-    entsoe_dc_markup:     parseFloat($('c_dc_markup').value),
-    poll_interval:        parseInt($('c_poll').value),
+    provider: $('c_provider')?.value || 'ha',
+    car_name: $('c_car')?.value || '',
   };
   document.querySelectorAll('[id^="pf_"]').forEach(el => {
     const key = el.id.replace('pf_', '');
@@ -72,7 +62,7 @@ async function saveConfig() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(cfg),
   });
-  if (r.ok) { toast('Konfiguration gespeichert'); $('carName').textContent = cfg.car_name; }
+  if (r.ok) { toast('Konfiguration gespeichert'); if($('carName') && cfg.car_name) $('carName').textContent = cfg.car_name; }
   else toast('Fehler beim Speichern', 'err');
 }
 

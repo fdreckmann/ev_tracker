@@ -842,12 +842,12 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
       <!-- 4. Laden & Kosten -->
       <div class="cfg-grp-label">Laden &amp; Kosten</div>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('preise',this)">💰 Kostenberechnung</button>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('zaehler',this)">🔌 Zähler &amp; Wallbox</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('tarif',this)" data-requires-permission="tariffs:view">⚡ Zuhause-Strom</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('ladeabos',this)" data-requires-permission="config:read">🪙 Ladekarten &amp; Abos</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('tarif',this)" data-requires-permission="tariffs:view">🏠 Zuhause laden</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('ladeabos',this)" data-requires-permission="config:read">🌐 Öffentlich laden</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('ladevorgang',this)">🔍 Ladevorgang-Erkennung</button>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('abrechnung',this)" data-requires-permission="billing:view">💼 Abrechnung</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('missing-charges-cfg',this)">🔍 Fehlende Ladevorg.</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('erweitert-preise',this)">⚗️ Erweitert / Legacy</button>
 
       <!-- 5. Benachrichtigungen -->
       <div class="cfg-grp-label" data-requires-permission="notifications:view">Benachrichtigungen</div>
@@ -934,17 +934,10 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         </div>
       </div>
 
-      <!-- PREISMODELL -->
-      <div id="cfgsec-preise" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">Kostenberechnung</div>
-        <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:16px;line-height:1.7">
-           <strong style="color:#fff">Zuhause:</strong> Fixer Tarif<br>
-           <strong style="color:#fff">Extern AC:</strong> ENTSO-E Spot × AC-Faktor<br>
-           <strong style="color:#fff">Extern DC:</strong> ENTSO-E Spot × DC-Faktor
-        </div>
+      <!-- LADEVORGANG-ERKENNUNG -->
+      <div id="cfgsec-ladevorgang" class="cfg-section" style="display:none">
+        <div class="cfg-sec-title">Ladevorgang-Erkennung</div>
         <div class="form-grid">
-          <div class="fg"><label>Heimpreis (€/kWh)</label>
-            <input type="number" id="c_price_home" value="{{ cfg.price_per_kwh_home }}" step="0.001" min="0"></div>
           <div class="fg"><label>Batteriekapazität (kWh)</label>
             <input type="number" id="c_bat" value="{{ cfg.battery_capacity_kwh }}" step="0.1" min="1"></div>
           <div class="fg"><label>DC-Schwellwert (kW)</label>
@@ -952,33 +945,79 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             <span class="hint">Ladeleistung ab der DC erkannt wird</span></div>
           <div class="fg"><label>Polling-Intervall (s)</label>
             <input type="number" id="c_poll" value="{{ cfg.poll_interval }}" min="30" max="600"></div>
-          <div class="fg"><label>Extern AC Fallback (€/kWh)</label>
-            <input type="number" id="c_price_ac" value="{{ cfg.price_per_kwh_ac }}" step="0.01" min="0"></div>
-          <div class="fg"><label>Extern DC Fallback (€/kWh)</label>
-            <input type="number" id="c_price_dc" value="{{ cfg.price_per_kwh_dc }}" step="0.01" min="0"></div>
         </div>
-
-        <div style="margin-top:20px">
-          <div class="cfg-sec-title">ENTSO-E Strompreis API</div>
-          <div class="warn-box" style="margin-bottom:16px">
-            Registrierung erforderlich (kostenlos) auf <strong>transparency.entsoe.eu</strong>
-          </div>
-          <div class="form-grid">
-            <div class="fg full"><label>ENTSO-E API Key</label>
-              <input type="password" id="c_entsoe_key" value="{{ cfg.entsoe_api_key }}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></div>
-            <div class="fg"><label>AC Aufschlagsfaktor</label>
-              <input type="number" id="c_ac_markup" value="{{ cfg.entsoe_ac_markup }}" step="0.1" min="1"></div>
-            <div class="fg"><label>DC Aufschlagsfaktor</label>
-              <input type="number" id="c_dc_markup" value="{{ cfg.entsoe_dc_markup }}" step="0.1" min="1"></div>
-          </div>
-          <div style="margin-top:10px;display:flex;gap:10px;align-items:center">
-            <button class="btn-g" onclick="testEntsoe()">🔗 ENTSO-E testen</button>
-            <div id="entsoeRes" style="font-size:.78rem;font-family:var(--mono);color:var(--mute)"></div>
-          </div>
-        </div>
-
         <div class="btn-row">
-          <button class="btn-p" onclick="saveConfig()">💾 Speichern</button>
+          <button class="btn-p" onclick="saveChargingDetectionConfig()">💾 Speichern</button>
+          <span id="detection_save_status" style="font-size:.75rem;color:var(--mute);margin-left:8px"></span>
+        </div>
+
+        <div style="margin-top:24px;border-top:1px solid var(--brd);padding-top:20px">
+          <div class="cfg-sec-title">Fehlende Ladevorgänge erkennen</div>
+          <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
+            EV Tracker erkennt automatisch mögliche fehlende Ladevorgänge, wenn das Fahrzeug offline war und der SOC danach gestiegen ist.
+          </p>
+          <div class="form-grid">
+            <div class="fg full"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="c_missing_charge_detection_enabled" style="width:auto"
+                {% if cfg.missing_charge_detection_enabled %}checked{% endif %}>
+              Erkennung aktiviert
+            </label></div>
+            <div class="fg full"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="c_missing_charge_show_dashboard_hints" style="width:auto"
+                {% if cfg.missing_charge_show_dashboard_hints %}checked{% endif %}>
+              Hinweise auf dem Dashboard anzeigen
+            </label></div>
+            <div><label>Mindest-Offlinedauer (Min.)</label>
+              <input type="number" id="c_missing_charge_min_gap_minutes" min="5" max="1440"
+                value="{{ cfg.missing_charge_min_gap_minutes|default(30) }}">
+              <span class="hint">Lücke zwischen zwei Snapshots (Standard: 30)</span></div>
+            <div><label>Mindest-SOC-Anstieg (%)</label>
+              <input type="number" id="c_missing_charge_min_soc_gain_percent" min="1" max="50" step="0.5"
+                value="{{ cfg.missing_charge_min_soc_gain_percent|default(3) }}">
+              <span class="hint">SOC-Zuwachs ab dem ein Vorschlag entsteht (Standard: 3)</span></div>
+            <div><label>Mindest-Energie (kWh)</label>
+              <input type="number" id="c_missing_charge_min_kwh" min="0.5" max="100" step="0.5"
+                value="{{ cfg.missing_charge_min_kwh|default(2) }}">
+              <span class="hint">Geschätzte kWh unter der kein Vorschlag entsteht (Standard: 2)</span></div>
+            <div><label>Standard-Verbrauch (kWh/100 km)</label>
+              <input type="number" id="c_missing_charge_default_consumption_kwh_per_100km" min="5" max="50" step="0.5"
+                value="{{ cfg.missing_charge_default_consumption_kwh_per_100km|default(18) }}">
+              <span class="hint">Wird für Fahrenergie-Berechnung verwendet (Standard: 18)</span></div>
+            <div class="fg full"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="c_missing_charge_ignore_small_bms" style="width:auto"
+                {% if cfg.missing_charge_ignore_small_bms %}checked{% endif %}>
+              Kleine BMS-SOC-Korrekturen ignorieren (1–2 %)
+            </label></div>
+          </div>
+          <button class="btn-p" style="margin-top:14px" onclick="saveMissingChargeConfig()">💾 Speichern</button>
+          <div id="missingChargeCfgResult" style="margin-top:8px;font-size:.78rem;font-family:var(--mono);color:var(--mute)"></div>
+        </div>
+      </div>
+
+      <!-- ERWEITERT / LEGACY -->
+      <div id="cfgsec-erweitert-preise" class="cfg-section" style="display:none">
+        <div class="cfg-sec-title">Erweitert / Legacy / Experimentell</div>
+        <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:16px">
+          Experimentelle Preisberechnung via ENTSO-E Spotmarkt. Nur für Nutzer mit dynamischem Stromtarif relevant.
+        </p>
+        <div class="warn-box" style="margin-bottom:16px">
+          ENTSO-E: Registrierung erforderlich (kostenlos) auf <strong>transparency.entsoe.eu</strong>
+        </div>
+        <div class="form-grid">
+          <div class="fg full"><label>ENTSO-E API Key</label>
+            <input type="password" id="c_entsoe_key" value="{{ cfg.entsoe_api_key }}" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></div>
+          <div class="fg"><label>AC Aufschlagsfaktor</label>
+            <input type="number" id="c_ac_markup" value="{{ cfg.entsoe_ac_markup }}" step="0.1" min="1"></div>
+          <div class="fg"><label>DC Aufschlagsfaktor</label>
+            <input type="number" id="c_dc_markup" value="{{ cfg.entsoe_dc_markup }}" step="0.1" min="1"></div>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:10px;align-items:center">
+          <button class="btn-g" onclick="testEntsoe()">🔗 ENTSO-E testen</button>
+          <div id="entsoeRes" style="font-size:.78rem;font-family:var(--mono);color:var(--mute)"></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn-p" onclick="saveAdvancedPricingConfig()">💾 Speichern</button>
+          <span id="advanced_save_status" style="font-size:.75rem;color:var(--mute);margin-left:8px"></span>
         </div>
       </div>
 
@@ -1403,7 +1442,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
            ══════════════════════════════════════════════════════════ -->
       <div id="cfgsec-tarif" class="cfg-section" style="display:none">
         <div class="card">
-          <div class="card-title">⚡ Zuhause-Strom &amp; Tarif</div>
+          <div class="card-title">🏠 Zuhause laden &amp; Tarif</div>
           <div style="display:flex;flex-direction:column;gap:16px">
             <div>
               <label class="cfg-lbl">Tarif-Provider</label>
@@ -1419,17 +1458,9 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             </div>
             <!-- Fixed price panel -->
             <div id="tariff_panel_fixed">
-              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
-                <div><label class="cfg-lbl">Preis Zuhause (€/kWh)</label>
-                  <input type="number" id="tariff_price_home" step="0.001" min="0"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-                <div><label class="cfg-lbl">Preis AC Extern (€/kWh)</label>
-                  <input type="number" id="tariff_price_ac" step="0.001" min="0"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-                <div><label class="cfg-lbl">Preis DC Extern (€/kWh)</label>
-                  <input type="number" id="tariff_price_dc" step="0.001" min="0"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-              </div>
+              <div><label class="cfg-lbl">Preis Zuhause (€/kWh)</label>
+                <input type="number" id="tariff_price_home" step="0.001" min="0"
+                  style="width:160px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
             </div>
             <!-- Octopus panel -->
             <div id="tariff_panel_octopus" style="display:none">
@@ -1546,7 +1577,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
            ══════════════════════════════════════════════════════════ -->
       <div id="cfgsec-ladeabos" class="cfg-section" style="display:none">
         <div class="card">
-          <div class="card-title">🪙 Ladekarten &amp; Abos</div>
+          <div class="card-title">🌐 Öffentlich laden</div>
           <p style="font-size:.8rem;color:var(--mute);margin:0 0 16px">
             Definiere dein Ladeabo (z.B. EnBW M, IONITY Passport), damit der EV Tracker die Kosten externer Ladevorgänge automatisch berechnet.
             Der Standardvertrag wird bei neuen Extern-Sessions verwendet.
@@ -1572,7 +1603,23 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
                 style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
             </div>
           </div>
-          <button class="btn-p" onclick="savePcConfig()" style="margin-bottom:24px">💾 Speichern</button>
+          <!-- Legacy fallback prices (from general config) -->
+          <details style="margin-bottom:18px">
+            <summary style="font-size:.78rem;color:var(--mute);cursor:pointer;padding:6px 0">🔧 Legacy-Fallback (price_per_kwh_ac / _dc)</summary>
+            <div style="padding:12px 0 0;display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:360px">
+              <div>
+                <label class="cfg-lbl">AC Fallback (€/kWh)</label>
+                <input type="number" id="c_price_ac" step="0.01" min="0" max="5"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+              </div>
+              <div>
+                <label class="cfg-lbl">DC Fallback (€/kWh)</label>
+                <input type="number" id="c_price_dc" step="0.01" min="0" max="5"
+                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+              </div>
+            </div>
+          </details>
+          <button class="btn-p" onclick="savePublicChargingConfig()" style="margin-bottom:24px">💾 Speichern</button>
           <span id="pc_save_status" style="font-size:.75rem;color:var(--mute);margin-left:8px"></span>
 
           <!-- Contract list -->
@@ -1845,20 +1892,6 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         </div>
       </div>
 
-      <div id="cfgsec-notify" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">Push Notifications (Home Assistant)</div>
-        <div class="form-grid">
-          <div class="fg full"><label>Notify Service</label>
-            <input id="c_notify" value="{{ cfg.notify_service }}" placeholder="notify.mobile_app_mein_iphone">
-            <span class="hint">HA → Einstellungen → Integrationen → Companion App → Service Name</span></div>
-        </div>
-        <div class="warn-box" style="margin-top:12px">
-          Benachrichtigung beim Start und Ende jedes Ladevorgangs.
-        </div>
-        <div class="btn-row">
-          <button class="btn-p" onclick="saveConfig()">💾 Speichern</button>
-        </div>
-      </div>
 
       <!-- BENACHRICHTIGUNGEN (zentral) -->
       <div id="cfgsec-notifications" class="cfg-section" style="display:none">
@@ -2177,53 +2210,6 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       </div>
 
       <!-- FEHLENDE LADEVORGÄNGE -->
-      <div id="cfgsec-missing-charges-cfg" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">Fehlende Ladevorgänge erkennen</div>
-        <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
-          EV Tracker erkennt automatisch mögliche fehlende Ladevorgänge, wenn das Fahrzeug offline war und der SOC danach gestiegen ist.
-        </p>
-        <div class="form-grid">
-          <div class="fg full"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-            <input type="checkbox" id="c_missing_charge_detection_enabled" style="width:auto"
-              {% if cfg.missing_charge_detection_enabled %}checked{% endif %}>
-            Erkennung aktiviert
-          </label></div>
-          <div class="fg full"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-            <input type="checkbox" id="c_missing_charge_show_dashboard_hints" style="width:auto"
-              {% if cfg.missing_charge_show_dashboard_hints %}checked{% endif %}>
-            Hinweise auf dem Dashboard anzeigen
-          </label></div>
-
-          <div><label>Mindest-Offlinedauer (Min.)</label>
-            <input type="number" id="c_missing_charge_min_gap_minutes" min="5" max="1440"
-              value="{{ cfg.missing_charge_min_gap_minutes|default(30) }}">
-            <span class="hint">Lücke zwischen zwei Snapshots (Standard: 30)</span></div>
-
-          <div><label>Mindest-SOC-Anstieg (%)</label>
-            <input type="number" id="c_missing_charge_min_soc_gain_percent" min="1" max="50" step="0.5"
-              value="{{ cfg.missing_charge_min_soc_gain_percent|default(3) }}">
-            <span class="hint">SOC-Zuwachs ab dem ein Vorschlag entsteht (Standard: 3)</span></div>
-
-          <div><label>Mindest-Energie (kWh)</label>
-            <input type="number" id="c_missing_charge_min_kwh" min="0.5" max="100" step="0.5"
-              value="{{ cfg.missing_charge_min_kwh|default(2) }}">
-            <span class="hint">Geschätzte kWh unter der kein Vorschlag entsteht (Standard: 2)</span></div>
-
-          <div><label>Standard-Verbrauch (kWh/100 km)</label>
-            <input type="number" id="c_missing_charge_default_consumption_kwh_per_100km" min="5" max="50" step="0.5"
-              value="{{ cfg.missing_charge_default_consumption_kwh_per_100km|default(18) }}">
-            <span class="hint">Wird für Fahrenergie-Berechnung verwendet (Standard: 18)</span></div>
-
-          <div class="fg full"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-            <input type="checkbox" id="c_missing_charge_ignore_small_bms" style="width:auto"
-              {% if cfg.missing_charge_ignore_small_bms %}checked{% endif %}>
-            Kleine BMS-SOC-Korrekturen ignorieren (1–2 %)
-          </label></div>
-        </div>
-        <button class="btn-p" style="margin-top:14px"
-          onclick="saveMissingChargeConfig()">💾 Speichern</button>
-        <div id="missingChargeCfgResult" style="margin-top:8px;font-size:.78rem;font-family:var(--mono);color:var(--mute)"></div>
-      </div>
 
       <!-- LOGIN & SICHERHEIT -->
       <div id="cfgsec-auth" class="cfg-section" style="display:none">
@@ -3418,12 +3404,7 @@ async function loadConfig(){
   // Update dashboard vehicle card
   if($('dashVehicleName') && c.car_name) $('dashVehicleName').textContent = c.car_name;
   if($('dashVehiclePlate')) $('dashVehiclePlate').textContent = c.template_kennzeichen || '—';
-  const m = {c_car:'car_name',c_notify:'notify_service',
-             c_bat:'battery_capacity_kwh',
-             c_price_home:'price_per_kwh_home',c_price_ac:'price_per_kwh_ac',c_price_dc:'price_per_kwh_dc',
-             c_dc_thresh:'dc_threshold_kw',
-             c_entsoe_key:'entsoe_api_key',c_ac_markup:'entsoe_ac_markup',c_dc_markup:'entsoe_dc_markup',
-             c_poll:'poll_interval'};
+  const m = {c_car:'car_name'};
   for(const[id,key]of Object.entries(m)){const el=$(id);if(el)el.value=c[key]||'';}
   await loadProviderFields(c.provider||'ha');
   document.querySelectorAll('[id^="pf_"]').forEach(el=>{
@@ -5779,8 +5760,6 @@ async function saveTariffConfig(){
   const payload = {
     tariff_provider:          g('tariff_provider')?.value||'fixed',
     price_per_kwh_home:       parseFloat(g('tariff_price_home')?.value||0.30),
-    price_per_kwh_ac:         parseFloat(g('tariff_price_ac')?.value||0.45),
-    price_per_kwh_dc:         parseFloat(g('tariff_price_dc')?.value||0.75),
     tariff_fallback_price:    parseFloat(g('tariff_fallback_price')?.value||0.30),
     octopus_api_key:          g('tariff_octopus_api_key')?.value||'',
     octopus_account_id:       g('tariff_octopus_account_id')?.value||'',
@@ -5862,6 +5841,8 @@ async function loadPcConfig(){
     if($('pc_enabled'))   $('pc_enabled').value   = r.public_charging_price_enabled ? '1':'0';
     if($('pc_fallback_ac')) $('pc_fallback_ac').value = r.public_charging_fallback_ac ?? 0.45;
     if($('pc_fallback_dc')) $('pc_fallback_dc').value = r.public_charging_fallback_dc ?? 0.75;
+    if($('c_price_ac'))   $('c_price_ac').value   = r.price_per_kwh_ac ?? '';
+    if($('c_price_dc'))   $('c_price_dc').value   = r.price_per_kwh_dc ?? '';
     if($('enbw_enabled'))  $('enbw_enabled').checked = !!r.enbw_price_lookup_enabled;
     if($('enbw_cache_min')) $('enbw_cache_min').value = r.enbw_price_cache_minutes ?? 60;
     toggleEnbwSection();
@@ -5877,6 +5858,79 @@ async function savePcConfig(){
       public_charging_fallback_ac: parseFloat($('pc_fallback_ac').value)||0.45,
       public_charging_fallback_dc: parseFloat($('pc_fallback_dc').value)||0.75,
     };
+    const r=await apiFetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+    if(r.ok||r.saved){if(st){st.textContent='✅ Gespeichert';st.style.color='#6ee7b7';}}
+    else{if(st){st.textContent='❌ '+(r.error||'Fehler');st.style.color='#f87171';}}
+  }catch(e){if(st){st.textContent='❌ '+e.message;st.style.color='#f87171';}}
+}
+
+async function savePublicChargingConfig(){
+  const st = $('pc_save_status');
+  if(st){st.textContent='⏳…';st.style.color='var(--mute)';}
+  try{
+    const body={
+      public_charging_price_enabled: $('pc_enabled').value==='1',
+      public_charging_fallback_ac: parseFloat($('pc_fallback_ac').value)||0.45,
+      public_charging_fallback_dc: parseFloat($('pc_fallback_dc').value)||0.75,
+    };
+    const ac = parseFloat($('c_price_ac')?.value);
+    const dc = parseFloat($('c_price_dc')?.value);
+    if(!isNaN(ac)) body.price_per_kwh_ac = ac;
+    if(!isNaN(dc)) body.price_per_kwh_dc = dc;
+    const r=await apiFetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+    if(r.ok||r.saved){if(st){st.textContent='✅ Gespeichert';st.style.color='#6ee7b7';}}
+    else{if(st){st.textContent='❌ '+(r.error||'Fehler');st.style.color='#f87171';}}
+  }catch(e){if(st){st.textContent='❌ '+e.message;st.style.color='#f87171';}}
+}
+
+function loadMeterConfig(){ loadConfig(); }
+
+async function loadChargingDetectionConfig(){
+  try{
+    const c = await apiFetch('/api/config').then(r=>r.json());
+    if($('c_bat'))      $('c_bat').value      = c.battery_capacity_kwh||'';
+    if($('c_dc_thresh')) $('c_dc_thresh').value = c.dc_threshold_kw||'';
+    if($('c_poll'))     $('c_poll').value     = c.poll_interval||60;
+  }catch(e){ console.warn('loadChargingDetectionConfig',e); }
+}
+
+async function saveChargingDetectionConfig(){
+  const st = $('detection_save_status');
+  if(st){st.textContent='⏳…';st.style.color='var(--mute)';}
+  try{
+    const body={};
+    const bat = parseFloat($('c_bat')?.value);
+    const dc  = parseFloat($('c_dc_thresh')?.value);
+    const poll= parseInt($('c_poll')?.value);
+    if(!isNaN(bat)) body.battery_capacity_kwh = bat;
+    if(!isNaN(dc))  body.dc_threshold_kw = dc;
+    if(!isNaN(poll)) body.poll_interval = poll;
+    const r=await apiFetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
+    if(r.ok||r.saved){if(st){st.textContent='✅ Gespeichert';st.style.color='#6ee7b7';}}
+    else{if(st){st.textContent='❌ '+(r.error||'Fehler');st.style.color='#f87171';}}
+  }catch(e){if(st){st.textContent='❌ '+e.message;st.style.color='#f87171';}}
+}
+
+async function loadAdvancedPricingConfig(){
+  try{
+    const c = await apiFetch('/api/config').then(r=>r.json());
+    if($('c_entsoe_key')) $('c_entsoe_key').value = c.entsoe_api_key||'';
+    if($('c_ac_markup'))  $('c_ac_markup').value  = c.entsoe_ac_markup||'';
+    if($('c_dc_markup'))  $('c_dc_markup').value  = c.entsoe_dc_markup||'';
+  }catch(e){ console.warn('loadAdvancedPricingConfig',e); }
+}
+
+async function saveAdvancedPricingConfig(){
+  const st = $('advanced_save_status');
+  if(st){st.textContent='⏳…';st.style.color='var(--mute)';}
+  try{
+    const body={};
+    const key = $('c_entsoe_key')?.value.trim()||'';
+    if(key && key!=='********') body.entsoe_api_key = key;
+    const ac = parseFloat($('c_ac_markup')?.value);
+    const dc = parseFloat($('c_dc_markup')?.value);
+    if(!isNaN(ac)) body.entsoe_ac_markup = ac;
+    if(!isNaN(dc)) body.entsoe_dc_markup = dc;
     const r=await apiFetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
     if(r.ok||r.saved){if(st){st.textContent='✅ Gespeichert';st.style.color='#6ee7b7';}}
     else{if(st){st.textContent='❌ '+(r.error||'Fehler');st.style.color='#f87171';}}
@@ -6406,12 +6460,14 @@ function cfgSection(id, btn){
   // profil = Konto & Sicherheit: load profile + passkeys + check SMTP for TOTP
   if(id==='profil') { loadMyProfile(); loadPasskeys(); checkSmtpForTotp(); }
   if(id==='roles')    loadRolesSection();
-  if(id==='zaehler')  loadConfig();
+  if(id==='zaehler')  loadMeterConfig();
   if(id==='reports'){ loadReportConfig(); }
   if(id==='abrechnung')    { loadBillingConfig(); }
   if(id==='report-archive'){ loadReportArchive(); }
   if(id==='tarif')         { loadTariffConfig(); }
   if(id==='ladeabos')      { loadPcConfig(); loadContracts(); loadBuiltinContracts(); }
+  if(id==='ladevorgang')   { loadChargingDetectionConfig(); }
+  if(id==='erweitert-preise') { loadAdvancedPricingConfig(); }
   if(id==='api-tokens')    { loadApiTokens(); renderApiTokenScopeCheckboxes(); }
   if(id==='mqtt')          { loadMqttConfig(); loadNotifChannels(); }
   if(id==='notif-rules')   { loadNotifRules(); }
