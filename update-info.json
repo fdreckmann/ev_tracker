@@ -1,29 +1,39 @@
 {
   "latest_version": "2.0.53",
   "release_date": "2026-05-27",
-  "channel": "beta",
-  "title": "Pricing-Core, Excel-Template-Export, Location-Update, API v1 Fixes",
+  "channel": "stable",
+  "title": "Stable Release — Meter-vcfg, SSRF-Härtung, XSS-Fixes, pytest grün",
   "summary": [
-    "Zentrale Preislogik (pricing_service) für alle Ladearten und Verträge",
-    "Excel-Template-Export: robuste Tabellenkopf-Erkennung, korrekte Spalten-Zuordnung",
-    "Location-Update neuberechnet Preis automatisch wenn cost_manual=0",
-    "API v1 PUT normalisiert Location/Ladeart und berechnet Preis neu",
-    "Preismetadaten (Quelle, Vertragsname) in Sessions und Excel-Export"
+    "Zähler-Logik komplett auf vcfg umgestellt (per-Fahrzeug Meter-Konfiguration)",
+    "SSRF-Schutz in cache_provider_image (localhost, 169.254.x, Private-IPs blockiert)",
+    "XSS-Härtung in allen JavaScript-Dateien und index.html Template",
+    "Debug-URL-Masking: Userinfo (user:password@host) und Query-Secrets werden maskiert",
+    "Fahrzeugbild-Priorität konsistent (manual > auto > Silhouette > Placeholder)",
+    "GitHub Actions: Tests vor Docker-Push, latest nur per v*-Tag",
+    "Unraid CA-Template in separates Repo ausgelagert",
+    "Full pytest grün (169 Tests)"
   ],
   "fixes": [
-    "match_column() nutzt TABLE_FIELDS für präzise Spalten-Erkennung (Preis/kWh, Preisquelle, Vertrag)",
-    "Summary-Zeilen (Ladezeit gesamt, Gesamtkosten) werden nicht mehr als Tabellenkopf erkannt",
-    "col_override unterstützt alte {\"1\": {\"field\": \"date\"}} und neue {\"1\": \"date\"} Formate",
-    "api_update_location: row_factory=sqlite3.Row verhindert TypeError bei dict()",
-    "API v1 POST/PUT: location/charger_type werden normalisiert (external→extern)",
-    "API v1 PUT: price_per_kwh ist jetzt erlaubtes Update-Feld, setzt cost_manual=1"
+    "server.py: Meter-Home-Detection nutzt vcfg statt cfg (vcfg = fahrzeugspezifische Config)",
+    "server.py: FLASK_SECRET_KEY verhindert /data/.secret_key-Schreiben bei Tests",
+    "vehicle_image_service.py: _is_ssrf_blocked() schützt cache_provider_image()",
+    "meter_providers.py: sanitize_debug_url() maskiert Userinfo und Query-Secrets",
+    "backup_service.py: Funktions-Schatten behoben (_create_backup_impl)",
+    "index.html: escapeHtml() für r.name, r.email, r.error, r.filename, r.provider, e.message, b.name",
+    "sessions.js: v.id/v.name in Option-Tags und s.id in modalTitle escaped",
+    "billing.js: r.month in Template-Literal escaped",
+    "reports.js: period_label, location_filter, triggered_by, status escaped",
+    "status.js: r.vehicle_id in Session-Tabelle escaped"
   ],
   "breaking_changes": [],
-  "migration_notes": [],
+  "migration_notes": [
+    "Keine DB-Migration nötig — alle neuen Spalten werden automatisch ergänzt",
+    "Unraid CA-Template: jetzt unter https://github.com/fdreckmann/ev-tracker-unraid-app"
+  ],
   "update_instructions": [
     "docker compose pull",
     "docker compose up -d",
-    "Oder über Unraid/Portainer: Container auf 'latest' aktualisieren"
+    "docker image prune -f"
   ],
   "release_url": "https://github.com/fdreckmann/ev_tracker/releases/latest"
 }

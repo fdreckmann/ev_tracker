@@ -212,17 +212,21 @@ class TestBillingJsXSS:
 
 class TestUpdateInfoChannel:
 
-    def test_channel_is_beta(self):
+    def test_channel_is_consistent(self):
+        """version.json and update-info.json must have the same channel."""
+        import json
+        info_path = Path(__file__).parent.parent / "update-info.json"
+        vpath = Path(__file__).parent.parent / "version.json"
+        info_data = json.loads(info_path.read_text(encoding="utf-8"))
+        v_data = json.loads(vpath.read_text(encoding="utf-8")) if vpath.exists() else {}
+        assert info_data.get("channel") in ("beta", "stable"), \
+            f"update-info.json channel must be 'beta' or 'stable', got {info_data.get('channel')!r}"
+        if v_data:
+            assert v_data.get("channel") == info_data.get("channel"), \
+                f"version.json channel {v_data.get('channel')!r} != update-info.json {info_data.get('channel')!r}"
+
+    def test_channel_not_empty(self):
         import json
         info_path = Path(__file__).parent.parent / "update-info.json"
         data = json.loads(info_path.read_text(encoding="utf-8"))
-        assert data.get("channel") == "beta", \
-            f"update-info.json channel must be 'beta', got {data.get('channel')!r}"
-
-    def test_version_json_channel_is_beta(self):
-        import json
-        vpath = Path(__file__).parent.parent / "version.json"
-        if vpath.exists():
-            data = json.loads(vpath.read_text(encoding="utf-8"))
-            assert data.get("channel") == "beta", \
-                f"version.json channel must be 'beta', got {data.get('channel')!r}"
+        assert data.get("channel"), "update-info.json channel must not be empty"
