@@ -203,6 +203,20 @@ def api_manual_session_create():
     elif price_kwh is not None:
         cost_eur = round(kwh * price_kwh, 2)
         cost_manual = 1
+    else:
+        # Auto-price via pricing_service (cost_manual stays 0)
+        try:
+            from services.pricing_service import resolve_session_price, calculate_session_cost
+            from core.config import load_config
+            _cfg = load_config()
+            con_tmp = _get_db()
+            _pr = resolve_session_price(location, charger_type, _cfg, con_tmp)
+            close_db_if_owned(con_tmp)
+            if _pr["price_per_kwh"] is not None:
+                price_kwh = _pr["price_per_kwh"]
+                cost_eur  = calculate_session_cost(kwh, price_kwh)
+        except Exception as _e:
+            log.debug("Auto-pricing for manual session failed: %s", _e)
 
     # ── Metadata ─────────────────────────────────────────────────────────────
     manual_note   = (data.get("manual_note") or data.get("note") or "").strip() or None
@@ -442,6 +456,29 @@ def api_patch_session(sid):
 
     if "cost_eur" in fields or "price_per_kwh" in fields:
         fields["cost_manual"] = 1
+    elif existing.get("cost_manual", 0) == 0:
+        # Re-price automatically when location, charger_type, or kwh changes and no manual override
+        _reprice_triggers = {"location", "charger_type", "kwh_charged"}
+        if _reprice_triggers & set(fields.keys()):
+            try:
+                from services.pricing_service import resolve_session_price, calculate_session_cost
+                from core.config import load_config
+                _cfg = load_config()
+                _loc = fields.get("location") or existing.get("location") or "unknown"
+                _ct  = fields.get("charger_type") or existing.get("charger_type") or "ac"
+                _kwh = float(fields.get("kwh_charged") or existing.get("kwh_charged") or 0)
+                _pr  = resolve_session_price(_loc, _ct, _cfg, con, sid)
+                if _pr["price_per_kwh"] is not None:
+                    fields["price_per_kwh"] = _pr["price_per_kwh"]
+                    fields["price_source"]   = _pr["price_source"]
+                    fields["price_confidence"] = _pr["price_confidence"]
+                    if _pr.get("contract_id"):
+                        fields["charging_contract_id"]   = _pr["contract_id"]
+                        fields["charging_contract_name"] = _pr["contract_name"]
+                    if _kwh > 0:
+                        fields["cost_eur"] = calculate_session_cost(_kwh, _pr["price_per_kwh"])
+            except Exception as _e:
+                log.debug("PATCH auto-repricing failed: %s", _e)
 
     set_clause = ", ".join(f"{k}=?" for k in fields)
     values = list(fields.values()) + [sid]
@@ -450,6 +487,67 @@ def api_patch_session(sid):
     _audit("session_edited", f"session_id={sid} fields={list(fields.keys())}", ip=request.remote_addr)
     close_db_if_owned(con)
     return jsonify({"ok": True, "id": sid})
+
+
+@sessions_bp.route("/api/sessions/<int:sid>/recalculate-cost", methods=["POST"])
+@require_login
+def api_session_recalculate_cost(sid):
+    """
+    Clears cost_manual flag and re-prices the session using current config
+    (contract, fallback prices, home tariff). Does not change kwh_charged.
+    """
+    user = _current_user()
+    if not has_permission(user, "sessions:edit"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: sessions:edit"}), 403
+
+    con = _get_db()
+    row = con.execute("SELECT * FROM sessions WHERE id=?", (sid,)).fetchone()
+    if not row:
+        close_db_if_owned(con)
+        return jsonify({"ok": False, "error": "Session nicht gefunden"}), 404
+    session = dict(row)
+
+    location     = session.get("location") or "unknown"
+    charger_type = session.get("charger_type") or "ac"
+    kwh          = session.get("kwh_charged")
+
+    try:
+        from services.pricing_service import resolve_session_price, calculate_session_cost
+        from core.config import load_config
+        cfg = load_config()
+        pr  = resolve_session_price(location, charger_type, cfg, con, sid)
+    except Exception as _e:
+        close_db_if_owned(con)
+        return jsonify({"ok": False, "error": f"Preisberechnung fehlgeschlagen: {_e}"}), 500
+
+    if pr["price_per_kwh"] is None:
+        close_db_if_owned(con)
+        return jsonify({"ok": False, "error": "Kein Preis ermittelbar für diesen Standort/Ladetyp."}), 422
+
+    cost = calculate_session_cost(kwh, pr["price_per_kwh"])
+    con.execute(
+        """UPDATE sessions
+           SET cost_manual=0, price_per_kwh=?, cost_eur=?,
+               price_source=?, price_confidence=?,
+               charging_contract_id=COALESCE(?,charging_contract_id),
+               charging_contract_name=COALESCE(?,charging_contract_name)
+           WHERE id=?""",
+        (pr["price_per_kwh"], cost,
+         pr.get("price_source"), pr.get("price_confidence"),
+         pr.get("contract_id"), pr.get("contract_name"),
+         sid),
+    )
+    con.commit()
+    _audit("session_recalculated", f"session_id={sid} source={pr.get('price_source')}", ip=request.remote_addr)
+    close_db_if_owned(con)
+    return jsonify({
+        "ok": True,
+        "id": sid,
+        "price_per_kwh": pr["price_per_kwh"],
+        "cost_eur": cost,
+        "price_source": pr.get("price_source"),
+        "price_confidence": pr.get("price_confidence"),
+    })
 
 
 @sessions_bp.route("/api/stats/monthly")
