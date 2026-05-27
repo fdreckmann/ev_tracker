@@ -45,6 +45,39 @@ def _cleanup_export_tokens():
                 pass
 
 
+def _parse_export_params(args_or_body, is_json=False):
+    """Parse and validate year/month/col_override from request args or JSON body.
+    Returns (y, m, override, error_response) where error_response is None on success."""
+    from datetime import datetime as _dt
+    _now = _dt.now()
+    _raw_y = args_or_body.get("year", _now.year)
+    _raw_m = args_or_body.get("month", _now.month)
+    try:
+        y = int(_raw_y)
+    except (ValueError, TypeError):
+        return None, None, None, (jsonify({"ok": False, "error": "year muss eine Zahl sein"}), 400)
+    try:
+        m = int(_raw_m)
+    except (ValueError, TypeError):
+        return None, None, None, (jsonify({"ok": False, "error": "month muss eine Zahl sein"}), 400)
+    if not (1 <= m <= 12):
+        return None, None, None, (jsonify({"ok": False, "error": "month muss zwischen 1 und 12 liegen"}), 400)
+    if y < 2000 or y > 2100:
+        return None, None, None, (jsonify({"ok": False, "error": "year außerhalb des gültigen Bereichs"}), 400)
+    # Parse col_override
+    if is_json:
+        raw_override = args_or_body.get("col_override")
+    else:
+        _raw_override_str = args_or_body.get("col_override", "null") or "null"
+        try:
+            raw_override = json.loads(_raw_override_str)
+        except (json.JSONDecodeError, ValueError):
+            return None, None, None, (jsonify({"ok": False, "error": "col_override enthält kein gültiges JSON"}), 400)
+    if raw_override is not None and not isinstance(raw_override, dict):
+        return None, None, None, (jsonify({"ok": False, "error": "col_override muss ein Objekt sein"}), 400)
+    return y, m, raw_override, None
+
+
 @export_bp.route("/api/export")
 @require_login
 def api_export():
@@ -56,10 +89,10 @@ def api_export():
     user = _current_user()
     if not has_permission(user, "export:create"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: export:create"}), 403
-    y = request.args.get("year", datetime.now().year, type=int)
-    m = request.args.get("month", datetime.now().month, type=int)
+    y, m, override, _err = _parse_export_params(request.args, is_json=False)
+    if _err:
+        return _err
     loc = request.args.get("location", "all")
-    override = json.loads(request.args.get("col_override", "null") or "null")
     cfg = load_config()
     if override is None:
         saved = cfg.get("template_column_mapping") or cfg.get("template_mapping") or {}
@@ -89,9 +122,23 @@ def api_export():
     }
     include_sig_param = request.args.get("include_signature")
     if include_sig_param is not None:
-        include_signature = include_sig_param.lower() == "true"
+        include_signature = include_sig_param.lower() in ("true", "1", "yes")
     else:
         include_signature = bool(cfg.get("export_include_signature", False))
+    _tmpl_hash = (cfg.get("active_template") or {}).get("hash")
+    _map_hash = cfg.get("template_mapping_hash")
+    _has_column_mapping = bool(cfg.get("template_column_mapping") or cfg.get("template_mapping"))
+    if _tmpl_hash and (_map_hash is None or _map_hash != _tmpl_hash) and _has_column_mapping:
+        return jsonify({
+            "ok": False,
+            "error": "Neues Template erkannt — bitte Mapping prüfen und erneut speichern bevor der Export gestartet wird.",
+            "hash_mismatch": True,
+        }), 409
+    elif _tmpl_hash and _map_hash and _tmpl_hash != _map_hash:
+        import logging as _log_mod
+        _log_mod.getLogger(__name__).warning(
+            "Template hash mismatch: template=%s mapping=%s", _tmpl_hash, _map_hash)
+    footer_start_row = cfg.get("template_footer_start_row")
     sig_mapping = cfg.get("signature_mapping") or {}
     # Backward compat: "cell" → "anchor_cell" in signature_mapping
     if sig_mapping and "cell" in sig_mapping and "anchor_cell" not in sig_mapping:
@@ -106,7 +153,8 @@ def api_export():
                       cell_mapping=cell_mapping, sheet=sheet,
                       include_signature=include_signature,
                       signature_path=str(SIGNATURE_PATH) if SIGNATURE_PATH.exists() else None,
-                      signature_mapping=sig_mapping, lang=lang)
+                      signature_mapping=sig_mapping, lang=lang,
+                      footer_start_row=footer_start_row)
         filename = f"EV_Ladeprotokoll_{y:04d}-{m:02d}.xlsx"
         return send_file(_io_exp.BytesIO(xlsx_bytes), as_attachment=True,
                          download_name=filename,
@@ -130,8 +178,9 @@ def api_export_preview():
     if not has_permission(user, "export:preview"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: export:preview"}), 403
     body = request.get_json(silent=True) or {}
-    y    = int(body.get("year",  datetime.now().year))
-    m    = int(body.get("month", datetime.now().month))
+    y, m, _body_override, _perr = _parse_export_params(body, is_json=True)
+    if _perr:
+        return _perr
     loc  = body.get("location", "all")
     cfg  = load_config()
     lang = body.get("lang") or cfg.get("export_language", "de")
@@ -148,6 +197,7 @@ def api_export_preview():
     _raw_cm      = body.get("cell_mapping") or cfg.get("template_cell_mapping") or {}
     cell_mapping = _raw_cm if isinstance(_raw_cm, dict) else {}
     sheet        = body.get("sheet") or cfg.get("template_sheet")
+    footer_start_row_prev = body.get("footer_start_row") or cfg.get("template_footer_start_row")
     header_info  = {
         "fahrer":            cfg.get("template_fahrer", ""),
         "kennzeichen":       cfg.get("template_kennzeichen", ""),
@@ -156,11 +206,24 @@ def api_export_preview():
         "price_per_kwh":     cfg.get("price_per_kwh_home", 0.30),
         "meter_start_value": cfg.get("template_meter_start", 0.0),
     }
-    include_signature = bool(body.get("include_signature", False))
+    _inc_sig_param = body.get("include_signature")
+    if _inc_sig_param is not None:
+        include_signature = bool(_inc_sig_param)
+    else:
+        include_signature = bool(cfg.get("export_include_signature", False))
     sig_mapping       = cfg.get("signature_mapping") or {}
     if sig_mapping and "cell" in sig_mapping and "anchor_cell" not in sig_mapping:
         sig_mapping = dict(sig_mapping)
         sig_mapping["anchor_cell"] = sig_mapping["cell"]
+
+    # Hash mismatch check for preview
+    _prev_tmpl_hash = (cfg.get("active_template") or {}).get("hash")
+    _prev_map_hash  = cfg.get("template_mapping_hash")
+    _prev_has_mapping = bool(cfg.get("template_column_mapping") or cfg.get("template_mapping"))
+    _prev_hash_mismatch = bool(_prev_tmpl_hash and (_prev_map_hash is None or _prev_map_hash != _prev_tmpl_hash) and _prev_has_mapping)
+    _preview_warnings = []
+    if _prev_hash_mismatch:
+        _preview_warnings.append("Neues Template erkannt — Mapping wurde noch nicht für dieses Template gespeichert. Bitte Mapping prüfen.")
 
     SIGNATURE_PATH = _SIGNATURE_PATH
 
@@ -168,7 +231,7 @@ def api_export_preview():
     _cleanup_export_tokens()
 
     try:
-        xlsx_bytes, warnings = _export_func(
+        xlsx_bytes, _export_warnings = _export_func(
             y, m, loc,
             col_override=override, start_row=start_row, header_row=header_row,
             header_info=header_info, cell_mapping=cell_mapping, sheet=sheet,
@@ -176,7 +239,9 @@ def api_export_preview():
             signature_path=str(SIGNATURE_PATH) if SIGNATURE_PATH.exists() else None,
             signature_mapping=sig_mapping, lang=lang,
             return_warnings=True,
+            footer_start_row=footer_start_row_prev,
         )
+        warnings = _preview_warnings + (_export_warnings or [])
     except Exception as e:
         import logging
         logging.getLogger(__name__).exception("Export-Vorschau fehlgeschlagen")

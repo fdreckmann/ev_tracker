@@ -35,9 +35,17 @@ function updateActiveTemplateInfo(info){
   if(!info || !info.source){
     el.textContent = '';
   } else if(info.source === 'builtin'){
-    el.innerHTML = `<span style="color:var(--acc)">✓ ${info.name}</span>`;
+    const sp = document.createElement('span');
+    sp.style.color = 'var(--acc)';
+    sp.textContent = '✓ ' + (info.name || '');
+    el.textContent = '';
+    el.appendChild(sp);
   } else {
-    el.innerHTML = `<span style="color:var(--mute)">Eigene Vorlage</span>`;
+    const sp = document.createElement('span');
+    sp.style.color = 'var(--mute)';
+    sp.textContent = 'Eigene Vorlage';
+    el.textContent = '';
+    el.appendChild(sp);
   }
 }
 
@@ -69,15 +77,16 @@ function showAnalysisPanel(a){
   // Confidence bar
   const pct = Math.round((a.confidence||0)*100);
   const col = pct>=80?'var(--acc)':pct>=60?'#eab308':'var(--danger)';
+  var _eh2 = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'').replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});};
   $('analysisConfidence').innerHTML =
     `<span style="color:${col};font-weight:600">${pct}% Konfidenz</span>` +
-    (a.sheet ? `<span style="color:var(--mute);margin-left:10px">Sheet: ${a.sheet}</span>` : '') +
-    (a.start_row ? `<span style="color:var(--mute);margin-left:10px">Startzeile: ${a.start_row}</span>` : '');
+    (a.sheet ? `<span style="color:var(--mute);margin-left:10px">Sheet: ${_eh2(a.sheet)}</span>` : '') +
+    (a.start_row ? `<span style="color:var(--mute);margin-left:10px">Startzeile: ${_eh2(String(a.start_row))}</span>` : '');
 
   // Warnings
   const warnings = a.warnings||[];
   $('analysisWarnings').innerHTML = warnings.length
-    ? `<div style="color:#f59e0b;font-size:.72rem;font-family:var(--mono)">${warnings.map(w=>`⚠ ${w}`).join('<br>')}</div>`
+    ? `<div style="color:#f59e0b;font-size:.72rem;font-family:var(--mono)">${warnings.map(w=>`⚠ ${_eh2(w)}`).join('<br>')}</div>`
     : '';
 
   // Suggestions summary
@@ -130,9 +139,21 @@ async function saveCurrentAsTemplate(){
   const name=prompt('Name für diese Vorlage:','Meine Vorlage');
   if(!name) return;
   const saved=await fetch('/api/template/mapping').then(r=>r.json()).catch(()=>({}));
+  const colMap = saved.column_mapping || saved.mapping || {};
+  const payload = {
+    name,
+    mapping:            colMap,
+    column_mapping:     colMap,
+    cell_mapping:       saved.cell_mapping || {},
+    signature_mapping:  saved.signature_mapping || {},
+    start_row:          saved.start_row,
+    header_row:         saved.header_row,
+    sheet:              saved.sheet,
+    include_signature:  saved.include_signature || false,
+  };
   const r=await apiFetch('/api/export/templates',{method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({name,mapping:saved.mapping||{},start_row:saved.start_row})
+    body:JSON.stringify(payload)
   }).then(r=>r.json());
   if(r.ok){ toast('Vorlage gespeichert','ok'); loadExportTemplates(); }
   else toast('Fehler','err');

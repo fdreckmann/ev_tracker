@@ -132,6 +132,7 @@ def api_reports_create():
 
     # Excel
     excel_bytes = None
+    excel_warnings = []
     if data.get("include_excel", True):
         try:
             if len(periods) > 1:
@@ -140,17 +141,53 @@ def api_reports_create():
                     (p, _get_report_sessions(p["start"], p["end"], loc_filter, veh_filter))
                     for p in periods
                 ]
-                excel_bytes, _ = _emm(periods_sessions=periods_sessions,
-                                       loc_filter=loc_filter, config=cfg, lang=lang)
+                excel_bytes, _ew = _emm(periods_sessions=periods_sessions,
+                                        loc_filter=loc_filter, config=cfg, lang=lang)
+                excel_warnings = _ew or []
             else:
                 from export_excel import export as _export_func
                 from core.location import normalize_location as _nl
                 xl_loc = _nl(loc_filter) if loc_filter not in ("all",) else loc_filter
-                excel_bytes, _ = _export_func(
+                # Load template settings from config (same as export.py)
+                _saved_col = cfg.get("template_column_mapping") or cfg.get("template_mapping") or {}
+                _col_override = {k: v for k, v in _saved_col.items() if v} if isinstance(_saved_col, dict) else None
+                _start_row = cfg.get("template_start_row")
+                _header_row = cfg.get("template_header_row")
+                if _start_row and not _header_row:
+                    try:
+                        _header_row = int(_start_row) - 1
+                    except (ValueError, TypeError):
+                        pass
+                _raw_cm = cfg.get("template_cell_mapping") or {}
+                _cell_mapping = _raw_cm if isinstance(_raw_cm, dict) else {}
+                _sheet = cfg.get("template_sheet") or None
+                _header_info = {
+                    "fahrer":            cfg.get("template_fahrer", ""),
+                    "kennzeichen":       cfg.get("template_kennzeichen", ""),
+                    "abteilung":         cfg.get("template_abteilung", ""),
+                    "kostenstelle":      cfg.get("template_kostenstelle", ""),
+                    "price_per_kwh":     cfg.get("price_per_kwh_home", 0.30),
+                    "meter_start_value": cfg.get("template_meter_start", 0.0),
+                }
+                _sig_mapping = cfg.get("signature_mapping") or {}
+                if _sig_mapping and "cell" in _sig_mapping and "anchor_cell" not in _sig_mapping:
+                    _sig_mapping = dict(_sig_mapping)
+                    _sig_mapping["anchor_cell"] = _sig_mapping["cell"]
+                from core.db import DATA_DIR as _DATA_DIR
+                _sig_path_obj = _DATA_DIR / "signatures" / "default_signature.png"
+                _include_sig = bool(data.get("include_signature", cfg.get("export_include_signature", False)))
+                excel_bytes, excel_warnings = _export_func(
                     year=period_info["start"].year, month=period_info["start"].month,
-                    location=xl_loc, config=cfg, lang=lang, return_warnings=True)
+                    location=xl_loc,
+                    col_override=_col_override, start_row=_start_row, header_row=_header_row,
+                    header_info=_header_info, cell_mapping=_cell_mapping, sheet=_sheet,
+                    include_signature=_include_sig,
+                    signature_path=str(_sig_path_obj) if _sig_path_obj.exists() and _include_sig else None,
+                    signature_mapping=_sig_mapping,
+                    lang=lang, return_warnings=True)
         except Exception as e:
             log.warning("reports/create Excel: %s", e)
+            excel_warnings.append(f"Excel-Fehler: {e}")
 
     # PDF
     pdf_bytes = None
@@ -188,8 +225,12 @@ def api_reports_create():
         _fe("report_created", {"report_id": report_id, "period": combined_key,
                                 "sessions": len(all_sessions)}, cfg, db_path=DB_PATH)
     except Exception: pass
+    all_warnings = excel_warnings[:]
+    if data.get("include_pdf", False) and not pdf_bytes and all_sessions:
+        all_warnings.append("PDF konnte nicht erstellt werden")
     return jsonify({"ok": True, "report_id": report_id, "summary": summary,
-                    "has_excel": excel_bytes is not None, "has_pdf": pdf_bytes is not None})
+                    "has_excel": excel_bytes is not None, "has_pdf": pdf_bytes is not None,
+                    "warnings": all_warnings})
 
 
 @reports_bp.route("/api/reports/<int:report_id>/download/<fmt>")

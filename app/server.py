@@ -280,10 +280,59 @@ def init_db():
         meter_old     REAL, meter_new REAL,
         vehicle_id    TEXT DEFAULT 'v0'
     )""")
-    # migrate existing DB
-    for col, typedef in [("meter_old","REAL"),("meter_new","REAL"),("vehicle_id","TEXT DEFAULT 'v0'")]:
-        try: con.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
-        except Exception: pass
+    # migrate existing DB — ALL sessions columns (base + extended), idempotent
+    import logging as _init_log
+    _mig_logger = _init_log.getLogger(__name__)
+    _ALL_SESSION_COLS = [
+        # Base columns that may be missing in very old DBs
+        ("end_ts",        "TEXT"),
+        ("odo_start",     "REAL"),
+        ("odo_end",       "REAL"),
+        ("soc_start",     "REAL"),
+        ("soc_end",       "REAL"),
+        ("kwh_charged",   "REAL"),
+        ("cost_eur",      "REAL"),
+        ("cost_manual",   "INTEGER DEFAULT 0"),
+        ("location",      "TEXT DEFAULT 'unknown'"),
+        ("charger_type",  "TEXT DEFAULT 'unknown'"),
+        ("max_power_kw",  "REAL"),
+        ("price_per_kwh", "REAL"),
+        ("entsoe_spot",   "REAL"),
+        ("provider",      "TEXT DEFAULT 'ha'"),
+        ("meter_old",     "REAL"),
+        ("meter_new",     "REAL"),
+        ("vehicle_id",    "TEXT DEFAULT 'v0'"),
+        # Extended columns
+        ("kwh_source",          "TEXT DEFAULT 'soc'"),
+        ("meter_delta_kwh",     "REAL"),
+        ("meter_error",         "TEXT"),
+        ("charger_power_kw",    "REAL"),
+        ("tariff_provider",     "TEXT"),
+        ("tariff_price_source", "TEXT DEFAULT 'config'"),
+        ("meter_skipped_reason","TEXT"),
+        ("meter_used",          "INTEGER DEFAULT 0"),
+        ("meter_home_detection_start_value", "REAL"),
+        ("meter_home_detection_start_ts",    "TEXT"),
+        ("meter_home_detection_delta_kwh",   "REAL"),
+        ("location_source",     "TEXT DEFAULT 'unknown'"),
+        ("location_confidence", "INTEGER DEFAULT 0"),
+        ("manual_note",         "TEXT"),
+        ("manual_reason",       "TEXT"),
+        ("created_mode",        "TEXT DEFAULT 'auto'"),
+        ("missing_charge_candidate_id", "INTEGER"),
+        ("price_source",        "TEXT"),
+        ("price_confidence",    "REAL DEFAULT 0"),
+        ("charging_contract_id",   "TEXT"),
+        ("charging_contract_name", "TEXT"),
+    ]
+    for col, typedef in _ALL_SESSION_COLS:
+        try:
+            con.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
+        except sqlite3.OperationalError as _e:
+            if "duplicate column" not in str(_e).lower():
+                _mig_logger.warning("sessions migration '%s': %s", col, _e)
+        except Exception as _e:
+            _mig_logger.warning("sessions migration '%s': %s", col, _e)
     con.execute("""CREATE TABLE IF NOT EXISTS session_points (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         session_id INTEGER NOT NULL,
@@ -297,35 +346,6 @@ def init_db():
     details TEXT,
     ip      TEXT
 )""")
-    # live migration
-    for col, typedef in [
-        ("cost_manual",  "INTEGER DEFAULT 0"),
-        ("charger_type", "TEXT DEFAULT 'unknown'"),
-        ("max_power_kw", "REAL"),
-        ("price_per_kwh","REAL"),
-        ("entsoe_spot",  "REAL"),
-        ("provider",     "TEXT DEFAULT 'ha'"),
-        ("kwh_source",         "TEXT DEFAULT 'soc'"),
-        ("meter_delta_kwh",    "REAL"),
-        ("meter_error",        "TEXT"),
-        ("charger_power_kw",   "REAL"),
-        ("tariff_provider",    "TEXT"),
-        ("tariff_price_source","TEXT DEFAULT 'config'"),
-        ("meter_skipped_reason", "TEXT"),
-        ("meter_used",           "INTEGER DEFAULT 0"),
-        ("meter_home_detection_start_value", "REAL"),
-        ("meter_home_detection_start_ts",    "TEXT"),
-        ("meter_home_detection_delta_kwh",   "REAL"),
-        ("location_source",      "TEXT DEFAULT 'unknown'"),
-        ("location_confidence",  "INTEGER DEFAULT 0"),
-        ("manual_note",                  "TEXT"),
-        ("manual_reason",                "TEXT"),
-        ("created_mode",                 "TEXT DEFAULT 'auto'"),
-        ("missing_charge_candidate_id",  "INTEGER"),
-    ]:
-        try:
-            con.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
-        except sqlite3.OperationalError: pass
     # Backfill NULL vehicle_id → 'v0'
     try:
         con.execute("UPDATE sessions SET vehicle_id='v0' WHERE vehicle_id IS NULL")
@@ -409,15 +429,58 @@ def init_db():
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
     )""")
-    # Vehicle access scope (Vorbereitung, noch nicht aktiv)
+    # Schema migrations tracking table
+    con.execute("""CREATE TABLE IF NOT EXISTS schema_migrations (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        migration   TEXT NOT NULL UNIQUE,
+        applied_at  TEXT NOT NULL
+    )""")
+
+    def _migration_applied(name: str) -> bool:
+        return bool(con.execute(
+            "SELECT 1 FROM schema_migrations WHERE migration=?", (name,)).fetchone())
+
+    def _mark_migration(name: str):
+        con.execute("INSERT OR IGNORE INTO schema_migrations (migration, applied_at) VALUES (?,?)",
+                    (name, datetime.utcnow().isoformat()))
+
+    # Vehicle access scope — vehicle_id must be TEXT (not INTEGER) since IDs are strings like "v0"
+    # Migration: recreate table with correct type if old schema had INTEGER
     con.execute("""CREATE TABLE IF NOT EXISTS user_vehicle_access (
         user_id    INTEGER NOT NULL,
-        vehicle_id INTEGER NOT NULL,
+        vehicle_id TEXT NOT NULL,
         can_view   INTEGER DEFAULT 1,
         can_edit   INTEGER DEFAULT 0,
         can_export INTEGER DEFAULT 0,
         PRIMARY KEY (user_id, vehicle_id)
     )""")
+    if not _migration_applied("fix_user_vehicle_access_vehicle_id_type"):
+        try:
+            # Check if vehicle_id column type is INTEGER (old schema)
+            _cols_uva = {r[1]: r[2] for r in con.execute(
+                "PRAGMA table_info(user_vehicle_access)").fetchall()}
+            if _cols_uva.get("vehicle_id", "").upper() == "INTEGER":
+                import logging as _mig_log
+                _mig_log.getLogger(__name__).info(
+                    "Migrating user_vehicle_access.vehicle_id INTEGER → TEXT")
+                con.execute("ALTER TABLE user_vehicle_access RENAME TO _uva_old")
+                con.execute("""CREATE TABLE user_vehicle_access (
+                    user_id    INTEGER NOT NULL,
+                    vehicle_id TEXT NOT NULL,
+                    can_view   INTEGER DEFAULT 1,
+                    can_edit   INTEGER DEFAULT 0,
+                    can_export INTEGER DEFAULT 0,
+                    PRIMARY KEY (user_id, vehicle_id)
+                )""")
+                con.execute("""INSERT OR IGNORE INTO user_vehicle_access
+                    SELECT user_id, CAST(vehicle_id AS TEXT), can_view, can_edit, can_export
+                    FROM _uva_old""")
+                con.execute("DROP TABLE _uva_old")
+        except Exception as _uva_err:
+            import logging as _mig_log
+            _mig_log.getLogger(__name__).warning(
+                "user_vehicle_access migration skipped: %s", _uva_err)
+        _mark_migration("fix_user_vehicle_access_vehicle_id_type")
     con.execute("""CREATE TABLE IF NOT EXISTS email_report_history (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
         sent_at       TEXT NOT NULL,
@@ -785,11 +848,19 @@ def fetch_entsoe_spot(api_key: str):
     except Exception as e:
         log.warning("ENTSO-E error: %s", e); return None
 
-def calc_extern_price(cfg, charger_type, spot):
+def calc_extern_price(cfg, charger_type, spot=None):
+    """Legacy wrapper — use pricing_service.resolve_session_price() for new code."""
+    try:
+        from services.pricing_service import resolve_session_price
+        from core.db import _get_db, close_db_if_owned
+        con = _get_db()
+        pr = resolve_session_price("extern", charger_type, cfg, con)
+        close_db_if_owned(con)
+        if pr["price_per_kwh"] is not None:
+            return pr["price_per_kwh"]
+    except Exception:
+        pass
     is_dc = charger_type == "dc"
-    if spot is not None:
-        markup = cfg.get("entsoe_dc_markup" if is_dc else "entsoe_ac_markup", 6.0 if is_dc else 3.0)
-        return round(spot * markup, 4)
     return cfg.get("price_per_kwh_dc" if is_dc else "price_per_kwh_ac", 0.75 if is_dc else 0.45)
 
 def ha_notify(cfg, title, message):
@@ -1008,10 +1079,15 @@ def tracker_loop(vehicle_id: str = "v0"):
 
                 spot = fetch_entsoe_spot(cfg.get("entsoe_api_key","")) if _effective_location == "extern" else None
                 st["entsoe_spot"] = spot
+                _price_source = "config"; _price_conf = 0; _price_contract_id = None; _price_contract_name = None
                 try:
                     from services.pricing_service import resolve_session_price
                     _pr = resolve_session_price(_effective_location, charger_type, cfg, con)
                     price_kwh = _pr["price_per_kwh"] if _pr["price_per_kwh"] is not None else cfg.get("price_per_kwh_home", 0.30)
+                    _price_source = _pr.get("price_source", "config")
+                    _price_conf = _pr.get("price_confidence", 0)
+                    _price_contract_id = _pr.get("contract_id")
+                    _price_contract_name = _pr.get("contract_name")
                 except Exception:
                     price_kwh = (cfg["price_per_kwh_home"] if _effective_location == "home"
                                  else calc_extern_price(cfg, charger_type, spot))
@@ -1022,13 +1098,15 @@ def tracker_loop(vehicle_id: str = "v0"):
                     (start_ts,odo_start,soc_start,location,charger_type,
                      max_power_kw,price_per_kwh,entsoe_spot,provider,meter_old,vehicle_id,charger_power_kw,
                      meter_home_detection_start_value,meter_home_detection_start_ts,
-                     location_source,location_confidence)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     location_source,location_confidence,
+                     price_source,price_confidence,charging_contract_id,charging_contract_name)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (datetime.now().isoformat(timespec="seconds"),
                      odo_start,soc_start,_effective_location,charger_type,power_kw,price_kwh,spot,
                      provider_id,meter_start_val,vehicle_id,sess_charger_kw,
                      mhd_start_val, mhd_start_ts,
-                     _loc_src, 0 if _effective_location == "unknown" else 80))
+                     _loc_src, 0 if _effective_location == "unknown" else 80,
+                     _price_source, _price_conf, _price_contract_id, _price_contract_name))
                 con.commit(); session_id=cur.lastrowid; session_active=True
                 st["session_id"]=session_id
                 try:
@@ -1400,11 +1478,12 @@ def ensure_started_once():
             raise _startup_error
         try:
             init_db()
-            start_tracker()
-            if callable(globals().get("schedule_backup")):
-                schedule_backup()
-            if callable(globals().get("schedule_report")):
-                schedule_report()
+            if not app.config.get("TESTING"):
+                start_tracker()
+                if callable(globals().get("schedule_backup")):
+                    schedule_backup()
+                if callable(globals().get("schedule_report")):
+                    schedule_report()
             _started_once = True
             _startup_error = None
         except Exception as e:
@@ -1885,61 +1964,14 @@ _RESTORE_BLOCKED_FILES = {"sessions.db-wal", "sessions.db-shm",
 _BACKUP_MAX_UPLOAD_BYTES = 200 * 1024 * 1024  # 200 MB
 
 def restore_backup(zip_path):
-    """Zip-Slip-safe restore: validate all paths + symlinks, then extract allowed files."""
-    # Reject oversized files
-    if Path(zip_path).stat().st_size > _BACKUP_MAX_UPLOAD_BYTES:
-        raise ValueError(f"ZIP zu groß (max. {_BACKUP_MAX_UPLOAD_BYTES//1024//1024} MB)")
-
-    # Create a safety backup before overwriting anything
+    """Restore — delegates to backup_service for the secure, chunked implementation."""
+    from services.backup_service import _restore_backup_impl as _svc_restore
+    # Pre-restore safety backup
     try:
         create_backup("pre_restore")
     except Exception as e:
         log.warning("Sicherheits-Backup vor Restore fehlgeschlagen: %s", e)
-
-    data_dir_resolved = DATA_DIR.resolve()
-
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        members = zf.infolist()
-
-        # Phase 1: validate every entry before extracting anything
-        for info in members:
-            member = info.filename
-            if member.endswith("/"):
-                continue
-            # Reject symlinks (external_attr bit 0xA0000000 on Unix)
-            if (info.external_attr >> 16) & 0xFFFF == 0xA1ED:
-                raise ValueError(f"Symlink im ZIP nicht erlaubt: {member!r}")
-            # Reject absolute paths and path-traversal components
-            parts = member.replace("\\", "/").split("/")
-            if any(p in ("", "..") for p in parts):
-                raise ValueError(f"Unsicherer ZIP-Eintrag: {member!r}")
-            dest = (DATA_DIR / member).resolve()
-            if not str(dest).startswith(str(data_dir_resolved) + "/") and \
-               str(dest) != str(data_dir_resolved):
-                raise ValueError(f"Pfad außerhalb DATA_DIR: {member!r}")
-
-        # Phase 2: extract only allowed paths, skip everything else
-        for info in members:
-            member = info.filename
-            if member.endswith("/"):
-                continue
-            if member.startswith("backups/"):
-                continue
-            basename = member.rsplit("/", 1)[-1]
-            if basename in _RESTORE_BLOCKED_FILES:
-                log.debug("Restore: WAL/SHM-Datei blockiert %r", member)
-                continue
-            is_allowed = (
-                member in _RESTORE_ALLOWED_FILES or
-                any(member.startswith(d) for d in _RESTORE_ALLOWED_DIRS)
-            )
-            if not is_allowed:
-                log.debug("Restore: übersprungen %r (nicht in Allowlist)", member)
-                continue
-            dest = DATA_DIR / member
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            with zf.open(info) as src, open(dest, "wb") as dst:
-                dst.write(src.read())
+    _svc_restore(Path(zip_path), DATA_DIR)
 
 def parse_cron_next(cron_expr):
     now=datetime.now(); expr=cron_expr.strip().lower()
@@ -2198,9 +2230,10 @@ def _build_report_html(sessions, period_info, cfg, lang="de"):
     plabel     = period_info.get("label_de" if is_de else "label_en", "")
     loc_filter = cfg.get("report_email_location_filter", "all")
     loc_lbl, veh_lbl = _report_filter_labels(cfg, is_de)
+    from services.pricing_service import get_session_duration_seconds
     total_kwh  = sum(s.get("kwh_charged") or 0 for s in sessions)
     total_cost = sum(s.get("cost_eur")    or 0 for s in sessions)
-    total_secs = sum(s.get("duration_sec") or 0 for s in sessions)
+    total_secs = sum(get_session_duration_seconds(s) or 0 for s in sessions)
     home_kwh   = sum((s.get("kwh_charged") or 0) for s in sessions if s.get("location") == "home")
     ext_kwh    = sum((s.get("kwh_charged") or 0) for s in sessions if s.get("location") == "extern")
     total_h    = total_secs / 3600

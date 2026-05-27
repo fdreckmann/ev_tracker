@@ -243,8 +243,31 @@ def analyze_template(path: Path) -> dict:
 
             row_scores[rnum] = score
 
-        # Find best scoring row
-        if row_scores:
+        # Find best scoring row — require at least 2 TABLE_FIELDS matches to be a valid header.
+        # This prevents summary rows like "Ladezeit gesamt | 5.3h | Gesamtkosten | 45€" from
+        # being mistaken for a data table header.
+        matched_fields_per_row = {}
+        for rnum_check in range(1, scan_max_row + 1):
+            mf = 0
+            for cnum_check in range(1, min(ws.max_column or MAX_COLS, MAX_COLS) + 1):
+                cell_check = ws.cell(row=rnum_check, column=cnum_check)
+                if isinstance(cell_check, MergedCell):
+                    continue
+                val_check = cell_check.value
+                if val_check is None or str(val_check).strip() == "":
+                    continue
+                f_check, c_check, _ = _match_table_field(val_check)
+                if f_check and c_check >= 0.65:
+                    mf += 1
+            matched_fields_per_row[rnum_check] = mf
+
+        # Only consider rows with >= 2 matched TABLE_FIELDS as valid header candidates
+        valid_rows = {r: s for r, s in row_scores.items() if matched_fields_per_row.get(r, 0) >= 2}
+        if valid_rows:
+            header_row = max(valid_rows, key=lambda r: valid_rows[r])
+            max_score = valid_rows[header_row]
+        elif row_scores:
+            # Fallback: best scoring row even without enough field matches (lower confidence)
             header_row = max(row_scores, key=lambda r: row_scores[r])
             max_score = row_scores[header_row]
         else:
@@ -252,7 +275,7 @@ def analyze_template(path: Path) -> dict:
             max_score = 0
 
         header_confidence = 1.0
-        if max_score < 4:
+        if max_score < 4 or matched_fields_per_row.get(header_row, 0) < 2:
             header_confidence = 0.4
             warnings.append("Keine klare Tabellenkopfzeile erkannt")
 

@@ -14,6 +14,95 @@ from version import APP_VERSION
 api_v1_bp = Blueprint("api_v1", __name__)
 
 
+def _vehicle_id_valid(vid: str) -> bool:
+    """Check if vehicle_id exists (v0 or in extra_vehicles). Also guards path traversal."""
+    if not vid or not isinstance(vid, str):
+        return False
+    if vid == "v0":
+        return True
+    if any(c in vid for c in ('/', '\\', '..', '\x00')):
+        return False
+    cfg = load_config()
+    return any(v.get("id") == vid for v in cfg.get("extra_vehicles", []))
+
+
+def _validate_session_payload(data: dict, partial: bool = False) -> "str | None":
+    """Validate session payload fields. Returns error string or None."""
+    def _float(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    if not partial:
+        if not data.get("start_ts"):
+            return "start_ts ist erforderlich"
+
+    if data.get("start_ts"):
+        try:
+            start_dt = datetime.fromisoformat(str(data["start_ts"]))
+        except (ValueError, TypeError):
+            return "start_ts: ungültiges ISO-Datum"
+    else:
+        start_dt = None
+
+    if data.get("end_ts"):
+        try:
+            end_dt = datetime.fromisoformat(str(data["end_ts"]))
+        except (ValueError, TypeError):
+            return "end_ts: ungültiges ISO-Datum"
+        if start_dt and end_dt <= start_dt:
+            return "end_ts muss nach start_ts liegen"
+
+    if "kwh_charged" in data:
+        v = _float(data["kwh_charged"])
+        if v is None: return "kwh_charged: ungültiger Wert"
+        if v < 0: return "kwh_charged muss >= 0 sein"
+
+    if "cost_eur" in data:
+        v = _float(data["cost_eur"])
+        if v is None: return "cost_eur: ungültiger Wert"
+        if v < 0: return "cost_eur muss >= 0 sein"
+
+    if "price_per_kwh" in data:
+        v = _float(data["price_per_kwh"])
+        if v is None: return "price_per_kwh: ungültiger Wert"
+        if v < 0: return "price_per_kwh muss >= 0 sein"
+
+    for soc_key in ("soc_start", "soc_end"):
+        if soc_key in data:
+            v = _float(data[soc_key])
+            if v is None: return f"{soc_key}: ungültiger Wert"
+            if not (0 <= v <= 100): return f"{soc_key} muss zwischen 0 und 100 liegen"
+
+    if "odo_start" in data and "odo_end" in data:
+        os_ = _float(data["odo_start"])
+        oe_ = _float(data["odo_end"])
+        if os_ is not None and oe_ is not None and oe_ < os_:
+            return "odo_end darf nicht kleiner als odo_start sein"
+
+    if "meter_old" in data and "meter_new" in data:
+        mo_ = _float(data["meter_old"])
+        mn_ = _float(data["meter_new"])
+        if mo_ is not None and mn_ is not None and mn_ < mo_:
+            return "meter_new darf nicht kleiner als meter_old sein"
+
+    if "vehicle_id" in data and data["vehicle_id"] is not None:
+        if not _vehicle_id_valid(str(data["vehicle_id"])):
+            return f"vehicle_id unbekannt: {data['vehicle_id']!r}"
+
+    if "charger_type" in data:
+        try:
+            from services.pricing_service import normalize_charger_type as _nct
+            ct = _nct(str(data["charger_type"]))
+        except Exception:
+            ct = str(data["charger_type"])
+        if ct not in ("ac", "dc", "unknown"):
+            return f"charger_type ungültig: {data['charger_type']!r}"
+
+    return None
+
+
 @api_v1_bp.route("/api/v1/status")
 def api_v1_status():
 
@@ -29,7 +118,9 @@ def api_v1_vehicles():
     cfg = load_config()
     vehicles = [{"id": "v0", "name": cfg.get("car_name","EV"), "provider": cfg.get("provider","ha")}]
     for v in cfg.get("extra_vehicles", []):
-        vehicles.append({"id": v.get("id"), "name": v.get("car_name"), "provider": v.get("provider")})
+        vehicles.append({"id": v.get("id"),
+                         "name": v.get("name") or v.get("car_name") or v.get("id"),
+                         "provider": v.get("provider")})
     return jsonify(vehicles)
 
 
@@ -71,33 +162,68 @@ def api_v1_session_create():
     token_row, err_resp, code = _require_api_token("sessions:write")
     if err_resp: return err_resp, code
     data = request.get_json(force=True) or {}
-    kwh = data.get("kwh_charged")
+    _verr = _validate_session_payload(data, partial=False)
+    if _verr:
+        return jsonify({"ok": False, "error": _verr}), 400
+    kwh       = data.get("kwh_charged")
     price_kwh = data.get("price_per_kwh")
     cost_eur  = data.get("cost_eur")
     cost_manual = 0
+    _price_source = None; _price_conf = 0; _contract_id = None; _contract_name = None
+
     if cost_eur is not None:
         cost_manual = 1
     elif kwh is not None and price_kwh is not None:
         try: cost_eur = round(float(kwh) * float(price_kwh), 2); cost_manual = 1
         except (ValueError, TypeError): pass
+    elif kwh is not None:
+        # Auto-price via pricing_service
+        try:
+            from services.pricing_service import resolve_session_price, calculate_session_cost
+            cfg = load_config()
+            con_tmp = _get_db()
+            location     = data.get("location", "unknown")
+            charger_type = data.get("charger_type", "unknown")
+            _pr = resolve_session_price(location, charger_type, cfg, con_tmp)
+            close_db_if_owned(con_tmp)
+            if _pr["price_per_kwh"] is not None:
+                price_kwh     = _pr["price_per_kwh"]
+                cost_eur      = calculate_session_cost(float(kwh), price_kwh)
+                _price_source = _pr.get("price_source")
+                _price_conf   = _pr.get("price_confidence", 0)
+                _contract_id  = _pr.get("contract_id")
+                _contract_name= _pr.get("contract_name")
+        except Exception as _e:
+            import logging; logging.getLogger(__name__).debug("api_v1 auto-pricing failed: %s", _e)
+
+    # Normalize location/charger_type before storing
+    try:
+        from services.pricing_service import normalize_location as _nl, normalize_charger_type as _nct
+        _loc_store = _nl(data.get("location", "unknown"))
+        _ctype_store = _nct(data.get("charger_type", "unknown"))
+    except Exception:
+        _loc_store = data.get("location", "unknown")
+        _ctype_store = data.get("charger_type", "unknown")
+
     con = _get_db()
     cur = con.execute("""INSERT INTO sessions
         (start_ts, end_ts, kwh_charged, cost_eur, cost_manual, price_per_kwh,
          location, charger_type, charger_power_kw, max_power_kw,
          soc_start, soc_end, odo_start, odo_end,
          meter_old, meter_new, vehicle_id, provider, kwh_source, created_mode,
-         manual_note, manual_reason)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+         manual_note, manual_reason,
+         price_source, price_confidence, charging_contract_id, charging_contract_name)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (data.get("start_ts"), data.get("end_ts"),
          kwh, cost_eur, cost_manual, price_kwh,
-         data.get("location","unknown"),
-         data.get("charger_type","unknown"),
+         _loc_store, _ctype_store,
          data.get("charger_power_kw"), data.get("max_power_kw"),
          data.get("soc_start"), data.get("soc_end"),
          data.get("odo_start"), data.get("odo_end"),
          data.get("meter_old"), data.get("meter_new"),
          data.get("vehicle_id","v0"), "api", "api", "api",
-         data.get("manual_note"), data.get("manual_reason")))
+         data.get("manual_note"), data.get("manual_reason"),
+         _price_source, _price_conf, _contract_id, _contract_name))
     sid = cur.lastrowid
     con.commit(); close_db_if_owned(con)
     return jsonify({"ok": True, "id": sid}), 201
@@ -108,13 +234,65 @@ def api_v1_session_update(session_id):
     token_row, err_resp, code = _require_api_token("sessions:write")
     if err_resp: return err_resp, code
     data = request.get_json(force=True) or {}
-    allowed = {"kwh_charged","cost_eur","location","end_ts","soc_end","odo_end"}
+    _verr = _validate_session_payload(data, partial=True)
+    if _verr:
+        return jsonify({"ok": False, "error": _verr}), 400
+    allowed = {"kwh_charged","cost_eur","price_per_kwh","location","end_ts","soc_end","odo_end","charger_type"}
     updates = {k: v for k, v in data.items() if k in allowed}
     if not updates:
         return jsonify({"error": "Keine gültigen Felder"}), 400
+
+    # Normalize location and charger_type before storing
+    try:
+        from services.pricing_service import normalize_location as _nl, normalize_charger_type as _nct
+        if "location" in updates:
+            updates["location"] = _nl(updates["location"])
+        if "charger_type" in updates:
+            updates["charger_type"] = _nct(updates["charger_type"])
+    except Exception:
+        pass
+
+    # Explicit price/cost from caller → mark as manual
+    user_sent_cost = bool({"cost_eur", "price_per_kwh"} & set(data.keys()))
+    if user_sent_cost:
+        updates["cost_manual"] = 1
+
     con = _get_db()
-    if not con.execute("SELECT 1 FROM sessions WHERE id=?", (session_id,)).fetchone():
+    existing = con.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()
+    if not existing:
         close_db_if_owned(con); return jsonify({"error": "Session nicht gefunden"}), 404
+    existing = dict(existing)
+
+    # If only price_per_kwh was given (no cost_eur), calculate cost_eur from stored kwh
+    if user_sent_cost and "price_per_kwh" in updates and "cost_eur" not in updates:
+        try:
+            kwh_val = updates.get("kwh_charged") or existing.get("kwh_charged")
+            if kwh_val is not None:
+                from services.pricing_service import calculate_session_cost
+                updates["cost_eur"] = calculate_session_cost(float(kwh_val), float(updates["price_per_kwh"]))
+        except Exception:
+            pass
+
+    # Reprice when location/charger_type/kwh_charged changes and cost was not manually set
+    _reprice_triggers = {"location", "charger_type", "kwh_charged"}
+    if not user_sent_cost and existing.get("cost_manual", 0) == 0 and _reprice_triggers & set(updates.keys()):
+        try:
+            from services.pricing_service import resolve_session_price, calculate_session_cost
+            cfg = load_config()
+            new_loc = updates.get("location", existing.get("location", "unknown"))
+            new_ctype = updates.get("charger_type", existing.get("charger_type", "unknown"))
+            new_kwh = updates.get("kwh_charged", existing.get("kwh_charged"))
+            _pr = resolve_session_price(new_loc, new_ctype, cfg, con, session_id)
+            if _pr["price_per_kwh"] is not None and new_kwh is not None:
+                updates["price_per_kwh"] = _pr["price_per_kwh"]
+                updates["cost_eur"] = calculate_session_cost(float(new_kwh), _pr["price_per_kwh"])
+                updates["price_source"] = _pr.get("price_source")
+                updates["price_confidence"] = _pr.get("price_confidence", 0)
+                updates["charging_contract_id"] = _pr.get("contract_id")
+                updates["charging_contract_name"] = _pr.get("contract_name")
+        except Exception as _e:
+            import logging; logging.getLogger(__name__).debug("api_v1 PUT reprice failed: %s", _e)
+
     sets = ", ".join(f"{k}=?" for k in updates)
     con.execute(f"UPDATE sessions SET {sets} WHERE id=?",
                 list(updates.values()) + [session_id])

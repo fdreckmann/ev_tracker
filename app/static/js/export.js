@@ -2,6 +2,19 @@
 
 var _lastExportPreviewToken = null;
 
+async function checkTemplateMappingHash() {
+  const banner = $('templateHashMismatchBanner');
+  if (!banner) return;
+  try {
+    const r = await fetch('/api/template/mapping').then(r => r.json());
+    if (r.hash_mismatch) {
+      banner.style.display = '';
+    } else {
+      banner.style.display = 'none';
+    }
+  } catch(_) {}
+}
+
 async function doExport(){
   const y=$('expY').value, m=$('expM').value, loc=$('expLoc').value;
   const lang = $('expLang')?.value || 'de';
@@ -120,30 +133,50 @@ async function loadExportTemplates(){
     el.innerHTML='<div class="empty" style="padding:20px">Noch keine Vorlagen gespeichert</div>';
     return;
   }
-  el.innerHTML=templates.map(t=>`
-    <div style="display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:12px 14px">
+  el.innerHTML='';
+  templates.forEach(t=>{
+    const tid=escapeHtml(t.id||'');
+    const colCount=Object.keys(t.column_mapping||t.mapping||{}).length;
+    const cellCount=Object.keys(t.cell_mapping||{}).length;
+    const defBadge=t.is_default?'<span style="color:var(--acc);margin-left:8px">★ Standard</span>':'';
+    const div=document.createElement('div');
+    div.style.cssText='display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:12px 14px';
+    div.innerHTML=`
       <div style="flex:1">
-        <div style="font-weight:700;font-size:.85rem;color:#fff">${t.name}</div>
+        <div style="font-weight:700;font-size:.85rem;color:#fff"></div>
         <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-top:2px">
-          ${Object.keys(t.mapping||{}).length} Spalten zugewiesen
-          ${t.is_default?'<span style="color:var(--acc);margin-left:8px">★ Standard</span>':''}
+          ${colCount} Spalten · ${cellCount} Einzelzellen ${defBadge}
         </div>
       </div>
-      <button class="btn-s" style="font-size:.72rem;padding:5px 12px" onclick="loadExportTemplate('${t.id}')">📂 Laden</button>
-      <button class="btn-g" style="font-size:.72rem;padding:5px 12px" onclick="setDefaultTemplate('${t.id}')">★</button>
-      <button class="btn-d" style="font-size:.72rem;padding:5px 12px" onclick="deleteExportTemplate('${t.id}')">✕</button>
-    </div>
-  `).join('');
+      <button class="btn-s" style="font-size:.72rem;padding:5px 12px" onclick="loadExportTemplate('${tid}')">📂 Laden</button>
+      <button class="btn-g" style="font-size:.72rem;padding:5px 12px" onclick="setDefaultTemplate('${tid}')">★</button>
+      <button class="btn-d" style="font-size:.72rem;padding:5px 12px" onclick="deleteExportTemplate('${tid}')">✕</button>
+    `;
+    div.querySelector('div[style*="font-weight:700"]').textContent=t.name||'';
+    el.appendChild(div);
+  });
 }
 
 async function loadExportTemplate(tid){
   const templates=await fetch('/api/export/templates').then(r=>r.json());
   const t=templates.find(x=>x.id===tid);
-  if(!t) return;
-  await apiFetch('/api/template/mapping',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({mapping:t.mapping||{},start_row:t.start_row})});
-  toast('Vorlage "'+t.name+'" geladen','ok');
-  loadMappingPreview();
+  if(!t){ toast('Vorlage nicht gefunden','err'); return; }
+  // Support both old "mapping" and new "column_mapping" field names
+  const colMap = t.column_mapping || t.mapping || {};
+  const payload = {
+    mapping:           colMap,
+    column_mapping:    colMap,
+    cell_mapping:      t.cell_mapping || {},
+    signature_mapping: t.signature_mapping || {},
+    start_row:         t.start_row,
+    header_row:        t.header_row,
+    sheet:             t.sheet,
+    include_signature: t.include_signature || false,
+  };
+  const r=await apiFetch('/api/template/mapping',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(payload)}).then(r=>r.json()).catch(()=>({}));
+  if(r && r.ok!==false){ toast('Vorlage "'+escapeHtml(t.name)+'" geladen','ok'); loadMappingPreview(); }
+  else toast('Fehler: '+(r&&r.error||''),'err');
 }
 
 async function deleteExportTemplate(tid){

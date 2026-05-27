@@ -1,25 +1,25 @@
 {
-  "latest_version": "2.0.42",
-  "release_date": "2026-05-25",
+  "latest_version": "2.0.53",
+  "release_date": "2026-05-27",
   "channel": "stable",
-  "title": "PUID/PGID-User-Mapping, Fehlerbehebung DB-Berechtigungen",
+  "title": "Pricing-Core, Excel-Template-Export, Location-Update, API v1 Fixes",
   "summary": [
-    "Non-Root-Container jetzt Unraid-kompatibel via PUID/PGID (user: 99:100)",
-    "_has_users() unterscheidet DB-Fehler von fehlenden Benutzern",
-    "error.html zeigt spezifische Fehlermeldung bei readonly database",
-    "/api/health prüft DB-Schreibbarkeit, users_count und startup_error",
-    "docker-entrypoint.sh unterstützt root- und non-root-Start"
+    "Zentrale Preislogik (pricing_service) für alle Ladearten und Verträge",
+    "Excel-Template-Export: robuste Tabellenkopf-Erkennung, korrekte Spalten-Zuordnung",
+    "Location-Update neuberechnet Preis automatisch wenn cost_manual=0",
+    "API v1 PUT normalisiert Location/Ladeart und berechnet Preis neu",
+    "Preismetadaten (Quelle, Vertragsname) in Sessions und Excel-Export"
   ],
   "fixes": [
-    "Permission denied /home/evtracker behoben (HOME gesetzt)",
-    "attempt to write a readonly database zeigt klare Fehlermeldung",
-    "ensure_started_once() setzt _started_once nur nach erfolgreichem Start"
+    "match_column() nutzt TABLE_FIELDS für präzise Spalten-Erkennung (Preis/kWh, Preisquelle, Vertrag)",
+    "Summary-Zeilen (Ladezeit gesamt, Gesamtkosten) werden nicht mehr als Tabellenkopf erkannt",
+    "col_override unterstützt alte {\"1\": {\"field\": \"date\"}} und neue {\"1\": \"date\"} Formate",
+    "api_update_location: row_factory=sqlite3.Row verhindert TypeError bei dict()",
+    "API v1 POST/PUT: location/charger_type werden normalisiert (external→extern)",
+    "API v1 PUT: price_per_kwh ist jetzt erlaubtes Update-Feld, setzt cost_manual=1"
   ],
   "breaking_changes": [],
-  "migration_notes": [
-    "Für Unraid: PUID=99, PGID=100 in .env setzen oder user: '99:100' in compose",
-    "Bestehende Instanzen: chown -R 10001:100 /mnt/user/appdata/ev-tracker"
-  ],
+  "migration_notes": [],
   "update_instructions": [
     "docker compose pull",
     "docker compose up -d",

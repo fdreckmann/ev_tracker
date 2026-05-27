@@ -24,6 +24,18 @@ def normalize_charger_type(value: str | None) -> str:
     return _CHARGER_ALIASES.get(str(value).lower().strip(), "ac")
 
 
+def normalize_location(loc: str | None) -> str:
+    """Normalize location strings. Maps 'external' → 'extern'. Returns 'unknown' as default."""
+    if not loc:
+        return "unknown"
+    loc = str(loc).lower().strip()
+    if loc in ("external", "extern"):
+        return "extern"
+    if loc == "home":
+        return "home"
+    return "unknown"
+
+
 def resolve_session_price(
     location: str,
     charger_type: str,
@@ -38,6 +50,7 @@ def resolve_session_price(
     Never raises; on error falls back to config defaults with source='fallback'.
     cost_manual=1 sessions must be handled by the caller — this function does not check it.
     """
+    location = normalize_location(location)
     ct = normalize_charger_type(charger_type)
     result = {
         "price_per_kwh": None,

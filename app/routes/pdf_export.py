@@ -30,22 +30,38 @@ def api_export_pdf():
     except ImportError:
         return jsonify({"error": "pdf_export Modul nicht gefunden"}), 503
 
-    stype      = data.get("schedule_type", cfg.get("report_email_schedule_type", "monthly"))
-    pmode      = data.get("period_mode",   data.get("report_email_period_mode", "previous_period"))
     loc_filter = data.get("location_filter", cfg.get("report_email_location_filter", "all"))
-    veh_filter = data.get("vehicle_filter",  cfg.get("report_email_vehicle_filter", "all"))
+    # Support vehicle_id as alias for vehicle_filter (UI may send either)
+    veh_filter = (data.get("vehicle_filter") or data.get("vehicle_id") or
+                  cfg.get("report_email_vehicle_filter", "all"))
     lang       = data.get("lang", cfg.get("report_pdf_language", "de"))
     if lang == "auto":
         lang = "de"
 
-    cfg["report_email_period_mode"]   = pmode
-    cfg["report_email_schedule_type"] = stype
-    cfg["report_email_single_month"]  = data.get("single_month", cfg.get("report_email_single_month", ""))
-    cfg["report_email_months"]        = data.get("months", cfg.get("report_email_months", []))
-
-    from services.report_service import calculate_report_periods, _get_report_sessions
+    from services.report_service import calculate_report_periods, _get_report_sessions, _month_period
     SIGNATURE_PATH = DATA_DIR / "signatures" / "default_signature.png"
-    periods     = calculate_report_periods(stype, pmode, datetime.now(), cfg)
+
+    # Period resolution: explicit year+month > single_month string > period_mode/schedule
+    if data.get("year") and data.get("month"):
+        y, m = int(data["year"]), int(data["month"])
+        _pi = _month_period(f"{y:04d}-{m:02d}")
+        periods = [_pi] if _pi else []
+    elif data.get("single_month"):
+        _pi = _month_period(data["single_month"])
+        periods = [_pi] if _pi else []
+    else:
+        stype = data.get("schedule_type", cfg.get("report_email_schedule_type", "monthly"))
+        pmode = data.get("period_mode",   data.get("report_email_period_mode", "previous_period"))
+        tmp_cfg = dict(cfg)
+        tmp_cfg["report_email_period_mode"]   = pmode
+        tmp_cfg["report_email_schedule_type"] = stype
+        tmp_cfg["report_email_single_month"]  = data.get("single_month", cfg.get("report_email_single_month", ""))
+        tmp_cfg["report_email_months"]        = data.get("months", cfg.get("report_email_months", []))
+        periods = calculate_report_periods(stype, pmode, datetime.now(), tmp_cfg)
+
+    if not periods:
+        return jsonify({"error": "Ungültiger Zeitraum"}), 400
+
     period_info = periods[0]
 
     bc_con = _get_db()

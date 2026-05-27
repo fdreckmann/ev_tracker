@@ -136,11 +136,24 @@ def api_update_vehicle(vid):
     if vid == "v0":
         data = request.get_json(silent=True) or {}
         cfg  = load_config()
+        # Determine password fields for v0's provider
+        try:
+            _v0_provider = data.get("provider") or cfg.get("provider", "ha")
+            from providers import get_config_fields as _gcf
+            _v0_pw_keys = {f["id"] for f in _gcf(_v0_provider) if f.get("type") == "password"}
+        except Exception:
+            _v0_pw_keys = {"ha_token", "vw_password", "smartcar_client_secret",
+                           "tesla_refresh_token", "enbw_api_subscription_key"}
         for k, val in data.items():
             if k in VEHICLE_SPECIFIC_KEYS or k == "car_name":
-                # Location fields: False, [], "disabled" are valid — only skip mask/empty string
-                if k not in _LOCATION_KEYS and val in ("", _MASK):
-                    continue
+                if k in _v0_pw_keys:
+                    # Password fields: skip if masked or empty (preserve stored secret)
+                    if val in ("", _MASK):
+                        continue
+                elif k not in _LOCATION_KEYS:
+                    # Normal fields: only skip if masked (allow clearing with "")
+                    if val == _MASK:
+                        continue
                 cfg[k] = val
         save_config(cfg)
         return jsonify({"ok": True})
