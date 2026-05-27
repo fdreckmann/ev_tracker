@@ -844,7 +844,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <div class="cfg-grp-label">Laden &amp; Kosten</div>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('zaehler',this)">🔌 Zähler &amp; Wallbox</button>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('tarif',this)" data-requires-permission="tariffs:view">🏠 Zuhause laden</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('ladeabos',this)" data-requires-permission="config:read">🌐 Öffentlich laden</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('ladeabos',this)" data-requires-permission="public_charging:view">🌐 Öffentlich laden</button>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('ladevorgang',this)">🔍 Ladevorgang-Erkennung</button>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('abrechnung',this)" data-requires-permission="billing:view">💼 Abrechnung</button>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('erweitert-preise',this)">⚗️ Erweitert / Legacy</button>
@@ -928,6 +928,18 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           </div>
         </div>
 
+        <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--brd)">
+          <div class="cfg-sec-title">Tracker-Einstellungen</div>
+          <div class="form-grid">
+            <div class="fg"><label>Batteriekapazität (kWh)</label>
+              <input type="number" id="c_bat" value="{{ cfg.battery_capacity_kwh }}" step="0.1" min="1">
+              <span class="hint">Für Schätzungen bei fehlenden kWh-Werten</span></div>
+            <div class="fg"><label>Polling-Intervall (s)</label>
+              <input type="number" id="c_poll" value="{{ cfg.poll_interval }}" min="30" max="600">
+              <span class="hint">Abfrageintervall des Providers (30–600 s)</span></div>
+          </div>
+        </div>
+
         <div class="btn-row">
           <button class="btn-p" onclick="saveConfig()">💾 Speichern</button>
           <button class="btn-s" onclick="loadConfig()">↺ Zurücksetzen</button>
@@ -938,13 +950,9 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <div id="cfgsec-ladevorgang" class="cfg-section" style="display:none">
         <div class="cfg-sec-title">Ladevorgang-Erkennung</div>
         <div class="form-grid">
-          <div class="fg"><label>Batteriekapazität (kWh)</label>
-            <input type="number" id="c_bat" value="{{ cfg.battery_capacity_kwh }}" step="0.1" min="1"></div>
           <div class="fg"><label>DC-Schwellwert (kW)</label>
             <input type="number" id="c_dc_thresh" value="{{ cfg.dc_threshold_kw }}" step="1" min="1">
             <span class="hint">Ladeleistung ab der DC erkannt wird</span></div>
-          <div class="fg"><label>Polling-Intervall (s)</label>
-            <input type="number" id="c_poll" value="{{ cfg.poll_interval }}" min="30" max="600"></div>
         </div>
         <div class="btn-row">
           <button class="btn-p" onclick="saveChargingDetectionConfig()">💾 Speichern</button>
@@ -1576,56 +1584,53 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
            LADEABOS / ÖFFENTLICHES LADEN
            ══════════════════════════════════════════════════════════ -->
       <div id="cfgsec-ladeabos" class="cfg-section" style="display:none">
-        <div class="card">
-          <div class="card-title">🌐 Öffentlich laden</div>
-          <p style="font-size:.8rem;color:var(--mute);margin:0 0 16px">
-            Definiere dein Ladeabo (z.B. EnBW M, IONITY Passport), damit der EV Tracker die Kosten externer Ladevorgänge automatisch berechnet.
-            Der Standardvertrag wird bei neuen Extern-Sessions verwendet.
-          </p>
 
-          <!-- Global settings -->
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:18px;padding:14px;background:#1e2030;border-radius:8px">
+        <!-- A) Allgemein -->
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-title">🌐 Öffentlich laden — Allgemein</div>
+          <div style="display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center">
+            <label class="cfg-lbl" style="margin:0">Preisberechnung</label>
+            <select id="pc_enabled" style="width:200px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
+              <option value="1">Aktiviert</option>
+              <option value="0">Deaktiviert</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- B) Fallbackpreise -->
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-title">⚙️ Fallbackpreise</div>
+          <p style="font-size:.75rem;color:var(--mute);margin:0 0 14px">
+            Werden verwendet wenn kein Ladeabo passt und kein Live-Preis verfügbar ist.
+          </p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:400px">
             <div>
-              <label class="cfg-lbl">Öffentliche Preisberechnung</label>
-              <select id="pc_enabled" style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
-                <option value="1">Aktiviert</option>
-                <option value="0">Deaktiviert</option>
-              </select>
-            </div>
-            <div>
-              <label class="cfg-lbl">Fallback AC (€/kWh)</label>
+              <label class="cfg-lbl">AC Fallback (€/kWh)</label>
               <input type="number" id="pc_fallback_ac" step="0.01" min="0" max="5"
                 style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
             </div>
             <div>
-              <label class="cfg-lbl">Fallback DC (€/kWh)</label>
+              <label class="cfg-lbl">DC Fallback (€/kWh)</label>
               <input type="number" id="pc_fallback_dc" step="0.01" min="0" max="5"
                 style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
             </div>
           </div>
-          <!-- Legacy fallback prices (from general config) -->
-          <details style="margin-bottom:18px">
-            <summary style="font-size:.78rem;color:var(--mute);cursor:pointer;padding:6px 0">🔧 Legacy-Fallback (price_per_kwh_ac / _dc)</summary>
-            <div style="padding:12px 0 0;display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:360px">
-              <div>
-                <label class="cfg-lbl">AC Fallback (€/kWh)</label>
-                <input type="number" id="c_price_ac" step="0.01" min="0" max="5"
-                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
-              </div>
-              <div>
-                <label class="cfg-lbl">DC Fallback (€/kWh)</label>
-                <input type="number" id="c_price_dc" step="0.01" min="0" max="5"
-                  style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
-              </div>
-            </div>
-          </details>
-          <button class="btn-p" onclick="savePublicChargingConfig()" style="margin-bottom:24px">💾 Speichern</button>
-          <span id="pc_save_status" style="font-size:.75rem;color:var(--mute);margin-left:8px"></span>
+          <div style="margin-top:16px">
+            <button class="btn-p" onclick="savePublicChargingConfig()" data-requires-permission="public_charging:configure">💾 Speichern</button>
+            <span id="pc_save_status" style="font-size:.75rem;color:var(--mute);margin-left:8px"></span>
+          </div>
+        </div>
 
-          <!-- Contract list -->
+        <!-- C) Ladeabos -->
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-title">🪙 Meine Ladeabos</div>
+          <p style="font-size:.8rem;color:var(--mute);margin:0 0 16px">
+            Definiere dein Ladeabo (z.B. EnBW M, IONITY Passport). Der Standardvertrag wird automatisch bei neuen Extern-Sessions verwendet.
+          </p>
+
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-            <div style="font-size:.85rem;font-weight:600">Meine Ladeabos</div>
-            <button class="btn-s" onclick="showContractForm()" data-requires-permission="config:write">➕ Neues Abo</button>
+            <span style="font-size:.8rem;color:var(--mute)">Gespeicherte Abos</span>
+            <button class="btn-s" onclick="showContractForm()" data-requires-permission="public_charging:manage_contracts">➕ Neues Abo</button>
           </div>
           <div id="contract_list" style="display:grid;gap:8px;margin-bottom:18px">
             <div style="font-size:.78rem;color:var(--mute);text-align:center;padding:16px">Lade…</div>
@@ -1673,7 +1678,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
                 style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <button class="btn-p" onclick="saveContractForm()" data-requires-permission="config:write">💾 Speichern</button>
+              <button class="btn-p" onclick="saveContractForm()" data-requires-permission="public_charging:manage_contracts">💾 Speichern</button>
               <button class="btn-s" onclick="hideContractForm()">Abbrechen</button>
               <span id="cf_status" style="font-size:.75rem;color:var(--mute);align-self:center"></span>
             </div>
@@ -1688,18 +1693,18 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           </details>
         </div>
 
-        <!-- EnBW Live Price (advanced) -->
-        <div class="card" style="margin-top:12px">
-          <div class="card-title" style="font-size:.9rem">🔴 EnBW Live-Preisabfrage <span style="font-size:.7rem;color:#f59e0b;font-weight:400">(inoffiziell / experimentell)</span></div>
+        <!-- D) EnBW Live Price -->
+        <div class="card">
+          <div class="card-title">🔴 EnBW Live-Preisabfrage <span style="font-size:.7rem;color:#f59e0b;font-weight:400;text-transform:none;letter-spacing:0">(inoffiziell / experimentell)</span></div>
           <div style="font-size:.78rem;color:#f59e0b;background:#2d1f00;border:1px solid #7c4f00;border-radius:6px;padding:10px;margin-bottom:14px">
             ⚠️ Diese Funktion nutzt eine <strong>inoffizielle, nicht dokumentierte API</strong> von EnBW. Sie kann sich jederzeit ohne Vorwarnung ändern oder abgeschaltet werden.
-            Nur aktivieren wenn du einen gültigen API-Key hast.
+            Nur aktivieren wenn EVSE-IDs in Sessions vorhanden sind und ein gültiger API-Key vorliegt.
           </div>
           <div style="display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center;margin-bottom:12px">
             <label class="cfg-lbl" style="margin:0">Live-Abfrage aktivieren</label>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
               <input type="checkbox" id="enbw_enabled" onchange="toggleEnbwSection()">
-              <span style="font-size:.8rem;color:var(--mute)">Nur aktivieren wenn EVSE-IDs in Sessions bekannt sind</span>
+              <span style="font-size:.8rem;color:var(--mute)">Nur wenn EVSE-IDs in Sessions bekannt sind</span>
             </label>
           </div>
           <div id="enbw_section" style="display:none">
@@ -1716,7 +1721,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
               </div>
             </div>
           </div>
-          <button class="btn-p" onclick="saveEnbwConfig()">💾 Speichern</button>
+          <button class="btn-p" onclick="saveEnbwConfig()" data-requires-permission="public_charging:configure">💾 Speichern</button>
           <span id="enbw_save_status" style="font-size:.75rem;color:var(--mute);margin-left:8px"></span>
         </div>
       </div>
@@ -3404,7 +3409,7 @@ async function loadConfig(){
   // Update dashboard vehicle card
   if($('dashVehicleName') && c.car_name) $('dashVehicleName').textContent = c.car_name;
   if($('dashVehiclePlate')) $('dashVehiclePlate').textContent = c.template_kennzeichen || '—';
-  const m = {c_car:'car_name'};
+  const m = {c_car:'car_name', c_bat:'battery_capacity_kwh', c_poll:'poll_interval'};
   for(const[id,key]of Object.entries(m)){const el=$(id);if(el)el.value=c[key]||'';}
   await loadProviderFields(c.provider||'ha');
   document.querySelectorAll('[id^="pf_"]').forEach(el=>{
@@ -5735,8 +5740,6 @@ async function loadTariffConfig(){
     const s=id=>$(id);
     if(s('tariff_provider'))            { s('tariff_provider').value            = r.tariff_provider||'fixed'; onTariffProviderChange(); }
     if(s('tariff_price_home'))            s('tariff_price_home').value           = r.price_per_kwh_home||0.30;
-    if(s('tariff_price_ac'))              s('tariff_price_ac').value             = r.price_per_kwh_ac||0.45;
-    if(s('tariff_price_dc'))              s('tariff_price_dc').value             = r.price_per_kwh_dc||0.75;
     if(s('tariff_fallback_price'))        s('tariff_fallback_price').value       = r.tariff_fallback_price||0.30;
     if(s('tariff_octopus_api_key'))       s('tariff_octopus_api_key').value      = r.octopus_api_key||'';
     if(s('tariff_octopus_account_id'))    s('tariff_octopus_account_id').value   = r.octopus_account_id||'';
@@ -5839,10 +5842,11 @@ async function loadPcConfig(){
   try{
     const r = await apiFetch('/api/config').then(r=>r.json());
     if($('pc_enabled'))   $('pc_enabled').value   = r.public_charging_price_enabled ? '1':'0';
-    if($('pc_fallback_ac')) $('pc_fallback_ac').value = r.public_charging_fallback_ac ?? 0.45;
-    if($('pc_fallback_dc')) $('pc_fallback_dc').value = r.public_charging_fallback_dc ?? 0.75;
-    if($('c_price_ac'))   $('c_price_ac').value   = r.price_per_kwh_ac ?? '';
-    if($('c_price_dc'))   $('c_price_dc').value   = r.price_per_kwh_dc ?? '';
+    // fall back to legacy price_per_kwh_ac/dc if dedicated fallback not set
+    const fallAc = r.public_charging_fallback_ac ?? r.price_per_kwh_ac ?? 0.45;
+    const fallDc = r.public_charging_fallback_dc ?? r.price_per_kwh_dc ?? 0.75;
+    if($('pc_fallback_ac')) $('pc_fallback_ac').value = fallAc;
+    if($('pc_fallback_dc')) $('pc_fallback_dc').value = fallDc;
     if($('enbw_enabled'))  $('enbw_enabled').checked = !!r.enbw_price_lookup_enabled;
     if($('enbw_cache_min')) $('enbw_cache_min').value = r.enbw_price_cache_minutes ?? 60;
     toggleEnbwSection();
@@ -5868,15 +5872,16 @@ async function savePublicChargingConfig(){
   const st = $('pc_save_status');
   if(st){st.textContent='⏳…';st.style.color='var(--mute)';}
   try{
+    const ac = parseFloat($('pc_fallback_ac')?.value)||0.45;
+    const dc = parseFloat($('pc_fallback_dc')?.value)||0.75;
     const body={
       public_charging_price_enabled: $('pc_enabled').value==='1',
-      public_charging_fallback_ac: parseFloat($('pc_fallback_ac').value)||0.45,
-      public_charging_fallback_dc: parseFloat($('pc_fallback_dc').value)||0.75,
+      public_charging_fallback_ac: ac,
+      public_charging_fallback_dc: dc,
+      // keep legacy keys in sync so existing code paths still work
+      price_per_kwh_ac: ac,
+      price_per_kwh_dc: dc,
     };
-    const ac = parseFloat($('c_price_ac')?.value);
-    const dc = parseFloat($('c_price_dc')?.value);
-    if(!isNaN(ac)) body.price_per_kwh_ac = ac;
-    if(!isNaN(dc)) body.price_per_kwh_dc = dc;
     const r=await apiFetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
     if(r.ok||r.saved){if(st){st.textContent='✅ Gespeichert';st.style.color='#6ee7b7';}}
     else{if(st){st.textContent='❌ '+(r.error||'Fehler');st.style.color='#f87171';}}
@@ -5888,9 +5893,7 @@ function loadMeterConfig(){ loadConfig(); }
 async function loadChargingDetectionConfig(){
   try{
     const c = await apiFetch('/api/config').then(r=>r.json());
-    if($('c_bat'))      $('c_bat').value      = c.battery_capacity_kwh||'';
     if($('c_dc_thresh')) $('c_dc_thresh').value = c.dc_threshold_kw||'';
-    if($('c_poll'))     $('c_poll').value     = c.poll_interval||60;
   }catch(e){ console.warn('loadChargingDetectionConfig',e); }
 }
 
@@ -5899,12 +5902,8 @@ async function saveChargingDetectionConfig(){
   if(st){st.textContent='⏳…';st.style.color='var(--mute)';}
   try{
     const body={};
-    const bat = parseFloat($('c_bat')?.value);
-    const dc  = parseFloat($('c_dc_thresh')?.value);
-    const poll= parseInt($('c_poll')?.value);
-    if(!isNaN(bat)) body.battery_capacity_kwh = bat;
-    if(!isNaN(dc))  body.dc_threshold_kw = dc;
-    if(!isNaN(poll)) body.poll_interval = poll;
+    const dc = parseFloat($('c_dc_thresh')?.value);
+    if(!isNaN(dc)) body.dc_threshold_kw = dc;
     const r=await apiFetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
     if(r.ok||r.saved){if(st){st.textContent='✅ Gespeichert';st.style.color='#6ee7b7';}}
     else{if(st){st.textContent='❌ '+(r.error||'Fehler');st.style.color='#f87171';}}
@@ -5982,9 +5981,9 @@ async function loadContracts(){
           ${c.notes?`<div style="font-size:.72rem;color:var(--mute)">${escapeHtml(c.notes)}</div>`:''}
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
-          ${!c.is_default?`<button class="btn-s" style="font-size:.72rem;padding:4px 8px" onclick="setDefaultContract(${c.id})" data-requires-permission="config:write">⭐ Standard</button>`:''}
-          <button class="btn-s" style="font-size:.72rem;padding:4px 8px" onclick="editContract(${c.id})" data-requires-permission="config:write">✏️</button>
-          <button class="btn-s" style="font-size:.72rem;padding:4px 8px;color:#f87171" onclick="deleteContract(${c.id},'${escapeHtml(c.name)}')" data-requires-permission="config:write">🗑️</button>
+          ${!c.is_default?`<button class="btn-s" style="font-size:.72rem;padding:4px 8px" onclick="setDefaultContract(${c.id})" data-requires-permission="public_charging:manage_contracts">⭐ Standard</button>`:''}
+          <button class="btn-s" style="font-size:.72rem;padding:4px 8px" onclick="editContract(${c.id})" data-requires-permission="public_charging:manage_contracts">✏️</button>
+          <button class="btn-s" style="font-size:.72rem;padding:4px 8px;color:#f87171" onclick="deleteContract(${c.id},'${escapeHtml(c.name)}')" data-requires-permission="public_charging:manage_contracts">🗑️</button>
         </div>
       </div>`).join('');
     applyPermissions();
@@ -6004,7 +6003,7 @@ async function loadBuiltinContracts(){
           ${c.price_ac_kwh!=null?'<br>AC: '+c.price_ac_kwh.toFixed(3)+' €/kWh':''}
           ${c.price_dc_kwh!=null?'<br>DC: '+c.price_dc_kwh.toFixed(3)+' €/kWh':''}
         </div>
-        <button class="btn-s" style="font-size:.72rem;padding:3px 8px" onclick="importBuiltinContract(${JSON.stringify(JSON.stringify(c))})" data-requires-permission="config:write">📥 Importieren</button>
+        <button class="btn-s" style="font-size:.72rem;padding:3px 8px" onclick="importBuiltinContract(${JSON.stringify(JSON.stringify(c))})" data-requires-permission="public_charging:manage_contracts">📥 Importieren</button>
       </div>`).join('');
     applyPermissions();
   }catch(e){ console.warn('loadBuiltinContracts',e); }
