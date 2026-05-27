@@ -2,17 +2,24 @@ name: Build & Push Docker Image
 
 on:
   push:
-    branches: [ "main", "dev" ]
+    branches:
+      - main
+      - dev
+      - test
+
   schedule:
     - cron: '0 2 * * *'   # nightly um 02:00 UTC
+
   workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/ev-tracker
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,14 +32,45 @@ jobs:
 
       - name: Set tags
         id: tags
+        shell: bash
         run: |
-          SHA_SHORT=$(echo ${{ github.sha }} | cut -c1-8)
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/ev-tracker:nightly" >> $GITHUB_OUTPUT
-          elif [ "${{ github.ref }}" = "refs/heads/dev" ]; then
-            echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/ev-tracker:dev" >> $GITHUB_OUTPUT
+          SHA_SHORT=$(echo "${GITHUB_SHA}" | cut -c1-8)
+
+          if [ "${GITHUB_EVENT_NAME}" = "schedule" ]; then
+            {
+              echo "tags<<EOF"
+              echo "${IMAGE_NAME}:nightly"
+              echo "${IMAGE_NAME}:nightly-${SHA_SHORT}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+
+          elif [ "${GITHUB_REF_NAME}" = "main" ]; then
+            {
+              echo "tags<<EOF"
+              echo "${IMAGE_NAME}:latest"
+              echo "${IMAGE_NAME}:main-${SHA_SHORT}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+
+          elif [ "${GITHUB_REF_NAME}" = "dev" ]; then
+            {
+              echo "tags<<EOF"
+              echo "${IMAGE_NAME}:dev"
+              echo "${IMAGE_NAME}:dev-${SHA_SHORT}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+
+          elif [ "${GITHUB_REF_NAME}" = "test" ]; then
+            {
+              echo "tags<<EOF"
+              echo "${IMAGE_NAME}:beta"
+              echo "${IMAGE_NAME}:beta-${SHA_SHORT}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+
           else
-            echo "tags=${{ secrets.DOCKERHUB_USERNAME }}/ev-tracker:latest,${{ secrets.DOCKERHUB_USERNAME }}/ev-tracker:$SHA_SHORT" >> $GITHUB_OUTPUT
+            echo "Unsupported branch: ${GITHUB_REF_NAME}"
+            exit 1
           fi
 
       - name: Build and push
