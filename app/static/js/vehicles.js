@@ -16,15 +16,18 @@ async function loadVehicleList() {
     var active = v.active !== false;
     var row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:12px 14px';
+    var _eh = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'').replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});};
     row.innerHTML =
       '<div style="flex:1;min-width:0">' +
-        '<div style="font-weight:700;font-size:.85rem;color:#fff">'+v.name+'</div>' +
-        '<div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-top:3px">'+(v.provider||'ha')+' · ID: '+v.id+(isV0?' · Primär':'')+'</div>' +
+        '<div style="font-weight:700;font-size:.85rem;color:#fff">'+_eh(v.name||'')+'</div>' +
+        '<div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-top:3px">'+_eh(v.provider||'ha')+' · ID: '+_eh(v.id)+(isV0?' · Primär':'')+'</div>' +
       '</div>' +
       '<div style="font-size:.72rem;font-family:var(--mono);color:'+(active?'var(--acc)':'var(--mute)')+'">' +
         (active?'● Aktiv':'○ Inaktiv') +
       '</div>' +
-      '<button class="btn-s" style="font-size:.72rem;padding:5px 12px" onclick="openEditVehicleModal(\''+v.id+'\')">✏ Bearbeiten</button>';
+      '<button class="btn-s" style="font-size:.72rem;padding:5px 12px" data-vid="'+_eh(v.id)+'">✏ Bearbeiten</button>';
+    var editBtn = row.querySelector('.btn-s[data-vid]');
+    if (editBtn) editBtn.addEventListener('click', function(){ openEditVehicleModal(this.dataset.vid); });
     el.appendChild(row);
   });
 }
@@ -126,17 +129,18 @@ async function loadVehicleModalFields(existingVehicle) {
   var fields = await fetch('/api/providers/'+provider+'/fields').then(function(r){return r.json();}).catch(function(){return [];});
   var container = $('vm_fields');
   container.innerHTML = '';
+  var _eh = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'').replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});};
   fields.forEach(function(f) {
     var val = existingVehicle ? (existingVehicle[f.id]||'') : '';
     var wrap = document.createElement('div');
     if(f.type === 'select'){
-      wrap.innerHTML = '<label class="lbl">'+f.label+'</label>' +
-        '<select class="inp" id="vmf_'+f.id+'">'+(f.options||[]).map(function(o){return '<option value="'+o+'" '+(val===o?'selected':'')+'>'+o+'</option>';}).join('')+'</select>' +
-        (f.hint?'<span class="hint">'+f.hint+'</span>':'');
+      wrap.innerHTML = '<label class="lbl">'+_eh(f.label)+'</label>' +
+        '<select class="inp" id="vmf_'+_eh(f.id)+'">'+(f.options||[]).map(function(o){return '<option value="'+_eh(o)+'" '+(val===o?'selected':'')+'>'+_eh(o)+'</option>';}).join('')+'</select>' +
+        (f.hint?'<span class="hint">'+_eh(f.hint)+'</span>':'');
     } else {
-      wrap.innerHTML = '<label class="lbl">'+f.label+(f.required?' *':'')+'</label>' +
-        '<input class="inp" type="'+(f.type||'text')+'" id="vmf_'+f.id+'" value="'+val+'" placeholder="'+(f.placeholder||'')+'">' +
-        (f.hint?'<span class="hint">'+f.hint+'</span>':'');
+      wrap.innerHTML = '<label class="lbl">'+_eh(f.label)+(f.required?' *':'')+'</label>' +
+        '<input class="inp" type="'+(f.type||'text')+'" id="vmf_'+_eh(f.id)+'" value="'+_eh(String(val||''))+'" placeholder="'+_eh(f.placeholder||'')+'">' +
+        (f.hint?'<span class="hint">'+_eh(f.hint)+'</span>':'');
     }
     container.appendChild(wrap);
   });

@@ -183,9 +183,10 @@ def _build_report_html(sessions, period_info, cfg, lang="de"):
     plabel     = period_info.get("label_de" if is_de else "label_en", "")
     loc_filter = cfg.get("report_email_location_filter", "all")
     loc_lbl, veh_lbl = _report_filter_labels(cfg, is_de)
+    from services.pricing_service import get_session_duration_seconds
     total_kwh  = sum(s.get("kwh_charged") or 0 for s in sessions)
     total_cost = sum(s.get("cost_eur")    or 0 for s in sessions)
-    total_secs = sum(s.get("duration_sec") or 0 for s in sessions)
+    total_secs = sum(get_session_duration_seconds(s) or 0 for s in sessions)
     home_kwh   = sum((s.get("kwh_charged") or 0) for s in sessions if s.get("location") == "home")
     ext_kwh    = sum((s.get("kwh_charged") or 0) for s in sessions if s.get("location") == "extern")
     total_h    = total_secs / 3600

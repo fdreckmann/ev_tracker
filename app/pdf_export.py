@@ -185,7 +185,8 @@ def generate_report_pdf(
     # Aggregates
     total_kwh  = sum(s.get("kwh_charged") or 0 for s in sessions)
     total_cost = sum(s.get("cost_eur") or 0 for s in sessions)
-    total_secs = sum(s.get("duration_sec") or 0 for s in sessions)
+    from services.pricing_service import get_session_duration_seconds
+    total_secs = sum(get_session_duration_seconds(s) or 0 for s in sessions)
     total_h    = total_secs / 3600
     avg_price  = total_cost / total_kwh if total_kwh else 0
     n          = len(sessions)
@@ -422,7 +423,8 @@ def generate_multi_month_report_pdf(
     all_sessions = [s for _, slist in periods_sessions for s in slist]
     total_kwh  = sum(s.get("kwh_charged") or 0 for s in all_sessions)
     total_cost = sum(s.get("cost_eur") or 0 for s in all_sessions)
-    total_secs = sum(s.get("duration_sec") or 0 for s in all_sessions)
+    from services.pricing_service import get_session_duration_seconds
+    total_secs = sum(get_session_duration_seconds(s) or 0 for s in all_sessions)
     total_h    = total_secs / 3600
     avg_price  = total_cost / total_kwh if total_kwh else 0
     n_months   = len(periods_sessions)
@@ -574,7 +576,7 @@ def generate_multi_month_report_pdf(
         m_kwh  = sum(s.get("kwh_charged") or 0 for s in slist)
         m_cost = sum(s.get("cost_eur") or 0 for s in slist)
         m_avg  = m_cost / m_kwh if m_kwh else 0
-        m_h    = sum(s.get("duration_sec") or 0 for s in slist) / 3600
+        m_h    = sum(get_session_duration_seconds(s) or 0 for s in slist) / 3600
 
         info_rows = [
             [_t("sessions",lang), str(len(slist)),

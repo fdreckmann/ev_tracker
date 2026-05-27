@@ -1670,6 +1670,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
                 <label class="cfg-lbl">Monatliche Grundgebühr (€)</label>
                 <input type="number" id="cf_monthly" step="0.01" min="0" value="0"
                   style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+                <div style="font-size:.72rem;color:var(--mute);margin-top:4px">Grundgebühren werden aktuell nicht auf einzelne Ladevorgänge verteilt.</div>
               </div>
             </div>
             <div style="margin-bottom:12px">
@@ -2279,7 +2280,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           Speichere mehrere Spalten-Zuordnungen als benannte Vorlagen und wähle beim Export die passende aus.
         </p>
         <div id="exportTemplateList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"></div>
-        <button class="btn-p" style="font-size:.78rem;padding:8px 18px" onclick="saveCurrentAsTemplate()">💾 Aktuelle Zuordnung als Vorlage speichern</button>
+        <button class="btn-p" style="font-size:.78rem;padding:8px 18px" onclick="saveCurrentAsTemplate()" data-requires-permission="export:templates_manage">💾 Aktuelle Zuordnung als Vorlage speichern</button>
         <span style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-left:10px">Zuerst Template hochladen &amp; Spalten zuweisen im Export-Bereich</span>
       </div>
 
@@ -2517,18 +2518,20 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         Kein Template — eingebautes Format wird verwendet
       </span>
       <button class="btn-d" id="tplDelBtn" onclick="deleteTpl()"
-        style="margin-left:auto;font-size:.72rem;padding:5px 12px;display:none">✕ Entfernen</button>
+        style="margin-left:auto;font-size:.72rem;padding:5px 12px;display:none"
+        data-requires-permission="templates:delete">✕ Entfernen</button>
     </div>
     <div class="tpl-meta" id="tplMeta"></div>
 
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
-      <button class="btn-s" style="font-size:.78rem;padding:8px 18px" onclick="openGalleryModal()">📚 Vorlagen-Galerie</button>
+      <button class="btn-s" style="font-size:.78rem;padding:8px 18px" onclick="openGalleryModal()" data-requires-permission="templates:gallery_use">📚 Vorlagen-Galerie</button>
       <div id="activeTemplateInfo" style="font-size:.72rem;font-family:var(--mono);color:var(--mute)"></div>
     </div>
 
     <div class="drop-zone" id="dropZone"
+         data-requires-permission="templates:upload"
          onclick="document.getElementById('tplFile').click()"
-         ondragover="ev.preventDefault();this.classList.add('drag')"
+         ondragover="event.preventDefault();this.classList.add('drag')"
          ondragleave="this.classList.remove('drag')"
          ondrop="handleDrop(event)">
       <div class="dz-icon">📊</div>
@@ -2550,8 +2553,8 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         </table>
       </div>
       <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
-        <button class="btn-p" onclick="openMappingModal()">✏️ Spalten zuweisen</button>
-        <button class="btn-s" onclick="saveMapping()">💾 Speichern</button>
+        <button class="btn-p" onclick="openMappingModal()" data-requires-permission="templates:edit_mapping">✏️ Spalten zuweisen</button>
+        <button class="btn-s" onclick="saveMapping()" data-requires-permission="templates:edit_mapping">💾 Speichern</button>
         <div id="mappingSaveInfo" style="font-size:.75rem;font-family:var(--mono);color:var(--mute)"></div>
       </div>
     </div>
@@ -2630,6 +2633,9 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
   <!-- Export config -->
   <div class="card">
+    <div id="templateHashMismatchBanner" style="display:none;background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.4);border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:.8rem;color:#f59e0b">
+      ⚠ <strong>Neue Vorlage erkannt</strong> — bitte Mapping prüfen und neu speichern, bevor der Export gestartet wird.
+    </div>
     <div class="card-title">Monatsbericht exportieren</div>
     <div class="exp-grid">
       <select id="expY"></select>
@@ -3334,7 +3340,7 @@ function tab(id, btn){
   $('panel-'+id).classList.add('active');
   if(btn) btn.classList.add('active');
   if(id==='sessions'){ loadSessions(); loadMissingChargeCandidates(); }
-  if(id==='export'){loadExpPreview();refreshTplInfo();}
+  if(id==='export'){loadExpPreview();refreshTplInfo();checkTemplateMappingHash();}
   if(id==='backup') loadBackups();
   if(id==='dashboard') loadCharts();
   if(id==='config'){ cfgSection('fahrzeuge', document.querySelector('.cfg-nav-btn.active')||document.querySelector('.cfg-nav-btn')); }
@@ -4333,7 +4339,7 @@ async function saveMappingModal(){
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify(body)
   }).then(r=>r.json());
-  if(r.ok){ toast('Template-Konfiguration gespeichert'); closeMappingModal(); }
+  if(r.ok){ toast('Template-Konfiguration gespeichert'); closeMappingModal(); checkTemplateMappingHash(); }
   else {
     $('mappingModalInfo').style.color = 'var(--danger)';
     $('mappingModalInfo').textContent = '❌ Fehler beim Speichern';
@@ -4430,6 +4436,7 @@ async function uploadTpl(file){
   if(r.ok){
     toast(`Template hochgeladen: ${r.filename}`);
     await refreshTplInfo();
+    checkTemplateMappingHash();
     openMappingModal(); // sofort Spalten zuweisen
   } else toast('Upload fehlgeschlagen: '+r.error,'err');
   $('tplFile').value='';
@@ -5992,19 +5999,28 @@ async function loadContracts(){
 
 async function loadBuiltinContracts(){
   try{
-    const rows=await apiFetch('/api/charging-contracts/builtin').then(r=>r.json());
+    const [builtins, existing] = await Promise.all([
+      apiFetch('/api/charging-contracts/builtin').then(r=>r.json()),
+      apiFetch('/api/charging-contracts').then(r=>r.json()).catch(()=>[]),
+    ]);
+    const importedNames = new Set((existing||[]).map(c=>c.name));
     const el=$('builtin_contract_list');
     if(!el) return;
-    el.innerHTML=rows.map(c=>`
-      <div style="padding:10px 12px;background:#1e2030;border-radius:8px;border:1px solid var(--brd)">
+    el.innerHTML=builtins.map(c=>{
+      const imported=importedNames.has(c.name);
+      const btn=imported
+        ? `<span style="font-size:.72rem;color:var(--acc);font-weight:600">✓ Importiert</span>`
+        : `<button class="btn-s" style="font-size:.72rem;padding:3px 8px" onclick="importBuiltinContract(${JSON.stringify(JSON.stringify(c))})" data-requires-permission="public_charging:manage_contracts">📥 Importieren</button>`;
+      return `<div style="padding:10px 12px;background:#1e2030;border-radius:8px;border:1px solid ${imported?'var(--acc)':'var(--brd)'}">
         <div style="font-size:.82rem;font-weight:600;margin-bottom:2px">${escapeHtml(c.name)}</div>
         <div style="font-size:.72rem;color:var(--mute);margin-bottom:6px">${escapeHtml(c.description||'')}
           ${c.monthly_fee_eur?'<br>'+c.monthly_fee_eur.toFixed(2)+' €/Monat':''}
           ${c.price_ac_kwh!=null?'<br>AC: '+c.price_ac_kwh.toFixed(3)+' €/kWh':''}
           ${c.price_dc_kwh!=null?'<br>DC: '+c.price_dc_kwh.toFixed(3)+' €/kWh':''}
         </div>
-        <button class="btn-s" style="font-size:.72rem;padding:3px 8px" onclick="importBuiltinContract(${JSON.stringify(JSON.stringify(c))})" data-requires-permission="public_charging:manage_contracts">📥 Importieren</button>
-      </div>`).join('');
+        ${btn}
+      </div>`;
+    }).join('');
     applyPermissions();
   }catch(e){ console.warn('loadBuiltinContracts',e); }
 }
@@ -6012,13 +6028,20 @@ async function loadBuiltinContracts(){
 async function importBuiltinContract(jsonStr){
   try{
     const c=JSON.parse(jsonStr);
-    const r=await apiFetch('/api/charging-contracts',{
+    const res=await apiFetch('/api/charging-contracts',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({name:c.name,cpo:c.cpo||'',price_ac_kwh:c.price_ac_kwh,price_dc_kwh:c.price_dc_kwh,monthly_fee_eur:c.monthly_fee_eur||0,notes:c.description||''})
-    }).then(r=>r.json());
-    if(r.id){ loadContracts(); }
-    else{ alert(r.error||'Fehler beim Importieren'); }
-  }catch(e){ alert(e.message); }
+    });
+    const r=await res.json();
+    if(r.id){
+      const dflt=r.is_default?' (als Standard gesetzt)':'';
+      toast(`✓ ${escapeHtml(c.name)} importiert${dflt}`);
+      await loadContracts();
+      await loadBuiltinContracts();
+    } else {
+      toast(r.error||'Fehler beim Importieren','err');
+    }
+  }catch(e){ toast(e.message,'err'); }
 }
 
 function showContractForm(data){

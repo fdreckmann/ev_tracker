@@ -1,10 +1,31 @@
 import os, sys, sqlite3, shutil, json, re
+import re as _re_formula
+
+_RE_RANGE_FORMULA = re.compile(r'[A-Za-z]+\d+:[A-Za-z]+\d+')
+
+def _is_range_formula(formula):
+    """Return True only for formulas referencing a cell range (e.g. SUM(C3:C12))."""
+    if not isinstance(formula, str) or not formula.startswith("="):
+        return False
+    return bool(_RE_RANGE_FORMULA.search(formula))
 from datetime import datetime
 from pathlib import Path
 import openpyxl
 from openpyxl.cell.cell import MergedCell
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+
+
+def _adjust_formula_rows(formula, delta):
+    """Adjust relative row references in an Excel formula by delta rows."""
+    if not isinstance(formula, str) or not formula.startswith("=") or delta == 0:
+        return formula
+    def _sub(m):
+        col_abs, col_let, row_abs, row_num = m.group(1), m.group(2), m.group(3), int(m.group(4))
+        if not row_abs:
+            row_num += delta
+        return f"{col_abs}{col_let}{row_abs}{row_num}"
+    return _re_formula.sub(r'(\$?)([A-Za-z]+)(\$?)(\d+)', _sub, formula)
 
 try:
     from template_fields import TABLE_FIELDS, HEADER_FIELDS
@@ -184,6 +205,22 @@ COLUMN_KEYWORDS = {
     "zählerstand alt":  "meter_old",
     "zählerstand neu":  "meter_new",
     "zählerstand":      "meter_old",
+    "charging_time":    "duration",
+    "total_duration":   "duration",
+    "duration_hours":   "duration_hours",
+    "charge_power":     "charge_power_kw",
+    "avg_power":        "charge_power_kw",
+    "ladeleistung":     "charge_power_kw",
+    "preis":            "price_per_kwh",
+    "price":            "price_per_kwh",
+    "preis/kwh":        "price_per_kwh",
+    "preisquelle":      "price_source",
+    "price_source":     "price_source",
+    "vertrag":          "charging_contract_name",
+    "contract":         "charging_contract_name",
+    "ladetyp":          "charger_type",
+    "charger_type":     "charger_type",
+    "ladeart":          "charger_type",
 }
 
 FIELD_LABELS = {
@@ -201,6 +238,9 @@ FIELD_LABELS = {
     "meter_new":   "Zählerstand Neu (kWh)",
     "location":    "Standort",
     "row_num":     "Nr.",
+    "price_source":           "Preisquelle",
+    "charging_contract_name": "Vertragsname",
+    "charger_type":           "Ladeart",
     None:          "— nicht zugewiesen —",
 }
 
@@ -220,6 +260,10 @@ NUM_FMT = {
     "meter_old":   '0',
     "meter_new":   '0',
     "row_num":     "0",
+    "price_per_kwh":          '€0.0000',
+    "charger_type":           "@",
+    "price_source":           "@",
+    "charging_contract_name": "@",
 }
 
 LOCATION_LABELS = {"home": "🏠 Zuhause", "extern": "⚡ Extern", "unknown": "—"}
@@ -239,10 +283,60 @@ HEADER_KEYWORDS = {
 }
 
 def match_column(txt):
-    if not txt: return None
-    h = str(txt).lower().strip()
+    """Match a column header text to a TABLE_FIELDS key.
+
+    Uses TABLE_FIELDS synonyms (from template_fields.py) with best-confidence
+    selection: exact match > substring > partial words. Longer synonyms win on
+    ties so "preis/kwh" beats the shorter "kwh" substring of kwh_charged.
+    Falls back to the legacy COLUMN_KEYWORDS dict only for exact keyword matches.
+    """
+    if not txt:
+        return None
+    norm = str(txt).lower().strip().rstrip(":").strip()
+    if not norm:
+        return None
+
+    best_field = None
+    best_conf = 0.0
+    best_syn_len = 0
+
+    for field, info in TABLE_FIELDS.items():
+        for syn in info.get("synonyms", []):
+            syn_l = syn.lower()
+            if norm == syn_l:
+                conf = 1.0
+            elif syn_l in norm or norm in syn_l:
+                conf = 0.8
+            else:
+                words = syn_l.split()
+                if len(words) > 1 and all(w in norm for w in words):
+                    conf = 0.7
+                else:
+                    continue
+            # Higher confidence wins; tie broken by synonym length (longer = more specific)
+            if conf > best_conf or (conf == best_conf and len(syn) > best_syn_len):
+                best_field = field
+                best_conf = conf
+                best_syn_len = len(syn)
+
+    # Tiebreaker for charge_power_kw vs charger_power_kw (installed rating wins when
+    # header contains priority words like "kw/stunde", "wallbox", "11kw", …)
+    if best_field == "charge_power_kw" and best_conf < 1.0:
+        try:
+            from template_fields import CHARGER_POWER_PRIORITY_KEYWORDS
+            if any(kw in norm for kw in CHARGER_POWER_PRIORITY_KEYWORDS):
+                best_field = "charger_power_kw"
+        except ImportError:
+            pass
+
+    if best_field and best_conf >= 0.7:
+        return best_field
+
+    # Legacy fallback: exact keyword match only (avoids false substring positives)
     for kw, field in COLUMN_KEYWORDS.items():
-        if kw in h: return field
+        if norm == kw:
+            return field
+
     return None
 
 def fetch_sessions(year, month, location="all"):
@@ -263,29 +357,12 @@ def to_row(s, idx, lang="de"):
     dt_s = datetime.fromisoformat(s["start_ts"])
     dt_e = datetime.fromisoformat(s["end_ts"]) if s.get("end_ts") else None
 
-    # Calculate duration in seconds from timestamps or stored fields
-    total_seconds = None
-    if dt_e:
-        total_seconds = (dt_e - dt_s).total_seconds()
-    elif s.get("duration_seconds"):
-        try:
-            total_seconds = float(s["duration_seconds"])
-        except (ValueError, TypeError):
-            pass
-    elif s.get("duration"):
-        # Try parsing "HH:MM" string format
-        dur_raw = s["duration"]
-        if isinstance(dur_raw, str) and ":" in dur_raw:
-            try:
-                parts = dur_raw.split(":")
-                total_seconds = int(parts[0]) * 3600 + int(parts[1]) * 60
-            except (ValueError, IndexError):
-                pass
-        elif isinstance(dur_raw, (int, float)):
-            # Already in fractional days (legacy)
-            total_seconds = float(dur_raw) * 86400
-
-    duration = total_seconds / 86400 if total_seconds is not None else None  # fraction of day for [h]:MM format
+    try:
+        from services.pricing_service import get_session_duration_seconds
+        total_seconds = get_session_duration_seconds(s)
+    except Exception:
+        total_seconds = int((dt_e - dt_s).total_seconds()) if dt_e else None
+    duration = total_seconds / 86400 if total_seconds is not None else None
     duration_hours = round(total_seconds / 3600, 2) if total_seconds is not None else None
 
     # Determine charger_type: use stored value or derive from location
@@ -317,6 +394,8 @@ def to_row(s, idx, lang="de"):
         "meter_new":    format_meter_value_kwh(s.get("meter_new")),
         "location":     LOCATION_LABELS.get(s.get("location", "unknown"), s.get("location", "—")),
         "charger_type": charger_type,
+        "price_source":          s.get("price_source"),
+        "charging_contract_name": s.get("charging_contract_name"),
     }
     # Calculate charge_power_kw = kwh / duration_h
     kwh = s.get("kwh_charged")
@@ -547,7 +626,7 @@ def _fill_placeholders(wb, header_vals, include_signature=False, sig_img=None):
 def export_with_template(year, month, sessions, location, col_override=None, start_row=None, header_row=None, header_info=None,
                           cell_mapping=None, sheet=None,
                           include_signature=False, signature_path=None, signature_mapping=None,
-                          lang="de"):
+                          lang="de", footer_start_row=None):
     if header_info is None:
         header_info = {}
     if cell_mapping is None:
@@ -564,36 +643,78 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
     else:
         ws = wb.active
 
-    # build column map from explicit mapping
+    # ── Build column map from explicit mapping ────────────────────────────────
+    # Supports both formats: {"1": "date"} and {"1": {"field": "date", ...}}
     col_map = {}
     if col_override and isinstance(col_override, dict):
-        for col_str, field in col_override.items():
-            try: col_idx = int(col_str)
-            except (ValueError, TypeError): continue
+        for col_str, field_info in col_override.items():
+            try:
+                col_idx = int(col_str)
+            except (ValueError, TypeError):
+                continue
+            field = field_info.get("field") if isinstance(field_info, dict) else field_info
             if field:
                 col_map[col_idx] = field
 
-    # fallback: auto-detect from header keywords if no mapping provided
+    # ── Fallback: auto-detect header row if no explicit column mapping ────────
+    # When header_row is saved (from a previous template analysis), scan exactly
+    # that row. Otherwise call analyze_template() for robust detection, which
+    # requires >=2 actual session-column matches and won't mistake summary rows
+    # (e.g. "Ladezeit gesamt | Gesamtkosten") for the data table header.
     if not col_map:
-        for row in ws.iter_rows():
-            filled = [c for c in row if c.value is not None and str(c.value).strip()]
-            if len(filled) >= 2:
-                for cell in row:
+        if header_row:
+            hr = int(header_row)
+            for cnum in range(1, (ws.max_column or 40) + 1):
+                try:
+                    cell = ws.cell(row=hr, column=cnum)
+                    if isinstance(cell, MergedCell) or cell.value is None:
+                        continue
                     f = match_column(cell.value)
-                    if f: col_map[cell.column] = f
-                if col_map:
-                    break
+                    if f:
+                        col_map[cnum] = f
+                except Exception:
+                    pass
+        else:
+            # No header_row saved — use template_analyzer for robust detection
+            try:
+                from template_analyzer import analyze_template as _at
+                _analysis = _at(TEMPLATE_PATH)
+                if _analysis.get("ok") and _analysis.get("column_mapping"):
+                    for col_str, info in _analysis["column_mapping"].items():
+                        try:
+                            col_idx = int(col_str)
+                        except (ValueError, TypeError):
+                            continue
+                        field = info.get("field") if isinstance(info, dict) else info
+                        if field:
+                            col_map[col_idx] = field
+                    if not start_row and _analysis.get("start_row"):
+                        start_row = _analysis["start_row"]
+                elif _analysis.get("ok") and _analysis.get("header_row"):
+                    # analyzer detected header but no column mapping yet — scan that row
+                    hr = _analysis["header_row"]
+                    for cnum in range(1, (ws.max_column or 40) + 1):
+                        try:
+                            cell = ws.cell(row=hr, column=cnum)
+                            if isinstance(cell, MergedCell) or cell.value is None:
+                                continue
+                            f = match_column(cell.value)
+                            if f:
+                                col_map[cnum] = f
+                        except Exception:
+                            pass
+                    if not start_row:
+                        start_row = hr + 1
+            except Exception:
+                pass
 
-    # determine data start row
+    # ── Determine data start row ──────────────────────────────────────────────
     if start_row:
         ds = int(start_row)
+    elif header_row:
+        ds = int(header_row) + 1
     else:
-        detected = None
-        for row in ws.iter_rows():
-            filled = [c for c in row if c.value is not None and str(c.value).strip()]
-            if len(filled) >= 2:
-                detected = row[0].row; break
-        ds = (detected + 1) if detected else (ws.max_row or 1)
+        ds = (ws.max_row or 1)
 
     if not col_map:
         col_map = {1:"row_num",2:"date",3:"start_time",4:"end_time",
@@ -630,10 +751,110 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
             enriched.append(s)
         sessions = enriched
 
-    # clear old data rows
-    for r in range(ds, max_row + 1):
-        for cell in ws[r]:
-            safe_set(cell, None)
+    # Detect footer_start_row:
+    # - When provided explicitly (from saved config), use it directly.
+    # - Otherwise use the heuristic: scan for first row containing a range formula
+    #   (e.g. =SUM(C3:C12)). Simple per-row formulas (=B5-A5) and non-empty
+    #   unmapped columns do NOT trigger footer detection.
+    if footer_start_row is not None:
+        footer_start_row = int(footer_start_row)
+    else:
+        footer_start_row = (max_row or ds) + 1
+        for _fr in range(ds, (max_row or 0) + 1):
+            for _fc in range(1, (ws.max_column or 20) + 1):
+                try:
+                    _fv = ws.cell(row=_fr, column=_fc).value
+                    if _is_range_formula(_fv):
+                        footer_start_row = _fr
+                        break
+                except Exception:
+                    pass
+            else:
+                continue
+            break
+
+    template_data_rows = max(footer_start_row - ds, 0)
+
+    # If more sessions than template rows, insert rows before the footer to make room
+    n_extra = len(sessions) - template_data_rows
+    if n_extra > 0 and footer_start_row <= (ws.max_row or 0):
+        style_row = footer_start_row - 1
+        _rstyles = {}
+        for ci in col_map:
+            try:
+                _c = ws.cell(row=style_row, column=ci)
+                _rstyles[ci] = {
+                    "font":          _c.font.copy()      if _c.font      else None,
+                    "fill":          _c.fill.copy()      if _c.fill      else None,
+                    "border":        _c.border.copy()    if _c.border    else None,
+                    "alignment":     _c.alignment.copy() if _c.alignment else None,
+                    "number_format": _c.number_format,
+                }
+            except Exception:
+                pass
+        # Capture template data row (row ds) formulas before insertion shifts rows
+        tformulas = {}
+        for ci in col_map:
+            try:
+                c = ws.cell(row=ds, column=ci)
+                if isinstance(c.value, str) and c.value.startswith("="):
+                    tformulas[ci] = c.value
+            except Exception:
+                pass
+        old_last_data = footer_start_row - 1  # before insertion
+        ws.insert_rows(footer_start_row, n_extra)
+        # After insert_rows, footer is now at footer_start_row + n_extra
+        new_footer_start = footer_start_row + n_extra
+        for _ei in range(n_extra):
+            _r = footer_start_row + _ei
+            for ci, _st in _rstyles.items():
+                try:
+                    _cell = ws.cell(row=_r, column=ci)
+                    if _st["font"]:      _cell.font      = _st["font"]
+                    if _st["fill"]:      _cell.fill      = _st["fill"]
+                    if _st["border"]:    _cell.border    = _st["border"]
+                    if _st["alignment"]: _cell.alignment = _st["alignment"]
+                    if _st["number_format"]: _cell.number_format = _st["number_format"]
+                except Exception:
+                    pass
+            # Apply formula patterns from template data row with adjusted row references
+            for ci, formula in tformulas.items():
+                try:
+                    cell = ws.cell(row=_r, column=ci)
+                    adjusted = _adjust_formula_rows(formula, _r - ds)
+                    cell.value = adjusted
+                except Exception:
+                    pass
+        # Extend SUM/range formulas in footer rows to cover new data rows
+        _new_last = old_last_data + n_extra
+        for _sr in range(new_footer_start, (ws.max_row or 0) + 1):
+            for _sc in range(1, (ws.max_column or 20) + 1):
+                try:
+                    _cell = ws.cell(row=_sr, column=_sc)
+                    if not (isinstance(_cell.value, str) and _cell.value.startswith("=")):
+                        continue
+                    _cell.value = _re_formula.sub(
+                        rf'([A-Za-z]+\$?){old_last_data}(?=[,):+\-*/\s]|$)',
+                        lambda m: m.group(1) + str(_new_last),
+                        _cell.value
+                    )
+                except Exception:
+                    pass
+        max_row = ws.max_row or 0
+
+    # Clear old data: ONLY mapped columns, ONLY rows before footer, skip formula cells
+    clear_end = min(ds + max(len(sessions), template_data_rows) - 1, footer_start_row - 1)
+    for r in range(ds, clear_end + 1):
+        for ci in col_map:
+            try:
+                cell = ws.cell(row=r, column=ci)
+                if isinstance(cell, MergedCell):
+                    continue
+                if isinstance(cell.value, str) and cell.value.startswith("="):
+                    continue
+                safe_set(cell, None)
+            except Exception:
+                pass
 
     # write data rows
     for i, s in enumerate(sessions):
@@ -805,8 +1026,8 @@ def export_builtin(year, month, sessions, location, config=None, lang="de"):
     ws.title = t_export("charging_log", lang)
     ws.freeze_panes = "A3"
 
-    # Title
-    ws.merge_cells("A1:K1")
+    # Title (16 columns: A–P)
+    ws.merge_cells("A1:P1")
     t = ws["A1"]
     t.value     = f"{t_export('charging_log', lang)} – {ml}  |  {loc_label}"
     t.font      = Font(name="Arial", bold=True, size=14, color=C_FG)
@@ -819,13 +1040,18 @@ def export_builtin(year, month, sessions, location, config=None, lang="de"):
         t_export("date", lang),
         t_export("start", lang),
         t_export("end", lang),
+        t_export("duration_hours", lang),
+        t_export("charger_type", lang),
         t_export("odo_start", lang),
         t_export("odo_end", lang),
         t_export("soc_start", lang),
         t_export("soc_end", lang),
         t_export("kwh", lang),
+        t_export("price_per_kwh", lang),
         t_export("cost", lang),
         t_export("location", lang),
+        "Preisquelle" if lang != "en" else "Price source",
+        "Vertragsname" if lang != "en" else "Contract name",
     ]
     for col, h in enumerate(hdrs, 1):
         cs(ws, 2, col, h, bold=True, bg="#"+C_HDR, fg=C_FG, al="center")
@@ -835,42 +1061,47 @@ def export_builtin(year, month, sessions, location, config=None, lang="de"):
         r  = ds + i
         rd = to_row(s, i + 1, lang=lang)
         bg = row_bg(s)
-        cs(ws,r,1, rd["row_num"],    bg=bg, al="center")
-        cs(ws,r,2, rd["date"],       bg=bg, nf="DD.MM.YYYY", al="center")
-        cs(ws,r,3, rd["start_time"], bg=bg, nf="HH:MM", al="center")
-        cs(ws,r,4, rd["end_time"],   bg=bg, nf="HH:MM", al="center")
-        cs(ws,r,5, rd["odo_start"],  bg=bg, nf='#,##0 "km"', al="right")
-        cs(ws,r,6, rd["odo_end"],    bg=bg, nf='#,##0 "km"', al="right")
-        cs(ws,r,7, rd["soc_start"],  bg=bg, nf='0"%"', al="right")
-        cs(ws,r,8, rd["soc_end"],    bg=bg, nf='0"%"', al="right")
-        cs(ws,r,9, rd["kwh_charged"],bg=bg, nf='0.00 "kWh"', al="right")
-        cs(ws,r,10,rd["cost_eur"],   bg=bg, nf='€#,##0.00', al="right")
-        cs(ws,r,11,rd["location"],   bg=bg, al="center")
+        cs(ws,r,1, rd["row_num"],         bg=bg, al="center")
+        cs(ws,r,2, rd["date"],            bg=bg, nf="DD.MM.YYYY", al="center")
+        cs(ws,r,3, rd["start_time"],      bg=bg, nf="HH:MM", al="center")
+        cs(ws,r,4, rd["end_time"],        bg=bg, nf="HH:MM", al="center")
+        cs(ws,r,5, rd["duration_hours"],  bg=bg, nf='0.00 "h"', al="right")
+        cs(ws,r,6, rd["charger_type"],    bg=bg, al="center")
+        cs(ws,r,7, rd["odo_start"],       bg=bg, nf='#,##0 "km"', al="right")
+        cs(ws,r,8, rd["odo_end"],         bg=bg, nf='#,##0 "km"', al="right")
+        cs(ws,r,9, rd["soc_start"],       bg=bg, nf='0"%"', al="right")
+        cs(ws,r,10,rd["soc_end"],         bg=bg, nf='0"%"', al="right")
+        cs(ws,r,11,rd["kwh_charged"],     bg=bg, nf='0.00 "kWh"', al="right")
+        cs(ws,r,12,rd["price_per_kwh"],   bg=bg, nf='€0.0000', al="right")
+        cs(ws,r,13,rd["cost_eur"],        bg=bg, nf='€#,##0.00', al="right")
+        cs(ws,r,14,rd["location"],        bg=bg, al="center")
+        cs(ws,r,15,rd["price_source"],    bg=bg, al="left")
+        cs(ws,r,16,rd["charging_contract_name"], bg=bg, al="left")
 
     n = len(sessions)
     if n:
         tr = ds + n
-        for col in range(1, 12):
+        for col in range(1, 17):
             v  = ("Σ" if col==1
-                  else f"=SUM(I{ds}:I{ds+n-1})" if col==9
-                  else f"=SUM(J{ds}:J{ds+n-1})" if col==10
+                  else f"=SUM(K{ds}:K{ds+n-1})" if col==11
+                  else f"=SUM(M{ds}:M{ds+n-1})" if col==13
                   else "")
-            nf = ('0.00 "kWh"' if col==9 else '€#,##0.00' if col==10 else None)
+            nf = ('0.00 "kWh"' if col==11 else '€#,##0.00' if col==13 else None)
             cs(ws, tr, col, v, bold=True, bg="#"+C_SUM, nf=nf,
                al="center" if col==1 else "right")
 
     # column widths
-    for col, w in enumerate([5,13,8,8,13,13,10,10,13,12,14],1):
+    for col, w in enumerate([5,13,8,8,8,8,13,13,10,10,13,10,12,14,14,20],1):
         ws.column_dimensions[get_column_letter(col)].width = w
 
     # Legend
     leg = ds + n + 2
-    ws.merge_cells(f"A{leg}:C{leg}")
+    ws.merge_cells(f"A{leg}:D{leg}")
     home_lbl = "🏠 " + t_export("home", lang)
     ext_lbl  = "⚡ " + t_export("external", lang)
     c = ws[f"A{leg}"]; c.value=f"{home_lbl} = Grün"; c.font=Font(name="Arial",size=9,color="2E7D32")
-    ws.merge_cells(f"D{leg}:F{leg}")
-    c = ws[f"D{leg}"]; c.value=f"{ext_lbl} = Gelb"; c.font=Font(name="Arial",size=9,color="F57F17")
+    ws.merge_cells(f"E{leg}:H{leg}")
+    c = ws[f"E{leg}"]; c.value=f"{ext_lbl} = Gelb"; c.font=Font(name="Arial",size=9,color="F57F17")
 
     # ── Summary sheet ─────────────────────────────────────────────────────────
     summary_title = t_export("summary", lang)
@@ -892,6 +1123,9 @@ def export_builtin(year, month, sessions, location, config=None, lang="de"):
     total_km  = ((sessions[-1].get("odo_end") or 0) - (sessions[0].get("odo_start") or 0)) if n else 0
     total_kwh = home_kwh + ext_kwh
     verbrauch = round(total_kwh / total_km * 100, 1) if total_km > 0 else None
+    hv2 = compute_header_values(sessions, year, month, lang=lang)
+    total_h_val = round(hv2.get("total_charging_hours") or 0, 2)
+    avg_pwr_val = hv2.get("avg_charge_power_kw")
 
     if lang == "en":
         rows2 = [
@@ -907,7 +1141,10 @@ def export_builtin(year, month, sessions, location, config=None, lang="de"):
             ("Odometer end",            sessions[-1].get("odo_end")  if n else "-", '#,##0 "km"'),
             ("Total km",                total_km,       '#,##0 "km"'),
             ("Consumption",             verbrauch,      '0.0 "kWh/100km"'),
+            ("Total charging time",     total_h_val,    '0.00 "h"'),
         ]
+        if avg_pwr_val is not None:
+            rows2.append(("Avg. charging power", avg_pwr_val, '0.00 "kW"'))
     else:
         rows2 = [
             ("Ladevorgänge gesamt",     n,              None),
@@ -922,7 +1159,10 @@ def export_builtin(year, month, sessions, location, config=None, lang="de"):
             ("KM Monatsende",           sessions[-1].get("odo_end")  if n else "-", '#,##0 "km"'),
             ("Gefahrene KM",            total_km,       '#,##0 "km"'),
             ("Verbrauch",               verbrauch,      '0.0 "kWh/100km"'),
+            ("Ladezeit gesamt",         total_h_val,    '0.00 "h"'),
         ]
+        if avg_pwr_val is not None:
+            rows2.append(("Ø Ladeleistung", avg_pwr_val, '0.00 "kW"'))
     for ri, (lbl, val, fmt_) in enumerate(rows2, 3):
         bg = "#"+C_ALT if ri % 2 == 0 else None
         cs(ws2, ri, 1, lbl, bold=not lbl.startswith("  "), bg=bg, al="left")
@@ -939,7 +1179,7 @@ def export_builtin(year, month, sessions, location, config=None, lang="de"):
 def export(year, month, location="all", col_override=None, start_row=None, header_row=None, header_info=None,
            cell_mapping=None, sheet=None,
            include_signature=False, signature_path=None, signature_mapping=None,
-           lang="de", return_warnings=False):
+           lang="de", return_warnings=False, footer_start_row=None):
     """Export sessions to XLSX. Returns bytes or (bytes, warnings) if return_warnings=True."""
     sessions = fetch_sessions(year, month, location)
     warnings_list = []
@@ -961,7 +1201,8 @@ def export(year, month, location="all", col_override=None, start_row=None, heade
                                     include_signature=include_signature,
                                     signature_path=signature_path,
                                     signature_mapping=signature_mapping,
-                                    lang=lang)
+                                    lang=lang,
+                                    footer_start_row=footer_start_row)
     else:
         path = export_builtin(year, month, sessions, location, lang=lang)
 
@@ -1045,8 +1286,8 @@ def export_multi_month_bytes(periods_sessions, loc_filter="all", config=None, la
         ws = wb.create_sheet(title=sheet_name)
         ws.freeze_panes = "A3"
 
-        # Title row
-        ws.merge_cells("A1:K1")
+        # Title row (16 columns: A–P)
+        ws.merge_cells("A1:P1")
         t = ws["A1"]
         t.value     = period_info.get("label_de" if lang != "en" else "label_en", sheet_name)
         t.font      = Font(name="Arial", bold=True, size=13, color=C_FG)
@@ -1059,13 +1300,18 @@ def export_multi_month_bytes(periods_sessions, loc_filter="all", config=None, la
             t_export("date", lang),
             t_export("start", lang),
             t_export("end", lang),
+            t_export("duration_hours", lang),
+            t_export("charger_type", lang),
             t_export("odo_start", lang),
             t_export("odo_end", lang),
             t_export("soc_start", lang),
             t_export("soc_end", lang),
             t_export("kwh", lang),
+            t_export("price_per_kwh", lang),
             t_export("cost", lang),
             t_export("location", lang),
+            "Preisquelle" if lang != "en" else "Price source",
+            "Vertragsname" if lang != "en" else "Contract name",
         ]
         for col, h in enumerate(hdrs, 1):
             cs(ws, 2, col, h, bold=True, bg="#"+C_HDR, fg=C_FG, al="center")
@@ -1075,32 +1321,37 @@ def export_multi_month_bytes(periods_sessions, loc_filter="all", config=None, la
             r  = ds + i
             rd = to_row(s, i + 1, lang=lang)
             bg = row_bg(s)
-            cs(ws, r, 1,  rd["row_num"],     bg=bg, al="center")
-            cs(ws, r, 2,  rd["date"],        bg=bg, nf="DD.MM.YYYY", al="center")
-            cs(ws, r, 3,  rd["start_time"],  bg=bg, nf="HH:MM", al="center")
-            cs(ws, r, 4,  rd["end_time"],    bg=bg, nf="HH:MM", al="center")
-            cs(ws, r, 5,  rd["odo_start"],   bg=bg, nf='#,##0 "km"', al="right")
-            cs(ws, r, 6,  rd["odo_end"],     bg=bg, nf='#,##0 "km"', al="right")
-            cs(ws, r, 7,  rd["soc_start"],   bg=bg, nf='0"%"', al="right")
-            cs(ws, r, 8,  rd["soc_end"],     bg=bg, nf='0"%"', al="right")
-            cs(ws, r, 9,  rd["kwh_charged"], bg=bg, nf='0.00 "kWh"', al="right")
-            cs(ws, r, 10, rd["cost_eur"],    bg=bg, nf='€#,##0.00', al="right")
-            cs(ws, r, 11, rd["location"],    bg=bg, al="center")
+            cs(ws, r, 1,  rd["row_num"],         bg=bg, al="center")
+            cs(ws, r, 2,  rd["date"],             bg=bg, nf="DD.MM.YYYY", al="center")
+            cs(ws, r, 3,  rd["start_time"],       bg=bg, nf="HH:MM", al="center")
+            cs(ws, r, 4,  rd["end_time"],         bg=bg, nf="HH:MM", al="center")
+            cs(ws, r, 5,  rd["duration_hours"],   bg=bg, nf='0.00 "h"', al="right")
+            cs(ws, r, 6,  rd["charger_type"],     bg=bg, al="center")
+            cs(ws, r, 7,  rd["odo_start"],        bg=bg, nf='#,##0 "km"', al="right")
+            cs(ws, r, 8,  rd["odo_end"],          bg=bg, nf='#,##0 "km"', al="right")
+            cs(ws, r, 9,  rd["soc_start"],        bg=bg, nf='0"%"', al="right")
+            cs(ws, r, 10, rd["soc_end"],          bg=bg, nf='0"%"', al="right")
+            cs(ws, r, 11, rd["kwh_charged"],      bg=bg, nf='0.00 "kWh"', al="right")
+            cs(ws, r, 12, rd["price_per_kwh"],    bg=bg, nf='€0.0000', al="right")
+            cs(ws, r, 13, rd["cost_eur"],         bg=bg, nf='€#,##0.00', al="right")
+            cs(ws, r, 14, rd["location"],         bg=bg, al="center")
+            cs(ws, r, 15, rd["price_source"],     bg=bg, al="left")
+            cs(ws, r, 16, rd["charging_contract_name"], bg=bg, al="left")
 
         n = len(sessions)
         if n:
             tr = ds + n
-            for col in range(1, 12):
+            for col in range(1, 17):
                 v  = ("Σ" if col == 1
-                      else f"=SUM(I{ds}:I{ds+n-1})" if col == 9
-                      else f"=SUM(J{ds}:J{ds+n-1})" if col == 10
+                      else f"=SUM(K{ds}:K{ds+n-1})" if col == 11
+                      else f"=SUM(M{ds}:M{ds+n-1})" if col == 13
                       else "")
-                nf = ('0.00 "kWh"' if col == 9 else '€#,##0.00' if col == 10 else None)
+                nf = ('0.00 "kWh"' if col == 11 else '€#,##0.00' if col == 13 else None)
                 cs(ws, tr, col, v, bold=True, bg="#"+C_SUM, nf=nf,
                    al="center" if col == 1 else "right")
 
         # Column widths
-        col_widths = [6, 12, 9, 9, 12, 12, 10, 10, 12, 12, 18]
+        col_widths = [5, 13, 8, 8, 8, 8, 13, 13, 10, 10, 13, 10, 12, 14, 14, 20]
         for i, w in enumerate(col_widths, 1):
             ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
 

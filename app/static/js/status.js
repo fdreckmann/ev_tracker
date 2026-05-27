@@ -66,6 +66,7 @@ async function refreshStatus() {
 
     const ts = s.tracker_status || (s.running || s.tracker_alive ? 'ready' : 'stopped');
     const _tsMap = {
+      not_configured: ['dot warn',     'Nicht konfiguriert'],
       stopped:        ['dot err',      'Tracker gestoppt'],
       provider_error: ['dot err',      'Provider Fehler'],
       no_data:        ['dot warn',     'Warte auf Daten'],

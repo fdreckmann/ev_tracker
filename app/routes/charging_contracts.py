@@ -57,10 +57,26 @@ def api_create_contract():
     now = datetime.utcnow().isoformat()
     con = _get_db()
     try:
-        price_ac = _parse_price(data.get("price_ac_kwh"))
-        price_dc = _parse_price(data.get("price_dc_kwh"))
+        # Prevent duplicate names
+        if con.execute("SELECT id FROM charging_contracts WHERE name=?", (name,)).fetchone():
+            return jsonify({"error": f"Ein Ladeabo mit dem Namen '{name}' existiert bereits.", "duplicate": True}), 409
+
+        price_ac  = _parse_price(data.get("price_ac_kwh"))
+        price_dc  = _parse_price(data.get("price_dc_kwh"))
         price_kwh = _parse_price(data.get("price_kwh"))
-        monthly = _parse_price(data.get("monthly_fee_eur")) or 0.0
+        monthly   = _parse_price(data.get("monthly_fee_eur")) or 0.0
+        want_default = bool(data.get("is_default", False))
+
+        # Auto-set as default when no default exists yet
+        has_default = con.execute(
+            "SELECT id FROM charging_contracts WHERE is_default=1 LIMIT 1"
+        ).fetchone()
+        is_default = want_default or (not has_default)
+
+        # Enforce single default
+        if is_default:
+            con.execute("UPDATE charging_contracts SET is_default=0")
+
         cur = con.execute(
             """INSERT INTO charging_contracts
                (name, cpo, price_ac_kwh, price_dc_kwh, price_kwh,
@@ -74,14 +90,14 @@ def api_create_contract():
                 price_kwh,
                 monthly,
                 1 if data.get("active", True) else 0,
-                1 if data.get("is_default", False) else 0,
+                1 if is_default else 0,
                 (data.get("notes") or "").strip(),
                 now,
                 now,
             ),
         )
         con.commit()
-        return jsonify({"id": cur.lastrowid}), 201
+        return jsonify({"id": cur.lastrowid, "is_default": is_default}), 201
     finally:
         close_db_if_owned(con)
 
@@ -101,6 +117,16 @@ def api_update_contract(cid: int):
     try:
         if not con.execute("SELECT id FROM charging_contracts WHERE id=?", (cid,)).fetchone():
             return jsonify({"error": "Nicht gefunden"}), 404
+        # Prevent duplicate names (excluding self)
+        dup = con.execute(
+            "SELECT id FROM charging_contracts WHERE name=? AND id!=?", (name, cid)
+        ).fetchone()
+        if dup:
+            return jsonify({"error": f"Ein Ladeabo mit dem Namen '{name}' existiert bereits.", "duplicate": True}), 409
+        is_default = bool(data.get("is_default", False))
+        # Enforce single default
+        if is_default:
+            con.execute("UPDATE charging_contracts SET is_default=0")
         con.execute(
             """UPDATE charging_contracts SET
                name=?, cpo=?, price_ac_kwh=?, price_dc_kwh=?, price_kwh=?,
@@ -114,7 +140,7 @@ def api_update_contract(cid: int):
                 _parse_price(data.get("price_kwh")),
                 _parse_price(data.get("monthly_fee_eur")) or 0.0,
                 1 if data.get("active", True) else 0,
-                1 if data.get("is_default", False) else 0,
+                1 if is_default else 0,
                 (data.get("notes") or "").strip(),
                 now,
                 cid,

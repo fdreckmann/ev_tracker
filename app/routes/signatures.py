@@ -96,8 +96,15 @@ def api_signature_draw():
     image_data = body.get("image_data", "")
     if not image_data or "base64," not in image_data:
         return jsonify({"ok": False, "error": "Ungültige Bilddaten"}), 400
+    _MAX_DECODED = 2 * 1024 * 1024  # 2 MB decoded limit
+    _b64_part = image_data.split("base64,", 1)[1]
+    # Fast pre-check: base64 encodes 3 bytes as 4 chars → max encoded length for 2 MB
+    if len(_b64_part) > (_MAX_DECODED * 4 // 3) + 64:
+        return jsonify({"ok": False, "error": "Bilddaten zu groß (max 2 MB)"}), 413
     try:
-        raw = _b64.b64decode(image_data.split("base64,", 1)[1])
+        raw = _b64.b64decode(_b64_part)
+        if len(raw) > _MAX_DECODED:
+            return jsonify({"ok": False, "error": "Bilddaten zu groß (max 2 MB)"}), 413
         from PIL import Image as _PILImage
         img = _PILImage.open(_io.BytesIO(raw))
         img = _normalize_signature_image(img)

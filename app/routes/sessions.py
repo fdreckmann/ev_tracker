@@ -98,9 +98,36 @@ def api_update_location(sid):
     loc = normalize_location((request.json or {}).get("location","unknown"))
     if loc not in ("home","extern","unknown"):
         return jsonify({"ok":False,"error":"Ungültiger Standort"}), 400
-    con = sqlite3.connect(DB_PATH)
+    con = _get_db()
     try:
-        con.execute("UPDATE sessions SET location=? WHERE id=?", (loc, sid))
+        existing = con.execute("SELECT * FROM sessions WHERE id=?", (sid,)).fetchone()
+        if not existing:
+            return jsonify({"ok": False, "error": "Session nicht gefunden"}), 404
+        existing = dict(existing)
+        if existing.get("cost_manual", 0) == 0:
+            try:
+                from services.pricing_service import resolve_session_price, calculate_session_cost
+                from core.config import load_config
+                cfg = load_config()
+                charger_type = existing.get("charger_type", "unknown")
+                kwh = existing.get("kwh_charged")
+                _pr = resolve_session_price(loc, charger_type, cfg, con, sid)
+                if _pr["price_per_kwh"] is not None and kwh is not None:
+                    new_cost = calculate_session_cost(float(kwh), _pr["price_per_kwh"])
+                    con.execute(
+                        """UPDATE sessions SET location=?, price_per_kwh=?, cost_eur=?,
+                           price_source=?, price_confidence=?, charging_contract_id=?, charging_contract_name=?
+                           WHERE id=?""",
+                        (loc, _pr["price_per_kwh"], new_cost,
+                         _pr.get("price_source"), _pr.get("price_confidence", 0),
+                         _pr.get("contract_id"), _pr.get("contract_name"), sid))
+                else:
+                    con.execute("UPDATE sessions SET location=? WHERE id=?", (loc, sid))
+            except Exception as _e:
+                log.debug("Reprice after location update failed: %s", _e)
+                con.execute("UPDATE sessions SET location=? WHERE id=?", (loc, sid))
+        else:
+            con.execute("UPDATE sessions SET location=? WHERE id=?", (loc, sid))
         con.commit()
     finally:
         close_db_if_owned(con)
@@ -163,6 +190,14 @@ def api_manual_session_create():
 
     # ── Vehicle / Location / Charger ─────────────────────────────────────────
     vehicle_id = (data.get("vehicle_id") or "v0").strip()
+    # Validate vehicle_id exists and has no path traversal characters
+    def _vehicle_id_valid_local(vid):
+        if vid == "v0": return True
+        if not vid or any(c in vid for c in ('/', '\\', '..', '\x00')): return False
+        from core.config import load_config as _lc
+        return any(v.get("id") == vid for v in _lc().get("extra_vehicles", []))
+    if not _vehicle_id_valid_local(vehicle_id):
+        return jsonify({"ok": False, "error": f"Unbekannte vehicle_id: {vehicle_id!r}"}), 400
 
     location = (data.get("location") or "home").strip()
     if location not in ("home", "extern", "unknown"):
@@ -193,6 +228,7 @@ def api_manual_session_create():
     price_kwh = _float_or_none(data.get("price_per_kwh"))
     cost_eur  = _float_or_none(data.get("cost_eur"))
     cost_manual = 0
+    _auto_price_source = None; _auto_price_conf = 0; _auto_contract_id = None; _auto_contract_name = None
 
     if price_kwh is not None and price_kwh < 0:
         return jsonify({"ok": False, "error": "Preis pro kWh muss >= 0 sein."}), 400
@@ -215,6 +251,10 @@ def api_manual_session_create():
             if _pr["price_per_kwh"] is not None:
                 price_kwh = _pr["price_per_kwh"]
                 cost_eur  = calculate_session_cost(kwh, price_kwh)
+                _auto_price_source    = _pr.get("price_source")
+                _auto_price_conf      = _pr.get("price_confidence", 0)
+                _auto_contract_id     = _pr.get("contract_id")
+                _auto_contract_name   = _pr.get("contract_name")
         except Exception as _e:
             log.debug("Auto-pricing for manual session failed: %s", _e)
 
@@ -251,15 +291,17 @@ def api_manual_session_create():
          soc_start, soc_end, odo_start, odo_end,
          meter_old, meter_new, meter_delta_kwh, meter_used,
          vehicle_id, provider, kwh_source, created_mode,
-         manual_note, manual_reason)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+         manual_note, manual_reason,
+         price_source, price_confidence, charging_contract_id, charging_contract_name)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (start_ts, end_ts, round(kwh, 3), cost_eur, cost_manual, price_kwh,
          location, "manual", location_confidence,
          charger_type, charger_power_kw, max_power_kw,
          soc_start, soc_end, odo_start, odo_end,
          meter_old, meter_new, meter_delta, meter_used,
          vehicle_id, "manual", "manual", "manual",
-         manual_note, manual_reason))
+         manual_note, manual_reason,
+         _auto_price_source, _auto_price_conf, _auto_contract_id, _auto_contract_name))
     sid = cur.lastrowid
     con.commit()
     row = con.execute("SELECT * FROM sessions WHERE id=?", (sid,)).fetchone()
@@ -340,6 +382,8 @@ def api_patch_session(sid):
     if not has_permission(_current_user(), "sessions:edit"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: sessions:edit"}), 403
     data = request.get_json(force=True) or {}
+    # Track which cost fields the user explicitly sent (before filtering)
+    _user_sent_cost_fields = {"price_per_kwh", "cost_eur"} & set(data.keys())
     allowed = {
         "kwh_charged", "price_per_kwh", "cost_eur", "charger_power_kw",
         "start_ts", "end_ts", "soc_start", "soc_end",
@@ -454,7 +498,8 @@ def api_patch_session(sid):
         except (ValueError, TypeError):
             pass
 
-    if "cost_eur" in fields or "price_per_kwh" in fields:
+    if _user_sent_cost_fields:
+        # User explicitly provided price/cost → mark as manual
         fields["cost_manual"] = 1
     elif existing.get("cost_manual", 0) == 0:
         # Re-price automatically when location, charger_type, or kwh changes and no manual override

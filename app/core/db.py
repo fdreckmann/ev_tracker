@@ -22,25 +22,27 @@ def _get_db():
     Outside request context (background threads): returns a new connection
     that the caller must close.
     """
+    def _configure(con):
+        con.row_factory = sqlite3.Row
+        con.execute("PRAGMA foreign_keys=ON")
+        con.execute("PRAGMA busy_timeout=5000")
+        return con
+
     try:
         db = g.get("_db")
         if db is None:
-            db = sqlite3.connect(DB_PATH)
-            db.row_factory = sqlite3.Row
+            db = _configure(sqlite3.connect(DB_PATH))
             g._db = db
         else:
             try:
                 db.execute("SELECT 1")
             except Exception:
-                db = sqlite3.connect(DB_PATH)
-                db.row_factory = sqlite3.Row
+                db = _configure(sqlite3.connect(DB_PATH))
                 g._db = db
         return db
     except RuntimeError:
         # Outside request context (background threads) — caller owns the connection
-        con = sqlite3.connect(DB_PATH)
-        con.row_factory = sqlite3.Row
-        return con
+        return _configure(sqlite3.connect(DB_PATH))
 
 
 def close_db_if_owned(con):
