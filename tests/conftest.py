@@ -2,6 +2,7 @@
 Shared pytest fixtures for EV Tracker tests.
 """
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -12,14 +13,23 @@ import pytest
 APP_DIR = Path(__file__).parent.parent / "app"
 sys.path.insert(0, str(APP_DIR))
 
+# Disable remote update checks for the entire test session so tests never make
+# real HTTP calls to GitHub, which would cause hangs in air-gapped / CI envs.
+os.environ.setdefault("EV_TRACKER_UPDATE_CHECK_ENABLED", "false")
+
 
 @pytest.fixture()
 def app(tmp_path, monkeypatch):
-    """Fresh Flask app with isolated DB and config for each test."""
+    """Fresh Flask app with isolated DB and config for each test.
+
+    All persistent paths (DB, config, exports, template, signature) are
+    redirected to tmp_path.  No file in /data is created or modified.
+    """
     db_path = tmp_path / "sessions.db"
     cfg_path = tmp_path / "config.json"
     sig_dir = tmp_path / "signatures"
     sig_dir.mkdir()
+    (tmp_path / "exports").mkdir(exist_ok=True)
 
     cfg_path.write_text(json.dumps({
         "provider": "manual",
@@ -29,6 +39,10 @@ def app(tmp_path, monkeypatch):
         "price_per_kwh_dc": 0.75,
     }))
 
+    # Keep update check disabled per-test so monkeypatch can't accidentally
+    # re-enable it through env-var restoration.
+    monkeypatch.setenv("EV_TRACKER_UPDATE_CHECK_ENABLED", "false")
+
     import core.db as _db
     import core.config as _cfg_mod
 
@@ -37,7 +51,7 @@ def app(tmp_path, monkeypatch):
 
     # Patch config path — core.config uses CONFIG_FILE (not _CONFIG_PATH)
     monkeypatch.setattr(_cfg_mod, "CONFIG_FILE", cfg_path)
-    # Also reset the config cache so next load_config() reads the patched file
+    # Reset the config cache so next load_config() reads the patched file
     _cfg_mod._config_cache["data"] = None
     _cfg_mod._config_cache["ts"] = 0
 
@@ -66,7 +80,23 @@ def app(tmp_path, monkeypatch):
     except Exception:
         pass
 
+    # Patch update-service cache so no stale remote data leaks across tests
+    try:
+        import services.update_service as _upd
+        monkeypatch.setattr(_upd, "_cache", {"data": None, "ts": 0.0})
+    except Exception:
+        pass
+
     import server as _srv
+
+    # Prevent _get_secret_key() from writing to /data by patching it to a
+    # fixed value.  The test config overrides app.secret_key anyway.
+    try:
+        import core.security as _sec
+        monkeypatch.setattr(_sec, "_get_secret_key", lambda: "test-secret-key")
+    except Exception:
+        pass
+
     monkeypatch.setattr(_srv, "DB_PATH", db_path)
     monkeypatch.setattr(_srv, "DATA_DIR", tmp_path)
     try:

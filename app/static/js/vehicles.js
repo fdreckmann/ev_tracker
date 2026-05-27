@@ -207,7 +207,7 @@ async function saveVehicleModal() {
     if (resp.status === 403) {
       errMsg = 'Keine Berechtigung: Fahrzeuge erstellen/bearbeiten';
     }
-    $('vm_info').innerHTML = '<span style="color:var(--danger)">❌ '+errMsg+'</span>';
+    $('vm_info').innerHTML = '<span style="color:var(--danger)">❌ '+escapeHtml(errMsg)+'</span>';
   }
 }
 
@@ -222,7 +222,7 @@ async function archiveVehicleModal() {
     loadVehicleList();
     if(typeof refreshMobileDashboard === 'function') refreshMobileDashboard();
   } else {
-    $('vm_info').innerHTML = '<span style="color:var(--danger)">❌ '+(r.error||'Fehler')+'</span>';
+    $('vm_info').innerHTML = '<span style="color:var(--danger)">❌ '+escapeHtml(r.error||'Fehler')+'</span>';
   }
 }
 
