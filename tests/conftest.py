@@ -46,6 +46,8 @@ def app(tmp_path, monkeypatch):
         import export_excel as _xl
         monkeypatch.setattr(_xl, "DB_PATH", db_path)
         monkeypatch.setattr(_xl, "DATA_DIR", tmp_path)
+        monkeypatch.setattr(_xl, "EXPORT_DIR", tmp_path / "exports")
+        monkeypatch.setattr(_xl, "TEMPLATE_PATH", tmp_path / "template.xlsx")
     except Exception:
         pass
 
@@ -67,6 +69,10 @@ def app(tmp_path, monkeypatch):
     import server as _srv
     monkeypatch.setattr(_srv, "DB_PATH", db_path)
     monkeypatch.setattr(_srv, "DATA_DIR", tmp_path)
+    try:
+        monkeypatch.setattr(_srv, "_started_once", False)
+    except Exception:
+        pass
 
     flask_app = _srv.app
     flask_app.config.update({
