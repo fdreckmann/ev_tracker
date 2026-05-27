@@ -58,9 +58,10 @@ async function refreshStatus() {
     // /api/status now calls refresh_vehicle_location_state internally (TTL-cached).
     // We also fetch the location endpoint directly to get ha_debug and bypass the cache
     // on the first call after page load.
-    const [s, locResp] = await Promise.all([
+    const [s, locResp, meterResp] = await Promise.all([
       apiFetch(`/api/status?vehicle_id=${encodeURIComponent(vid)}`, {cache: 'no-store'}).then(r => r.json()),
       apiFetch(`/api/vehicles/${encodeURIComponent(vid)}/location`, {cache: 'no-store'}).then(r => r.json()).catch(() => null),
+      apiFetch(`/api/meter/status?vehicle_id=${encodeURIComponent(vid)}`, {cache: 'no-store'}).then(r => r.json()).catch(() => null),
     ]);
     const dot = $('sDot'), txt = $('sTxt');
 
@@ -204,11 +205,24 @@ async function refreshStatus() {
 
     renderTbl($('recentTbl'), rows.slice(0, 5), false);
 
-    const lastMeter = rows.find(r => r.meter_new != null);
+    // Live-Zählerstand from /api/meter/status (TTL-cached server-side)
     const meterTile = $('dMeterTile');
-    if (lastMeter && meterTile) {
-      $('dMeter').textContent = Math.round(Number(lastMeter.meter_new)).toLocaleString('de') + ' kWh';
-      meterTile.style.display = '';
+    const meterEl   = $('dMeter');
+    if (meterTile && meterEl) {
+      if (meterResp && meterResp.source && meterResp.source !== 'none') {
+        if (meterResp.ok && meterResp.value_kwh != null) {
+          meterEl.textContent = Number(meterResp.value_kwh).toLocaleString('de', {maximumFractionDigits: 1});
+          meterEl.className = 'sv';
+          meterEl.title = 'Quelle: ' + meterResp.source + (meterResp.endpoint ? ' · ' + meterResp.endpoint : '');
+        } else {
+          meterEl.textContent = '—';
+          meterEl.className = 'sv err';
+          meterEl.title = meterResp.error || 'Lesefehler';
+        }
+        meterTile.style.display = '';
+      } else {
+        meterTile.style.display = 'none';
+      }
     }
 
     fitAllStats();
