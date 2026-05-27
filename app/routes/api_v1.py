@@ -71,23 +71,46 @@ def api_v1_session_create():
     token_row, err_resp, code = _require_api_token("sessions:write")
     if err_resp: return err_resp, code
     data = request.get_json(force=True) or {}
-    kwh = data.get("kwh_charged")
+    kwh       = data.get("kwh_charged")
     price_kwh = data.get("price_per_kwh")
     cost_eur  = data.get("cost_eur")
     cost_manual = 0
+    _price_source = None; _price_conf = 0; _contract_id = None; _contract_name = None
+
     if cost_eur is not None:
         cost_manual = 1
     elif kwh is not None and price_kwh is not None:
         try: cost_eur = round(float(kwh) * float(price_kwh), 2); cost_manual = 1
         except (ValueError, TypeError): pass
+    elif kwh is not None:
+        # Auto-price via pricing_service
+        try:
+            from services.pricing_service import resolve_session_price, calculate_session_cost
+            cfg = load_config()
+            con_tmp = _get_db()
+            location     = data.get("location", "unknown")
+            charger_type = data.get("charger_type", "unknown")
+            _pr = resolve_session_price(location, charger_type, cfg, con_tmp)
+            close_db_if_owned(con_tmp)
+            if _pr["price_per_kwh"] is not None:
+                price_kwh     = _pr["price_per_kwh"]
+                cost_eur      = calculate_session_cost(float(kwh), price_kwh)
+                _price_source = _pr.get("price_source")
+                _price_conf   = _pr.get("price_confidence", 0)
+                _contract_id  = _pr.get("contract_id")
+                _contract_name= _pr.get("contract_name")
+        except Exception as _e:
+            import logging; logging.getLogger(__name__).debug("api_v1 auto-pricing failed: %s", _e)
+
     con = _get_db()
     cur = con.execute("""INSERT INTO sessions
         (start_ts, end_ts, kwh_charged, cost_eur, cost_manual, price_per_kwh,
          location, charger_type, charger_power_kw, max_power_kw,
          soc_start, soc_end, odo_start, odo_end,
          meter_old, meter_new, vehicle_id, provider, kwh_source, created_mode,
-         manual_note, manual_reason)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+         manual_note, manual_reason,
+         price_source, price_confidence, charging_contract_id, charging_contract_name)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (data.get("start_ts"), data.get("end_ts"),
          kwh, cost_eur, cost_manual, price_kwh,
          data.get("location","unknown"),
@@ -97,7 +120,8 @@ def api_v1_session_create():
          data.get("odo_start"), data.get("odo_end"),
          data.get("meter_old"), data.get("meter_new"),
          data.get("vehicle_id","v0"), "api", "api", "api",
-         data.get("manual_note"), data.get("manual_reason")))
+         data.get("manual_note"), data.get("manual_reason"),
+         _price_source, _price_conf, _contract_id, _contract_name))
     sid = cur.lastrowid
     con.commit(); close_db_if_owned(con)
     return jsonify({"ok": True, "id": sid}), 201

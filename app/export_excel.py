@@ -184,6 +184,22 @@ COLUMN_KEYWORDS = {
     "zählerstand alt":  "meter_old",
     "zählerstand neu":  "meter_new",
     "zählerstand":      "meter_old",
+    "charging_time":    "duration",
+    "total_duration":   "duration",
+    "duration_hours":   "duration_hours",
+    "charge_power":     "charge_power_kw",
+    "avg_power":        "charge_power_kw",
+    "ladeleistung":     "charge_power_kw",
+    "preis":            "price_per_kwh",
+    "price":            "price_per_kwh",
+    "preis/kwh":        "price_per_kwh",
+    "preisquelle":      "price_source",
+    "price_source":     "price_source",
+    "vertrag":          "charging_contract_name",
+    "contract":         "charging_contract_name",
+    "ladetyp":          "charger_type",
+    "charger_type":     "charger_type",
+    "ladeart":          "charger_type",
 }
 
 FIELD_LABELS = {
@@ -201,6 +217,9 @@ FIELD_LABELS = {
     "meter_new":   "Zählerstand Neu (kWh)",
     "location":    "Standort",
     "row_num":     "Nr.",
+    "price_source":           "Preisquelle",
+    "charging_contract_name": "Vertragsname",
+    "charger_type":           "Ladeart",
     None:          "— nicht zugewiesen —",
 }
 
@@ -220,6 +239,10 @@ NUM_FMT = {
     "meter_old":   '0',
     "meter_new":   '0',
     "row_num":     "0",
+    "price_per_kwh":          '€0.0000',
+    "charger_type":           "@",
+    "price_source":           "@",
+    "charging_contract_name": "@",
 }
 
 LOCATION_LABELS = {"home": "🏠 Zuhause", "extern": "⚡ Extern", "unknown": "—"}
@@ -263,29 +286,12 @@ def to_row(s, idx, lang="de"):
     dt_s = datetime.fromisoformat(s["start_ts"])
     dt_e = datetime.fromisoformat(s["end_ts"]) if s.get("end_ts") else None
 
-    # Calculate duration in seconds from timestamps or stored fields
-    total_seconds = None
-    if dt_e:
-        total_seconds = (dt_e - dt_s).total_seconds()
-    elif s.get("duration_seconds"):
-        try:
-            total_seconds = float(s["duration_seconds"])
-        except (ValueError, TypeError):
-            pass
-    elif s.get("duration"):
-        # Try parsing "HH:MM" string format
-        dur_raw = s["duration"]
-        if isinstance(dur_raw, str) and ":" in dur_raw:
-            try:
-                parts = dur_raw.split(":")
-                total_seconds = int(parts[0]) * 3600 + int(parts[1]) * 60
-            except (ValueError, IndexError):
-                pass
-        elif isinstance(dur_raw, (int, float)):
-            # Already in fractional days (legacy)
-            total_seconds = float(dur_raw) * 86400
-
-    duration = total_seconds / 86400 if total_seconds is not None else None  # fraction of day for [h]:MM format
+    try:
+        from services.pricing_service import get_session_duration_seconds
+        total_seconds = get_session_duration_seconds(s)
+    except Exception:
+        total_seconds = int((dt_e - dt_s).total_seconds()) if dt_e else None
+    duration = total_seconds / 86400 if total_seconds is not None else None
     duration_hours = round(total_seconds / 3600, 2) if total_seconds is not None else None
 
     # Determine charger_type: use stored value or derive from location
@@ -317,6 +323,8 @@ def to_row(s, idx, lang="de"):
         "meter_new":    format_meter_value_kwh(s.get("meter_new")),
         "location":     LOCATION_LABELS.get(s.get("location", "unknown"), s.get("location", "—")),
         "charger_type": charger_type,
+        "price_source":          s.get("price_source"),
+        "charging_contract_name": s.get("charging_contract_name"),
     }
     # Calculate charge_power_kw = kwh / duration_h
     kwh = s.get("kwh_charged")
@@ -805,8 +813,8 @@ def export_builtin(year, month, sessions, location, config=None, lang="de"):
     ws.title = t_export("charging_log", lang)
     ws.freeze_panes = "A3"
 
-    # Title
-    ws.merge_cells("A1:K1")
+    # Title (16 columns: A–P)
+    ws.merge_cells("A1:P1")
     t = ws["A1"]
     t.value     = f"{t_export('charging_log', lang)} – {ml}  |  {loc_label}"
     t.font      = Font(name="Arial", bold=True, size=14, color=C_FG)
@@ -819,13 +827,18 @@ def export_builtin(year, month, sessions, location, config=None, lang="de"):
         t_export("date", lang),
         t_export("start", lang),
         t_export("end", lang),
+        t_export("duration_hours", lang),
+        t_export("charger_type", lang),
         t_export("odo_start", lang),
         t_export("odo_end", lang),
         t_export("soc_start", lang),
         t_export("soc_end", lang),
         t_export("kwh", lang),
+        t_export("price_per_kwh", lang),
         t_export("cost", lang),
         t_export("location", lang),
+        "Preisquelle" if lang != "en" else "Price source",
+        "Vertragsname" if lang != "en" else "Contract name",
     ]
     for col, h in enumerate(hdrs, 1):
         cs(ws, 2, col, h, bold=True, bg="#"+C_HDR, fg=C_FG, al="center")
@@ -835,42 +848,47 @@ def export_builtin(year, month, sessions, location, config=None, lang="de"):
         r  = ds + i
         rd = to_row(s, i + 1, lang=lang)
         bg = row_bg(s)
-        cs(ws,r,1, rd["row_num"],    bg=bg, al="center")
-        cs(ws,r,2, rd["date"],       bg=bg, nf="DD.MM.YYYY", al="center")
-        cs(ws,r,3, rd["start_time"], bg=bg, nf="HH:MM", al="center")
-        cs(ws,r,4, rd["end_time"],   bg=bg, nf="HH:MM", al="center")
-        cs(ws,r,5, rd["odo_start"],  bg=bg, nf='#,##0 "km"', al="right")
-        cs(ws,r,6, rd["odo_end"],    bg=bg, nf='#,##0 "km"', al="right")
-        cs(ws,r,7, rd["soc_start"],  bg=bg, nf='0"%"', al="right")
-        cs(ws,r,8, rd["soc_end"],    bg=bg, nf='0"%"', al="right")
-        cs(ws,r,9, rd["kwh_charged"],bg=bg, nf='0.00 "kWh"', al="right")
-        cs(ws,r,10,rd["cost_eur"],   bg=bg, nf='€#,##0.00', al="right")
-        cs(ws,r,11,rd["location"],   bg=bg, al="center")
+        cs(ws,r,1, rd["row_num"],         bg=bg, al="center")
+        cs(ws,r,2, rd["date"],            bg=bg, nf="DD.MM.YYYY", al="center")
+        cs(ws,r,3, rd["start_time"],      bg=bg, nf="HH:MM", al="center")
+        cs(ws,r,4, rd["end_time"],        bg=bg, nf="HH:MM", al="center")
+        cs(ws,r,5, rd["duration_hours"],  bg=bg, nf='0.00 "h"', al="right")
+        cs(ws,r,6, rd["charger_type"],    bg=bg, al="center")
+        cs(ws,r,7, rd["odo_start"],       bg=bg, nf='#,##0 "km"', al="right")
+        cs(ws,r,8, rd["odo_end"],         bg=bg, nf='#,##0 "km"', al="right")
+        cs(ws,r,9, rd["soc_start"],       bg=bg, nf='0"%"', al="right")
+        cs(ws,r,10,rd["soc_end"],         bg=bg, nf='0"%"', al="right")
+        cs(ws,r,11,rd["kwh_charged"],     bg=bg, nf='0.00 "kWh"', al="right")
+        cs(ws,r,12,rd["price_per_kwh"],   bg=bg, nf='€0.0000', al="right")
+        cs(ws,r,13,rd["cost_eur"],        bg=bg, nf='€#,##0.00', al="right")
+        cs(ws,r,14,rd["location"],        bg=bg, al="center")
+        cs(ws,r,15,rd["price_source"],    bg=bg, al="left")
+        cs(ws,r,16,rd["charging_contract_name"], bg=bg, al="left")
 
     n = len(sessions)
     if n:
         tr = ds + n
-        for col in range(1, 12):
+        for col in range(1, 17):
             v  = ("Σ" if col==1
-                  else f"=SUM(I{ds}:I{ds+n-1})" if col==9
-                  else f"=SUM(J{ds}:J{ds+n-1})" if col==10
+                  else f"=SUM(K{ds}:K{ds+n-1})" if col==11
+                  else f"=SUM(M{ds}:M{ds+n-1})" if col==13
                   else "")
-            nf = ('0.00 "kWh"' if col==9 else '€#,##0.00' if col==10 else None)
+            nf = ('0.00 "kWh"' if col==11 else '€#,##0.00' if col==13 else None)
             cs(ws, tr, col, v, bold=True, bg="#"+C_SUM, nf=nf,
                al="center" if col==1 else "right")
 
     # column widths
-    for col, w in enumerate([5,13,8,8,13,13,10,10,13,12,14],1):
+    for col, w in enumerate([5,13,8,8,8,8,13,13,10,10,13,10,12,14,14,20],1):
         ws.column_dimensions[get_column_letter(col)].width = w
 
     # Legend
     leg = ds + n + 2
-    ws.merge_cells(f"A{leg}:C{leg}")
+    ws.merge_cells(f"A{leg}:D{leg}")
     home_lbl = "🏠 " + t_export("home", lang)
     ext_lbl  = "⚡ " + t_export("external", lang)
     c = ws[f"A{leg}"]; c.value=f"{home_lbl} = Grün"; c.font=Font(name="Arial",size=9,color="2E7D32")
-    ws.merge_cells(f"D{leg}:F{leg}")
-    c = ws[f"D{leg}"]; c.value=f"{ext_lbl} = Gelb"; c.font=Font(name="Arial",size=9,color="F57F17")
+    ws.merge_cells(f"E{leg}:H{leg}")
+    c = ws[f"E{leg}"]; c.value=f"{ext_lbl} = Gelb"; c.font=Font(name="Arial",size=9,color="F57F17")
 
     # ── Summary sheet ─────────────────────────────────────────────────────────
     summary_title = t_export("summary", lang)
@@ -892,6 +910,9 @@ def export_builtin(year, month, sessions, location, config=None, lang="de"):
     total_km  = ((sessions[-1].get("odo_end") or 0) - (sessions[0].get("odo_start") or 0)) if n else 0
     total_kwh = home_kwh + ext_kwh
     verbrauch = round(total_kwh / total_km * 100, 1) if total_km > 0 else None
+    hv2 = compute_header_values(sessions, year, month, lang=lang)
+    total_h_val = round(hv2.get("total_charging_hours") or 0, 2)
+    avg_pwr_val = hv2.get("avg_charge_power_kw")
 
     if lang == "en":
         rows2 = [
@@ -907,7 +928,10 @@ def export_builtin(year, month, sessions, location, config=None, lang="de"):
             ("Odometer end",            sessions[-1].get("odo_end")  if n else "-", '#,##0 "km"'),
             ("Total km",                total_km,       '#,##0 "km"'),
             ("Consumption",             verbrauch,      '0.0 "kWh/100km"'),
+            ("Total charging time",     total_h_val,    '0.00 "h"'),
         ]
+        if avg_pwr_val is not None:
+            rows2.append(("Avg. charging power", avg_pwr_val, '0.00 "kW"'))
     else:
         rows2 = [
             ("Ladevorgänge gesamt",     n,              None),
@@ -922,7 +946,10 @@ def export_builtin(year, month, sessions, location, config=None, lang="de"):
             ("KM Monatsende",           sessions[-1].get("odo_end")  if n else "-", '#,##0 "km"'),
             ("Gefahrene KM",            total_km,       '#,##0 "km"'),
             ("Verbrauch",               verbrauch,      '0.0 "kWh/100km"'),
+            ("Ladezeit gesamt",         total_h_val,    '0.00 "h"'),
         ]
+        if avg_pwr_val is not None:
+            rows2.append(("Ø Ladeleistung", avg_pwr_val, '0.00 "kW"'))
     for ri, (lbl, val, fmt_) in enumerate(rows2, 3):
         bg = "#"+C_ALT if ri % 2 == 0 else None
         cs(ws2, ri, 1, lbl, bold=not lbl.startswith("  "), bg=bg, al="left")
@@ -1045,8 +1072,8 @@ def export_multi_month_bytes(periods_sessions, loc_filter="all", config=None, la
         ws = wb.create_sheet(title=sheet_name)
         ws.freeze_panes = "A3"
 
-        # Title row
-        ws.merge_cells("A1:K1")
+        # Title row (16 columns: A–P)
+        ws.merge_cells("A1:P1")
         t = ws["A1"]
         t.value     = period_info.get("label_de" if lang != "en" else "label_en", sheet_name)
         t.font      = Font(name="Arial", bold=True, size=13, color=C_FG)
@@ -1059,13 +1086,18 @@ def export_multi_month_bytes(periods_sessions, loc_filter="all", config=None, la
             t_export("date", lang),
             t_export("start", lang),
             t_export("end", lang),
+            t_export("duration_hours", lang),
+            t_export("charger_type", lang),
             t_export("odo_start", lang),
             t_export("odo_end", lang),
             t_export("soc_start", lang),
             t_export("soc_end", lang),
             t_export("kwh", lang),
+            t_export("price_per_kwh", lang),
             t_export("cost", lang),
             t_export("location", lang),
+            "Preisquelle" if lang != "en" else "Price source",
+            "Vertragsname" if lang != "en" else "Contract name",
         ]
         for col, h in enumerate(hdrs, 1):
             cs(ws, 2, col, h, bold=True, bg="#"+C_HDR, fg=C_FG, al="center")
@@ -1075,32 +1107,37 @@ def export_multi_month_bytes(periods_sessions, loc_filter="all", config=None, la
             r  = ds + i
             rd = to_row(s, i + 1, lang=lang)
             bg = row_bg(s)
-            cs(ws, r, 1,  rd["row_num"],     bg=bg, al="center")
-            cs(ws, r, 2,  rd["date"],        bg=bg, nf="DD.MM.YYYY", al="center")
-            cs(ws, r, 3,  rd["start_time"],  bg=bg, nf="HH:MM", al="center")
-            cs(ws, r, 4,  rd["end_time"],    bg=bg, nf="HH:MM", al="center")
-            cs(ws, r, 5,  rd["odo_start"],   bg=bg, nf='#,##0 "km"', al="right")
-            cs(ws, r, 6,  rd["odo_end"],     bg=bg, nf='#,##0 "km"', al="right")
-            cs(ws, r, 7,  rd["soc_start"],   bg=bg, nf='0"%"', al="right")
-            cs(ws, r, 8,  rd["soc_end"],     bg=bg, nf='0"%"', al="right")
-            cs(ws, r, 9,  rd["kwh_charged"], bg=bg, nf='0.00 "kWh"', al="right")
-            cs(ws, r, 10, rd["cost_eur"],    bg=bg, nf='€#,##0.00', al="right")
-            cs(ws, r, 11, rd["location"],    bg=bg, al="center")
+            cs(ws, r, 1,  rd["row_num"],         bg=bg, al="center")
+            cs(ws, r, 2,  rd["date"],             bg=bg, nf="DD.MM.YYYY", al="center")
+            cs(ws, r, 3,  rd["start_time"],       bg=bg, nf="HH:MM", al="center")
+            cs(ws, r, 4,  rd["end_time"],         bg=bg, nf="HH:MM", al="center")
+            cs(ws, r, 5,  rd["duration_hours"],   bg=bg, nf='0.00 "h"', al="right")
+            cs(ws, r, 6,  rd["charger_type"],     bg=bg, al="center")
+            cs(ws, r, 7,  rd["odo_start"],        bg=bg, nf='#,##0 "km"', al="right")
+            cs(ws, r, 8,  rd["odo_end"],          bg=bg, nf='#,##0 "km"', al="right")
+            cs(ws, r, 9,  rd["soc_start"],        bg=bg, nf='0"%"', al="right")
+            cs(ws, r, 10, rd["soc_end"],          bg=bg, nf='0"%"', al="right")
+            cs(ws, r, 11, rd["kwh_charged"],      bg=bg, nf='0.00 "kWh"', al="right")
+            cs(ws, r, 12, rd["price_per_kwh"],    bg=bg, nf='€0.0000', al="right")
+            cs(ws, r, 13, rd["cost_eur"],         bg=bg, nf='€#,##0.00', al="right")
+            cs(ws, r, 14, rd["location"],         bg=bg, al="center")
+            cs(ws, r, 15, rd["price_source"],     bg=bg, al="left")
+            cs(ws, r, 16, rd["charging_contract_name"], bg=bg, al="left")
 
         n = len(sessions)
         if n:
             tr = ds + n
-            for col in range(1, 12):
+            for col in range(1, 17):
                 v  = ("Σ" if col == 1
-                      else f"=SUM(I{ds}:I{ds+n-1})" if col == 9
-                      else f"=SUM(J{ds}:J{ds+n-1})" if col == 10
+                      else f"=SUM(K{ds}:K{ds+n-1})" if col == 11
+                      else f"=SUM(M{ds}:M{ds+n-1})" if col == 13
                       else "")
-                nf = ('0.00 "kWh"' if col == 9 else '€#,##0.00' if col == 10 else None)
+                nf = ('0.00 "kWh"' if col == 11 else '€#,##0.00' if col == 13 else None)
                 cs(ws, tr, col, v, bold=True, bg="#"+C_SUM, nf=nf,
                    al="center" if col == 1 else "right")
 
         # Column widths
-        col_widths = [6, 12, 9, 9, 12, 12, 10, 10, 12, 12, 18]
+        col_widths = [5, 13, 8, 8, 8, 8, 13, 13, 10, 10, 13, 10, 12, 14, 14, 20]
         for i, w in enumerate(col_widths, 1):
             ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
 

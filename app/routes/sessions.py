@@ -193,6 +193,7 @@ def api_manual_session_create():
     price_kwh = _float_or_none(data.get("price_per_kwh"))
     cost_eur  = _float_or_none(data.get("cost_eur"))
     cost_manual = 0
+    _auto_price_source = None; _auto_price_conf = 0; _auto_contract_id = None; _auto_contract_name = None
 
     if price_kwh is not None and price_kwh < 0:
         return jsonify({"ok": False, "error": "Preis pro kWh muss >= 0 sein."}), 400
@@ -215,6 +216,10 @@ def api_manual_session_create():
             if _pr["price_per_kwh"] is not None:
                 price_kwh = _pr["price_per_kwh"]
                 cost_eur  = calculate_session_cost(kwh, price_kwh)
+                _auto_price_source    = _pr.get("price_source")
+                _auto_price_conf      = _pr.get("price_confidence", 0)
+                _auto_contract_id     = _pr.get("contract_id")
+                _auto_contract_name   = _pr.get("contract_name")
         except Exception as _e:
             log.debug("Auto-pricing for manual session failed: %s", _e)
 
@@ -251,15 +256,17 @@ def api_manual_session_create():
          soc_start, soc_end, odo_start, odo_end,
          meter_old, meter_new, meter_delta_kwh, meter_used,
          vehicle_id, provider, kwh_source, created_mode,
-         manual_note, manual_reason)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+         manual_note, manual_reason,
+         price_source, price_confidence, charging_contract_id, charging_contract_name)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (start_ts, end_ts, round(kwh, 3), cost_eur, cost_manual, price_kwh,
          location, "manual", location_confidence,
          charger_type, charger_power_kw, max_power_kw,
          soc_start, soc_end, odo_start, odo_end,
          meter_old, meter_new, meter_delta, meter_used,
          vehicle_id, "manual", "manual", "manual",
-         manual_note, manual_reason))
+         manual_note, manual_reason,
+         _auto_price_source, _auto_price_conf, _auto_contract_id, _auto_contract_name))
     sid = cur.lastrowid
     con.commit()
     row = con.execute("SELECT * FROM sessions WHERE id=?", (sid,)).fetchone()

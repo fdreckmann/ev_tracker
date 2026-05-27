@@ -1016,10 +1016,15 @@ def tracker_loop(vehicle_id: str = "v0"):
 
                 spot = fetch_entsoe_spot(cfg.get("entsoe_api_key","")) if _effective_location == "extern" else None
                 st["entsoe_spot"] = spot
+                _price_source = "config"; _price_conf = 0; _price_contract_id = None; _price_contract_name = None
                 try:
                     from services.pricing_service import resolve_session_price
                     _pr = resolve_session_price(_effective_location, charger_type, cfg, con)
                     price_kwh = _pr["price_per_kwh"] if _pr["price_per_kwh"] is not None else cfg.get("price_per_kwh_home", 0.30)
+                    _price_source = _pr.get("price_source", "config")
+                    _price_conf = _pr.get("price_confidence", 0)
+                    _price_contract_id = _pr.get("contract_id")
+                    _price_contract_name = _pr.get("contract_name")
                 except Exception:
                     price_kwh = (cfg["price_per_kwh_home"] if _effective_location == "home"
                                  else calc_extern_price(cfg, charger_type, spot))
@@ -1030,13 +1035,15 @@ def tracker_loop(vehicle_id: str = "v0"):
                     (start_ts,odo_start,soc_start,location,charger_type,
                      max_power_kw,price_per_kwh,entsoe_spot,provider,meter_old,vehicle_id,charger_power_kw,
                      meter_home_detection_start_value,meter_home_detection_start_ts,
-                     location_source,location_confidence)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     location_source,location_confidence,
+                     price_source,price_confidence,charging_contract_id,charging_contract_name)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (datetime.now().isoformat(timespec="seconds"),
                      odo_start,soc_start,_effective_location,charger_type,power_kw,price_kwh,spot,
                      provider_id,meter_start_val,vehicle_id,sess_charger_kw,
                      mhd_start_val, mhd_start_ts,
-                     _loc_src, 0 if _effective_location == "unknown" else 80))
+                     _loc_src, 0 if _effective_location == "unknown" else 80,
+                     _price_source, _price_conf, _price_contract_id, _price_contract_name))
                 con.commit(); session_id=cur.lastrowid; session_active=True
                 st["session_id"]=session_id
                 try:
