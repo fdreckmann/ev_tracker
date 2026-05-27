@@ -2,12 +2,17 @@
 Provider connection test routes.
 """
 import re as _re_sanitize_url
+import time
 from flask import Blueprint, jsonify, request
 
 from core.config import load_config
 from core.security import require_login, has_permission, _current_user
 
 connections_bp = Blueprint("connections", __name__)
+
+# TTL cache for /api/meter/status — avoids hammering devices on every dashboard poll
+_meter_status_cache: dict = {}   # key: vehicle_id → {"ts": float, "data": dict}
+_METER_STATUS_TTL = 30           # seconds
 
 def _sanitize_url(url):
     if not url:
@@ -86,6 +91,58 @@ def api_meter_test():
         "debug":          result.debug,
         "suggestions":    result.suggestions or [],
     })
+
+
+@connections_bp.route("/api/meter/status", methods=["GET"])
+@require_login
+def api_meter_status():
+    """Return live meter reading from the configured source with 30-second TTL cache."""
+    if not has_permission(_current_user(), "meter:test"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: meter:test"}), 403
+
+    vid = request.args.get("vehicle_id", "v0")
+    force = request.args.get("force", "").lower() in ("1", "true")
+
+    cached = _meter_status_cache.get(vid)
+    if cached and not force and (time.time() - cached["ts"]) < _METER_STATUS_TTL:
+        return jsonify(cached["data"])
+
+    cfg = load_config()
+    # For extra vehicles merge vehicle-specific config with global config
+    if vid != "v0":
+        extras = cfg.get("extra_vehicles", [])
+        vehicle = next((v for v in extras if v.get("id") == vid), None)
+        if vehicle:
+            try:
+                from server import build_vehicle_config
+                cfg = build_vehicle_config(vehicle, cfg)
+            except Exception:
+                cfg = {**cfg, **vehicle}
+
+    source = cfg.get("meter_source", "none")
+    if not source or source == "none":
+        data = {"ok": False, "source": "none", "value_kwh": None,
+                "endpoint": None, "last_read": None, "error": "Keine Zählerquelle konfiguriert"}
+        _meter_status_cache[vid] = {"ts": time.time(), "data": data}
+        return jsonify(data)
+
+    from meter_providers import read_meter as _read_meter_impl
+    try:
+        result = _read_meter_impl(cfg)
+        data = {
+            "ok":         result.ok,
+            "value_kwh":  result.value,
+            "source":     source,
+            "endpoint":   _sanitize_url(result.endpoint),
+            "last_read":  time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
+            "error":      result.error if not result.ok else None,
+        }
+    except Exception as e:
+        data = {"ok": False, "source": source, "value_kwh": None,
+                "endpoint": None, "last_read": None, "error": str(e)}
+
+    _meter_status_cache[vid] = {"ts": time.time(), "data": data}
+    return jsonify(data)
 
 
 @connections_bp.route("/api/entsoe/test", methods=["POST"])

@@ -58,9 +58,10 @@ async function refreshStatus() {
     // /api/status now calls refresh_vehicle_location_state internally (TTL-cached).
     // We also fetch the location endpoint directly to get ha_debug and bypass the cache
     // on the first call after page load.
-    const [s, locResp] = await Promise.all([
+    const [s, locResp, meterResp] = await Promise.all([
       apiFetch(`/api/status?vehicle_id=${encodeURIComponent(vid)}`, {cache: 'no-store'}).then(r => r.json()),
       apiFetch(`/api/vehicles/${encodeURIComponent(vid)}/location`, {cache: 'no-store'}).then(r => r.json()).catch(() => null),
+      apiFetch(`/api/meter/status?vehicle_id=${encodeURIComponent(vid)}`, {cache: 'no-store'}).then(r => r.json()).catch(() => null),
     ]);
     const dot = $('sDot'), txt = $('sTxt');
 
@@ -170,17 +171,6 @@ async function refreshStatus() {
       }
     }
 
-    const spotEl = $('dSpot');
-    if (spotEl) {
-      if (s.entsoe_spot != null) {
-        spotEl.textContent = Number(s.entsoe_spot * 1000).toFixed(2) + ' €/MWh';
-        spotEl.className = 'sv g';
-      } else {
-        spotEl.textContent = s.entsoe_ok === false && (s.location_status || s.location) === 'extern' ? 'Kein Key' : '—';
-        spotEl.className = 'sv';
-      }
-    }
-
     if (s.charging) {
       $('dSt').textContent = 'Laden'; $('dSt').className = 'sv w';
       $('dStSub').textContent = 'Session #' + (s.session_id || '?');
@@ -204,11 +194,35 @@ async function refreshStatus() {
 
     renderTbl($('recentTbl'), rows.slice(0, 5), false);
 
-    const lastMeter = rows.find(r => r.meter_new != null);
+    // Live-Zählerstand from /api/meter/status (TTL-cached server-side)
     const meterTile = $('dMeterTile');
-    if (lastMeter && meterTile) {
-      $('dMeter').textContent = Math.round(Number(lastMeter.meter_new)).toLocaleString('de') + ' kWh';
-      meterTile.style.display = '';
+    const meterEl   = $('dMeter');
+    const meterSub  = $('dMeterSub');
+    if (meterTile && meterEl) {
+      if (meterResp && meterResp.source && meterResp.source !== 'none') {
+        const srcLabel = meterResp.source;
+        const timeStr  = meterResp.last_read ? meterResp.last_read.substring(11, 16) : '';
+        if (meterResp.ok && meterResp.value_kwh != null) {
+          meterEl.textContent = Number(meterResp.value_kwh).toLocaleString('de', {maximumFractionDigits: 1});
+          meterEl.className = 'sv';
+          meterEl.title = (meterResp.endpoint ? meterResp.endpoint : '');
+          if (meterSub) {
+            meterSub.textContent = srcLabel + ' · ✓' + (timeStr ? ' · ' + timeStr : '');
+            meterSub.style.color = '';
+          }
+        } else {
+          meterEl.textContent = '—';
+          meterEl.className = 'sv err';
+          meterEl.title = meterResp.error || 'Lesefehler';
+          if (meterSub) {
+            meterSub.textContent = srcLabel + ' · Fehler';
+            meterSub.style.color = 'var(--danger)';
+          }
+        }
+        meterTile.style.display = '';
+      } else {
+        meterTile.style.display = 'none';
+      }
     }
 
     fitAllStats();
@@ -257,7 +271,7 @@ function renderTbl(el, rows, showDel = true) {
       <td>${fmt(r.soc_start, 0)}% → ${fmt(r.soc_end, 0)}%</td>
       <td>${typeBadge(r.charger_type, r.max_power_kw)}</td>
       <td class="g">${fmt(r.kwh_charged)} kWh</td>
-      <td style="font-size:.72rem;color:var(--mute)">${r.price_per_kwh ? fmt(r.price_per_kwh, 4) + ' €/kWh' : '—'}${r.entsoe_spot ? '<br><span style="color:#4a5c72">Spot:' + fmt(r.entsoe_spot, 4) + '</span>' : ''}</td>
+      <td style="font-size:.72rem;color:var(--mute)">${r.price_per_kwh ? fmt(r.price_per_kwh, 4) + ' €/kWh' : '—'}</td>
       <td class="w" id="cost_${r.id}">
         ${r.cost_eur != null ? fmt(r.cost_eur) + ' €' : '—'}
         ${r.cost_manual ? '<span title="Kosten manuell" style="color:var(--acc);font-size:.65rem"> ✎</span>' : ''}

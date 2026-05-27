@@ -71,8 +71,9 @@ async function openAddSessionModal() {
 
   var now  = new Date();
   var iso  = function(d){ return new Date(d - d.getTimezoneOffset()*60000).toISOString().slice(0,16); };
+  var _eh = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'').replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});};
   var vOpts = vehicles.length
-    ? vehicles.map(function(v){return '<option value="'+v.id+'">'+(v.name||v.id)+'</option>';}).join('')
+    ? vehicles.map(function(v){return '<option value="'+_eh(v.id)+'">'+(v.name?_eh(v.name):_eh(v.id))+'</option>';}).join('')
     : '<option value="v0">Fahrzeug v0</option>';
 
   // Pre-fill location from current vehicle state if available
@@ -253,7 +254,8 @@ async function showSessionDetail(id){
   var dt = function(d){ return new Date(d).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); };
   var isManual = s.provider === 'manual' || s.created_mode === 'manual';
   var manualBadge = isManual ? ' <span style="background:rgba(100,200,255,.15);color:#64c8ff;border:1px solid rgba(100,200,255,.3);border-radius:4px;padding:1px 6px;font-size:.65rem;font-family:var(--mono)">✏ Manuell</span>' : '';
-  $('modalTitle').innerHTML = 'Session #'+s.id+' — '+new Date(s.start_ts).toLocaleDateString('de-DE') + manualBadge;
+  var _ehS = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'').replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});};
+  $('modalTitle').innerHTML = 'Session #'+_ehS(String(s.id))+' — '+new Date(s.start_ts).toLocaleDateString('de-DE') + manualBadge;
   $('modalMeta').innerHTML = dt(s.start_ts)+' → '+(s.end_ts?dt(s.end_ts):'läuft noch')+' &nbsp;·&nbsp; '+locBadge(s.location)+' &nbsp;·&nbsp; '+typeBadge(s.charger_type,s.max_power_kw);
 
   var fmtMeterVal = function(v){ return v!=null ? Number(v).toLocaleString('de',{minimumFractionDigits:3,maximumFractionDigits:3})+' kWh' : null; };

@@ -39,6 +39,9 @@ class VehicleState:
     location:     Optional[str]   = None   # "home" | "extern" | "unknown"
     charge_type:  Optional[str]   = None   # "ac" | "dc" | "unknown"
     error:        Optional[str]   = None   # Fehlermeldung wenn Abruf fehlschlägt
+    image_url:        Optional[str]   = None   # Provider-supplied image URL
+    image_source:     Optional[str]   = None   # "ha" | provider id
+    image_updated_at: Optional[str]   = None   # ISO timestamp of last image update
 
 
 class BaseProvider:

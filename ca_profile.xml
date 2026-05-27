@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<CAProfile version="1">
+  <Name>ev-tracker</Name>
+  <Author>fdreckmann</Author>
+  <Version>1.0</Version>
+  <Description>EV Tracker — Ladeprotokoll für Elektrofahrzeuge. Erfasst Ladevorgänge, Fahrzeugdaten, Live-Zählerstände, Wallbox-Anbindung, Kosten und Exporte. Unterstützt Home Assistant, Tasmota, Shelly, EVCC, OpenWB, go-e, WARP, Alfen, Webasto, Juice und Generic HTTP als Datenquellen. Mehrere Fahrzeuge, automatische Session-Erkennung, Excel-Export, Backup und API.</Description>
+  <Overview>EV Tracker is a self-hosted charging log for electric vehicles. It tracks charging sessions, vehicle data, live meter readings, wallbox integration, costs and exports. Supports Home Assistant, Tasmota, Shelly, EVCC, OpenWB, go-e, WARP, Alfen, Webasto, Juice, and Generic HTTP as data sources. Supports multiple vehicles, automatic session detection, Excel export, backup, and API.</Overview>
+  <Category>Tools: HomeAutomation:</Category>
+  <WebUI>http://[IP]:[PORT:8054]/</WebUI>
+  <Icon>https://raw.githubusercontent.com/fdreckmann/ev_tracker/main/app/static/favicon.ico</Icon>
+  <Support>https://github.com/fdreckmann/ev_tracker/issues</Support>
+  <Project>https://github.com/fdreckmann/ev_tracker</Project>
+  <Repository>19121412/ev-tracker:latest</Repository>
+  <Registry>https://hub.docker.com/r/19121412/ev-tracker</Registry>
+  <Environment>
+    <Variable>
+      <Name>DATA_DIR</Name>
+      <Value>/data</Value>
+      <Description>Internal data path (do not change)</Description>
+      <Display>advanced</Display>
+      <Required>true</Required>
+      <Mask>false</Mask>
+    </Variable>
+    <Variable>
+      <Name>TZ</Name>
+      <Value>Europe/Berlin</Value>
+      <Description>Timezone (e.g. Europe/Berlin, Europe/Zurich, Europe/Vienna)</Description>
+      <Display>always</Display>
+      <Required>true</Required>
+      <Mask>false</Mask>
+    </Variable>
+  </Environment>
+  <Ports>
+    <Port>
+      <ContainerPort>8080</ContainerPort>
+      <HostPort>8054</HostPort>
+      <Protocol>tcp</Protocol>
+      <Description>Web UI port for the EV Tracker dashboard</Description>
+      <Display>always</Display>
+      <Required>true</Required>
+      <Mask>false</Mask>
+    </Port>
+  </Ports>
+  <Volumes>
+    <Volume>
+      <ContainerPath>/data</ContainerPath>
+      <HostPath>/mnt/user/appdata/ev-tracker</HostPath>
+      <Mode>rw</Mode>
+      <Description>Storage location for config, database, exports and backups</Description>
+      <Display>always</Display>
+      <Required>true</Required>
+      <Mask>false</Mask>
+    </Volume>
+  </Volumes>
+  <ExtraParams>--restart unless-stopped</ExtraParams>
+  <Privileged>false</Privileged>
+  <Network>bridge</Network>
+</CAProfile>

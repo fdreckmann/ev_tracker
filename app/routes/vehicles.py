@@ -58,6 +58,16 @@ def _safe_veh_img_path(vid: str) -> "Path":
         raise ValueError(f"Pfad-Traversal verhindert für vehicle_id: {vid!r}")
     return target
 
+def _safe_auto_img_path(vid: str) -> "Path":
+    """Return resolved auto.webp path (provider cache); raises ValueError for unsafe IDs."""
+    if not _validate_vehicle_id(vid):
+        raise ValueError(f"Ungültige vehicle_id: {vid!r}")
+    base = _VEH_IMG_DIR.resolve()
+    target = (base / vid / "auto.webp").resolve()
+    if not str(target).startswith(str(base) + "/"):
+        raise ValueError(f"Pfad-Traversal verhindert für vehicle_id: {vid!r}")
+    return target
+
 def _update_vehicle_image_meta(vid: str, mode: str, path: str,
                                 source: str = "", attribution: str = "",
                                 default_image_key: str = "") -> None:
@@ -485,7 +495,7 @@ def api_delete_vehicle(vid):
 
 # ── Vehicle Image Routes ────────────────────────────────────────────────────────
 
-@vehicles_bp.route("/api/vehicles/<vid>/image")
+@vehicles_bp.route("/api/vehicles/<vid>/image", methods=["GET"])
 @require_login
 def api_vehicle_image_meta(vid):
     if not _vehicle_exists(vid):
@@ -493,11 +503,26 @@ def api_vehicle_image_meta(vid):
     if not has_permission(_current_user(), "vehicles:view"):
         return jsonify({"error": "Keine Berechtigung: vehicles:view"}), 403
     try:
-        img_path = _safe_veh_img_path(vid)
+        img_path  = _safe_veh_img_path(vid)
+        auto_path = _safe_auto_img_path(vid)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    return jsonify({"exists": img_path.exists(), "vehicle_id": vid,
-                    "url": f"/api/vehicles/{vid}/image/file" if img_path.exists() else None})
+    has_manual = img_path.exists()
+    has_auto   = auto_path.exists()
+    if has_manual:
+        active_source = "manual"
+    elif has_auto:
+        active_source = "auto"
+    else:
+        active_source = "none"
+    return jsonify({
+        "exists": has_manual or has_auto,
+        "vehicle_id": vid,
+        "has_manual": has_manual,
+        "has_auto":   has_auto,
+        "active_source": active_source,
+        "url": f"/api/vehicles/{vid}/image/file" if (has_manual or has_auto) else None,
+    })
 
 @vehicles_bp.route("/api/vehicles/<vid>/image/file")
 @require_login
@@ -508,19 +533,44 @@ def api_vehicle_image_file(vid):
             return send_file(str(ph), mimetype="image/svg+xml")
         return jsonify({"error": "Fahrzeug nicht gefunden"}), 404
     if not has_permission(_current_user(), "vehicles:view"):
-        # Return placeholder instead of 403 so <img> tags degrade gracefully
         if ph.exists():
             return send_file(str(ph), mimetype="image/svg+xml")
         return jsonify({"error": "Keine Berechtigung: vehicles:view"}), 403
     try:
-        img_path = _safe_veh_img_path(vid)
+        img_path  = _safe_veh_img_path(vid)
+        auto_path = _safe_auto_img_path(vid)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    if not img_path.exists():
-        if ph.exists():
-            return send_file(str(ph), mimetype="image/svg+xml")
-        return jsonify({"error": "Kein Bild vorhanden"}), 404
-    return send_file(str(img_path), mimetype="image/webp")
+    # Priority: manual car.webp > provider auto.webp > silhouette key > placeholder
+    if img_path.exists():
+        return send_file(str(img_path), mimetype="image/webp")
+    if auto_path.exists():
+        return send_file(str(auto_path), mimetype="image/webp")
+    # Try default_image_key or auto-suggest silhouette before placeholder
+    from services.vehicle_image_service import suggest_vehicle_image_key
+    try:
+        cfg = load_config()
+        if vid == "v0":
+            vehicle = cfg
+            key = cfg.get("vehicle_default_image_key", "") or ""
+        else:
+            vehicle = next((v for v in cfg.get("extra_vehicles", []) if v.get("id") == vid), {})
+            key = vehicle.get("default_image_key", "") or ""
+        if not key:
+            key = suggest_vehicle_image_key(
+                brand=vehicle.get("brand", ""),
+                model=vehicle.get("model", ""),
+                name=vehicle.get("name", vehicle.get("car_name", "")),
+            )
+        if key:
+            svg_path = Path(__file__).parent.parent / "static" / "vehicle_images" / f"{key}.svg"
+            if svg_path.exists():
+                return send_file(str(svg_path), mimetype="image/svg+xml")
+    except Exception:
+        pass
+    if ph.exists():
+        return send_file(str(ph), mimetype="image/svg+xml")
+    return jsonify({"error": "Kein Bild vorhanden"}), 404
 
 @vehicles_bp.route("/api/vehicles/<vid>/image/upload", methods=["POST"])
 @require_login
@@ -554,6 +604,38 @@ def api_vehicle_image_upload(vid):
     _audit("vehicle_image_uploaded", f"vehicle_id={vid}", ip=request.remote_addr)
     return jsonify({"ok": True, "url": f"/api/vehicles/{vid}/image/file"})
 
+@vehicles_bp.route("/api/vehicles/<vid>/image", methods=["POST"])
+@require_login
+def api_vehicle_image_post(vid):
+    """Alternative upload endpoint at POST /api/vehicles/<vid>/image."""
+    if not _vehicle_exists(vid):
+        return jsonify({"ok": False, "error": "Fahrzeug nicht gefunden"}), 404
+    if not has_permission(_current_user(), "vehicles:image_manage"):
+        return jsonify({"error": "Keine Berechtigung: vehicles:image_manage"}), 403
+    try:
+        img_path = _safe_veh_img_path(vid)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    if "file" not in request.files:
+        return jsonify({"ok": False, "error": "Keine Datei"}), 400
+    f = request.files["file"]
+    raw = f.read(_VEH_IMG_MAX_BYTES + 1)
+    if len(raw) > _VEH_IMG_MAX_BYTES:
+        return jsonify({"ok": False, "error": "Datei zu groß (max. 3 MB)"}), 400
+    try:
+        from PIL import Image as _PilImage
+        import io as _io
+        _img = _PilImage.open(_io.BytesIO(raw))
+        _img.verify()
+        _img = _PilImage.open(_io.BytesIO(raw))
+        img_path.parent.mkdir(parents=True, exist_ok=True)
+        _img.save(str(img_path), "WEBP", quality=85)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Ungültiges Bild: {e}"}), 400
+    _update_vehicle_image_meta(vid, mode="upload", path=f"/api/vehicles/{vid}/image/file")
+    _audit("vehicle_image_uploaded", f"vehicle_id={vid}", ip=request.remote_addr)
+    return jsonify({"ok": True, "url": f"/api/vehicles/{vid}/image/file"})
+
 @vehicles_bp.route("/api/vehicles/<vid>/image", methods=["DELETE"])
 @require_login
 def api_vehicle_image_delete(vid):
@@ -562,14 +644,19 @@ def api_vehicle_image_delete(vid):
     if not has_permission(_current_user(), "vehicles:image_manage"):
         return jsonify({"error": "Keine Berechtigung: vehicles:image_manage"}), 403
     try:
-        img_path = _safe_veh_img_path(vid)
+        img_path  = _safe_veh_img_path(vid)
+        auto_path = _safe_auto_img_path(vid)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     if img_path.exists():
         img_path.unlink()
         _audit("vehicle_image_deleted", f"vehicle_id={vid}", ip=request.remote_addr)
+    # Keep auto.webp (provider-cached); update meta to reflect active source
+    if auto_path.exists():
+        _update_vehicle_image_meta(vid, mode="auto", path=f"/api/vehicles/{vid}/image/file")
+        return jsonify({"ok": True, "active_source": "auto"})
     _update_vehicle_image_meta(vid, mode="none", path="")
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "active_source": "none"})
 
 
 # ── Vehicle Image Suggestion / Manifest ────────────────────────────────────────

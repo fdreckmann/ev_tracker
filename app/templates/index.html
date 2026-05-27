@@ -721,9 +721,8 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     <div class="stat"><div class="sl">Standort</div><div class="sv" id="dLoc">—</div><div class="su">Auto Position</div></div>
     <div class="stat"><div class="sl">SOC</div><div class="sv g" id="dSoc">—</div><div class="su">Prozent</div></div>
     <div class="stat"><div class="sl">Kilometerstand</div><div class="sv b" id="dOdo">—</div><div class="su">km</div></div>
-    <div class="stat" id="dMeterTile" style="display:none"><div class="sl">Zählerstand</div><div class="sv" id="dMeter" style="color:#a78bfa">—</div><div class="su">kWh</div></div>
+    <div class="stat" id="dMeterTile" style="display:none"><div class="sl">Live-Zählerstand</div><div class="sv" id="dMeter" style="color:#a78bfa">—</div><div class="su" id="dMeterSub">kWh</div></div>
     <div class="stat" id="dChargeTile"><div class="sl" id="dChargeLabel">Ladevorgang</div><div class="sv" id="dType">—</div><div class="su" id="dPwr">—</div></div>
-    <div class="stat"><div class="sl">ENTSO-E Spot</div><div class="sv" id="dSpot" style="font-size:1rem">—</div><div class="su">aktueller Preis</div></div>
     <div class="stat"><div class="sl">Datenquelle</div><div class="sv" id="dProviderName" style="font-size:.85rem">—</div><div class="su" id="dProviderSub">Provider</div></div>
     <div class="stat"><div class="sl">Letztes Update</div><div class="sv" id="dPoll" style="font-size:1rem">—</div><div class="su">HA Polling</div></div>
   </div>
@@ -4515,8 +4514,12 @@ async function saveMeterSource(){
   });
   const r=await apiFetch('/api/config',{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
-  if(r.ok) toast('Zählerstand-Quelle gespeichert');
-  else toast('Fehler beim Speichern','err');
+  if(r.ok) {
+    toast('Zählerstand-Quelle gespeichert');
+    // Force-refresh the live meter tile so it picks up the new source immediately
+    apiFetch('/api/meter/status?force=1',{cache:'no-store'}).catch(()=>{});
+    setTimeout(refreshStatus, 500);
+  } else toast('Fehler beim Speichern','err');
 }
 async function testMeterSource(){
   const btn = document.getElementById('testMeterBtn');
@@ -4526,7 +4529,16 @@ async function testMeterSource(){
   const dbg=$('meterTestDebug');
   if(dbg) { dbg.textContent=''; dbg.style.display='none'; }
   try {
-    const cfg = collectMeterFormConfig();
+    const g = id => { const el=$(id); return el ? el.value : ''; };
+    const gb = id => { const el=$(id); return el ? el.checked : false; };
+    const base = collectMeterFormConfig();
+    const cfg = Object.assign({}, base, {
+      meter_evcc_port:      parseInt($('c_meter_evcc_port')?.value)||7070,
+      meter_evcc_lp:        parseInt($('c_meter_evcc_lp')?.value)||0,
+      meter_alfen_pass:     g('c_meter_alfen_pass'),
+      meter_prefer_meter_delta: gb('c_meter_prefer_delta'),
+      meter_scope:          g('c_meter_scope') || 'home_only',
+    });
     const resp = await apiFetch('/api/meter/test', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -6785,27 +6797,34 @@ async function loadMobileVehicleCards() {
         isActive && !charging && locLabel ? `<span style="background:#1e2a3a;color:#8892b0;border-radius:4px;padding:2px 6px;font-size:10px">${locLabel}</span>` : '',
         !isActive ? '<span style="background:#2d1f1f;color:#ef4444;border-radius:4px;padding:2px 6px;font-size:10px">Inaktiv</span>' : '',
       ].filter(Boolean).join(' ');
-      const imgId = `mvcard_img_${v.id}`;
-      return `<div class="mobile-card" onclick="openMobileVehicleDetail('${v.id}')" style="cursor:pointer;border:1px solid #2d3147;position:relative">
+      const _eh = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'').replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});};
+      const safeId = encodeURIComponent(v.id);
+      const imgId = `mvcard_img_${safeId}`;
+      return `<div class="mobile-card" data-vid="${_eh(v.id)}" style="cursor:pointer;border:1px solid #2d3147;position:relative">
         <div style="display:flex;gap:12px;align-items:flex-start">
-          <img id="${imgId}" src="/api/vehicles/${encodeURIComponent(v.id)}/image/file"
+          <img id="${imgId}" src="/api/vehicles/${safeId}/image/file"
             onerror="this.src='/static/vehicle_images/placeholder_car.svg'"
             style="width:52px;height:36px;object-fit:contain;border-radius:4px;flex-shrink:0">
           <div style="flex:1;min-width:0">
             <div style="display:flex;justify-content:space-between;align-items:flex-start">
               <div>
-                <div style="font-size:15px;font-weight:600;color:#e6f1ff">${v.name || v.id}</div>
-                <div style="font-size:12px;color:#8892b0;margin-top:2px">${v.provider || '—'}</div>
+                <div style="font-size:15px;font-weight:600;color:#e6f1ff">${_eh(v.name || v.id)}</div>
+                <div style="font-size:12px;color:#8892b0;margin-top:2px">${_eh(v.provider || '—')}</div>
               </div>
               <div style="text-align:right;flex-shrink:0">${badges}</div>
             </div>
             ${socBar}
           </div>
         </div>
-        <div style="margin-top:8px;font-size:11px;color:#4a5c72">ID: ${v.id}</div>
+        <div style="margin-top:8px;font-size:11px;color:#4a5c72">ID: ${_eh(v.id)}</div>
       </div>`;
     };
     el.innerHTML = vehicles.map(_buildVehicleCard).join('');
+    el.querySelectorAll('[data-vid]').forEach(function(card) {
+      card.addEventListener('click', function() {
+        openMobileVehicleDetail(this.dataset.vid);
+      });
+    });
   } catch(e) {
     el.innerHTML = '<p style="color:#ef4444;font-size:13px">Fehler beim Laden der Fahrzeuge.</p>';
   }
