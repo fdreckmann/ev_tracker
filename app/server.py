@@ -1052,7 +1052,7 @@ def tracker_loop(vehicle_id: str = "v0"):
 
             if charging and not session_active:
                 soc_start = soc; odo_start = odo; peak_power = power_kw or 0
-                _meter_scope = cfg.get("meter_scope", "home_only")
+                _meter_scope = vcfg.get("meter_scope", "home_only")
                 _effective_location = effective_session_location(location, st.get("location_status"))
                 meter_start_val = None
                 if _meter_scope == "disabled":
@@ -1061,24 +1061,24 @@ def tracker_loop(vehicle_id: str = "v0"):
                     log.info("[%s] Meter skipped at session start (scope=home_only, location=%s)",
                              vehicle_id, _effective_location)
                 else:
-                    _meter_start_res = _read_meter_impl(cfg)
+                    _meter_start_res = _read_meter_impl(vcfg)
                     meter_start_val = _meter_start_res.value
-                    if meter_start_val is None and cfg.get("meter_source","none") != "none":
+                    if meter_start_val is None and vcfg.get("meter_source","none") != "none":
                         log.warning("[%s] Zählerstand-Lesefehler beim Session-Start: %s",
                                     vehicle_id, getattr(_meter_start_res, "error", "unknown"))
                         try:
                             from notification_manager import fire_event as _fe
                             _fe("meter_read_failed", {"vehicle_id": vehicle_id,
-                                "phase": "start", "source": cfg.get("meter_source")},
-                                cfg, db_path=DB_PATH)
+                                "phase": "start", "source": vcfg.get("meter_source")},
+                                vcfg, db_path=DB_PATH)
                         except Exception: pass
                 # Meter-based home detection: save reference value when location is unknown
                 mhd_start_val = None
                 mhd_start_ts  = None
-                _mhd_enabled = cfg.get("meter_home_detection_enabled", True)
+                _mhd_enabled = vcfg.get("meter_home_detection_enabled", True)
                 if (_effective_location == "unknown" and _mhd_enabled
-                        and cfg.get("meter_source", "none") != "none"):
-                    _mhd_res = _read_meter_impl(cfg)
+                        and vcfg.get("meter_source", "none") != "none"):
+                    _mhd_res = _read_meter_impl(vcfg)
                     if _mhd_res.value is not None:
                         mhd_start_val = _mhd_res.value
                         mhd_start_ts  = datetime.utcnow().isoformat(timespec="seconds")
@@ -1247,21 +1247,21 @@ def tracker_loop(vehicle_id: str = "v0"):
                     kwh  = round(max(0.0,soc-soc_start)/100.0*vcfg["battery_capacity_kwh"],2)
                     if not cost_manual:
                         cost = round(kwh*(db_price or cfg["price_per_kwh_home"]),2)
-                _meter_scope = cfg.get("meter_scope", "home_only")
+                _meter_scope = vcfg.get("meter_scope", "home_only")
                 _effective_location = effective_session_location(location, st.get("location_status"))
 
                 # Final meter-based home detection at session end
-                _mhd_enabled = cfg.get("meter_home_detection_enabled", True)
+                _mhd_enabled = vcfg.get("meter_home_detection_enabled", True)
                 _mhd_start   = st.get("meter_home_det_start_val")
                 _mhd_start_ts= st.get("meter_home_det_start_ts")
                 if (_effective_location == "unknown" and _mhd_enabled
-                        and _mhd_start is not None and cfg.get("meter_source", "none") != "none"):
+                        and _mhd_start is not None and vcfg.get("meter_source", "none") != "none"):
                     try:
-                        _mhd_end_res = _read_meter_impl(cfg)
+                        _mhd_end_res = _read_meter_impl(vcfg)
                         if _mhd_end_res.value is not None:
                             _mhd_delta_end = _mhd_end_res.value - _mhd_start
-                            _mhd_min = float(cfg.get("meter_home_detection_min_delta_kwh", 0.2))
-                            _mhd_max_h = float(cfg.get("meter_home_detection_max_delta_kwh_per_hour", 30.0))
+                            _mhd_min = float(vcfg.get("meter_home_detection_min_delta_kwh", 0.2))
+                            _mhd_max_h = float(vcfg.get("meter_home_detection_max_delta_kwh_per_hour", 30.0))
                             _mhd_rate_ok = True
                             if _mhd_start_ts:
                                 try:
@@ -1315,9 +1315,9 @@ def tracker_loop(vehicle_id: str = "v0"):
                     log.info("[%s] Meter skipped at session end (scope=home_only, location=%s)",
                              vehicle_id, _effective_location)
                 else:
-                    _meter_end_res = _read_meter_impl(cfg)
+                    _meter_end_res = _read_meter_impl(vcfg)
                     meter_end_val = _meter_end_res.value
-                prefer_delta = cfg.get("meter_prefer_meter_delta", False)
+                prefer_delta = vcfg.get("meter_prefer_meter_delta", False)
                 kwh_source = "soc"
                 if (prefer_delta and meter_start_val is not None and meter_end_val is not None
                         and meter_end_val >= meter_start_val):

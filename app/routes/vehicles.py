@@ -541,11 +541,33 @@ def api_vehicle_image_file(vid):
         auto_path = _safe_auto_img_path(vid)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    # Priority: manual car.webp > provider auto.webp > placeholder
+    # Priority: manual car.webp > provider auto.webp > silhouette key > placeholder
     if img_path.exists():
         return send_file(str(img_path), mimetype="image/webp")
     if auto_path.exists():
         return send_file(str(auto_path), mimetype="image/webp")
+    # Try default_image_key or auto-suggest silhouette before placeholder
+    from services.vehicle_image_service import suggest_vehicle_image_key
+    try:
+        cfg = load_config()
+        if vid == "v0":
+            vehicle = cfg
+            key = cfg.get("vehicle_default_image_key", "") or ""
+        else:
+            vehicle = next((v for v in cfg.get("extra_vehicles", []) if v.get("id") == vid), {})
+            key = vehicle.get("default_image_key", "") or ""
+        if not key:
+            key = suggest_vehicle_image_key(
+                brand=vehicle.get("brand", ""),
+                model=vehicle.get("model", ""),
+                name=vehicle.get("name", vehicle.get("car_name", "")),
+            )
+        if key:
+            svg_path = Path(__file__).parent.parent / "static" / "vehicle_images" / f"{key}.svg"
+            if svg_path.exists():
+                return send_file(str(svg_path), mimetype="image/svg+xml")
+    except Exception:
+        pass
     if ph.exists():
         return send_file(str(ph), mimetype="image/svg+xml")
     return jsonify({"error": "Kein Bild vorhanden"}), 404

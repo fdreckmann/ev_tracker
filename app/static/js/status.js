@@ -197,16 +197,27 @@ async function refreshStatus() {
     // Live-Zählerstand from /api/meter/status (TTL-cached server-side)
     const meterTile = $('dMeterTile');
     const meterEl   = $('dMeter');
+    const meterSub  = $('dMeterSub');
     if (meterTile && meterEl) {
       if (meterResp && meterResp.source && meterResp.source !== 'none') {
+        const srcLabel = meterResp.source;
+        const timeStr  = meterResp.last_read ? meterResp.last_read.substring(11, 16) : '';
         if (meterResp.ok && meterResp.value_kwh != null) {
           meterEl.textContent = Number(meterResp.value_kwh).toLocaleString('de', {maximumFractionDigits: 1});
           meterEl.className = 'sv';
-          meterEl.title = 'Quelle: ' + meterResp.source + (meterResp.endpoint ? ' · ' + meterResp.endpoint : '');
+          meterEl.title = (meterResp.endpoint ? meterResp.endpoint : '');
+          if (meterSub) {
+            meterSub.textContent = srcLabel + ' · ✓' + (timeStr ? ' · ' + timeStr : '');
+            meterSub.style.color = '';
+          }
         } else {
           meterEl.textContent = '—';
           meterEl.className = 'sv err';
           meterEl.title = meterResp.error || 'Lesefehler';
+          if (meterSub) {
+            meterSub.textContent = srcLabel + ' · Fehler';
+            meterSub.style.color = 'var(--danger)';
+          }
         }
         meterTile.style.display = '';
       } else {

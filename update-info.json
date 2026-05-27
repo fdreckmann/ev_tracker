@@ -1,7 +1,7 @@
 {
   "latest_version": "2.0.53",
   "release_date": "2026-05-27",
-  "channel": "stable",
+  "channel": "beta",
   "title": "Pricing-Core, Excel-Template-Export, Location-Update, API v1 Fixes",
   "summary": [
     "Zentrale Preislogik (pricing_service) für alle Ladearten und Verträge",
