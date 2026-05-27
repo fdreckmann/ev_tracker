@@ -50,6 +50,10 @@ async function saveConfig() {
     provider: $('c_provider')?.value || 'ha',
     car_name: $('c_car')?.value || '',
   };
+  const bat  = parseFloat($('c_bat')?.value);
+  const poll = parseInt($('c_poll')?.value);
+  if (!isNaN(bat))  cfg.battery_capacity_kwh = bat;
+  if (!isNaN(poll)) cfg.poll_interval = poll;
   document.querySelectorAll('[id^="pf_"]').forEach(el => {
     const key = el.id.replace('pf_', '');
     if (el.type === 'password' && (!el.value || el.value === '********')) return;

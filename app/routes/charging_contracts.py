@@ -13,7 +13,7 @@ charging_contracts_bp = Blueprint("charging_contracts", __name__)
 
 def _check_perm(write: bool = False):
     user = _current_user()
-    perm = "config:write" if write else "config:read"
+    perm = "public_charging:manage_contracts" if write else "public_charging:view"
     if not has_permission(user, perm):
         return jsonify({"error": f"Keine Berechtigung: {perm}"}), 403
     return None

@@ -126,6 +126,10 @@ ALL_PERMISSIONS = {
     "tariffs:view":             {"label": "Tarife ansehen",                 "group": "Tarife"},
     "tariffs:configure":        {"label": "Tarife konfigurieren",           "group": "Tarife"},
     "tariffs:test":             {"label": "Tarif testen",                   "group": "Tarife"},
+    # Öffentliches Laden / Ladeabos
+    "public_charging:view":          {"label": "Öffentl. Laden ansehen",        "group": "Öffentl. Laden"},
+    "public_charging:configure":     {"label": "Öffentl. Laden konfigurieren",  "group": "Öffentl. Laden"},
+    "public_charging:manage_contracts": {"label": "Ladeabos verwalten",         "group": "Öffentl. Laden"},
     # Export PDF
     "export:pdf":               {"label": "PDF exportieren",                "group": "Export"},
     # API Tokens
@@ -164,6 +168,7 @@ DEFAULT_ROLE_PERMISSIONS = {
         "reports:view", "reports:history", "reports:archive", "reports:send",
         "billing:view",
         "tariffs:view",
+        "public_charging:view", "public_charging:configure", "public_charging:manage_contracts",
         "notifications:view", "notifications:manage",
         "mqtt:view",
         "api_tokens:view",
