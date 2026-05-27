@@ -1008,8 +1008,13 @@ def tracker_loop(vehicle_id: str = "v0"):
 
                 spot = fetch_entsoe_spot(cfg.get("entsoe_api_key","")) if _effective_location == "extern" else None
                 st["entsoe_spot"] = spot
-                price_kwh = (cfg["price_per_kwh_home"] if _effective_location == "home"
-                             else calc_extern_price(cfg, charger_type, spot))
+                try:
+                    from services.pricing_service import resolve_session_price
+                    _pr = resolve_session_price(_effective_location, charger_type, cfg, con)
+                    price_kwh = _pr["price_per_kwh"] if _pr["price_per_kwh"] is not None else cfg.get("price_per_kwh_home", 0.30)
+                except Exception:
+                    price_kwh = (cfg["price_per_kwh_home"] if _effective_location == "home"
+                                 else calc_extern_price(cfg, charger_type, spot))
                 # Set wallbox power for home sessions
                 sess_charger_kw = (cfg.get("home_charger_power_kw") or None) if _effective_location == "home" else None
                 _loc_src = st.get("location_source", "unknown") if _effective_location != "unknown" else "unknown"
@@ -1125,9 +1130,14 @@ def tracker_loop(vehicle_id: str = "v0"):
                     peak_power = power_kw
                     new_type = "dc" if power_kw > float(vcfg.get("dc_threshold_kw",22)) else "ac"
                     if new_type != charger_type:
-                        spot = st.get("entsoe_spot")
-                        price = (cfg["price_per_kwh_home"] if _effective_location=="home"
-                                 else calc_extern_price(cfg,new_type,spot))
+                        try:
+                            from services.pricing_service import resolve_session_price
+                            _pr2 = resolve_session_price(_effective_location, new_type, cfg, con, session_id)
+                            price = _pr2["price_per_kwh"] if _pr2["price_per_kwh"] is not None else cfg.get("price_per_kwh_home", 0.30)
+                        except Exception:
+                            spot = st.get("entsoe_spot")
+                            price = (cfg["price_per_kwh_home"] if _effective_location=="home"
+                                     else calc_extern_price(cfg,new_type,spot))
                         cur.execute("UPDATE sessions SET charger_type=?,max_power_kw=?,price_per_kwh=? WHERE id=?",
                                     (new_type,peak_power,price,session_id))
                         con.commit(); charger_type=new_type
