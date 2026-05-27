@@ -267,7 +267,7 @@ function renderTbl(el, rows, showDel = true) {
       <td class="num">${r.id}</td>
       <td>${fmtDate(r.start_ts).split(' ')[0]}</td>
       <td>${fmtTime(r.start_ts)} → ${r.end_ts ? fmtTime(r.end_ts) : '…'}</td>
-      ${hasVehicle ? `<td style="font-size:.72rem;font-family:var(--mono);color:var(--acc2)">${r.vehicle_id || 'v0'}</td>` : ''}
+      ${hasVehicle ? `<td style="font-size:.72rem;font-family:var(--mono);color:var(--acc2)">${escapeHtml(r.vehicle_id || 'v0')}</td>` : ''}
       <td>${fmt(r.soc_start, 0)}% → ${fmt(r.soc_end, 0)}%</td>
       <td>${typeBadge(r.charger_type, r.max_power_kw)}</td>
       <td class="g">${fmt(r.kwh_charged)} kWh</td>

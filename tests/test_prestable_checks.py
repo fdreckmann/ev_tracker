@@ -73,6 +73,17 @@ class TestSanitizeDebugUrl:
         url = "http://host/api/status"
         assert self._fn()(url) == url
 
+    def test_userinfo_stripped(self):
+        result = self._fn()("http://user:password@example.com/meter?token=s3cr3t")
+        assert "user:password" not in result
+        assert "password" not in result
+        assert "example.com" in result
+
+    def test_userinfo_without_query(self):
+        result = self._fn()("http://admin:secret@192.168.1.1/api")
+        assert "admin:secret" not in result
+        assert "192.168.1.1" in result
+
     def test_token_masked(self):
         result = self._fn()("http://host/api?token=secret123&period=day")
         assert "secret123" not in result

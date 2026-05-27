@@ -17,6 +17,10 @@ sys.path.insert(0, str(APP_DIR))
 # real HTTP calls to GitHub, which would cause hangs in air-gapped / CI envs.
 os.environ.setdefault("EV_TRACKER_UPDATE_CHECK_ENABLED", "false")
 
+# Prevent server.py from writing /data/.secret_key at import time.
+# This must be set before any test file can import server.py.
+os.environ.setdefault("FLASK_SECRET_KEY", "test-secret-key-for-pytest")
+
 
 @pytest.fixture()
 def app(tmp_path, monkeypatch):

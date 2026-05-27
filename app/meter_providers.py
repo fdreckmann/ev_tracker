@@ -12,15 +12,22 @@ _SECRET_PARAMS = frozenset({
 })
 
 def sanitize_debug_url(url: str) -> str:
-    """Mask secret query-string parameters in a URL before logging."""
-    if not url or "?" not in url:
+    """Mask secret query-string parameters and userinfo credentials in a URL before logging."""
+    if not url:
         return url
     try:
         parsed = urllib.parse.urlparse(url)
-        qs = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
-        masked = {k: ["***"] if k.lower() in _SECRET_PARAMS else v for k, v in qs.items()}
-        safe_query = urllib.parse.urlencode(masked, doseq=True)
-        return urllib.parse.urlunparse(parsed._replace(query=safe_query))
+        # Strip userinfo (user:password@host)
+        netloc = parsed.netloc
+        if "@" in netloc:
+            netloc = netloc.split("@", 1)[1]
+            parsed = parsed._replace(netloc=netloc)
+        # Mask secret query params
+        if parsed.query:
+            qs = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+            masked = {k: ["***"] if k.lower() in _SECRET_PARAMS else v for k, v in qs.items()}
+            parsed = parsed._replace(query=urllib.parse.urlencode(masked, doseq=True))
+        return urllib.parse.urlunparse(parsed)
     except Exception:
         return url
 

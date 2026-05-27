@@ -6,6 +6,8 @@ on:
       - main
       - dev
       - test
+    tags:
+      - 'v*'
 
   schedule:
     - cron: '0 2 * * *'   # nightly um 02:00 UTC
@@ -17,8 +19,33 @@ env:
   IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/ev-tracker
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pillow
+
+      - name: Python syntax check
+        run: python -m compileall -q app tests
+
+      - name: JavaScript syntax check
+        run: for f in app/static/js/*.js; do node --check "$f"; done
+
+      - name: Run tests
+        run: python -m pytest -q
+
   build-and-push:
     runs-on: ubuntu-latest
+    needs: test
 
     steps:
       - name: Checkout
@@ -44,10 +71,19 @@ jobs:
               echo "EOF"
             } >> "$GITHUB_OUTPUT"
 
-          elif [ "${GITHUB_REF_NAME}" = "main" ]; then
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME}"
             {
               echo "tags<<EOF"
               echo "${IMAGE_NAME}:latest"
+              echo "${IMAGE_NAME}:${VERSION}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+
+          elif [ "${GITHUB_REF_NAME}" = "main" ]; then
+            {
+              echo "tags<<EOF"
+              echo "${IMAGE_NAME}:beta"
               echo "${IMAGE_NAME}:main-${SHA_SHORT}"
               echo "EOF"
             } >> "$GITHUB_OUTPUT"
@@ -69,7 +105,7 @@ jobs:
             } >> "$GITHUB_OUTPUT"
 
           else
-            echo "Unsupported branch: ${GITHUB_REF_NAME}"
+            echo "Unsupported ref: ${GITHUB_REF_NAME}"
             exit 1
           fi
 
