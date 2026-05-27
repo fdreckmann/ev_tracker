@@ -80,6 +80,32 @@ async function refreshStatus() {
     $('dOdo').textContent = s.odo_current != null ? Math.round(s.odo_current).toLocaleString('de') : '—';
     $('dPoll').textContent = s.last_poll ? s.last_poll.substring(11, 16) : '—';
 
+    const providerEl = $('dProviderName');
+    if (providerEl) {
+      const name = s.provider_name || s.provider || s.provider_id || '—';
+      providerEl.textContent = name;
+      if (s.provider_connected === false && s.provider_last_error) {
+        providerEl.className = 'sv err';
+        providerEl.title = s.provider_last_error;
+      } else {
+        providerEl.className = 'sv';
+        providerEl.title = 'Provider: ' + (s.provider_id || s.provider || name);
+      }
+    }
+    const providerSubEl = $('dProviderSub');
+    if (providerSubEl) {
+      if (s.provider_connected === false) {
+        providerSubEl.textContent = 'Fehler';
+        providerSubEl.style.color = 'var(--danger)';
+      } else if (s.provider_connected === true) {
+        providerSubEl.textContent = 'Verbunden';
+        providerSubEl.style.color = 'var(--acc)';
+      } else {
+        providerSubEl.textContent = 'Provider';
+        providerSubEl.style.color = '';
+      }
+    }
+
     const locEl = $('dLoc');
     if (locEl) {
       // Prefer direct location endpoint (may have bypassed TTL cache).

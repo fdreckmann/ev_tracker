@@ -126,6 +126,7 @@ def _compute_tracker_status(st: dict) -> str:
 def api_status():
     from core.location import effective_session_location
     from services.location_service import refresh_vehicle_location_state
+    from services.vehicle_service import get_all_vehicles
     vid = request.args.get("vehicle_id", "v0")
     st  = _state.vehicle_states.get(vid, _state.vehicle_states.get("v0", {}))
     result = dict(st)
@@ -150,6 +151,30 @@ def api_status():
         result["effective_location"] = effective_session_location(
             result.get("location"), result.get("location_status")
         )
+    # Provider info for the requested vehicle
+    try:
+        from providers import PROVIDERS
+        cfg = load_config()
+        provider_id = cfg.get("provider", "ha")
+        # For non-v0 vehicles, prefer vehicle-specific config
+        if vid != "v0":
+            for v in get_all_vehicles(cfg):
+                if v.get("id") == vid:
+                    provider_id = v.get("provider", provider_id)
+                    break
+        try:
+            provider_name = PROVIDERS[provider_id].PROVIDER_NAME
+        except (KeyError, AttributeError):
+            provider_name = provider_id
+        result["vehicle_id"]       = vid
+        result["provider"]         = provider_id
+        result["provider_id"]      = provider_id
+        result["provider_name"]    = provider_name
+        result["provider_connected"]   = st.get("provider_connected")
+        result["provider_last_error"]  = st.get("last_error")
+        result["provider_last_success"]= st.get("last_successful_poll")
+    except Exception:
+        pass
     return jsonify(result)
 
 
@@ -177,6 +202,11 @@ def api_mobile_summary():
     all_vehicles_cfg = get_all_vehicles(include_archived=False)
     from core.location import effective_session_location
     from services.location_service import refresh_vehicle_location_state
+    try:
+        from providers import PROVIDERS as _PROVIDERS
+    except Exception:
+        _PROVIDERS = {}
+
     vehicles_out = []
     for v in all_vehicles_cfg:
         vid = v.get("id", "v0")
@@ -193,6 +223,11 @@ def api_mobile_summary():
             loc_source = vs.get("location_source", "none")
             loc_detail = vs.get("location_source_detail", "")
             loc_ts     = vs.get("location_timestamp", "")
+        v_provider_id = v.get("provider", cfg.get("provider", "ha"))
+        try:
+            v_provider_name = _PROVIDERS[v_provider_id].PROVIDER_NAME
+        except (KeyError, AttributeError):
+            v_provider_name = v_provider_id
         vehicles_out.append({
             "id": vid,
             "name": v.get("car_name", v.get("name", vid)),
@@ -209,6 +244,10 @@ def api_mobile_summary():
             "power_kw": vs.get("power_kw"),
             "session_active": vs.get("session_active", False),
             "image_url": f"/api/vehicles/{vid}/image/file",
+            "provider": v_provider_id,
+            "provider_id": v_provider_id,
+            "provider_name": v_provider_name,
+            "provider_connected": vs.get("provider_connected"),
         })
 
     # Recent sessions (last 10)
