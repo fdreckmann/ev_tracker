@@ -132,13 +132,37 @@ def api_v1_session_update(session_id):
     token_row, err_resp, code = _require_api_token("sessions:write")
     if err_resp: return err_resp, code
     data = request.get_json(force=True) or {}
-    allowed = {"kwh_charged","cost_eur","location","end_ts","soc_end","odo_end"}
+    allowed = {"kwh_charged","cost_eur","location","end_ts","soc_end","odo_end","charger_type"}
     updates = {k: v for k, v in data.items() if k in allowed}
     if not updates:
         return jsonify({"error": "Keine gültigen Felder"}), 400
     con = _get_db()
-    if not con.execute("SELECT 1 FROM sessions WHERE id=?", (session_id,)).fetchone():
+    existing = con.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()
+    if not existing:
         close_db_if_owned(con); return jsonify({"error": "Session nicht gefunden"}), 404
+    existing = dict(existing)
+
+    # Reprice when location/charger_type/kwh_charged changes and cost was not manually set
+    _reprice_triggers = {"location", "charger_type", "kwh_charged"}
+    user_sent_cost = "cost_eur" in updates
+    if not user_sent_cost and existing.get("cost_manual", 0) == 0 and _reprice_triggers & set(updates.keys()):
+        try:
+            from services.pricing_service import resolve_session_price, calculate_session_cost
+            cfg = load_config()
+            new_loc = updates.get("location", existing.get("location", "unknown"))
+            new_ctype = updates.get("charger_type", existing.get("charger_type", "unknown"))
+            new_kwh = updates.get("kwh_charged", existing.get("kwh_charged"))
+            _pr = resolve_session_price(new_loc, new_ctype, cfg, con, session_id)
+            if _pr["price_per_kwh"] is not None and new_kwh is not None:
+                updates["price_per_kwh"] = _pr["price_per_kwh"]
+                updates["cost_eur"] = calculate_session_cost(float(new_kwh), _pr["price_per_kwh"])
+                updates["price_source"] = _pr.get("price_source")
+                updates["price_confidence"] = _pr.get("price_confidence", 0)
+                updates["charging_contract_id"] = _pr.get("contract_id")
+                updates["charging_contract_name"] = _pr.get("contract_name")
+        except Exception as _e:
+            import logging; logging.getLogger(__name__).debug("api_v1 PUT reprice failed: %s", _e)
+
     sets = ", ".join(f"{k}=?" for k in updates)
     con.execute(f"UPDATE sessions SET {sets} WHERE id=?",
                 list(updates.values()) + [session_id])

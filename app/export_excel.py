@@ -582,14 +582,17 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
                 col_map[col_idx] = field
 
     # fallback: auto-detect from header keywords if no mapping provided
+    # Require at least 2 matched column fields to avoid treating summary rows as table headers.
     if not col_map:
         for row in ws.iter_rows():
             filled = [c for c in row if c.value is not None and str(c.value).strip()]
             if len(filled) >= 2:
+                row_map = {}
                 for cell in row:
                     f = match_column(cell.value)
-                    if f: col_map[cell.column] = f
-                if col_map:
+                    if f: row_map[cell.column] = f
+                if len(row_map) >= 2:
+                    col_map = row_map
                     break
 
     # determine data start row

@@ -100,7 +100,34 @@ def api_update_location(sid):
         return jsonify({"ok":False,"error":"Ungültiger Standort"}), 400
     con = sqlite3.connect(DB_PATH)
     try:
-        con.execute("UPDATE sessions SET location=? WHERE id=?", (loc, sid))
+        existing = con.execute("SELECT * FROM sessions WHERE id=?", (sid,)).fetchone()
+        if not existing:
+            return jsonify({"ok": False, "error": "Session nicht gefunden"}), 404
+        existing = dict(existing)
+        if existing.get("cost_manual", 0) == 0:
+            try:
+                from services.pricing_service import resolve_session_price, calculate_session_cost
+                from core.config import load_config
+                cfg = load_config()
+                charger_type = existing.get("charger_type", "unknown")
+                kwh = existing.get("kwh_charged")
+                _pr = resolve_session_price(loc, charger_type, cfg, con, sid)
+                if _pr["price_per_kwh"] is not None and kwh is not None:
+                    new_cost = calculate_session_cost(float(kwh), _pr["price_per_kwh"])
+                    con.execute(
+                        """UPDATE sessions SET location=?, price_per_kwh=?, cost_eur=?,
+                           price_source=?, price_confidence=?, charging_contract_id=?, charging_contract_name=?
+                           WHERE id=?""",
+                        (loc, _pr["price_per_kwh"], new_cost,
+                         _pr.get("price_source"), _pr.get("price_confidence", 0),
+                         _pr.get("contract_id"), _pr.get("contract_name"), sid))
+                else:
+                    con.execute("UPDATE sessions SET location=? WHERE id=?", (loc, sid))
+            except Exception as _e:
+                log.debug("Reprice after location update failed: %s", _e)
+                con.execute("UPDATE sessions SET location=? WHERE id=?", (loc, sid))
+        else:
+            con.execute("UPDATE sessions SET location=? WHERE id=?", (loc, sid))
         con.commit()
     finally:
         close_db_if_owned(con)
