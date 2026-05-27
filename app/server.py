@@ -280,10 +280,59 @@ def init_db():
         meter_old     REAL, meter_new REAL,
         vehicle_id    TEXT DEFAULT 'v0'
     )""")
-    # migrate existing DB
-    for col, typedef in [("meter_old","REAL"),("meter_new","REAL"),("vehicle_id","TEXT DEFAULT 'v0'")]:
-        try: con.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
-        except Exception: pass
+    # migrate existing DB — ALL sessions columns (base + extended), idempotent
+    import logging as _init_log
+    _mig_logger = _init_log.getLogger(__name__)
+    _ALL_SESSION_COLS = [
+        # Base columns that may be missing in very old DBs
+        ("end_ts",        "TEXT"),
+        ("odo_start",     "REAL"),
+        ("odo_end",       "REAL"),
+        ("soc_start",     "REAL"),
+        ("soc_end",       "REAL"),
+        ("kwh_charged",   "REAL"),
+        ("cost_eur",      "REAL"),
+        ("cost_manual",   "INTEGER DEFAULT 0"),
+        ("location",      "TEXT DEFAULT 'unknown'"),
+        ("charger_type",  "TEXT DEFAULT 'unknown'"),
+        ("max_power_kw",  "REAL"),
+        ("price_per_kwh", "REAL"),
+        ("entsoe_spot",   "REAL"),
+        ("provider",      "TEXT DEFAULT 'ha'"),
+        ("meter_old",     "REAL"),
+        ("meter_new",     "REAL"),
+        ("vehicle_id",    "TEXT DEFAULT 'v0'"),
+        # Extended columns
+        ("kwh_source",          "TEXT DEFAULT 'soc'"),
+        ("meter_delta_kwh",     "REAL"),
+        ("meter_error",         "TEXT"),
+        ("charger_power_kw",    "REAL"),
+        ("tariff_provider",     "TEXT"),
+        ("tariff_price_source", "TEXT DEFAULT 'config'"),
+        ("meter_skipped_reason","TEXT"),
+        ("meter_used",          "INTEGER DEFAULT 0"),
+        ("meter_home_detection_start_value", "REAL"),
+        ("meter_home_detection_start_ts",    "TEXT"),
+        ("meter_home_detection_delta_kwh",   "REAL"),
+        ("location_source",     "TEXT DEFAULT 'unknown'"),
+        ("location_confidence", "INTEGER DEFAULT 0"),
+        ("manual_note",         "TEXT"),
+        ("manual_reason",       "TEXT"),
+        ("created_mode",        "TEXT DEFAULT 'auto'"),
+        ("missing_charge_candidate_id", "INTEGER"),
+        ("price_source",        "TEXT"),
+        ("price_confidence",    "REAL DEFAULT 0"),
+        ("charging_contract_id",   "TEXT"),
+        ("charging_contract_name", "TEXT"),
+    ]
+    for col, typedef in _ALL_SESSION_COLS:
+        try:
+            con.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
+        except sqlite3.OperationalError as _e:
+            if "duplicate column" not in str(_e).lower():
+                _mig_logger.warning("sessions migration '%s': %s", col, _e)
+        except Exception as _e:
+            _mig_logger.warning("sessions migration '%s': %s", col, _e)
     con.execute("""CREATE TABLE IF NOT EXISTS session_points (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         session_id INTEGER NOT NULL,
@@ -297,41 +346,6 @@ def init_db():
     details TEXT,
     ip      TEXT
 )""")
-    # live migration — add columns to sessions as schema evolves
-    # "duplicate column" errors (OperationalError "table X already has column Y") are silently
-    # ignored; any other OperationalError is logged as a warning.
-    import logging as _init_log
-    _mig_logger = _init_log.getLogger(__name__)
-    for col, typedef in [
-        ("cost_manual",  "INTEGER DEFAULT 0"),
-        ("charger_type", "TEXT DEFAULT 'unknown'"),
-        ("max_power_kw", "REAL"),
-        ("price_per_kwh","REAL"),
-        ("entsoe_spot",  "REAL"),
-        ("provider",     "TEXT DEFAULT 'ha'"),
-        ("kwh_source",         "TEXT DEFAULT 'soc'"),
-        ("meter_delta_kwh",    "REAL"),
-        ("meter_error",        "TEXT"),
-        ("charger_power_kw",   "REAL"),
-        ("tariff_provider",    "TEXT"),
-        ("tariff_price_source","TEXT DEFAULT 'config'"),
-        ("meter_skipped_reason", "TEXT"),
-        ("meter_used",           "INTEGER DEFAULT 0"),
-        ("meter_home_detection_start_value", "REAL"),
-        ("meter_home_detection_start_ts",    "TEXT"),
-        ("meter_home_detection_delta_kwh",   "REAL"),
-        ("location_source",      "TEXT DEFAULT 'unknown'"),
-        ("location_confidence",  "INTEGER DEFAULT 0"),
-        ("manual_note",                  "TEXT"),
-        ("manual_reason",                "TEXT"),
-        ("created_mode",                 "TEXT DEFAULT 'auto'"),
-        ("missing_charge_candidate_id",  "INTEGER"),
-    ]:
-        try:
-            con.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
-        except sqlite3.OperationalError as _e:
-            if "duplicate column" not in str(_e).lower():
-                _mig_logger.warning("sessions migration '%s': %s", col, _e)
     # Backfill NULL vehicle_id → 'v0'
     try:
         con.execute("UPDATE sessions SET vehicle_id='v0' WHERE vehicle_id IS NULL")
@@ -1464,11 +1478,12 @@ def ensure_started_once():
             raise _startup_error
         try:
             init_db()
-            start_tracker()
-            if callable(globals().get("schedule_backup")):
-                schedule_backup()
-            if callable(globals().get("schedule_report")):
-                schedule_report()
+            if not app.config.get("TESTING"):
+                start_tracker()
+                if callable(globals().get("schedule_backup")):
+                    schedule_backup()
+                if callable(globals().get("schedule_report")):
+                    schedule_report()
             _started_once = True
             _startup_error = None
         except Exception as e:

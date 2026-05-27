@@ -45,6 +45,39 @@ def _cleanup_export_tokens():
                 pass
 
 
+def _parse_export_params(args_or_body, is_json=False):
+    """Parse and validate year/month/col_override from request args or JSON body.
+    Returns (y, m, override, error_response) where error_response is None on success."""
+    from datetime import datetime as _dt
+    _now = _dt.now()
+    _raw_y = args_or_body.get("year", _now.year)
+    _raw_m = args_or_body.get("month", _now.month)
+    try:
+        y = int(_raw_y)
+    except (ValueError, TypeError):
+        return None, None, None, (jsonify({"ok": False, "error": "year muss eine Zahl sein"}), 400)
+    try:
+        m = int(_raw_m)
+    except (ValueError, TypeError):
+        return None, None, None, (jsonify({"ok": False, "error": "month muss eine Zahl sein"}), 400)
+    if not (1 <= m <= 12):
+        return None, None, None, (jsonify({"ok": False, "error": "month muss zwischen 1 und 12 liegen"}), 400)
+    if y < 2000 or y > 2100:
+        return None, None, None, (jsonify({"ok": False, "error": "year außerhalb des gültigen Bereichs"}), 400)
+    # Parse col_override
+    if is_json:
+        raw_override = args_or_body.get("col_override")
+    else:
+        _raw_override_str = args_or_body.get("col_override", "null") or "null"
+        try:
+            raw_override = json.loads(_raw_override_str)
+        except (json.JSONDecodeError, ValueError):
+            return None, None, None, (jsonify({"ok": False, "error": "col_override enthält kein gültiges JSON"}), 400)
+    if raw_override is not None and not isinstance(raw_override, dict):
+        return None, None, None, (jsonify({"ok": False, "error": "col_override muss ein Objekt sein"}), 400)
+    return y, m, raw_override, None
+
+
 @export_bp.route("/api/export")
 @require_login
 def api_export():
@@ -56,10 +89,10 @@ def api_export():
     user = _current_user()
     if not has_permission(user, "export:create"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: export:create"}), 403
-    y = request.args.get("year", datetime.now().year, type=int)
-    m = request.args.get("month", datetime.now().month, type=int)
+    y, m, override, _err = _parse_export_params(request.args, is_json=False)
+    if _err:
+        return _err
     loc = request.args.get("location", "all")
-    override = json.loads(request.args.get("col_override", "null") or "null")
     cfg = load_config()
     if override is None:
         saved = cfg.get("template_column_mapping") or cfg.get("template_mapping") or {}
@@ -130,8 +163,9 @@ def api_export_preview():
     if not has_permission(user, "export:preview"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: export:preview"}), 403
     body = request.get_json(silent=True) or {}
-    y    = int(body.get("year",  datetime.now().year))
-    m    = int(body.get("month", datetime.now().month))
+    y, m, _body_override, _perr = _parse_export_params(body, is_json=True)
+    if _perr:
+        return _perr
     loc  = body.get("location", "all")
     cfg  = load_config()
     lang = body.get("lang") or cfg.get("export_language", "de")

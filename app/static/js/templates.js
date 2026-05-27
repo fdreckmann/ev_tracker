@@ -35,9 +35,17 @@ function updateActiveTemplateInfo(info){
   if(!info || !info.source){
     el.textContent = '';
   } else if(info.source === 'builtin'){
-    el.innerHTML = `<span style="color:var(--acc)">✓ ${info.name}</span>`;
+    const sp = document.createElement('span');
+    sp.style.color = 'var(--acc)';
+    sp.textContent = '✓ ' + (info.name || '');
+    el.textContent = '';
+    el.appendChild(sp);
   } else {
-    el.innerHTML = `<span style="color:var(--mute)">Eigene Vorlage</span>`;
+    const sp = document.createElement('span');
+    sp.style.color = 'var(--mute)';
+    sp.textContent = 'Eigene Vorlage';
+    el.textContent = '';
+    el.appendChild(sp);
   }
 }
 
@@ -130,9 +138,21 @@ async function saveCurrentAsTemplate(){
   const name=prompt('Name für diese Vorlage:','Meine Vorlage');
   if(!name) return;
   const saved=await fetch('/api/template/mapping').then(r=>r.json()).catch(()=>({}));
+  const colMap = saved.column_mapping || saved.mapping || {};
+  const payload = {
+    name,
+    mapping:            colMap,
+    column_mapping:     colMap,
+    cell_mapping:       saved.cell_mapping || {},
+    signature_mapping:  saved.signature_mapping || {},
+    start_row:          saved.start_row,
+    header_row:         saved.header_row,
+    sheet:              saved.sheet,
+    include_signature:  saved.include_signature || false,
+  };
   const r=await apiFetch('/api/export/templates',{method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({name,mapping:saved.mapping||{},start_row:saved.start_row})
+    body:JSON.stringify(payload)
   }).then(r=>r.json());
   if(r.ok){ toast('Vorlage gespeichert','ok'); loadExportTemplates(); }
   else toast('Fehler','err');

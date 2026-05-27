@@ -34,11 +34,30 @@ def api_upload_template():
         return jsonify({"ok": False, "error": "Template zu groß (max 10 MB)"}), 400
     f.seek(0)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    f.save(TEMPLATE_PATH)
+    import os, tempfile
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".xlsx", dir=DATA_DIR)
+    try:
+        os.close(tmp_fd)
+        f.save(tmp_path)
+        try:
+            import openpyxl as _opxl
+            _wb = _opxl.load_workbook(tmp_path, read_only=True)
+            _wb.close()
+        except Exception as _xe:
+            os.unlink(tmp_path)
+            return jsonify({"ok": False, "error": f"Ungültige XLSX-Datei: {_xe}"}), 400
+        os.replace(tmp_path, TEMPLATE_PATH)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+        raise
     cfg = load_config()
-    cfg["active_template"] = {"source": "upload", "template_id": None, "name": f.filename}
+    _fname = f.filename
+    cfg["active_template"] = {"source": "upload", "template_id": None, "name": _fname}
     save_config(cfg)
-    return jsonify({"ok": True, "filename": f.filename, "size": TEMPLATE_PATH.stat().st_size})
+    return jsonify({"ok": True, "filename": _fname, "size": TEMPLATE_PATH.stat().st_size})
 
 
 # ── DELETE /api/template ──────────────────────────────────────────────────────

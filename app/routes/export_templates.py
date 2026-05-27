@@ -28,12 +28,21 @@ def create_export_template():
     cfg  = load_config()
     templates = cfg.get("export_templates", [])
     tid = secrets.token_hex(6)
+    # Support both old "mapping" and new "column_mapping" field names
+    _col_map = data.get("column_mapping") or data.get("mapping") or {}
     tpl = {
-        "id":         tid,
-        "name":       str(data.get("name", "Neue Vorlage"))[:128],
-        "mapping":    data.get("mapping", {}),
-        "start_row":  data.get("start_row"),
-        "is_default": bool(data.get("is_default", False)),
+        "id":               tid,
+        "name":             str(data.get("name", "Neue Vorlage"))[:128],
+        "mapping":          _col_map,          # legacy compat
+        "column_mapping":   _col_map,
+        "cell_mapping":     data.get("cell_mapping") or {},
+        "signature_mapping":data.get("signature_mapping") or {},
+        "start_row":        data.get("start_row"),
+        "header_row":       data.get("header_row"),
+        "sheet":            data.get("sheet"),
+        "include_signature":bool(data.get("include_signature", False)),
+        "mapping_version":  2,
+        "is_default":       bool(data.get("is_default", False)),
     }
     if tpl["is_default"]:
         for t in templates: t["is_default"] = False
@@ -56,6 +65,11 @@ def update_export_template(tid):
         return jsonify({"ok": False, "error": "Nicht gefunden"}), 404
     if data.get("is_default"):
         for t in templates: t["is_default"] = False
+    # Keep legacy "mapping" in sync with "column_mapping"
+    if "column_mapping" in data and "mapping" not in data:
+        data = {**data, "mapping": data["column_mapping"]}
+    elif "mapping" in data and "column_mapping" not in data:
+        data = {**data, "column_mapping": data["mapping"]}
     tpl.update({k: v for k, v in data.items() if k != "id"})
     cfg["export_templates"] = templates
     save_config(cfg)

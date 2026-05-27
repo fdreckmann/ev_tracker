@@ -14,6 +14,79 @@ from version import APP_VERSION
 api_v1_bp = Blueprint("api_v1", __name__)
 
 
+def _validate_session_payload(data: dict, partial: bool = False) -> "str | None":
+    """Validate session payload fields. Returns error string or None."""
+    def _float(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    if not partial:
+        if not data.get("start_ts"):
+            return "start_ts ist erforderlich"
+
+    if data.get("start_ts"):
+        try:
+            start_dt = datetime.fromisoformat(str(data["start_ts"]))
+        except (ValueError, TypeError):
+            return "start_ts: ungültiges ISO-Datum"
+    else:
+        start_dt = None
+
+    if data.get("end_ts"):
+        try:
+            end_dt = datetime.fromisoformat(str(data["end_ts"]))
+        except (ValueError, TypeError):
+            return "end_ts: ungültiges ISO-Datum"
+        if start_dt and end_dt <= start_dt:
+            return "end_ts muss nach start_ts liegen"
+
+    if "kwh_charged" in data:
+        v = _float(data["kwh_charged"])
+        if v is None: return "kwh_charged: ungültiger Wert"
+        if v < 0: return "kwh_charged muss >= 0 sein"
+
+    if "cost_eur" in data:
+        v = _float(data["cost_eur"])
+        if v is None: return "cost_eur: ungültiger Wert"
+        if v < 0: return "cost_eur muss >= 0 sein"
+
+    if "price_per_kwh" in data:
+        v = _float(data["price_per_kwh"])
+        if v is None: return "price_per_kwh: ungültiger Wert"
+        if v < 0: return "price_per_kwh muss >= 0 sein"
+
+    for soc_key in ("soc_start", "soc_end"):
+        if soc_key in data:
+            v = _float(data[soc_key])
+            if v is None: return f"{soc_key}: ungültiger Wert"
+            if not (0 <= v <= 100): return f"{soc_key} muss zwischen 0 und 100 liegen"
+
+    if "odo_start" in data and "odo_end" in data:
+        os_ = _float(data["odo_start"])
+        oe_ = _float(data["odo_end"])
+        if os_ is not None and oe_ is not None and oe_ < os_:
+            return "odo_end darf nicht kleiner als odo_start sein"
+
+    if "meter_old" in data and "meter_new" in data:
+        mo_ = _float(data["meter_old"])
+        mn_ = _float(data["meter_new"])
+        if mo_ is not None and mn_ is not None and mn_ < mo_:
+            return "meter_new darf nicht kleiner als meter_old sein"
+
+    if "charger_type" in data:
+        try:
+            from services.pricing_service import normalize_charger_type as _nct
+            ct = _nct(str(data["charger_type"]))
+        except Exception:
+            ct = str(data["charger_type"])
+        if ct not in ("ac", "dc", "unknown"):
+            return f"charger_type ungültig: {data['charger_type']!r}"
+
+    return None
+
+
 @api_v1_bp.route("/api/v1/status")
 def api_v1_status():
 
@@ -29,7 +102,9 @@ def api_v1_vehicles():
     cfg = load_config()
     vehicles = [{"id": "v0", "name": cfg.get("car_name","EV"), "provider": cfg.get("provider","ha")}]
     for v in cfg.get("extra_vehicles", []):
-        vehicles.append({"id": v.get("id"), "name": v.get("car_name"), "provider": v.get("provider")})
+        vehicles.append({"id": v.get("id"),
+                         "name": v.get("name") or v.get("car_name") or v.get("id"),
+                         "provider": v.get("provider")})
     return jsonify(vehicles)
 
 
@@ -71,6 +146,9 @@ def api_v1_session_create():
     token_row, err_resp, code = _require_api_token("sessions:write")
     if err_resp: return err_resp, code
     data = request.get_json(force=True) or {}
+    _verr = _validate_session_payload(data, partial=False)
+    if _verr:
+        return jsonify({"ok": False, "error": _verr}), 400
     kwh       = data.get("kwh_charged")
     price_kwh = data.get("price_per_kwh")
     cost_eur  = data.get("cost_eur")
@@ -140,6 +218,9 @@ def api_v1_session_update(session_id):
     token_row, err_resp, code = _require_api_token("sessions:write")
     if err_resp: return err_resp, code
     data = request.get_json(force=True) or {}
+    _verr = _validate_session_payload(data, partial=True)
+    if _verr:
+        return jsonify({"ok": False, "error": _verr}), 400
     allowed = {"kwh_charged","cost_eur","price_per_kwh","location","end_ts","soc_end","odo_end","charger_type"}
     updates = {k: v for k, v in data.items() if k in allowed}
     if not updates:

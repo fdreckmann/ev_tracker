@@ -2280,7 +2280,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           Speichere mehrere Spalten-Zuordnungen als benannte Vorlagen und wähle beim Export die passende aus.
         </p>
         <div id="exportTemplateList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"></div>
-        <button class="btn-p" style="font-size:.78rem;padding:8px 18px" onclick="saveCurrentAsTemplate()">💾 Aktuelle Zuordnung als Vorlage speichern</button>
+        <button class="btn-p" style="font-size:.78rem;padding:8px 18px" onclick="saveCurrentAsTemplate()" data-requires-permission="export:templates_manage">💾 Aktuelle Zuordnung als Vorlage speichern</button>
         <span style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-left:10px">Zuerst Template hochladen &amp; Spalten zuweisen im Export-Bereich</span>
       </div>
 
@@ -2518,16 +2518,18 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         Kein Template — eingebautes Format wird verwendet
       </span>
       <button class="btn-d" id="tplDelBtn" onclick="deleteTpl()"
-        style="margin-left:auto;font-size:.72rem;padding:5px 12px;display:none">✕ Entfernen</button>
+        style="margin-left:auto;font-size:.72rem;padding:5px 12px;display:none"
+        data-requires-permission="templates:delete">✕ Entfernen</button>
     </div>
     <div class="tpl-meta" id="tplMeta"></div>
 
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
-      <button class="btn-s" style="font-size:.78rem;padding:8px 18px" onclick="openGalleryModal()">📚 Vorlagen-Galerie</button>
+      <button class="btn-s" style="font-size:.78rem;padding:8px 18px" onclick="openGalleryModal()" data-requires-permission="templates:gallery_use">📚 Vorlagen-Galerie</button>
       <div id="activeTemplateInfo" style="font-size:.72rem;font-family:var(--mono);color:var(--mute)"></div>
     </div>
 
     <div class="drop-zone" id="dropZone"
+         data-requires-permission="templates:upload"
          onclick="document.getElementById('tplFile').click()"
          ondragover="ev.preventDefault();this.classList.add('drag')"
          ondragleave="this.classList.remove('drag')"
@@ -2551,8 +2553,8 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         </table>
       </div>
       <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
-        <button class="btn-p" onclick="openMappingModal()">✏️ Spalten zuweisen</button>
-        <button class="btn-s" onclick="saveMapping()">💾 Speichern</button>
+        <button class="btn-p" onclick="openMappingModal()" data-requires-permission="templates:edit_mapping">✏️ Spalten zuweisen</button>
+        <button class="btn-s" onclick="saveMapping()" data-requires-permission="templates:edit_mapping">💾 Speichern</button>
         <div id="mappingSaveInfo" style="font-size:.75rem;font-family:var(--mono);color:var(--mute)"></div>
       </div>
     </div>

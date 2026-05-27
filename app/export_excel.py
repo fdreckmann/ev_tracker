@@ -730,10 +730,68 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
             enriched.append(s)
         sessions = enriched
 
-    # clear old data rows
-    for r in range(ds, max_row + 1):
-        for cell in ws[r]:
-            safe_set(cell, None)
+    # Detect footer_start_row: first row at or after ds that contains a formula cell.
+    # This protects SUM formulas, signature lines, and other footer content.
+    footer_start_row = (max_row or ds) + 1
+    for _fr in range(ds, (max_row or 0) + 1):
+        for _fc in range(1, (ws.max_column or 20) + 1):
+            try:
+                _fv = ws.cell(row=_fr, column=_fc).value
+                if isinstance(_fv, str) and _fv.startswith("="):
+                    footer_start_row = _fr
+                    break
+            except Exception:
+                pass
+        if footer_start_row <= (max_row or 0):
+            break
+
+    template_data_rows = max(footer_start_row - ds, 0)
+
+    # If more sessions than template rows, insert rows before the footer to make room
+    n_extra = len(sessions) - template_data_rows
+    if n_extra > 0 and footer_start_row <= (ws.max_row or 0):
+        style_row = footer_start_row - 1
+        _rstyles = {}
+        for ci in col_map:
+            try:
+                _c = ws.cell(row=style_row, column=ci)
+                _rstyles[ci] = {
+                    "font":          _c.font.copy()      if _c.font      else None,
+                    "fill":          _c.fill.copy()      if _c.fill      else None,
+                    "border":        _c.border.copy()    if _c.border    else None,
+                    "alignment":     _c.alignment.copy() if _c.alignment else None,
+                    "number_format": _c.number_format,
+                }
+            except Exception:
+                pass
+        ws.insert_rows(footer_start_row, n_extra)
+        for _ei in range(n_extra):
+            _r = footer_start_row + _ei
+            for ci, _st in _rstyles.items():
+                try:
+                    _cell = ws.cell(row=_r, column=ci)
+                    if _st["font"]:      _cell.font      = _st["font"]
+                    if _st["fill"]:      _cell.fill      = _st["fill"]
+                    if _st["border"]:    _cell.border    = _st["border"]
+                    if _st["alignment"]: _cell.alignment = _st["alignment"]
+                    if _st["number_format"]: _cell.number_format = _st["number_format"]
+                except Exception:
+                    pass
+        max_row = ws.max_row or 0
+
+    # Clear old data: ONLY mapped columns, ONLY rows before footer, skip formula cells
+    clear_end = min(ds + max(len(sessions), template_data_rows) - 1, footer_start_row - 1)
+    for r in range(ds, clear_end + 1):
+        for ci in col_map:
+            try:
+                cell = ws.cell(row=r, column=ci)
+                if isinstance(cell, MergedCell):
+                    continue
+                if isinstance(cell.value, str) and cell.value.startswith("="):
+                    continue
+                safe_set(cell, None)
+            except Exception:
+                pass
 
     # write data rows
     for i, s in enumerate(sessions):

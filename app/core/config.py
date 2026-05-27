@@ -370,7 +370,19 @@ def load_config() -> dict:
 
 
 def save_config(cfg: dict) -> None:
+    import os
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(cfg, f, indent=2)
+    tmp = CONFIG_FILE.with_suffix(".json.tmp")
+    try:
+        with open(tmp, "w") as f:
+            json.dump(cfg, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, CONFIG_FILE)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise
     _config_cache["data"] = None
