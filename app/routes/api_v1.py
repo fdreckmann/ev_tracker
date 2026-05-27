@@ -102,6 +102,15 @@ def api_v1_session_create():
         except Exception as _e:
             import logging; logging.getLogger(__name__).debug("api_v1 auto-pricing failed: %s", _e)
 
+    # Normalize location/charger_type before storing
+    try:
+        from services.pricing_service import normalize_location as _nl, normalize_charger_type as _nct
+        _loc_store = _nl(data.get("location", "unknown"))
+        _ctype_store = _nct(data.get("charger_type", "unknown"))
+    except Exception:
+        _loc_store = data.get("location", "unknown")
+        _ctype_store = data.get("charger_type", "unknown")
+
     con = _get_db()
     cur = con.execute("""INSERT INTO sessions
         (start_ts, end_ts, kwh_charged, cost_eur, cost_manual, price_per_kwh,
@@ -113,8 +122,7 @@ def api_v1_session_create():
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (data.get("start_ts"), data.get("end_ts"),
          kwh, cost_eur, cost_manual, price_kwh,
-         data.get("location","unknown"),
-         data.get("charger_type","unknown"),
+         _loc_store, _ctype_store,
          data.get("charger_power_kw"), data.get("max_power_kw"),
          data.get("soc_start"), data.get("soc_end"),
          data.get("odo_start"), data.get("odo_end"),
@@ -132,19 +140,44 @@ def api_v1_session_update(session_id):
     token_row, err_resp, code = _require_api_token("sessions:write")
     if err_resp: return err_resp, code
     data = request.get_json(force=True) or {}
-    allowed = {"kwh_charged","cost_eur","location","end_ts","soc_end","odo_end","charger_type"}
+    allowed = {"kwh_charged","cost_eur","price_per_kwh","location","end_ts","soc_end","odo_end","charger_type"}
     updates = {k: v for k, v in data.items() if k in allowed}
     if not updates:
         return jsonify({"error": "Keine gültigen Felder"}), 400
+
+    # Normalize location and charger_type before storing
+    try:
+        from services.pricing_service import normalize_location as _nl, normalize_charger_type as _nct
+        if "location" in updates:
+            updates["location"] = _nl(updates["location"])
+        if "charger_type" in updates:
+            updates["charger_type"] = _nct(updates["charger_type"])
+    except Exception:
+        pass
+
+    # Explicit price/cost from caller → mark as manual
+    user_sent_cost = bool({"cost_eur", "price_per_kwh"} & set(data.keys()))
+    if user_sent_cost:
+        updates["cost_manual"] = 1
+
     con = _get_db()
     existing = con.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()
     if not existing:
         close_db_if_owned(con); return jsonify({"error": "Session nicht gefunden"}), 404
     existing = dict(existing)
 
+    # If only price_per_kwh was given (no cost_eur), calculate cost_eur from stored kwh
+    if user_sent_cost and "price_per_kwh" in updates and "cost_eur" not in updates:
+        try:
+            kwh_val = updates.get("kwh_charged") or existing.get("kwh_charged")
+            if kwh_val is not None:
+                from services.pricing_service import calculate_session_cost
+                updates["cost_eur"] = calculate_session_cost(float(kwh_val), float(updates["price_per_kwh"]))
+        except Exception:
+            pass
+
     # Reprice when location/charger_type/kwh_charged changes and cost was not manually set
     _reprice_triggers = {"location", "charger_type", "kwh_charged"}
-    user_sent_cost = "cost_eur" in updates
     if not user_sent_cost and existing.get("cost_manual", 0) == 0 and _reprice_triggers & set(updates.keys()):
         try:
             from services.pricing_service import resolve_session_price, calculate_session_cost

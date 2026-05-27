@@ -262,10 +262,60 @@ HEADER_KEYWORDS = {
 }
 
 def match_column(txt):
-    if not txt: return None
-    h = str(txt).lower().strip()
+    """Match a column header text to a TABLE_FIELDS key.
+
+    Uses TABLE_FIELDS synonyms (from template_fields.py) with best-confidence
+    selection: exact match > substring > partial words. Longer synonyms win on
+    ties so "preis/kwh" beats the shorter "kwh" substring of kwh_charged.
+    Falls back to the legacy COLUMN_KEYWORDS dict only for exact keyword matches.
+    """
+    if not txt:
+        return None
+    norm = str(txt).lower().strip().rstrip(":").strip()
+    if not norm:
+        return None
+
+    best_field = None
+    best_conf = 0.0
+    best_syn_len = 0
+
+    for field, info in TABLE_FIELDS.items():
+        for syn in info.get("synonyms", []):
+            syn_l = syn.lower()
+            if norm == syn_l:
+                conf = 1.0
+            elif syn_l in norm or norm in syn_l:
+                conf = 0.8
+            else:
+                words = syn_l.split()
+                if len(words) > 1 and all(w in norm for w in words):
+                    conf = 0.7
+                else:
+                    continue
+            # Higher confidence wins; tie broken by synonym length (longer = more specific)
+            if conf > best_conf or (conf == best_conf and len(syn) > best_syn_len):
+                best_field = field
+                best_conf = conf
+                best_syn_len = len(syn)
+
+    # Tiebreaker for charge_power_kw vs charger_power_kw (installed rating wins when
+    # header contains priority words like "kw/stunde", "wallbox", "11kw", …)
+    if best_field == "charge_power_kw" and best_conf < 1.0:
+        try:
+            from template_fields import CHARGER_POWER_PRIORITY_KEYWORDS
+            if any(kw in norm for kw in CHARGER_POWER_PRIORITY_KEYWORDS):
+                best_field = "charger_power_kw"
+        except ImportError:
+            pass
+
+    if best_field and best_conf >= 0.7:
+        return best_field
+
+    # Legacy fallback: exact keyword match only (avoids false substring positives)
     for kw, field in COLUMN_KEYWORDS.items():
-        if kw in h: return field
+        if norm == kw:
+            return field
+
     return None
 
 def fetch_sessions(year, month, location="all"):
@@ -572,39 +622,78 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
     else:
         ws = wb.active
 
-    # build column map from explicit mapping
+    # ── Build column map from explicit mapping ────────────────────────────────
+    # Supports both formats: {"1": "date"} and {"1": {"field": "date", ...}}
     col_map = {}
     if col_override and isinstance(col_override, dict):
-        for col_str, field in col_override.items():
-            try: col_idx = int(col_str)
-            except (ValueError, TypeError): continue
+        for col_str, field_info in col_override.items():
+            try:
+                col_idx = int(col_str)
+            except (ValueError, TypeError):
+                continue
+            field = field_info.get("field") if isinstance(field_info, dict) else field_info
             if field:
                 col_map[col_idx] = field
 
-    # fallback: auto-detect from header keywords if no mapping provided
-    # Require at least 2 matched column fields to avoid treating summary rows as table headers.
+    # ── Fallback: auto-detect header row if no explicit column mapping ────────
+    # When header_row is saved (from a previous template analysis), scan exactly
+    # that row. Otherwise call analyze_template() for robust detection, which
+    # requires >=2 actual session-column matches and won't mistake summary rows
+    # (e.g. "Ladezeit gesamt | Gesamtkosten") for the data table header.
     if not col_map:
-        for row in ws.iter_rows():
-            filled = [c for c in row if c.value is not None and str(c.value).strip()]
-            if len(filled) >= 2:
-                row_map = {}
-                for cell in row:
+        if header_row:
+            hr = int(header_row)
+            for cnum in range(1, (ws.max_column or 40) + 1):
+                try:
+                    cell = ws.cell(row=hr, column=cnum)
+                    if isinstance(cell, MergedCell) or cell.value is None:
+                        continue
                     f = match_column(cell.value)
-                    if f: row_map[cell.column] = f
-                if len(row_map) >= 2:
-                    col_map = row_map
-                    break
+                    if f:
+                        col_map[cnum] = f
+                except Exception:
+                    pass
+        else:
+            # No header_row saved — use template_analyzer for robust detection
+            try:
+                from template_analyzer import analyze_template as _at
+                _analysis = _at(TEMPLATE_PATH)
+                if _analysis.get("ok") and _analysis.get("column_mapping"):
+                    for col_str, info in _analysis["column_mapping"].items():
+                        try:
+                            col_idx = int(col_str)
+                        except (ValueError, TypeError):
+                            continue
+                        field = info.get("field") if isinstance(info, dict) else info
+                        if field:
+                            col_map[col_idx] = field
+                    if not start_row and _analysis.get("start_row"):
+                        start_row = _analysis["start_row"]
+                elif _analysis.get("ok") and _analysis.get("header_row"):
+                    # analyzer detected header but no column mapping yet — scan that row
+                    hr = _analysis["header_row"]
+                    for cnum in range(1, (ws.max_column or 40) + 1):
+                        try:
+                            cell = ws.cell(row=hr, column=cnum)
+                            if isinstance(cell, MergedCell) or cell.value is None:
+                                continue
+                            f = match_column(cell.value)
+                            if f:
+                                col_map[cnum] = f
+                        except Exception:
+                            pass
+                    if not start_row:
+                        start_row = hr + 1
+            except Exception:
+                pass
 
-    # determine data start row
+    # ── Determine data start row ──────────────────────────────────────────────
     if start_row:
         ds = int(start_row)
+    elif header_row:
+        ds = int(header_row) + 1
     else:
-        detected = None
-        for row in ws.iter_rows():
-            filled = [c for c in row if c.value is not None and str(c.value).strip()]
-            if len(filled) >= 2:
-                detected = row[0].row; break
-        ds = (detected + 1) if detected else (ws.max_row or 1)
+        ds = (ws.max_row or 1)
 
     if not col_map:
         col_map = {1:"row_num",2:"date",3:"start_time",4:"end_time",
