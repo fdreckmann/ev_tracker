@@ -5,8 +5,12 @@ and returns the best matching image key.
 """
 from __future__ import annotations
 import json
+import logging
 import re
+import time
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 _MANIFEST_PATH = Path(__file__).parent.parent / "static" / "vehicle_images" / "manifest.json"
 
@@ -119,20 +123,23 @@ def _safe_vid(vid: str) -> str | None:
 def resolve_vehicle_image_url(vehicle: dict) -> str:
     """
     Return the URL that best represents this vehicle's image.
-    Priority: uploaded image > default_image_key silhouette > auto-suggest silhouette > placeholder
+    Priority: manual car.webp > auto auto.webp > default_image_key silhouette > auto-suggest > placeholder
     """
-    from pathlib import Path as _Path
     from core.db import DATA_DIR
 
     raw_vid = vehicle.get("id", "v0")
     vid = _safe_vid(str(raw_vid)) if raw_vid else None
 
-    # 1. Uploaded image (only if vid is safe)
-    img_path = DATA_DIR / "vehicles" / vid / "car.webp" if vid else None
-    if img_path and img_path.exists():
-        return f"/api/vehicles/{vid}/image/file"
+    if vid:
+        base = DATA_DIR / "vehicles" / vid
+        # 1. Manually uploaded image
+        if (base / "car.webp").exists():
+            return f"/api/vehicles/{vid}/image/file"
+        # 2. Provider-cached image
+        if (base / "auto.webp").exists():
+            return f"/api/vehicles/{vid}/image/file"
 
-    # 2. Saved default image key (v0 uses a prefixed config key name)
+    # 3. Saved default image key (v0 uses a prefixed config key name)
     key = vehicle.get("default_image_key", "") or vehicle.get("vehicle_default_image_key", "")
 
     # 3. Auto-suggest
@@ -152,3 +159,83 @@ def resolve_vehicle_image_url(vehicle: dict) -> str:
 def get_manifest() -> dict:
     """Return the full manifest (cached)."""
     return _load_manifest()
+
+
+_AUTO_IMG_FRESHNESS_SECS = 12 * 3600  # 12 hours
+
+
+def cache_provider_image(vid: str, image_url: str, source: str, config: dict) -> bool:
+    """
+    Download provider-supplied image URL server-side and save as auto.webp.
+    Returns True on success, False otherwise.
+    Security: http/https only, no file:// or other schemes; 3 MB cap; MIME check; PIL validation.
+    """
+    from core.db import DATA_DIR
+
+    safe_vid = _safe_vid(vid)
+    if not safe_vid:
+        log.warning("cache_provider_image: unsafe vid %r", vid)
+        return False
+
+    # Reject non-http(s) URLs
+    if not image_url or not isinstance(image_url, str):
+        return False
+    scheme = image_url.split("://")[0].lower() if "://" in image_url else ""
+    if scheme not in ("http", "https"):
+        log.warning("cache_provider_image: rejected non-http scheme %r for vid %s", scheme, vid)
+        return False
+
+    base = DATA_DIR / "vehicles" / safe_vid
+    auto_path = (base / "auto.webp").resolve()
+    # Path traversal guard
+    if not str(auto_path).startswith(str((DATA_DIR / "vehicles").resolve()) + "/"):
+        log.warning("cache_provider_image: path traversal detected for vid %r", vid)
+        return False
+
+    # Freshness check — skip if recently cached
+    if auto_path.exists():
+        age = time.time() - auto_path.stat().st_mtime
+        if age < _AUTO_IMG_FRESHNESS_SECS:
+            return True
+
+    try:
+        import requests
+        headers = {}
+        if source == "ha" and config.get("ha_token"):
+            headers["Authorization"] = f"Bearer {config['ha_token']}"
+
+        resp = requests.get(image_url, headers=headers, timeout=15, stream=True)
+        resp.raise_for_status()
+
+        # MIME type check
+        content_type = resp.headers.get("content-type", "").split(";")[0].strip().lower()
+        if content_type not in ("image/jpeg", "image/png", "image/webp"):
+            log.warning("cache_provider_image: rejected MIME %r for vid %s", content_type, vid)
+            return False
+
+        # Stream with 3 MB cap
+        max_bytes = 3 * 1024 * 1024
+        chunks: list[bytes] = []
+        total = 0
+        for chunk in resp.iter_content(chunk_size=65536):
+            total += len(chunk)
+            if total > max_bytes:
+                log.warning("cache_provider_image: image too large for vid %s", vid)
+                return False
+            chunks.append(chunk)
+        raw = b"".join(chunks)
+
+        # PIL validation + save as WEBP
+        from PIL import Image as _PilImage
+        import io as _io
+        img = _PilImage.open(_io.BytesIO(raw))
+        img.verify()
+        img = _PilImage.open(_io.BytesIO(raw))
+
+        base.mkdir(parents=True, exist_ok=True)
+        img.save(str(auto_path), "WEBP", quality=85)
+        log.info("cache_provider_image: saved auto.webp for vid %s (source=%s)", vid, source)
+        return True
+    except Exception as e:
+        log.warning("cache_provider_image: failed for vid %s: %s", vid, e)
+        return False

@@ -995,6 +995,19 @@ def tracker_loop(vehicle_id: str = "v0"):
                 name=vcfg.get("car_name", vehicle_id),
             )
 
+            # Auto-cache provider-supplied vehicle image (daemon thread — non-blocking)
+            if getattr(state, "image_url", None):
+                _img_url    = state.image_url
+                _img_source = state.image_source or provider_id
+                _img_cfg    = dict(vcfg)
+                def _do_cache_image(vid=vehicle_id, url=_img_url, src=_img_source, cfg=_img_cfg):
+                    try:
+                        from services.vehicle_image_service import cache_provider_image
+                        cache_provider_image(vid, url, src, cfg)
+                    except Exception as _cie:
+                        log.debug("Auto-image cache failed for %s: %s", vid, _cie)
+                threading.Thread(target=_do_cache_image, daemon=True).start()
+
             # Update location status
             try:
                 if getattr(state, 'lat', None) is not None:
