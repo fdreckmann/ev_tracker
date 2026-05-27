@@ -216,14 +216,23 @@ def api_export_preview():
         sig_mapping = dict(sig_mapping)
         sig_mapping["anchor_cell"] = sig_mapping["cell"]
 
-    # Hash mismatch check for preview
-    _prev_tmpl_hash = (cfg.get("active_template") or {}).get("hash")
-    _prev_map_hash  = cfg.get("template_mapping_hash")
+    # Hash mismatch check: block preview when a column_mapping exists for a
+    # different template hash so the user doesn't download a wrong export.
+    _prev_tmpl_hash   = (cfg.get("active_template") or {}).get("hash")
+    _prev_map_hash    = cfg.get("template_mapping_hash")
     _prev_has_mapping = bool(cfg.get("template_column_mapping") or cfg.get("template_mapping"))
-    _prev_hash_mismatch = bool(_prev_tmpl_hash and (_prev_map_hash is None or _prev_map_hash != _prev_tmpl_hash) and _prev_has_mapping)
-    _preview_warnings = []
+    _prev_hash_mismatch = bool(
+        _prev_tmpl_hash and
+        (_prev_map_hash is None or _prev_map_hash != _prev_tmpl_hash) and
+        _prev_has_mapping
+    )
     if _prev_hash_mismatch:
-        _preview_warnings.append("Neues Template erkannt — Mapping wurde noch nicht für dieses Template gespeichert. Bitte Mapping prüfen.")
+        return jsonify({
+            "ok": False,
+            "error": "Neues Template erkannt — bitte Mapping prüfen und erneut speichern bevor die Vorschau gestartet wird.",
+            "hash_mismatch": True,
+        }), 409
+    _preview_warnings = []
 
     SIGNATURE_PATH = _SIGNATURE_PATH
 

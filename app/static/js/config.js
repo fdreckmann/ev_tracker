@@ -22,6 +22,7 @@ async function loadProviderFields(pid) {
   const cfg = await fetch('/api/config').then(r => r.json()).catch(() => ({}));
   const container = $('providerFields');
   if (!container) return;
+  const _eh = typeof escapeHtml === 'function' ? escapeHtml : s => String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
   container.innerHTML = fields.map(f => {
     const val = cfg[f.id] || '';
     const w = fields.length <= 2 ? 'full' : '';
@@ -29,17 +30,17 @@ async function loadProviderFields(pid) {
     let inp;
     if (f.type === 'checkbox') {
       const checked = cfg[f.id] ? 'checked' : '';
-      inp = `<input type="checkbox" id="pf_${f.id}" ${checked} style="width:auto;margin-right:6px">`;
+      inp = `<input type="checkbox" id="pf_${_eh(f.id)}" ${checked} style="width:auto;margin-right:6px">`;
     } else if (f.type === 'select') {
-      inp = `<select id="pf_${f.id}" style="background:var(--bg);border:1px solid var(--brd);border-radius:8px;color:var(--txt);font-family:var(--mono);font-size:.84rem;padding:9px 13px;width:100%">${(f.options || []).map(o => `<option value="${o}" ${val === o ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
+      inp = `<select id="pf_${_eh(f.id)}" style="background:var(--bg);border:1px solid var(--brd);border-radius:8px;color:var(--txt);font-family:var(--mono);font-size:.84rem;padding:9px 13px;width:100%">${(f.options || []).map(o => `<option value="${_eh(o)}" ${val === o ? 'selected' : ''}>${_eh(o)}</option>`).join('')}</select>`;
     } else {
-      inp = `<input type="${f.type || 'text'}" id="pf_${f.id}" value="${f.type === 'password' ? '' : val}" placeholder="${f.placeholder || ''}">`;
+      inp = `<input type="${_eh(f.type || 'text')}" id="pf_${_eh(f.id)}" value="${f.type === 'password' ? '' : _eh(String(val))}" placeholder="${_eh(f.placeholder || '')}">`;
     }
     const hintHtml = hasSaved
       ? `<span class="hint" style="color:var(--acc)">Token gespeichert – leer lassen zum Beibehalten</span>`
-      : (f.hint ? `<span class="hint">${f.hint}</span>` : '');
+      : (f.hint ? `<span class="hint">${_eh(f.hint)}</span>` : '');
     return `<div class="fg ${w}">
-      <label>${f.label}${!f.required ? ' <span style="color:var(--mute);font-size:.65rem">(optional)</span>' : ''}</label>
+      <label>${_eh(f.label)}${!f.required ? ' <span style="color:var(--mute);font-size:.65rem">(optional)</span>' : ''}</label>
       ${inp}${hintHtml}
     </div>`;
   }).join('');
