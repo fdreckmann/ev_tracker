@@ -148,6 +148,7 @@ async function saveCurrentAsTemplate(){
     signature_mapping:  saved.signature_mapping || {},
     start_row:          saved.start_row,
     header_row:         saved.header_row,
+    footer_start_row:   saved.footer_start_row || null,
     sheet:              saved.sheet,
     include_signature:  saved.include_signature || false,
   };

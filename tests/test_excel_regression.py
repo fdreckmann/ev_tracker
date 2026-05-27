@@ -177,6 +177,106 @@ class TestExcelFooterDetection:
             _xl.TEMPLATE_PATH = old_tpl
             _xl.EXPORT_DIR = old_exp
 
+    @pytest.mark.skipif(not _has_openpyxl(), reason="openpyxl not available")
+    def test_plain_text_footer_heuristic(self, tmp_path):
+        """Footer with plain text and no formulas detected by heuristic (no explicit footer_start_row)."""
+        import openpyxl
+        from export_excel import export_with_template
+
+        # Template: 3 empty data rows, then a "Gesamt:" text footer (no formula)
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws["A2"] = "kWh"; ws["B2"] = "Kosten"
+        # 3 empty data-row slots
+        # (all cells None — leave them empty, openpyxl won't write None)
+        # Plain-text footer row (no formula)
+        ws["A6"] = "Gesamt:"; ws["B6"] = "— kWh"
+        tpl_path = tmp_path / "template.xlsx"
+        wb.save(str(tpl_path))
+
+        import export_excel as _xl
+        old_tpl = _xl.TEMPLATE_PATH
+        old_exp = _xl.EXPORT_DIR
+        try:
+            _xl.TEMPLATE_PATH = tpl_path
+            _xl.EXPORT_DIR = tmp_path / "exports"
+            (tmp_path / "exports").mkdir(exist_ok=True)
+
+            sessions = [dict(SAMPLE_SESSION, id=i+1) for i in range(2)]
+            col_map = {"1": "kwh_charged", "2": "cost_eur"}
+            result_path = export_with_template(
+                2026, 1, sessions,
+                location="all",
+                col_override=col_map,
+                start_row=3,
+                header_row=2,
+                # footer_start_row NOT set — heuristic must detect row 6
+            )
+            out_wb = openpyxl.load_workbook(result_path, data_only=True)
+            out_ws = out_wb.active
+            assert out_ws["A6"].value == "Gesamt:", \
+                f"Plain-text footer at row 6 was overwritten: {out_ws['A6'].value!r}"
+            assert out_ws["B6"].value == "— kWh", \
+                f"Plain-text footer cell B6 was overwritten: {out_ws['B6'].value!r}"
+        finally:
+            _xl.TEMPLATE_PATH = old_tpl
+            _xl.EXPORT_DIR = old_exp
+
+    @pytest.mark.skipif(not _has_openpyxl(), reason="openpyxl not available")
+    def test_unmapped_column_formula_copied_to_new_rows(self, tmp_path):
+        """Per-row formulas in unmapped columns must be copied to inserted rows.
+
+        Example: col A=kWh (mapped), col B=auto-cost (unmapped, =A3*0.30).
+        When 4 sessions are exported into a 2-row template, rows B5 and B6
+        must contain =A5*0.30 and =A6*0.30 respectively.
+        """
+        import openpyxl
+        from export_excel import export_with_template
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws["A2"] = "kWh"
+        # Two template data rows; col B has a per-row formula (not in col_map)
+        ws["A3"] = None; ws["B3"] = "=A3*0.30"
+        ws["A4"] = None; ws["B4"] = "=A4*0.30"
+        # SUM footer row
+        ws["A5"] = "Summe:"; ws["B5"] = "=SUM(B3:B4)"
+        tpl_path = tmp_path / "template.xlsx"
+        wb.save(str(tpl_path))
+
+        import export_excel as _xl
+        old_tpl = _xl.TEMPLATE_PATH
+        old_exp = _xl.EXPORT_DIR
+        try:
+            _xl.TEMPLATE_PATH = tpl_path
+            _xl.EXPORT_DIR = tmp_path / "exports"
+            (tmp_path / "exports").mkdir(exist_ok=True)
+
+            sessions = [dict(SAMPLE_SESSION, id=i+1) for i in range(4)]
+            col_map = {"1": "kwh_charged"}  # col A only mapped
+            result_path = export_with_template(
+                2026, 1, sessions,
+                location="all",
+                col_override=col_map,
+                start_row=3,
+                header_row=2,
+            )
+            out_wb = openpyxl.load_workbook(result_path, data_only=False)
+            out_ws = out_wb.active
+            # Data rows 3-6 (4 sessions); footer at row 7
+            # B5 and B6 (inserted rows) must have adjusted formulas
+            b5 = out_ws["B5"].value
+            b6 = out_ws["B6"].value
+            assert isinstance(b5, str) and b5.startswith("="), \
+                f"B5 should be a formula for inserted row 1: {b5!r}"
+            assert "A5" in b5, f"B5 formula should reference A5: {b5!r}"
+            assert isinstance(b6, str) and b6.startswith("="), \
+                f"B6 should be a formula for inserted row 2: {b6!r}"
+            assert "A6" in b6, f"B6 formula should reference A6: {b6!r}"
+        finally:
+            _xl.TEMPLATE_PATH = old_tpl
+            _xl.EXPORT_DIR = old_exp
+
 
 class TestTemplateHashInvalidation:
     """Tests for template hash invalidation on upload."""

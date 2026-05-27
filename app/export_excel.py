@@ -8,6 +8,76 @@ def _is_range_formula(formula):
     if not isinstance(formula, str) or not formula.startswith("="):
         return False
     return bool(_RE_RANGE_FORMULA.search(formula))
+
+
+def _detect_footer_start_row(ws, ds, max_row, col_map):
+    """Detect footer_start_row heuristically when not explicitly configured.
+
+    Phase 1 – range formulas: any row with a cell-range formula (SUM/SUMIF/…)
+    is the start of the footer section.
+
+    Phase 2 – plain-text footer: scan bottom-up from max_row.  A row qualifies
+    as a footer row when ALL mapped columns are either empty or contain only a
+    per-row formula AND at least one unmapped column carries a non-empty,
+    non-formula text value.  We stop collecting as soon as we hit a row that
+    is completely empty (a blank separator between data area and footer) or
+    that has actual data in a mapped column.
+    """
+    if max_row < ds:
+        return max_row + 1
+
+    all_cols = range(1, (ws.max_column or 20) + 1)
+
+    # Phase 1: range formulas are definitive footer indicators
+    for r in range(ds, max_row + 1):
+        for c in all_cols:
+            try:
+                if _is_range_formula(ws.cell(row=r, column=c).value):
+                    return r
+            except Exception:
+                pass
+
+    # Phase 2: bottom-up plain-text footer detection.
+    # Real data rows contain NUMERIC values in mapped columns (kwh, cost, etc.).
+    # Footer rows contain text labels (e.g. "Gesamt:", "Total") in any column.
+    # We stop as soon as we hit a row with a numeric value in a mapped column,
+    # or a completely blank row (blank separator between data and footer).
+    footer_rows = []
+    for r in range(max_row, ds - 1, -1):
+        row_empty = True
+        mapped_has_numeric = False   # numeric → real data row → stop
+        has_any_text = False         # text label → footer candidate
+        for c in all_cols:
+            try:
+                v = ws.cell(row=r, column=c).value
+                if v is None:
+                    continue
+                row_empty = False
+                if c in col_map:
+                    if isinstance(v, (int, float)):
+                        mapped_has_numeric = True   # real numeric data
+                    elif isinstance(v, str) and v.startswith("="):
+                        pass                         # formula — neutral
+                    elif isinstance(v, str) and v.strip():
+                        has_any_text = True          # label in mapped col → footer
+                else:
+                    if isinstance(v, str) and v.strip() and not v.startswith("="):
+                        has_any_text = True
+            except Exception:
+                pass
+
+        if row_empty:
+            break               # blank separator → stop collecting footer rows
+        if mapped_has_numeric:
+            break               # found a real numeric data row → stop
+        if has_any_text:
+            footer_rows.append(r)
+        else:
+            break               # non-text, non-numeric content → stop
+
+    if footer_rows:
+        return min(footer_rows)
+    return max_row + 1     # no footer detected
 from datetime import datetime
 from pathlib import Path
 import openpyxl
@@ -751,27 +821,14 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
             enriched.append(s)
         sessions = enriched
 
-    # Detect footer_start_row:
-    # - When provided explicitly (from saved config), use it directly.
-    # - Otherwise use the heuristic: scan for first row containing a range formula
-    #   (e.g. =SUM(C3:C12)). Simple per-row formulas (=B5-A5) and non-empty
-    #   unmapped columns do NOT trigger footer detection.
+    # Determine footer_start_row:
+    # - Explicit value from saved config → use directly (no heuristic).
+    # - Otherwise call _detect_footer_start_row() which handles both
+    #   SUM-formula footers and plain-text footers via a 2-phase algorithm.
     if footer_start_row is not None:
         footer_start_row = int(footer_start_row)
     else:
-        footer_start_row = (max_row or ds) + 1
-        for _fr in range(ds, (max_row or 0) + 1):
-            for _fc in range(1, (ws.max_column or 20) + 1):
-                try:
-                    _fv = ws.cell(row=_fr, column=_fc).value
-                    if _is_range_formula(_fv):
-                        footer_start_row = _fr
-                        break
-                except Exception:
-                    pass
-            else:
-                continue
-            break
+        footer_start_row = _detect_footer_start_row(ws, ds, max_row or 0, col_map)
 
     template_data_rows = max(footer_start_row - ds, 0)
 
@@ -792,13 +849,16 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
                 }
             except Exception:
                 pass
-        # Capture template data row (row ds) formulas before insertion shifts rows
-        tformulas = {}
-        for ci in col_map:
+        # Capture ALL per-row formulas from template data row (ds) before
+        # insert_rows() shifts rows.  This includes UNMAPPED columns such as
+        # auto-computed fields (e.g. C3 = =B3*0.30 where C is not in col_map).
+        tformulas_all = {}
+        for _tfc in range(1, (ws.max_column or 40) + 1):
             try:
-                c = ws.cell(row=ds, column=ci)
-                if isinstance(c.value, str) and c.value.startswith("="):
-                    tformulas[ci] = c.value
+                _tc = ws.cell(row=ds, column=_tfc)
+                if isinstance(_tc.value, str) and _tc.value.startswith("="):
+                    if not _is_range_formula(_tc.value):   # only per-row formulas
+                        tformulas_all[_tfc] = _tc.value
             except Exception:
                 pass
         old_last_data = footer_start_row - 1  # before insertion
@@ -807,6 +867,7 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
         new_footer_start = footer_start_row + n_extra
         for _ei in range(n_extra):
             _r = footer_start_row + _ei
+            # Apply styles from last template data row (mapped columns)
             for ci, _st in _rstyles.items():
                 try:
                     _cell = ws.cell(row=_r, column=ci)
@@ -817,10 +878,12 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
                     if _st["number_format"]: _cell.number_format = _st["number_format"]
                 except Exception:
                     pass
-            # Apply formula patterns from template data row with adjusted row references
-            for ci, formula in tformulas.items():
+            # Copy per-row formulas from all columns (mapped AND unmapped)
+            for ci, formula in tformulas_all.items():
                 try:
                     cell = ws.cell(row=_r, column=ci)
+                    if isinstance(cell, MergedCell):
+                        continue
                     adjusted = _adjust_formula_rows(formula, _r - ds)
                     cell.value = adjusted
                 except Exception:
