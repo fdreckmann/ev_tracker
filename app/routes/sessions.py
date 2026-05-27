@@ -98,8 +98,7 @@ def api_update_location(sid):
     loc = normalize_location((request.json or {}).get("location","unknown"))
     if loc not in ("home","extern","unknown"):
         return jsonify({"ok":False,"error":"Ungültiger Standort"}), 400
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
+    con = _get_db()
     try:
         existing = con.execute("SELECT * FROM sessions WHERE id=?", (sid,)).fetchone()
         if not existing:

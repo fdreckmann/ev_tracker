@@ -297,7 +297,11 @@ def init_db():
     details TEXT,
     ip      TEXT
 )""")
-    # live migration
+    # live migration — add columns to sessions as schema evolves
+    # "duplicate column" errors (OperationalError "table X already has column Y") are silently
+    # ignored; any other OperationalError is logged as a warning.
+    import logging as _init_log
+    _mig_logger = _init_log.getLogger(__name__)
     for col, typedef in [
         ("cost_manual",  "INTEGER DEFAULT 0"),
         ("charger_type", "TEXT DEFAULT 'unknown'"),
@@ -325,7 +329,9 @@ def init_db():
     ]:
         try:
             con.execute(f"ALTER TABLE sessions ADD COLUMN {col} {typedef}")
-        except sqlite3.OperationalError: pass
+        except sqlite3.OperationalError as _e:
+            if "duplicate column" not in str(_e).lower():
+                _mig_logger.warning("sessions migration '%s': %s", col, _e)
     # Backfill NULL vehicle_id → 'v0'
     try:
         con.execute("UPDATE sessions SET vehicle_id='v0' WHERE vehicle_id IS NULL")
@@ -409,15 +415,58 @@ def init_db():
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
     )""")
-    # Vehicle access scope (Vorbereitung, noch nicht aktiv)
+    # Schema migrations tracking table
+    con.execute("""CREATE TABLE IF NOT EXISTS schema_migrations (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        migration   TEXT NOT NULL UNIQUE,
+        applied_at  TEXT NOT NULL
+    )""")
+
+    def _migration_applied(name: str) -> bool:
+        return bool(con.execute(
+            "SELECT 1 FROM schema_migrations WHERE migration=?", (name,)).fetchone())
+
+    def _mark_migration(name: str):
+        con.execute("INSERT OR IGNORE INTO schema_migrations (migration, applied_at) VALUES (?,?)",
+                    (name, datetime.utcnow().isoformat()))
+
+    # Vehicle access scope — vehicle_id must be TEXT (not INTEGER) since IDs are strings like "v0"
+    # Migration: recreate table with correct type if old schema had INTEGER
     con.execute("""CREATE TABLE IF NOT EXISTS user_vehicle_access (
         user_id    INTEGER NOT NULL,
-        vehicle_id INTEGER NOT NULL,
+        vehicle_id TEXT NOT NULL,
         can_view   INTEGER DEFAULT 1,
         can_edit   INTEGER DEFAULT 0,
         can_export INTEGER DEFAULT 0,
         PRIMARY KEY (user_id, vehicle_id)
     )""")
+    if not _migration_applied("fix_user_vehicle_access_vehicle_id_type"):
+        try:
+            # Check if vehicle_id column type is INTEGER (old schema)
+            _cols_uva = {r[1]: r[2] for r in con.execute(
+                "PRAGMA table_info(user_vehicle_access)").fetchall()}
+            if _cols_uva.get("vehicle_id", "").upper() == "INTEGER":
+                import logging as _mig_log
+                _mig_log.getLogger(__name__).info(
+                    "Migrating user_vehicle_access.vehicle_id INTEGER → TEXT")
+                con.execute("ALTER TABLE user_vehicle_access RENAME TO _uva_old")
+                con.execute("""CREATE TABLE user_vehicle_access (
+                    user_id    INTEGER NOT NULL,
+                    vehicle_id TEXT NOT NULL,
+                    can_view   INTEGER DEFAULT 1,
+                    can_edit   INTEGER DEFAULT 0,
+                    can_export INTEGER DEFAULT 0,
+                    PRIMARY KEY (user_id, vehicle_id)
+                )""")
+                con.execute("""INSERT OR IGNORE INTO user_vehicle_access
+                    SELECT user_id, CAST(vehicle_id AS TEXT), can_view, can_edit, can_export
+                    FROM _uva_old""")
+                con.execute("DROP TABLE _uva_old")
+        except Exception as _uva_err:
+            import logging as _mig_log
+            _mig_log.getLogger(__name__).warning(
+                "user_vehicle_access migration skipped: %s", _uva_err)
+        _mark_migration("fix_user_vehicle_access_vehicle_id_type")
     con.execute("""CREATE TABLE IF NOT EXISTS email_report_history (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
         sent_at       TEXT NOT NULL,

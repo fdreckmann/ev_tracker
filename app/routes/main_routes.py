@@ -102,9 +102,21 @@ def api_provider_fields(provider_id):
     return jsonify(get_config_fields(provider_id))
 
 
-def _compute_tracker_status(st: dict) -> str:
-    """Return one of: stopped, provider_error, no_data, polling, sleeping, charging, ready."""
+def _compute_tracker_status(st: dict, cfg: dict | None = None) -> str:
+    """Return one of: not_configured, stopped, provider_error, no_data, polling, charging, ready."""
     if not (st.get("running") or st.get("tracker_alive")):
+        # Distinguish "not configured" (no provider set up) from plain "stopped"
+        if cfg is not None:
+            provider_id = cfg.get("provider", "ha")
+            if not provider_id or provider_id == "none":
+                return "not_configured"
+            if provider_id == "ha" and not cfg.get("ha_url") and not cfg.get("ha_token"):
+                return "not_configured"
+            if provider_id == "manual":
+                return "not_configured"
+        elif not st:
+            # Empty state dict with no config info → brand-new install
+            return "not_configured"
         return "stopped"
     if st.get("last_fatal_error"):
         return "provider_error"
@@ -130,7 +142,8 @@ def api_status():
     vid = request.args.get("vehicle_id", "v0")
     st  = _state.vehicle_states.get(vid, _state.vehicle_states.get("v0", {}))
     result = dict(st)
-    result["tracker_status"] = _compute_tracker_status(st)
+    _cfg_for_status = load_config()
+    result["tracker_status"] = _compute_tracker_status(st, _cfg_for_status)
     result["all_vehicles"] = [
         {"vehicle_id": k, "name": v.get("name", k), "running": v.get("running", False),
          "charging": v.get("charging", False), "session_active": v.get("session_active", False),
@@ -154,7 +167,7 @@ def api_status():
     # Provider info for the requested vehicle
     try:
         from providers import PROVIDERS
-        cfg = load_config()
+        cfg = _cfg_for_status
         provider_id = cfg.get("provider", "ha")
         # For non-v0 vehicles, prefer vehicle-specific config
         if vid != "v0":
