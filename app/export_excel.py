@@ -1,5 +1,13 @@
 import os, sys, sqlite3, shutil, json, re
 import re as _re_formula
+
+_RE_RANGE_FORMULA = re.compile(r'[A-Za-z]+\d+:[A-Za-z]+\d+')
+
+def _is_range_formula(formula):
+    """Return True only for formulas referencing a cell range (e.g. SUM(C3:C12))."""
+    if not isinstance(formula, str) or not formula.startswith("="):
+        return False
+    return bool(_RE_RANGE_FORMULA.search(formula))
 from datetime import datetime
 from pathlib import Path
 import openpyxl
@@ -618,7 +626,7 @@ def _fill_placeholders(wb, header_vals, include_signature=False, sig_img=None):
 def export_with_template(year, month, sessions, location, col_override=None, start_row=None, header_row=None, header_info=None,
                           cell_mapping=None, sheet=None,
                           include_signature=False, signature_path=None, signature_mapping=None,
-                          lang="de"):
+                          lang="de", footer_start_row=None):
     if header_info is None:
         header_info = {}
     if cell_mapping is None:
@@ -743,29 +751,26 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
             enriched.append(s)
         sessions = enriched
 
-    # Detect footer_start_row: first row at or after ds that is a footer indicator.
-    # A row is a footer if it has a non-empty cell in an unmapped column (plain text footer)
-    # or a formula cell in a mapped column.
-    footer_start_row = (max_row or ds) + 1
-    for _fr in range(ds, (max_row or 0) + 1):
-        _row_is_footer = False
-        for _fc in range(1, (ws.max_column or 20) + 1):
-            try:
-                _fv = ws.cell(row=_fr, column=_fc).value
-                if _fv is None:
-                    continue
-                if _fc not in col_map:
-                    # Non-empty cell in unmapped column = footer indicator
-                    _row_is_footer = True
-                    break
-                if isinstance(_fv, str) and _fv.startswith("="):
-                    # Formula in mapped column = footer indicator
-                    _row_is_footer = True
-                    break
-            except Exception:
-                pass
-        if _row_is_footer:
-            footer_start_row = _fr
+    # Detect footer_start_row:
+    # - When provided explicitly (from saved config), use it directly.
+    # - Otherwise use the heuristic: scan for first row containing a range formula
+    #   (e.g. =SUM(C3:C12)). Simple per-row formulas (=B5-A5) and non-empty
+    #   unmapped columns do NOT trigger footer detection.
+    if footer_start_row is not None:
+        footer_start_row = int(footer_start_row)
+    else:
+        footer_start_row = (max_row or ds) + 1
+        for _fr in range(ds, (max_row or 0) + 1):
+            for _fc in range(1, (ws.max_column or 20) + 1):
+                try:
+                    _fv = ws.cell(row=_fr, column=_fc).value
+                    if _is_range_formula(_fv):
+                        footer_start_row = _fr
+                        break
+                except Exception:
+                    pass
+            else:
+                continue
             break
 
     template_data_rows = max(footer_start_row - ds, 0)
@@ -1174,7 +1179,7 @@ def export_builtin(year, month, sessions, location, config=None, lang="de"):
 def export(year, month, location="all", col_override=None, start_row=None, header_row=None, header_info=None,
            cell_mapping=None, sheet=None,
            include_signature=False, signature_path=None, signature_mapping=None,
-           lang="de", return_warnings=False):
+           lang="de", return_warnings=False, footer_start_row=None):
     """Export sessions to XLSX. Returns bytes or (bytes, warnings) if return_warnings=True."""
     sessions = fetch_sessions(year, month, location)
     warnings_list = []
@@ -1196,7 +1201,8 @@ def export(year, month, location="all", col_override=None, start_row=None, heade
                                     include_signature=include_signature,
                                     signature_path=signature_path,
                                     signature_mapping=signature_mapping,
-                                    lang=lang)
+                                    lang=lang,
+                                    footer_start_row=footer_start_row)
     else:
         path = export_builtin(year, month, sessions, location, lang=lang)
 

@@ -178,10 +178,17 @@ def api_template_gallery_use(template_id):
     cfg["template_start_row"]      = dm.get("start_row")
     cfg["template_sheet"]          = dm.get("sheet", "")
     cfg["signature_mapping"]       = dm.get("signature_mapping", {})
+    _hash = None
+    if TEMPLATE_PATH.exists():
+        try:
+            _hash = hashlib.sha256(TEMPLATE_PATH.read_bytes()).hexdigest()[:16]
+        except Exception:
+            pass
     cfg["active_template"] = {
         "source":      "builtin",
         "template_id": template_id,
         "name":        m["name"],
+        "hash":        _hash,
     }
     save_config(cfg)
     _audit("template_gallery_use", f"id={template_id}", ip=request.remote_addr)
@@ -387,15 +394,19 @@ def api_template_mapping():
             return jsonify({"ok": False, "error": "Keine Berechtigung: templates:edit_mapping"}), 403
         body = request.get_json(force=True)
         # backward compat: "mapping" → column_mapping
-        cfg["template_column_mapping"] = body.get("column_mapping") or body.get("mapping") or {}
-        cfg["template_cell_mapping"]   = body.get("cell_mapping", {})
-        cfg["template_start_row"]      = body.get("start_row")
-        cfg["template_header_row"]     = body.get("header_row")
-        cfg["template_sheet"]          = body.get("sheet") or ""
-        cfg["signature_mapping"]       = body.get("signature_mapping") or {}
+        cfg["template_column_mapping"]    = body.get("column_mapping") or body.get("mapping") or {}
+        cfg["template_cell_mapping"]      = body.get("cell_mapping", {})
+        cfg["template_start_row"]         = body.get("start_row")
+        cfg["template_header_row"]        = body.get("header_row")
+        cfg["template_sheet"]             = body.get("sheet") or ""
+        cfg["signature_mapping"]          = body.get("signature_mapping") or {}
+        cfg["template_footer_start_row"]  = body.get("footer_start_row")
         cfg["template_mapping_hash"] = (cfg.get("active_template") or {}).get("hash")
         save_config(cfg)
         return jsonify({"ok": True})
+    _template_hash  = (cfg.get("active_template") or {}).get("hash")
+    _mapping_hash   = cfg.get("template_mapping_hash")
+    _hash_mismatch  = bool(_template_hash and (_mapping_hash is None or _mapping_hash != _template_hash))
     return jsonify({
         "column_mapping":    cfg.get("template_column_mapping") or cfg.get("template_mapping") or {},
         "cell_mapping":      cfg.get("template_cell_mapping", {}),
@@ -403,6 +414,8 @@ def api_template_mapping():
         "header_row":        cfg.get("template_header_row"),
         "sheet":             cfg.get("template_sheet", ""),
         "signature_mapping": cfg.get("signature_mapping") or {},
-        "mapping_hash":      cfg.get("template_mapping_hash"),
-        "template_hash":     (cfg.get("active_template") or {}).get("hash"),
+        "mapping_hash":      _mapping_hash,
+        "template_hash":     _template_hash,
+        "hash_mismatch":     _hash_mismatch,
+        "footer_start_row":  cfg.get("template_footer_start_row"),
     })

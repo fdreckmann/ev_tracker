@@ -233,6 +233,27 @@ class TestTemplateHashInvalidation:
             f"hash_mismatch should be False after saving mapping, got: {data2}"
 
 
+    def test_export_blocked_on_hash_mismatch(self, authed_client):
+        """GET /api/export must return 409 when column_mapping exists but hashes differ."""
+        import openpyxl
+        wb = openpyxl.Workbook(); wb.active["A1"] = "kWh"
+        buf = BytesIO(); wb.save(buf); buf.seek(0)
+        authed_client.post("/api/template", content_type="multipart/form-data",
+                           data={"file": (buf, "tpl.xlsx")})
+
+        # Inject stale mapping hash directly
+        from core.config import load_config, save_config
+        cfg = load_config()
+        cfg["template_column_mapping"] = {"1": "kwh_charged"}
+        cfg["template_mapping_hash"] = "stale_hash_value"
+        save_config(cfg)
+
+        rv = authed_client.get("/api/export?year=2026&month=1")
+        assert rv.status_code == 409, \
+            f"Expected 409 on hash mismatch, got {rv.status_code}: {rv.get_data(as_text=True)}"
+        assert rv.get_json().get("hash_mismatch") is True
+
+
 class TestCellMappingRoundtrip:
     """Tests for single-cell mapping preservation."""
 
@@ -245,11 +266,20 @@ class TestCellMappingRoundtrip:
             "header_row": 2,
             "sheet": "",
         }
-        rv = authed_client.post("/api/template/mapping",
-                               json=payload)
+        rv = authed_client.post("/api/template/mapping", json=payload)
         assert rv.get_json()["ok"] is True
 
         rv2 = authed_client.get("/api/template/mapping")
         data = rv2.get_json()
         assert "B4" in data["cell_mapping"], "Cell mapping B4 not preserved"
         assert "C4" in data["cell_mapping"], "Cell mapping C4 not preserved"
+
+    def test_footer_start_row_roundtrip(self, authed_client):
+        """footer_start_row must survive POST→GET roundtrip."""
+        rv = authed_client.post("/api/template/mapping",
+                                json={"column_mapping": {"1": "date"},
+                                      "start_row": 3, "footer_start_row": 12})
+        assert rv.get_json()["ok"] is True
+        rv2 = authed_client.get("/api/template/mapping")
+        assert rv2.get_json().get("footer_start_row") == 12, \
+            f"footer_start_row not preserved: {rv2.get_json()}"

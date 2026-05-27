@@ -129,17 +129,18 @@ async function loadVehicleModalFields(existingVehicle) {
   var fields = await fetch('/api/providers/'+provider+'/fields').then(function(r){return r.json();}).catch(function(){return [];});
   var container = $('vm_fields');
   container.innerHTML = '';
+  var _eh = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'').replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});};
   fields.forEach(function(f) {
     var val = existingVehicle ? (existingVehicle[f.id]||'') : '';
     var wrap = document.createElement('div');
     if(f.type === 'select'){
-      wrap.innerHTML = '<label class="lbl">'+f.label+'</label>' +
-        '<select class="inp" id="vmf_'+f.id+'">'+(f.options||[]).map(function(o){return '<option value="'+o+'" '+(val===o?'selected':'')+'>'+o+'</option>';}).join('')+'</select>' +
-        (f.hint?'<span class="hint">'+f.hint+'</span>':'');
+      wrap.innerHTML = '<label class="lbl">'+_eh(f.label)+'</label>' +
+        '<select class="inp" id="vmf_'+_eh(f.id)+'">'+(f.options||[]).map(function(o){return '<option value="'+_eh(o)+'" '+(val===o?'selected':'')+'>'+_eh(o)+'</option>';}).join('')+'</select>' +
+        (f.hint?'<span class="hint">'+_eh(f.hint)+'</span>':'');
     } else {
-      wrap.innerHTML = '<label class="lbl">'+f.label+(f.required?' *':'')+'</label>' +
-        '<input class="inp" type="'+(f.type||'text')+'" id="vmf_'+f.id+'" value="'+val+'" placeholder="'+(f.placeholder||'')+'">' +
-        (f.hint?'<span class="hint">'+f.hint+'</span>':'');
+      wrap.innerHTML = '<label class="lbl">'+_eh(f.label)+(f.required?' *':'')+'</label>' +
+        '<input class="inp" type="'+(f.type||'text')+'" id="vmf_'+_eh(f.id)+'" value="'+_eh(String(val||''))+'" placeholder="'+_eh(f.placeholder||'')+'">' +
+        (f.hint?'<span class="hint">'+_eh(f.hint)+'</span>':'');
     }
     container.appendChild(wrap);
   });

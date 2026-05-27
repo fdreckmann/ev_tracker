@@ -2633,6 +2633,9 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
   <!-- Export config -->
   <div class="card">
+    <div id="templateHashMismatchBanner" style="display:none;background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.4);border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:.8rem;color:#f59e0b">
+      ⚠ <strong>Neue Vorlage erkannt</strong> — bitte Mapping prüfen und neu speichern, bevor der Export gestartet wird.
+    </div>
     <div class="card-title">Monatsbericht exportieren</div>
     <div class="exp-grid">
       <select id="expY"></select>
@@ -3337,7 +3340,7 @@ function tab(id, btn){
   $('panel-'+id).classList.add('active');
   if(btn) btn.classList.add('active');
   if(id==='sessions'){ loadSessions(); loadMissingChargeCandidates(); }
-  if(id==='export'){loadExpPreview();refreshTplInfo();}
+  if(id==='export'){loadExpPreview();refreshTplInfo();checkTemplateMappingHash();}
   if(id==='backup') loadBackups();
   if(id==='dashboard') loadCharts();
   if(id==='config'){ cfgSection('fahrzeuge', document.querySelector('.cfg-nav-btn.active')||document.querySelector('.cfg-nav-btn')); }
@@ -4336,7 +4339,7 @@ async function saveMappingModal(){
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify(body)
   }).then(r=>r.json());
-  if(r.ok){ toast('Template-Konfiguration gespeichert'); closeMappingModal(); }
+  if(r.ok){ toast('Template-Konfiguration gespeichert'); closeMappingModal(); checkTemplateMappingHash(); }
   else {
     $('mappingModalInfo').style.color = 'var(--danger)';
     $('mappingModalInfo').textContent = '❌ Fehler beim Speichern';
@@ -4433,6 +4436,7 @@ async function uploadTpl(file){
   if(r.ok){
     toast(`Template hochgeladen: ${r.filename}`);
     await refreshTplInfo();
+    checkTemplateMappingHash();
     openMappingModal(); // sofort Spalten zuweisen
   } else toast('Upload fehlgeschlagen: '+r.error,'err');
   $('tplFile').value='';

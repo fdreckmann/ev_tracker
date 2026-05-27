@@ -2,6 +2,19 @@
 
 var _lastExportPreviewToken = null;
 
+async function checkTemplateMappingHash() {
+  const banner = $('templateHashMismatchBanner');
+  if (!banner) return;
+  try {
+    const r = await fetch('/api/template/mapping').then(r => r.json());
+    if (r.hash_mismatch) {
+      banner.style.display = '';
+    } else {
+      banner.style.display = 'none';
+    }
+  } catch(_) {}
+}
+
 async function doExport(){
   const y=$('expY').value, m=$('expM').value, loc=$('expLoc').value;
   const lang = $('expLang')?.value || 'de';

@@ -316,7 +316,7 @@ async function showSessionDetail(id){
     if (s.manual_note)   stats.push({l:'Notiz', v:escapeHtml(s.manual_note)});
   }
 
-  $('modalStats').innerHTML = stats.map(function(x){return '<div class="stat"><div class="sl">'+x.l+'</div><div class="sv" style="font-size:1.1rem'+(x.c?';color:'+x.c:'')+'">'+x.v+'</div></div>';}).join('');
+  $('modalStats').innerHTML = stats.map(function(x){return '<div class="stat"><div class="sl">'+escapeHtml(String(x.l||''))+'</div><div class="sv" style="font-size:1.1rem'+(x.c?';color:'+x.c:'')+'">'+escapeHtml(String(x.v||''))+'</div></div>';}).join('');
 
   var pts = await apiFetch('/api/sessions/'+id+'/points').then(function(r){return r.json();}).catch(function(){return [];});
 
