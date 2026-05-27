@@ -3368,7 +3368,7 @@ async function testEntsoe(){
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({entsoe_api_key:key})}).then(r=>r.json());
   if(r.ok) res.innerHTML=`<span style="color:var(--acc)">✅ ${r.price_kwh.toFixed(4)} €/kWh (${r.price_mwh} €/MWh) — DE Spotpreis</span>`;
-  else res.innerHTML=`<span style="color:var(--danger)">❌ ${r.error}</span>`;
+  else res.innerHTML=`<span style="color:var(--danger)">❌ ${escapeHtml(r.error||'')}</span>`;
 }
 
 
@@ -3448,34 +3448,37 @@ function renderGallery(){
   if(!_galleryData){ $('galleryGrid').innerHTML='<div style="color:var(--mute);font-family:var(--mono);font-size:.75rem">Fehler beim Laden</div>'; return; }
 
   // Build category filters
+  // _jss: JSON-stringify a value and HTML-escape the surrounding quotes so it
+  //       is safe to embed as a JS string literal inside an onclick attribute.
+  const _jss = s => JSON.stringify(String(s==null?'':s)).replace(/&/g,'&amp;').replace(/"/g,'&quot;');
   const cats = [...new Set(_galleryData.map(t=>t.category).filter(Boolean))];
   $('galleryFilters').innerHTML =
     `<button onclick="_galleryFilter=null;renderGallery()" class="btn-${_galleryFilter===null?'p':'s'}" style="font-size:.72rem;padding:5px 12px">Alle</button>` +
-    cats.map(c=>`<button onclick="_galleryFilter='${c}';renderGallery()" class="btn-${_galleryFilter===c?'p':'s'}" style="font-size:.72rem;padding:5px 12px">${c}</button>`).join('');
+    cats.map(c=>`<button onclick="_galleryFilter=${_jss(c)};renderGallery()" class="btn-${_galleryFilter===c?'p':'s'}" style="font-size:.72rem;padding:5px 12px">${escapeHtml(c)}</button>`).join('');
 
   const filtered = _galleryFilter ? _galleryData.filter(t=>t.category===_galleryFilter) : _galleryData;
 
   $('galleryGrid').innerHTML = filtered.map(t=>`
     <div style="background:var(--bg);border:1px solid ${t.active?'var(--acc)':'var(--brd)'};border-radius:10px;overflow:hidden;display:flex;flex-direction:column;transition:border-color .2s">
       <!-- Preview -->
-      <div style="background:#111;height:110px;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer" onclick="previewGalleryTemplate('${t.id}')">
-        <img src="${t.preview_url}" alt="${t.name}" style="max-width:100%;max-height:100%;object-fit:contain" onerror="this.style.display='none';this.nextSibling.style.display='flex'" loading="lazy">
+      <div style="background:#111;height:110px;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer" onclick="previewGalleryTemplate(${_jss(t.id)})">
+        <img src="${escapeHtml(t.preview_url||'')}" alt="${escapeHtml(t.name||'')}" style="max-width:100%;max-height:100%;object-fit:contain" onerror="this.style.display='none';this.nextSibling.style.display='flex'" loading="lazy">
         <div style="display:none;width:100%;height:100%;align-items:center;justify-content:center;color:var(--mute);font-size:2rem">📊</div>
       </div>
       <!-- Info -->
       <div style="padding:10px 12px;flex:1;display:flex;flex-direction:column;gap:4px">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <span style="font-size:.8rem;font-weight:600;color:#fff">${t.name}</span>
+          <span style="font-size:.8rem;font-weight:600;color:#fff">${escapeHtml(t.name||'')}</span>
           ${t.active ? '<span style="font-size:.6rem;background:rgba(0,210,120,.15);color:var(--acc);border:1px solid rgba(0,210,120,.3);border-radius:4px;padding:1px 6px">✓ Aktiv</span>' : ''}
         </div>
-        <span style="font-size:.6rem;background:rgba(100,130,255,.12);color:#7eb8f7;border-radius:4px;padding:1px 6px;align-self:flex-start">${t.category}</span>
-        <p style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin:2px 0 6px;line-height:1.4;flex:1">${t.description}</p>
-        ${t.recommended_for?.length ? `<div style="font-size:.65rem;color:#555;font-family:var(--mono)">${t.recommended_for.slice(0,3).join(' · ')}</div>` : ''}
+        <span style="font-size:.6rem;background:rgba(100,130,255,.12);color:#7eb8f7;border-radius:4px;padding:1px 6px;align-self:flex-start">${escapeHtml(t.category||'')}</span>
+        <p style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin:2px 0 6px;line-height:1.4;flex:1">${escapeHtml(t.description||'')}</p>
+        ${t.recommended_for?.length ? `<div style="font-size:.65rem;color:#555;font-family:var(--mono)">${t.recommended_for.slice(0,3).map(r=>escapeHtml(r)).join(' · ')}</div>` : ''}
       </div>
       <!-- Actions -->
       <div style="padding:8px 12px;border-top:1px solid var(--brd);display:flex;gap:6px">
-        <button class="btn-s" style="font-size:.7rem;padding:5px 10px;flex:1" onclick="previewGalleryTemplate('${t.id}')">👁 Vorschau</button>
-        <button class="${t.active?'btn-s':'btn-p'}" style="font-size:.7rem;padding:5px 10px;flex:1" onclick="useGalleryTemplate('${t.id}','${t.name}')" ${t.active?'disabled':''}>
+        <button class="btn-s" style="font-size:.7rem;padding:5px 10px;flex:1" onclick="previewGalleryTemplate(${_jss(t.id)})">👁 Vorschau</button>
+        <button class="${t.active?'btn-s':'btn-p'}" style="font-size:.7rem;padding:5px 10px;flex:1" onclick="useGalleryTemplate(${_jss(t.id)},${_jss(t.name)})" ${t.active?'disabled':''}>
           ${t.active ? '✓ Aktiv' : '▶ Verwenden'}
         </button>
       </div>
@@ -5056,7 +5059,7 @@ async function hardDeleteVehicleModal() {
     return;
   }
   if(!checkData.ok) {
-    $('vm_info').innerHTML = `<span style="color:var(--danger)">❌ ${checkData.error||'Prüfung fehlgeschlagen'}</span>`;
+    $('vm_info').innerHTML = `<span style="color:var(--danger)">❌ ${escapeHtml(checkData.error||'Prüfung fehlgeschlagen')}</span>`;
     return;
   }
 
@@ -5077,7 +5080,7 @@ async function hardDeleteVehicleModal() {
     toast('Fahrzeug endgültig gelöscht','ok');
     loadVehicleList();
   } else {
-    $('vm_info').innerHTML = `<span style="color:var(--danger)">❌ ${r.error||'Fehler beim Löschen'}</span>`;
+    $('vm_info').innerHTML = `<span style="color:var(--danger)">❌ ${escapeHtml(r.error||'Fehler beim Löschen')}</span>`;
   }
 }
 
@@ -5993,7 +5996,7 @@ async function loadContracts(){
           <button class="btn-s" style="font-size:.72rem;padding:4px 8px;color:#f87171" onclick="deleteContract(${c.id},'${escapeHtml(c.name)}')" data-requires-permission="public_charging:manage_contracts">🗑️</button>
         </div>
       </div>`).join('');
-    applyPermissions();
+    applyPermissionVisibility();
   }catch(e){ const el=$('contract_list'); if(el) el.innerHTML='<div style="color:#f87171;font-size:.78rem">'+e.message+'</div>'; }
 }
 
@@ -6021,7 +6024,7 @@ async function loadBuiltinContracts(){
         ${btn}
       </div>`;
     }).join('');
-    applyPermissions();
+    applyPermissionVisibility();
   }catch(e){ console.warn('loadBuiltinContracts',e); }
 }
 
@@ -6531,7 +6534,7 @@ async function loadKanaeleStatus(){
         ? '<span style="color:#6ee7b7">Aktiv: </span>' + active.join(' · ')
         : '<span style="color:var(--mute)">Kein Push-Kanal konfiguriert</span>';
     }
-    applyPermissions();
+    applyPermissionVisibility();
   } catch(e){ console.warn('loadKanaeleStatus', e); }
 }
 

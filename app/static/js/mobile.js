@@ -340,7 +340,7 @@ async function doMobileExportPreview() {
 
     var html = '';
     if (r.warnings && r.warnings.length > 0) {
-      html += '<div style="background:#332;padding:8px;border-radius:6px;margin-bottom:8px;font-size:12px">⚠️ '+r.warnings.join(' · ')+'</div>';
+      html += '<div style="background:#332;padding:8px;border-radius:6px;margin-bottom:8px;font-size:12px">⚠️ '+r.warnings.map(function(w){return escapeHtml(String(w));}).join(' · ')+'</div>';
     }
 
     // Erste 10 Datenzeilen aus erstem Sheet zeigen
@@ -357,7 +357,7 @@ async function doMobileExportPreview() {
         html += '<tr style="background:'+(isData?'transparent':'#1a2030')+'">';
         cells.slice(0, 6).forEach(function(c) {
           var v = c == null ? '' : String(c);
-          html += '<td style="padding:4px 6px;border:1px solid #2d3147;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+v.replace(/</g,'&lt;')+'</td>';
+          html += '<td style="padding:4px 6px;border:1px solid #2d3147;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escapeHtml(v)+'</td>';
         });
         html += '</tr>';
       });
@@ -367,7 +367,7 @@ async function doMobileExportPreview() {
     }
 
     if (_mobileExportToken) {
-      html += '<button onclick="window.location.href=\'/api/export/download/'+_mobileExportToken+'\'" style="width:100%;padding:12px;border-radius:8px;background:#3d5afe;border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;margin-top:8px">📥 Diese Datei herunterladen</button>';
+      html += '<button data-href="/api/export/download/'+encodeURIComponent(_mobileExportToken||'')+'" onclick="window.location.href=this.dataset.href" style="width:100%;padding:12px;border-radius:8px;background:#3d5afe;border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;margin-top:8px">📥 Diese Datei herunterladen</button>';
     }
 
     if (resultEl) resultEl.innerHTML = html;

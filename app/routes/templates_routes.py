@@ -401,6 +401,8 @@ def api_template_mapping():
         cfg["template_sheet"]             = body.get("sheet") or ""
         cfg["signature_mapping"]          = body.get("signature_mapping") or {}
         cfg["template_footer_start_row"]  = body.get("footer_start_row")
+        if "include_signature" in body:
+            cfg["export_include_signature"] = bool(body["include_signature"])
         cfg["template_mapping_hash"] = (cfg.get("active_template") or {}).get("hash")
         save_config(cfg)
         return jsonify({"ok": True})
@@ -414,6 +416,7 @@ def api_template_mapping():
         "header_row":        cfg.get("template_header_row"),
         "sheet":             cfg.get("template_sheet", ""),
         "signature_mapping": cfg.get("signature_mapping") or {},
+        "include_signature": bool(cfg.get("export_include_signature", False)),
         "mapping_hash":      _mapping_hash,
         "template_hash":     _template_hash,
         "hash_mismatch":     _hash_mismatch,

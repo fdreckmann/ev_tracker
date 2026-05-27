@@ -133,6 +133,7 @@ async function loadExportTemplates(){
     el.innerHTML='<div class="empty" style="padding:20px">Noch keine Vorlagen gespeichert</div>';
     return;
   }
+  const canManage = typeof hasPermission === 'function' ? hasPermission('export:templates_manage') : true;
   el.innerHTML='';
   templates.forEach(t=>{
     const tid=escapeHtml(t.id||'');
@@ -141,6 +142,11 @@ async function loadExportTemplates(){
     const defBadge=t.is_default?'<span style="color:var(--acc);margin-left:8px">★ Standard</span>':'';
     const div=document.createElement('div');
     div.style.cssText='display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:12px 14px';
+    // Always show Load button; manage buttons only for export:templates_manage
+    const manageBtns = canManage
+      ? `<button class="btn-g" style="font-size:.72rem;padding:5px 12px" onclick="setDefaultTemplate('${tid}')">★</button>
+         <button class="btn-d" style="font-size:.72rem;padding:5px 12px" onclick="deleteExportTemplate('${tid}')">✕</button>`
+      : '';
     div.innerHTML=`
       <div style="flex:1">
         <div style="font-weight:700;font-size:.85rem;color:#fff"></div>
@@ -149,8 +155,7 @@ async function loadExportTemplates(){
         </div>
       </div>
       <button class="btn-s" style="font-size:.72rem;padding:5px 12px" onclick="loadExportTemplate('${tid}')">📂 Laden</button>
-      <button class="btn-g" style="font-size:.72rem;padding:5px 12px" onclick="setDefaultTemplate('${tid}')">★</button>
-      <button class="btn-d" style="font-size:.72rem;padding:5px 12px" onclick="deleteExportTemplate('${tid}')">✕</button>
+      ${manageBtns}
     `;
     div.querySelector('div[style*="font-weight:700"]').textContent=t.name||'';
     el.appendChild(div);
@@ -170,12 +175,13 @@ async function loadExportTemplate(tid){
     signature_mapping: t.signature_mapping || {},
     start_row:         t.start_row,
     header_row:        t.header_row,
+    footer_start_row:  t.footer_start_row || null,
     sheet:             t.sheet,
     include_signature: t.include_signature || false,
   };
   const r=await apiFetch('/api/template/mapping',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify(payload)}).then(r=>r.json()).catch(()=>({}));
-  if(r && r.ok!==false){ toast('Vorlage "'+escapeHtml(t.name)+'" geladen','ok'); loadMappingPreview(); }
+  if(r && r.ok!==false){ toast('Vorlage "'+escapeHtml(t.name)+'" geladen','ok'); loadMappingPreview(); checkTemplateMappingHash(); }
   else toast('Fehler: '+(r&&r.error||''),'err');
 }
 

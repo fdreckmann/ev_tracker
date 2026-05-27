@@ -39,6 +39,7 @@ def create_export_template():
         "signature_mapping":data.get("signature_mapping") or {},
         "start_row":        data.get("start_row"),
         "header_row":       data.get("header_row"),
+        "footer_start_row": data.get("footer_start_row"),
         "sheet":            data.get("sheet"),
         "include_signature":bool(data.get("include_signature", False)),
         "mapping_version":  2,
