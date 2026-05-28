@@ -6906,7 +6906,7 @@ async function openMobileSessionCreate() {
   const now = new Date();
   const iso = d => new Date(d - d.getTimezoneOffset()*60000).toISOString().slice(0,16);
   const vOpts = vehicles.length
-    ? vehicles.map(v=>`<option value="${v.id}">${v.name||v.id}</option>`).join('')
+    ? vehicles.map(v=>`<option value="${escapeHtml(v.id)}">${escapeHtml(v.name||v.id)}</option>`).join('')
     : '<option value="v0">Fahrzeug v0</option>';
 
   let defaultLoc = 'home';
