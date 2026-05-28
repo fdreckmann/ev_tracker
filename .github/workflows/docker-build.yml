@@ -43,7 +43,13 @@ jobs:
           done
 
       - name: Run pytest
-        run: python -m pytest -q
+        env:
+          DATA_DIR: ${{ runner.temp }}/ev-tracker-data
+          EV_TRACKER_UPDATE_CHECK_ENABLED: "false"
+          FLASK_SECRET_KEY: "ci-test-secret-key"
+        run: |
+          mkdir -p "$DATA_DIR"
+          python -m pytest -q
 
       - name: Ensure tests did not write to /data
         run: |

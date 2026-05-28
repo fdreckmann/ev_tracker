@@ -64,6 +64,10 @@ def app(tmp_path, monkeypatch):
 
     # Patch config path — core.config uses CONFIG_FILE (not _CONFIG_PATH)
     monkeypatch.setattr(_cfg_mod, "CONFIG_FILE", cfg_path)
+    # core.config copies DATA_DIR at import time via `from core.db import DATA_DIR`.
+    # Patching core.db.DATA_DIR alone is not enough — save_config() reads the
+    # module-level name in core.config, so we must patch it there too.
+    monkeypatch.setattr(_cfg_mod, "DATA_DIR", tmp_path)
     # Reset the config cache so next load_config() reads the patched file
     _cfg_mod._config_cache["data"] = None
     _cfg_mod._config_cache["ts"] = 0
