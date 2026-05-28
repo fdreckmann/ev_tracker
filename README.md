@@ -4,7 +4,7 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 
 ![Docker Hub](https://img.shields.io/docker/pulls/19121412/ev-tracker)
 ![GitHub Actions](https://github.com/fdreckmann/ev_tracker/actions/workflows/docker-build.yml/badge.svg)
-![Version](https://img.shields.io/badge/version-2.0.37-blue)
+![Version](https://img.shields.io/badge/version-2.0.55-blue)
 
 ---
 
@@ -43,13 +43,16 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 |---------|-------------|
 | ⚡ Auto-Erkennung | Ladevorgänge werden automatisch erkannt und gespeichert |
 | ✏️ Manuell erfassen | Ladevorgänge nachträglich manuell anlegen (Desktop + Mobile) — mit Standort, AC/DC, kWh oder Zählerständen, SOC, KM-Stand, Kosten, Notiz, Grund |
+| 🔍 Fehlende Ladevorgänge | Automatische Erkennung verpasster Sessions via SOC-Delta-Analyse; Vorschlag mit Konfidenz-Score, Vorausfüll-Dialog, einmalig ignorieren oder dauerhaft ignorieren |
 | 🏠 Standort | Unterscheidet Zuhause / Extern — GPS + Home Assistant Entities + Geofence + Zähler-Fallback |
 | 🔌 AC / DC | Ladertyp-Erkennung via Leistungssensor oder HA Sensor |
-| 💰 Preismodell | Heimtarif fix · dynamisch via Tibber/Octopus/HA/EVCC · Extern via ENTSO-E Spotpreis |
+| 💰 Preismodell | Heimtarif fix · dynamisch via Tibber/Octopus/HA/EVCC · Extern via ENTSO-E oder EnBW Spotpreis |
+| 📋 Ladeabos | Öffentliche Ladepreis-Verträge (ADAC, EnBW, Ionity etc.) als Preisquelle für Extern-Sessions |
 | ✎ Manuelle Korrektur | Kosten, Standort, kWh, SOC, KM-Stand und alle weiteren Felder pro Session bearbeitbar |
 | 📊 Dashboard | Live-Status, Charts, Ladekurve, kontextsensitive Ladeinfo |
-| 📱 Mobile App | PWA-fähig, Bottom-Navigation, Cards, Bottom Sheets, installierbar |
-| 🔔 Push | Benachrichtigungen via Home Assistant notify, ntfy, Gotify |
+| 📱 Mobile App | PWA-fähig, Bottom-Navigation, Cards, Bottom Sheets, Schnellaktionen, installierbar |
+| 🚗 Fahrzeugbilder | Automatische Silhouette-Zuordnung nach Marke/Modell; manueller Bild-Upload hat immer Vorrang |
+| 🔔 Push | Benachrichtigungen via Home Assistant notify, ntfy, Gotify, Telegram |
 | 💾 Backup | Manuell + automatisch per Cron-Zeitplan |
 | ⬆ Update-Check | Verfügbare Updates werden angezeigt; Update via Docker-Pull (kein In-App-Update) |
 | 👥 Multi-User | Mehrere Benutzer mit Rollen und granularen Berechtigungen |
@@ -104,6 +107,8 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 | EVCC | Netz-Tarif aus `/api/state` (tariffGrid/gridPrice) |
 | Generic HTTP | Beliebige Preis-API mit JSON-Pfad |
 | ENTSO-E | Spotpreise für externe Ladevorgänge |
+| EnBW | Öffentliche Ladepreise via EnBW API (mit Subscription Key) |
+| Ladeabos | Eigene Vertrags-Preismodelle (kWh, Minute, Session-Fee) für öffentliche Ladevorgänge |
 
 Preise werden **zeitgewichtet** über den Ladezeitraum gemittelt. Bestehende Home-Sessions können im UI per Knopfdruck mit dem aktuellen Tarif neu berechnet werden.
 
@@ -117,8 +122,9 @@ Preise werden **zeitgewichtet** über den Ladezeitraum gemittelt. Bestehende Hom
 | 📧 E-Mail-Versand | SMTP-Konfiguration, HTML-E-Mails mit Übersichtstabelle |
 | 📄 PDF-Export | Professioneller PDF-Report mit reportlab |
 | 🔑 API-Tokens | SHA-256-gesicherte Tokens mit Scopes, einmalige Anzeige |
-| 📡 MQTT | Home Assistant Auto-Discovery, ntfy, Gotify |
+| 📡 MQTT | Home Assistant Auto-Discovery, ntfy, Gotify, Telegram |
 | 🔔 Regeln | DB-getriebene Benachrichtigungsregeln mit Ruhezeitfenstern |
+| 🔔 Notification-Bell | Ungelesene Benachrichtigungen als Badge — kein permanentes Polling ohne Berechtigung |
 
 ### Fahrzeug-Standorterkennung
 
@@ -147,6 +153,7 @@ Preise werden **zeitgewichtet** über den Ladezeitraum gemittelt. Bestehende Hom
 | ✅ Berechtigungen | 70+ granulare Permissions, pro Rolle konfigurierbar |
 | 🛡 CSRF-Schutz | Alle POST/PUT/DELETE-Endpunkte geschützt |
 | 🔒 Security Headers | X-Frame-Options, X-Content-Type-Options, Referrer-Policy |
+| 🔑 Passwort-Hashing | PBKDF2:SHA-256 (werkzeug); Legacy-SHA-256-Hashes werden beim Login transparent migriert |
 
 ---
 
@@ -303,10 +310,9 @@ Die Web-UI zeigt unter **Konfiguration → Version & Update** ob eine neue Versi
 
 | Tag | Beschreibung |
 |-----|-------------|
-| `latest` | Stabile Releases (nur bei Git-Tag `v*`) |
-| `beta` | Main-Branch (aktueller Entwicklungsstand) |
-| `nightly` | Automatischer Build (täglich 02:00 UTC) |
-| `dev` | Entwicklungsversion |
+| `latest` | Stabile Releases — wird nur bei Git-Tag `v*` gebaut |
+| `stable` | Main-Branch (Staging / Pre-Release) |
+| `dev` | Entwicklungsversion (dev-Branch) |
 
 ---
 
