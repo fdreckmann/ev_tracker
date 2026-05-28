@@ -75,6 +75,14 @@ function mobileNavTo(section) {
   }
 }
 
+function openDesktopConfigSection(sectionId) {
+  switchToDesktopSettings();
+  if (typeof tab === 'function') tab('config', document.querySelector('nav button:nth-child(2)'));
+  setTimeout(function() {
+    if (typeof cfgSection === 'function') cfgSection(sectionId);
+  }, 50);
+}
+
 function switchToDesktopSettings() {
   // Zeige Desktop-Ansicht wieder
   var mainContent = document.getElementById('mainContent') || document.querySelector('.main-content') || document.querySelector('main');
@@ -416,30 +424,38 @@ function toggleSettingsGroup(header) {
 }
 
 function initMobileMore() {
-  // Einfache Links zu den jeweiligen Desktop-Einstellungs-Bereichen
   var groups = {
     mobileGrpVehicles: [
-      {label: '🚗 Fahrzeuge verwalten', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('fahrzeuge'); }},
+      {label: '🚗 Fahrzeugliste öffnen',   action: function(){ mobileNavTo('vehicles'); }},
+      {label: '➕ Fahrzeug hinzufügen',      action: function(){ mobileNavTo('vehicles'); setTimeout(function(){ if (typeof openAddVehicleModal === 'function') openAddVehicleModal(); }, 150); }},
     ],
     mobileGrpProvider: [
-      {label: '🔌 Provider konfigurieren', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('verbindung'); }},
-      {label: '📊 Zählerstand testen', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('zaehler'); }},
+      {label: '🔌 Verbindung testen',        action: function(){ openMobileConnectionTest(); }},
+      {label: '📊 Zählerstand testen',       action: function(){ openMobileMeterTest(); }},
+      {label: '⚙️ Provider konfigurieren',   action: function(){ openDesktopConfigSection('verbindung'); }},
+      {label: '🔌 Zähler & Wallbox',         action: function(){ openDesktopConfigSection('zaehler'); }},
     ],
     mobileGrpExport: [
-      {label: '📥 Export-Einstellungen', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('export-tpl'); }},
+      {label: '📥 Export erstellen',         action: function(){ mobileNavTo('export'); }},
+      {label: '📋 Export-Vorlagen',          action: function(){ openDesktopConfigSection('export-tpl'); }},
     ],
     mobileGrpSignature: [
-      {label: '✍️ Unterschrift hochladen', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('auth'); }},
+      {label: '✍️ Signatur verwalten',       action: function(){ openMobileSignatureSheet(); }},
+      {label: '📋 Signaturposition in Vorlage', action: function(){ openDesktopConfigSection('export-tpl'); }},
     ],
     mobileGrpSecurity: [
-      {label: '👤 Benutzer & Sicherheit', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('auth'); }},
+      {label: '👤 Konto & Sicherheit',      action: function(){ openDesktopConfigSection('profil'); }},
+      {label: '👥 Benutzer',                action: function(){ openDesktopConfigSection('benutzer'); }},
+      {label: '🔐 Rollen & Rechte',         action: function(){ openDesktopConfigSection('roles'); }},
     ],
     mobileGrpSystem: [
-      {label: '⚙️ Allgemeine Einstellungen', action: function(){ switchToDesktopSettings(); }},
-      {label: '🔄 Updates & Version', action: function(){ switchToDesktopSettings(); document.getElementById('updateSection')?.scrollIntoView({behavior:'smooth'}); }},
+      {label: '⚙️ System-Status',           action: function(){ openMobileSystemStatus(); }},
+      {label: '🔄 Version & Update',        action: function(){ openDesktopConfigSection('version-info'); }},
+      {label: '⚙️ Allgemeine Einstellungen', action: function(){ openDesktopConfigSection('fahrzeuge'); }},
     ],
     mobileGrpBackup: [
-      {label: '💾 Backup & Restore', action: function(){ switchToDesktopSettings(); tab('backup', document.querySelector('nav button:nth-child(5)')); }},
+      {label: '💾 Backup erstellen',        action: function(){ openMobileBackupCreate(); }},
+      {label: '📂 Backup & Restore',        action: function(){ switchToDesktopSettings(); if (typeof tab === 'function') tab('backup', document.querySelector('nav button:nth-child(5)')); }},
     ],
   };
 
@@ -507,17 +523,17 @@ async function mobileMissingChargeAccept(id) {
     openMobileSessionCreate();
     setTimeout(function(){
       var el = function(id){ return document.getElementById(id); };
-      if(el('ms_start'))     el('ms_start').value     = c.start_ts ? c.start_ts.replace('T',' ').substring(0,16) : '';
-      if(el('ms_end'))       el('ms_end').value       = c.end_ts   ? c.end_ts.replace('T',' ').substring(0,16)   : '';
-      if(el('ms_kwh'))       el('ms_kwh').value       = c.estimated_kwh!=null ? c.estimated_kwh.toFixed(2) : '';
-      if(el('ms_soc_start')) el('ms_soc_start').value = c.soc_start!=null ? c.soc_start.toFixed(0) : '';
-      if(el('ms_soc_end'))   el('ms_soc_end').value   = c.soc_end!=null   ? c.soc_end.toFixed(0)   : '';
-      if(el('ms_odo_start')) el('ms_odo_start').value = c.odo_start!=null ? Math.round(c.odo_start) : '';
-      if(el('ms_odo_end'))   el('ms_odo_end').value   = c.odo_end!=null   ? Math.round(c.odo_end)   : '';
-      if(el('ms_location')&&c.suggested_location)      el('ms_location').value      = c.suggested_location;
-      if(el('ms_charger_type')&&c.suggested_charger_type) el('ms_charger_type').value = c.suggested_charger_type;
-      if(el('ms_reason'))    el('ms_reason').value    = 'Offline-Abweichung erkannt';
-      if(el('ms_note'))      el('ms_note').value      = 'Kandidat #'+id+': '+(c.reason||'');
+      if(el('msStart'))    el('msStart').value    = c.start_ts ? c.start_ts.replace('T',' ').substring(0,16) : '';
+      if(el('msEnd'))      el('msEnd').value      = c.end_ts   ? c.end_ts.replace('T',' ').substring(0,16)   : '';
+      if(el('msKwh'))      el('msKwh').value      = c.estimated_kwh!=null ? c.estimated_kwh.toFixed(2) : '';
+      if(el('msSocStart')) el('msSocStart').value = c.soc_start!=null ? c.soc_start.toFixed(0) : '';
+      if(el('msSocEnd'))   el('msSocEnd').value   = c.soc_end!=null   ? c.soc_end.toFixed(0)   : '';
+      if(el('msOdoStart')) el('msOdoStart').value = c.odo_start!=null ? Math.round(c.odo_start) : '';
+      if(el('msOdoEnd'))   el('msOdoEnd').value   = c.odo_end!=null   ? Math.round(c.odo_end)   : '';
+      if(el('msLoc')&&c.suggested_location)         el('msLoc').value  = c.suggested_location;
+      if(el('msType')&&c.suggested_charger_type)    el('msType').value = c.suggested_charger_type;
+      if(el('msReason'))   el('msReason').value   = 'Offline-Abweichung erkannt';
+      if(el('msNote'))     el('msNote').value     = 'Kandidat #'+id+': '+(c.reason||'');
     }, 200);
   } else if (typeof openCandidateAcceptDialog === 'function') {
     // Fall back to desktop dialog via re-accept (already accepted, just prefill)
@@ -538,6 +554,11 @@ async function mobileMissingChargeAccept(id) {
 
 async function mobileMissingChargeDismiss(id) {
   var r = await apiFetch('/api/missing-charges/'+id+'/dismiss',{method:'POST'}).then(function(x){return x.json();}).catch(function(){return {ok:false};});
-  if (r.ok) { toast('Vorschlag ignoriert'); refreshMobileDashboard(); }
-  else toast('Fehler: '+(r.error||'unbekannt'), 'err');
+  if (r.ok) {
+    toast('Vorschlag ignoriert');
+    if (typeof loadMobileSessions === 'function') await loadMobileSessions();
+    if (typeof refreshMobileDashboard === 'function') refreshMobileDashboard();
+  } else {
+    toast('Fehler: '+(r.error||'unbekannt'), 'err');
+  }
 }
