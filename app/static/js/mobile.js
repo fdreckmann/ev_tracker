@@ -88,7 +88,7 @@ function switchToDesktopSettings() {
   var mainContent = document.getElementById('mainContent') || document.querySelector('.main-content') || document.querySelector('main');
   if (mainContent) mainContent.style.display = '';
   // Blende Mobile-Sections aus
-  ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore'].forEach(function(id) {
+  ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore','mobileVehicles'].forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
@@ -500,7 +500,7 @@ if (document.readyState === 'loading') {
 window.addEventListener('resize', function() {
   if (window.innerWidth > 768) {
     // Desktop: alle Mobile-Sections ausblenden, Main-Content zeigen
-    ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore'].forEach(function(id) {
+    ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore','mobileVehicles'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
