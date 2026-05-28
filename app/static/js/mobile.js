@@ -19,7 +19,7 @@ function mobileNavTo(section) {
   _mobileCurrentSection = section;
 
   // Alle Mobile-Sections ausblenden
-  var sections = ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore'];
+  var sections = ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore','mobileVehicles'];
   sections.forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.style.display = 'none';
@@ -38,7 +38,7 @@ function mobileNavTo(section) {
     var el = document.getElementById('mobileSessionCards');
     if (el) el.style.display = 'block';
     document.getElementById('mbnSessions')?.classList.add('active');
-    renderMobileSessionCards();
+    loadMobileSessions();
   } else if (section === 'analysis') {
     // Auf Desktop-Analyse-Bereich scrollen oder cfgSection aufrufen
     document.getElementById('mbnAnalysis')?.classList.add('active');
@@ -59,15 +59,28 @@ function mobileNavTo(section) {
     if (el) el.style.display = 'block';
     document.getElementById('mbnMore')?.classList.add('active');
     initMobileMore();
+  } else if (section === 'vehicles') {
+    var el = document.getElementById('mobileVehicles');
+    if (el) el.style.display = 'block';
+    document.getElementById('mbnVehicles')?.classList.add('active');
+    if (typeof loadMobileVehicleCards === 'function') loadMobileVehicleCards();
   }
 
   // Auf Mobile: Desktop-Hauptcontent ausblenden wenn wir eigene Section zeigen
   if (window.innerWidth <= 768) {
     var mainContent = document.getElementById('mainContent') || document.querySelector('.main-content') || document.querySelector('main');
     if (mainContent && section !== 'analysis') {
-      mainContent.style.display = (section === 'home' || section === 'sessions' || section === 'export' || section === 'more') ? 'none' : 'block';
+      mainContent.style.display = (section === 'home' || section === 'sessions' || section === 'export' || section === 'more' || section === 'vehicles') ? 'none' : 'block';
     }
   }
+}
+
+function openDesktopConfigSection(sectionId) {
+  switchToDesktopSettings();
+  if (typeof tab === 'function') tab('config', document.querySelector('nav button:nth-child(2)'));
+  setTimeout(function() {
+    if (typeof cfgSection === 'function') cfgSection(sectionId);
+  }, 50);
 }
 
 function switchToDesktopSettings() {
@@ -75,7 +88,7 @@ function switchToDesktopSettings() {
   var mainContent = document.getElementById('mainContent') || document.querySelector('.main-content') || document.querySelector('main');
   if (mainContent) mainContent.style.display = '';
   // Blende Mobile-Sections aus
-  ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore'].forEach(function(id) {
+  ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore','mobileVehicles'].forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
@@ -218,26 +231,50 @@ function renderMobileSessionCards() {
 }
 
 function buildSessionCard(s, compact) {
-  var date = s.date || (s.start_time ? s.start_time.split('T')[0] : '—');
+  var date = s.date || (s.start_time ? s.start_time.split('T')[0] : (s.start_ts ? s.start_ts.split('T')[0] : '—'));
   var kwh = parseFloat(s.kwh_charged || 0).toFixed(1);
   var cost = parseFloat(s.cost_eur || 0).toFixed(2);
   var loc = s.location || '';
-  var isHome = loc.toLowerCase().includes('home') || loc.toLowerCase().includes('zuhause') || loc === '';
+  var isHome = loc === 'home' || loc === '' || loc.toLowerCase().includes('home') || loc.toLowerCase().includes('zuhause');
   var cls = isHome ? 'home' : 'extern';
+  var locLabels = {'home':'🏠 Zuhause','extern':'⚡ Extern','unknown':'— Unbekannt'};
+  var locLabel = locLabels[loc] || (loc ? escapeHtml(loc) : '');
   var dur = s.duration || '';
-  var start = s.start_time ? s.start_time.slice(11,16) : '';
+  var start = (s.start_time || s.start_ts || '').slice(11,16);
+  var sid = s.id || 0;
 
-  return '<div class="session-card '+cls+'" onclick="mobileSessionDetail('+(s.id||0)+')">' +
+  var safeLoc = escapeHtml(loc || 'unknown');
+  // Use data-loc attribute to avoid quoting hell in onclick
+  var changeLocBtn = sid ? '<button data-sid="'+sid+'" data-loc="'+safeLoc+'" onclick="event.stopPropagation();mobileEditLocation(this.dataset.sid,this.dataset.loc)" '
+    +'style="background:rgba(61,220,151,.14);color:#3ddc97;border:1px solid rgba(61,220,151,.3);border-radius:6px;padding:4px 10px;font-size:.7rem;cursor:pointer">📍</button>' : '';
+
+  return '<div class="session-card '+cls+'" onclick="mobileSessionDetail('+sid+')">' +
     '<div class="session-card-header">' +
-      '<span class="session-card-date">'+date+(start ? ' · '+start : '')+'</span>' +
+      '<span class="session-card-date">'+escapeHtml(date)+(start ? ' · '+start : '')+'</span>' +
       '<span class="session-card-cost">'+cost+' €</span>' +
     '</div>' +
     '<div class="session-card-details">' +
       '<span>⚡ '+kwh+' kWh</span>' +
-      (dur ? '<span>⏱ '+dur+'</span>' : '') +
-      (loc ? '<span>📍 '+escapeHtml(loc)+'</span>' : '') +
+      (dur ? '<span>⏱ '+escapeHtml(dur)+'</span>' : '') +
+      (locLabel ? '<span>'+locLabel+'</span>' : '') +
+      (!compact && sid ? '<span style="margin-left:auto">'+changeLocBtn+'</span>' : '') +
     '</div>' +
   '</div>';
+}
+
+async function loadMobileSessions() {
+  var sessions = await apiFetch('/api/sessions').then(function(r) { return r.json(); }).catch(function() { return []; });
+  window._allSessions = sessions;
+  window._sessions = sessions;
+  renderMobileSessionCards();
+}
+
+async function mobileEditLocation(sessionId, current) {
+  if (typeof window.editLocation === 'function') {
+    await window.editLocation(sessionId, current);
+    await loadMobileSessions();
+    if (typeof refreshMobileDashboard === 'function') refreshMobileDashboard();
+  }
 }
 
 function mobileSessionDetail(sessionId) {
@@ -387,30 +424,38 @@ function toggleSettingsGroup(header) {
 }
 
 function initMobileMore() {
-  // Einfache Links zu den jeweiligen Desktop-Einstellungs-Bereichen
   var groups = {
     mobileGrpVehicles: [
-      {label: '🚗 Fahrzeuge verwalten', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('fahrzeuge'); }},
+      {label: '🚗 Fahrzeugliste öffnen',   action: function(){ mobileNavTo('vehicles'); }},
+      {label: '➕ Fahrzeug hinzufügen',      action: function(){ mobileNavTo('vehicles'); setTimeout(function(){ if (typeof openAddVehicleModal === 'function') openAddVehicleModal(); }, 150); }},
     ],
     mobileGrpProvider: [
-      {label: '🔌 Provider konfigurieren', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('verbindung'); }},
-      {label: '📊 Zählerstand testen', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('zaehler'); }},
+      {label: '🔌 Verbindung testen',        action: function(){ openMobileConnectionTest(); }},
+      {label: '📊 Zählerstand testen',       action: function(){ openMobileMeterTest(); }},
+      {label: '⚙️ Provider konfigurieren',   action: function(){ openDesktopConfigSection('verbindung'); }},
+      {label: '🔌 Zähler & Wallbox',         action: function(){ openDesktopConfigSection('zaehler'); }},
     ],
     mobileGrpExport: [
-      {label: '📥 Export-Einstellungen', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('export-tpl'); }},
+      {label: '📥 Export erstellen',         action: function(){ mobileNavTo('export'); }},
+      {label: '📋 Export-Vorlagen',          action: function(){ openDesktopConfigSection('export-tpl'); }},
     ],
     mobileGrpSignature: [
-      {label: '✍️ Unterschrift hochladen', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('auth'); }},
+      {label: '✍️ Signatur verwalten',       action: function(){ openMobileSignatureSheet(); }},
+      {label: '📋 Signaturposition in Vorlage', action: function(){ openDesktopConfigSection('export-tpl'); }},
     ],
     mobileGrpSecurity: [
-      {label: '👤 Benutzer & Sicherheit', action: function(){ switchToDesktopSettings(); typeof cfgSection === 'function' && cfgSection('auth'); }},
+      {label: '👤 Konto & Sicherheit',      action: function(){ openDesktopConfigSection('profil'); }},
+      {label: '👥 Benutzer',                action: function(){ openDesktopConfigSection('benutzer'); }},
+      {label: '🔐 Rollen & Rechte',         action: function(){ openDesktopConfigSection('roles'); }},
     ],
     mobileGrpSystem: [
-      {label: '⚙️ Allgemeine Einstellungen', action: function(){ switchToDesktopSettings(); }},
-      {label: '🔄 Updates & Version', action: function(){ switchToDesktopSettings(); document.getElementById('updateSection')?.scrollIntoView({behavior:'smooth'}); }},
+      {label: '⚙️ System-Status',           action: function(){ openMobileSystemStatus(); }},
+      {label: '🔄 Version & Update',        action: function(){ openDesktopConfigSection('version-info'); }},
+      {label: '⚙️ Allgemeine Einstellungen', action: function(){ openDesktopConfigSection('fahrzeuge'); }},
     ],
     mobileGrpBackup: [
-      {label: '💾 Backup & Restore', action: function(){ switchToDesktopSettings(); tab('backup', document.querySelector('nav button:nth-child(5)')); }},
+      {label: '💾 Backup erstellen',        action: function(){ openMobileBackupCreate(); }},
+      {label: '📂 Backup & Restore',        action: function(){ switchToDesktopSettings(); if (typeof tab === 'function') tab('backup', document.querySelector('nav button:nth-child(5)')); }},
     ],
   };
 
@@ -455,7 +500,7 @@ if (document.readyState === 'loading') {
 window.addEventListener('resize', function() {
   if (window.innerWidth > 768) {
     // Desktop: alle Mobile-Sections ausblenden, Main-Content zeigen
-    ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore'].forEach(function(id) {
+    ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore','mobileVehicles'].forEach(function(id) {
       var el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
@@ -478,17 +523,17 @@ async function mobileMissingChargeAccept(id) {
     openMobileSessionCreate();
     setTimeout(function(){
       var el = function(id){ return document.getElementById(id); };
-      if(el('ms_start'))     el('ms_start').value     = c.start_ts ? c.start_ts.replace('T',' ').substring(0,16) : '';
-      if(el('ms_end'))       el('ms_end').value       = c.end_ts   ? c.end_ts.replace('T',' ').substring(0,16)   : '';
-      if(el('ms_kwh'))       el('ms_kwh').value       = c.estimated_kwh!=null ? c.estimated_kwh.toFixed(2) : '';
-      if(el('ms_soc_start')) el('ms_soc_start').value = c.soc_start!=null ? c.soc_start.toFixed(0) : '';
-      if(el('ms_soc_end'))   el('ms_soc_end').value   = c.soc_end!=null   ? c.soc_end.toFixed(0)   : '';
-      if(el('ms_odo_start')) el('ms_odo_start').value = c.odo_start!=null ? Math.round(c.odo_start) : '';
-      if(el('ms_odo_end'))   el('ms_odo_end').value   = c.odo_end!=null   ? Math.round(c.odo_end)   : '';
-      if(el('ms_location')&&c.suggested_location)      el('ms_location').value      = c.suggested_location;
-      if(el('ms_charger_type')&&c.suggested_charger_type) el('ms_charger_type').value = c.suggested_charger_type;
-      if(el('ms_reason'))    el('ms_reason').value    = 'Offline-Abweichung erkannt';
-      if(el('ms_note'))      el('ms_note').value      = 'Kandidat #'+id+': '+(c.reason||'');
+      if(el('msStart'))    el('msStart').value    = c.start_ts ? c.start_ts.replace('T',' ').substring(0,16) : '';
+      if(el('msEnd'))      el('msEnd').value      = c.end_ts   ? c.end_ts.replace('T',' ').substring(0,16)   : '';
+      if(el('msKwh'))      el('msKwh').value      = c.estimated_kwh!=null ? c.estimated_kwh.toFixed(2) : '';
+      if(el('msSocStart')) el('msSocStart').value = c.soc_start!=null ? c.soc_start.toFixed(0) : '';
+      if(el('msSocEnd'))   el('msSocEnd').value   = c.soc_end!=null   ? c.soc_end.toFixed(0)   : '';
+      if(el('msOdoStart')) el('msOdoStart').value = c.odo_start!=null ? Math.round(c.odo_start) : '';
+      if(el('msOdoEnd'))   el('msOdoEnd').value   = c.odo_end!=null   ? Math.round(c.odo_end)   : '';
+      if(el('msLoc')&&c.suggested_location)         el('msLoc').value  = c.suggested_location;
+      if(el('msType')&&c.suggested_charger_type)    el('msType').value = c.suggested_charger_type;
+      if(el('msReason'))   el('msReason').value   = 'Offline-Abweichung erkannt';
+      if(el('msNote'))     el('msNote').value     = 'Kandidat #'+id+': '+(c.reason||'');
     }, 200);
   } else if (typeof openCandidateAcceptDialog === 'function') {
     // Fall back to desktop dialog via re-accept (already accepted, just prefill)
@@ -509,6 +554,11 @@ async function mobileMissingChargeAccept(id) {
 
 async function mobileMissingChargeDismiss(id) {
   var r = await apiFetch('/api/missing-charges/'+id+'/dismiss',{method:'POST'}).then(function(x){return x.json();}).catch(function(){return {ok:false};});
-  if (r.ok) { toast('Vorschlag ignoriert'); refreshMobileDashboard(); }
-  else toast('Fehler: '+(r.error||'unbekannt'), 'err');
+  if (r.ok) {
+    toast('Vorschlag ignoriert');
+    if (typeof loadMobileSessions === 'function') await loadMobileSessions();
+    if (typeof refreshMobileDashboard === 'function') refreshMobileDashboard();
+  } else {
+    toast('Fehler: '+(r.error||'unbekannt'), 'err');
+  }
 }

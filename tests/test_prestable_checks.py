@@ -73,6 +73,17 @@ class TestSanitizeDebugUrl:
         url = "http://host/api/status"
         assert self._fn()(url) == url
 
+    def test_userinfo_stripped(self):
+        result = self._fn()("http://user:password@example.com/meter?token=s3cr3t")
+        assert "user:password" not in result
+        assert "password" not in result
+        assert "example.com" in result
+
+    def test_userinfo_without_query(self):
+        result = self._fn()("http://admin:secret@192.168.1.1/api")
+        assert "admin:secret" not in result
+        assert "192.168.1.1" in result
+
     def test_token_masked(self):
         result = self._fn()("http://host/api?token=secret123&period=day")
         assert "secret123" not in result
@@ -201,17 +212,21 @@ class TestBillingJsXSS:
 
 class TestUpdateInfoChannel:
 
-    def test_channel_is_beta(self):
+    def test_channel_is_consistent(self):
+        """version.json and update-info.json must have the same channel."""
+        import json
+        info_path = Path(__file__).parent.parent / "update-info.json"
+        vpath = Path(__file__).parent.parent / "version.json"
+        info_data = json.loads(info_path.read_text(encoding="utf-8"))
+        v_data = json.loads(vpath.read_text(encoding="utf-8")) if vpath.exists() else {}
+        assert info_data.get("channel") in ("beta", "stable"), \
+            f"update-info.json channel must be 'beta' or 'stable', got {info_data.get('channel')!r}"
+        if v_data:
+            assert v_data.get("channel") == info_data.get("channel"), \
+                f"version.json channel {v_data.get('channel')!r} != update-info.json {info_data.get('channel')!r}"
+
+    def test_channel_not_empty(self):
         import json
         info_path = Path(__file__).parent.parent / "update-info.json"
         data = json.loads(info_path.read_text(encoding="utf-8"))
-        assert data.get("channel") == "beta", \
-            f"update-info.json channel must be 'beta', got {data.get('channel')!r}"
-
-    def test_version_json_channel_is_beta(self):
-        import json
-        vpath = Path(__file__).parent.parent / "version.json"
-        if vpath.exists():
-            data = json.loads(vpath.read_text(encoding="utf-8"))
-            assert data.get("channel") == "beta", \
-                f"version.json channel must be 'beta', got {data.get('channel')!r}"
+        assert data.get("channel"), "update-info.json channel must not be empty"

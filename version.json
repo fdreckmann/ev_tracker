@@ -1,6 +1,8 @@
 {
-  "version": "2.0.53",
-  "build": "2026-05-27",
-  "channel": "beta",
-  "commit": ""
+  "version": "2.0.55",
+  "build": "2026-05-28",
+  "channel": "stable",
+  "commit": "",
+  "branch": "",
+  "image_tag": ""
 }

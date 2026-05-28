@@ -189,7 +189,7 @@ SIGNATURE_PATH = SIGNATURE_DIR / "default_signature.png"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
-app.secret_key = _get_secret_key()
+app.secret_key = os.environ.get("FLASK_SECRET_KEY") or _get_secret_key()
 
 _EXTERNAL_MODE = os.getenv("EV_TRACKER_EXPOSURE", "internal").lower() == "external"
 if _EXTERNAL_MODE:
@@ -1151,24 +1151,24 @@ def tracker_loop(vehicle_id: str = "v0"):
                 con.commit()
 
                 # ── Meter-based home detection ─────────────────────────────────
-                _mhd_enabled = cfg.get("meter_home_detection_enabled", True)
+                _mhd_enabled = vcfg.get("meter_home_detection_enabled", True)
                 _mhd_start   = st.get("meter_home_det_start_val")
                 _mhd_start_ts= st.get("meter_home_det_start_ts")
                 if (_mhd_enabled and _mhd_start is not None and _mhd_start_ts is not None
-                        and cfg.get("meter_source", "none") != "none"):
+                        and vcfg.get("meter_source", "none") != "none"):
                     _can_detect = (
                         _effective_location == "unknown" or
-                        (_effective_location == "extern" and cfg.get("meter_home_detection_override_external", False))
+                        (_effective_location == "extern" and vcfg.get("meter_home_detection_override_external", False))
                     )
                     _is_conflict = (_effective_location == "extern")
                     if _can_detect or _is_conflict:
                         try:
-                            _mhd_now_res = _read_meter_impl(cfg)
+                            _mhd_now_res = _read_meter_impl(vcfg)
                             if _mhd_now_res.value is not None:
                                 _mhd_delta = _mhd_now_res.value - _mhd_start
-                                _mhd_min   = float(cfg.get("meter_home_detection_min_delta_kwh", 0.2))
-                                _mhd_win   = float(cfg.get("meter_home_detection_window_minutes", 10))
-                                _mhd_max_h = float(cfg.get("meter_home_detection_max_delta_kwh_per_hour", 30.0))
+                                _mhd_min   = float(vcfg.get("meter_home_detection_min_delta_kwh", 0.2))
+                                _mhd_win   = float(vcfg.get("meter_home_detection_window_minutes", 10))
+                                _mhd_max_h = float(vcfg.get("meter_home_detection_max_delta_kwh_per_hour", 30.0))
                                 # Validate time window
                                 try:
                                     _mhd_age_min = (datetime.utcnow() - datetime.fromisoformat(_mhd_start_ts)).total_seconds() / 60
@@ -1199,7 +1199,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                                     st["location_source"]  = "meter_delta"
                                     _effective_location    = "home"
                                     # Recalculate price at home tariff
-                                    _mhd_home_price = cfg.get("price_per_kwh_home", 0.30)
+                                    _mhd_home_price = vcfg.get("price_per_kwh_home", 0.30)
                                     cur.execute(
                                         "UPDATE sessions SET location=?,price_per_kwh=?,meter_old=?,"
                                         "meter_home_detection_start_value=?,meter_home_detection_start_ts=?,"
@@ -1228,12 +1228,12 @@ def tracker_loop(vehicle_id: str = "v0"):
                     if new_type != charger_type:
                         try:
                             from services.pricing_service import resolve_session_price
-                            _pr2 = resolve_session_price(_effective_location, new_type, cfg, con, session_id)
-                            price = _pr2["price_per_kwh"] if _pr2["price_per_kwh"] is not None else cfg.get("price_per_kwh_home", 0.30)
+                            _pr2 = resolve_session_price(_effective_location, new_type, vcfg, con, session_id)
+                            price = _pr2["price_per_kwh"] if _pr2["price_per_kwh"] is not None else vcfg.get("price_per_kwh_home", 0.30)
                         except Exception:
                             spot = st.get("entsoe_spot")
-                            price = (cfg["price_per_kwh_home"] if _effective_location=="home"
-                                     else calc_extern_price(cfg,new_type,spot))
+                            price = (vcfg.get("price_per_kwh_home", 0.30) if _effective_location=="home"
+                                     else calc_extern_price(vcfg,new_type,spot))
                         cur.execute("UPDATE sessions SET charger_type=?,max_power_kw=?,price_per_kwh=? WHERE id=?",
                                     (new_type,peak_power,price,session_id))
                         con.commit(); charger_type=new_type
@@ -1326,17 +1326,17 @@ def tracker_loop(vehicle_id: str = "v0"):
                     if 0 < meter_delta <= 250:
                         kwh = meter_delta
                         if not cost_manual:
-                            cost = round(kwh * (db_price or cfg["price_per_kwh_home"]), 2)
+                            cost = round(kwh * (db_price or vcfg.get("price_per_kwh_home", 0.30)), 2)
                         kwh_source = "meter"
                         meter_used = 1
                 # Dynamic tariff price (only for home sessions with non-fixed provider)
-                effective_price = db_price or cfg.get("price_per_kwh_home", 0.30)
-                tariff_prov_name = cfg.get("tariff_provider", "fixed")
+                effective_price = db_price or vcfg.get("price_per_kwh_home", 0.30)
+                tariff_prov_name = vcfg.get("tariff_provider", "fixed")
                 tariff_price_src = "config"
                 if not cost_manual and _effective_location == "home" and tariff_prov_name not in ("fixed", "", None):
                     try:
                         from tariff_providers import get_tariff_provider
-                        _tp = get_tariff_provider(cfg)
+                        _tp = get_tariff_provider(vcfg)
                         _sess_start = cur.execute(
                             "SELECT start_ts FROM sessions WHERE id=?", (session_id,)).fetchone()
                         if _sess_start and _sess_start[0]:

@@ -1,28 +1,114 @@
-name: Build & Push Docker Image
+name: Test, Build & Push Docker Image
 
 on:
   push:
     branches:
       - main
       - dev
-      - test
-
-  schedule:
-    - cron: '0 2 * * *'   # nightly um 02:00 UTC
-
+    tags:
+      - "v*"
   workflow_dispatch:
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/ev-tracker
+  IMAGE_NAME: 19121412/ev-tracker
 
 jobs:
-  build-and-push:
+  test:
+    name: Run tests
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Python syntax check
+        run: python -m compileall -q app tests
+
+      - name: JavaScript syntax check
+        run: |
+          for f in app/static/js/*.js; do
+            node --check "$f"
+          done
+
+      - name: Run pytest
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+          DATA_DIR: ${{ runner.temp }}/ev-tracker-data
+          EV_TRACKER_UPDATE_CHECK_ENABLED: "false"
+          FLASK_SECRET_KEY: "ci-test-secret-key"
+        run: |
+          mkdir -p "$DATA_DIR"
+          python -m pytest -q
+
+      - name: Ensure tests did not write to /data
+        run: |
+          if [ -d /data ] && [ "$(ls -A /data 2>/dev/null)" ]; then
+            echo "ERROR: Tests wrote files to /data:"
+            ls -la /data
+            exit 1
+          fi
+
+  build-and-push:
+    name: Build and push Docker image
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set Docker tags and build metadata
+        id: tags
+        run: |
+          SHA_SHORT=$(echo "${GITHUB_SHA}" | cut -c1-8)
+          BUILD_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          VERSION_FROM_FILE=$(python3 -c "import json; print(json.load(open('version.json'))['version'])" 2>/dev/null || echo "unknown")
+
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            # Explicit release tag: latest + versioned tag + stable
+            VERSION="${GITHUB_REF_NAME#v}"
+            CHANNEL=stable
+            MAIN_TAG="${IMAGE_NAME}:latest"
+            echo "tags=${IMAGE_NAME}:latest,${IMAGE_NAME}:${GITHUB_REF_NAME},${IMAGE_NAME}:stable" >> "$GITHUB_OUTPUT"
+          elif [ "${GITHUB_REF_NAME}" = "main" ]; then
+            # main = staging / pre-release: stable tag only, never latest
+            VERSION="${VERSION_FROM_FILE}"
+            CHANNEL=stable
+            MAIN_TAG="${IMAGE_NAME}:stable"
+            echo "tags=${IMAGE_NAME}:stable,${IMAGE_NAME}:main-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+          elif [ "${GITHUB_REF_NAME}" = "dev" ]; then
+            # dev = ongoing development
+            VERSION="${VERSION_FROM_FILE}"
+            CHANNEL=dev
+            MAIN_TAG="${IMAGE_NAME}:dev"
+            echo "tags=${IMAGE_NAME}:dev,${IMAGE_NAME}:dev-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+          else
+            # other branches (feature, hotfix, …)
+            VERSION="${VERSION_FROM_FILE}"
+            CHANNEL=dev
+            MAIN_TAG="${IMAGE_NAME}:${GITHUB_REF_NAME}-${SHA_SHORT}"
+            echo "tags=${IMAGE_NAME}:${GITHUB_REF_NAME}-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "version=${VERSION}"            >> "$GITHUB_OUTPUT"
+          echo "build_ts=${BUILD_TS}"          >> "$GITHUB_OUTPUT"
+          echo "channel=${CHANNEL}"            >> "$GITHUB_OUTPUT"
+          echo "sha_short=${SHA_SHORT}"        >> "$GITHUB_OUTPUT"
+          echo "main_tag=${MAIN_TAG}"          >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -30,52 +116,17 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Set tags
-        id: tags
-        shell: bash
-        run: |
-          SHA_SHORT=$(echo "${GITHUB_SHA}" | cut -c1-8)
-
-          if [ "${GITHUB_EVENT_NAME}" = "schedule" ]; then
-            {
-              echo "tags<<EOF"
-              echo "${IMAGE_NAME}:nightly"
-              echo "${IMAGE_NAME}:nightly-${SHA_SHORT}"
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
-
-          elif [ "${GITHUB_REF_NAME}" = "main" ]; then
-            {
-              echo "tags<<EOF"
-              echo "${IMAGE_NAME}:latest"
-              echo "${IMAGE_NAME}:main-${SHA_SHORT}"
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
-
-          elif [ "${GITHUB_REF_NAME}" = "dev" ]; then
-            {
-              echo "tags<<EOF"
-              echo "${IMAGE_NAME}:dev"
-              echo "${IMAGE_NAME}:dev-${SHA_SHORT}"
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
-
-          elif [ "${GITHUB_REF_NAME}" = "test" ]; then
-            {
-              echo "tags<<EOF"
-              echo "${IMAGE_NAME}:beta"
-              echo "${IMAGE_NAME}:beta-${SHA_SHORT}"
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
-
-          else
-            echo "Unsupported branch: ${GITHUB_REF_NAME}"
-            exit 1
-          fi
-
-      - name: Build and push
+      - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: ${{ steps.tags.outputs.tags }}
+          platforms: linux/amd64
+          build-args: |
+            EV_TRACKER_VERSION=${{ steps.tags.outputs.version }}
+            EV_TRACKER_BUILD=${{ steps.tags.outputs.build_ts }}
+            EV_TRACKER_CHANNEL=${{ steps.tags.outputs.channel }}
+            EV_TRACKER_COMMIT=${{ github.sha }}
+            EV_TRACKER_BRANCH=${{ github.ref_name }}
+            EV_TRACKER_IMAGE_TAG=${{ steps.tags.outputs.main_tag }}

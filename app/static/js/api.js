@@ -53,8 +53,16 @@ async function initCsrf() {
 
 function apiFetch(url, opts) {
   opts = opts || {};
+  var timeoutMs = opts.timeoutMs != null ? opts.timeoutMs : 15000;
+  delete opts.timeoutMs;
   opts.headers = opts.headers || {};
   if (csrfToken) opts.headers['X-CSRF-Token'] = csrfToken;
+  if (timeoutMs && typeof AbortController !== 'undefined') {
+    var ctrl = new AbortController();
+    opts.signal = opts.signal || ctrl.signal;
+    var tid = setTimeout(function() { ctrl.abort(); }, timeoutMs);
+    return fetch(url, opts).finally(function() { clearTimeout(tid); });
+  }
   return fetch(url, opts);
 }
 
@@ -73,9 +81,11 @@ function normalizeLocation(val) {
   if (!val) return 'unknown';
   var v = String(val).trim().toLowerCase();
   if (['unknown','unavailable','disabled','none','n/a','null','offline',''].indexOf(v) >= 0) return 'unknown';
-  if (['home','zuhause','at_home','home_charging','garage','local'].indexOf(v) >= 0) return 'home';
+  if (['home','zuhause','at_home','home_charging','garage','local',
+       'intern','internal','zuhause_laden'].indexOf(v) >= 0) return 'home';
   if (['extern','external','not_home','away','unterwegs','extern_charging',
-       'outside','remote','roaming','public','charging_away','travel'].indexOf(v) >= 0) return 'extern';
+       'outside','remote','roaming','public','charging_away','travel',
+       'öffentlich'].indexOf(v) >= 0) return 'extern';
   return 'unknown';
 }
 

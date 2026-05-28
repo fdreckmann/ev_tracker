@@ -17,6 +17,19 @@ sys.path.insert(0, str(APP_DIR))
 # real HTTP calls to GitHub, which would cause hangs in air-gapped / CI envs.
 os.environ.setdefault("EV_TRACKER_UPDATE_CHECK_ENABLED", "false")
 
+# Prevent server.py from writing /data/.secret_key at import time.
+# This must be set before any test file can import server.py.
+os.environ.setdefault("FLASK_SECRET_KEY", "test-secret-key-for-pytest")
+
+# Pre-compute a cheap test password hash ONCE at import time.
+# Using 1 PBKDF2 iteration instead of the production ~260k makes each
+# authed_client fixture ~500x faster (0.6 s → ~1 ms per test).
+try:
+    from werkzeug.security import generate_password_hash as _gph
+    _TEST_PW_HASH: str = _gph("testpass123", method="pbkdf2:sha256:1", salt_length=8)
+except Exception:
+    _TEST_PW_HASH = ""
+
 
 @pytest.fixture()
 def app(tmp_path, monkeypatch):
@@ -51,6 +64,10 @@ def app(tmp_path, monkeypatch):
 
     # Patch config path — core.config uses CONFIG_FILE (not _CONFIG_PATH)
     monkeypatch.setattr(_cfg_mod, "CONFIG_FILE", cfg_path)
+    # core.config copies DATA_DIR at import time via `from core.db import DATA_DIR`.
+    # Patching core.db.DATA_DIR alone is not enough — save_config() reads the
+    # module-level name in core.config, so we must patch it there too.
+    monkeypatch.setattr(_cfg_mod, "DATA_DIR", tmp_path)
     # Reset the config cache so next load_config() reads the patched file
     _cfg_mod._config_cache["data"] = None
     _cfg_mod._config_cache["ts"] = 0
@@ -130,9 +147,8 @@ def authed_client(app):
     client = app.test_client()
     with app.app_context():
         from core.db import _get_db, close_db_if_owned
-        from core.security import _hash_password
         now = datetime.utcnow().isoformat()
-        pw = _hash_password("testpass123")
+        pw = _TEST_PW_HASH or "pbkdf2:sha256:1$test$0000000000000000000000000000000000000000000000000000000000000000"
         con = _get_db()
         con.execute("""INSERT OR IGNORE INTO users
             (name, email, password_hash, role, status, totp_secret,

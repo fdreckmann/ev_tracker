@@ -19,7 +19,7 @@ _RESTORE_ALLOWED_DIRS = {
 }
 
 
-def create_backup(data_dir: Path, backup_dir: Path, label: str = "manual") -> Path:
+def _create_backup_impl(data_dir: Path, backup_dir: Path, label: str = "manual") -> Path:
     """Create a zip backup of data_dir contents."""
     backup_dir.mkdir(parents=True, exist_ok=True)
     ts  = datetime.now().strftime("%Y%m%d_%H%M%S")

@@ -170,39 +170,20 @@ Flexibles rollenbasiertes Berechtigungssystem mit 70+ granularen Permissions.
 
 ## Installation auf Unraid
 
-### Schritt 1 — CA Template einrichten
+Das Unraid Community Apps Template wird in einem separaten Repository gepflegt:
 
-Im Unraid Terminal:
+➡ **https://github.com/fdreckmann/ev-tracker-unraid-app**
 
-```bash
-mkdir -p /boot/config/plugins/dockerMan/templates-user/
-cat > /boot/config/plugins/dockerMan/templates-user/ev-tracker.xml << 'XMLEOF'
-<?xml version="1.0"?>
-<Container version="2">
-  <Name>ev-tracker</Name>
-  <Repository>19121412/ev-tracker:latest</Repository>
-  <Registry>https://hub.docker.com/r/19121412/ev-tracker</Registry>
-  <Network>bridge</Network>
-  <Privileged>false</Privileged>
-  <Overview>EV Ladeprotokoll für Elektrofahrzeuge via Home Assistant oder direkter Hersteller-API.</Overview>
-  <Category>Tools:</Category>
-  <WebUI>http://[IP]:[PORT:8054]/</WebUI>
-  <Icon>https://raw.githubusercontent.com/home-assistant/brands/master/custom_integrations/volkswagen_we_connect_id/icon.png</Icon>
-  <ExtraParams>--restart unless-stopped</ExtraParams>
-  <Config Name="Web UI Port" Target="8080" Default="8054" Mode="tcp" Type="Port" Display="always" Required="true" Mask="false">8054</Config>
-  <Config Name="Daten-Verzeichnis" Target="/data" Default="/mnt/user/appdata/ev-tracker" Mode="rw" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/ev-tracker</Config>
+Dort findest du das aktuelle CA-Template, Installationsanleitung und Icons.
 
-  <Config Name="DATA_DIR" Target="DATA_DIR" Default="/data" Type="Variable" Display="advanced" Required="true" Mask="false">/data</Config>
-  <Config Name="TZ" Target="TZ" Default="Europe/Berlin" Type="Variable" Display="always" Required="true" Mask="false">Europe/Berlin</Config>
-</Container>
-XMLEOF
-```
+### Kurzanleitung
 
-### Schritt 2 — Container starten
+1. Community Apps → Suche nach **ev-tracker** → **Install**
+2. Daten-Verzeichnis anpassen (Standard: `/mnt/user/appdata/ev-tracker`)
+3. Zeitzone setzen (Standard: `Europe/Berlin`)
+4. **Apply** → Container startet automatisch
 
-Browser neu laden (F5) → Unraid → Docker → **"Add Container"** → Template **"ev-tracker"** → **Apply**
-
-### Schritt 3 — Web UI öffnen
+### Web UI öffnen
 
 ```
 http://<unraid-ip>:8054
@@ -322,7 +303,8 @@ Die Web-UI zeigt unter **Konfiguration → Version & Update** ob eine neue Versi
 
 | Tag | Beschreibung |
 |-----|-------------|
-| `latest` | Stabile Releases |
+| `latest` | Stabile Releases (nur bei Git-Tag `v*`) |
+| `beta` | Main-Branch (aktueller Entwicklungsstand) |
 | `nightly` | Automatischer Build (täglich 02:00 UTC) |
 | `dev` | Entwicklungsversion |
 

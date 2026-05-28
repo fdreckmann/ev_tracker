@@ -25,6 +25,9 @@ function fitAllStats() {
 window.addEventListener('resize', fitAllStats);
 
 // ── Status polling ────────────────────────────────────────────────────────────
+var _refreshStatusInFlight = false;
+var _lastLocationFetchTs = 0;
+
 function _applyLocationToTile(locEl, locStatus, locSrc, meterActive, locTitle) {
   const rawLoc = locStatus ? String(locStatus).trim().toLowerCase() : '';
   if (rawLoc === 'disabled') {
@@ -53,14 +56,20 @@ function _applyLocationToTile(locEl, locStatus, locSrc, meterActive, locTitle) {
 }
 
 async function refreshStatus() {
+  if (_refreshStatusInFlight) return;
+  _refreshStatusInFlight = true;
   try {
     const vid = window._activeVehicleId || 'v0';
-    // /api/status now calls refresh_vehicle_location_state internally (TTL-cached).
-    // We also fetch the location endpoint directly to get ha_debug and bypass the cache
-    // on the first call after page load.
+    // Throttle direct location endpoint to once per 60s to reduce server load.
+    const now = Date.now();
+    const fetchLoc = (now - _lastLocationFetchTs) >= 60000;
+    if (fetchLoc) _lastLocationFetchTs = now;
+    const locPromise = fetchLoc
+      ? apiFetch(`/api/vehicles/${encodeURIComponent(vid)}/location`, {cache: 'no-store'}).then(r => r.json()).catch(() => null)
+      : Promise.resolve(null);
     const [s, locResp, meterResp] = await Promise.all([
       apiFetch(`/api/status?vehicle_id=${encodeURIComponent(vid)}`, {cache: 'no-store'}).then(r => r.json()),
-      apiFetch(`/api/vehicles/${encodeURIComponent(vid)}/location`, {cache: 'no-store'}).then(r => r.json()).catch(() => null),
+      locPromise,
       apiFetch(`/api/meter/status?vehicle_id=${encodeURIComponent(vid)}`, {cache: 'no-store'}).then(r => r.json()).catch(() => null),
     ]);
     const dot = $('sDot'), txt = $('sTxt');
@@ -142,7 +151,7 @@ async function refreshStatus() {
       _applyLocationToTile(locEl, locStatus, locSrc, s.meter_home_det_active, locTitle);
     }
 
-    const rows = await fetch('/api/sessions').then(r => r.json()).catch(() => []);
+    const rows = await apiFetch('/api/sessions?limit=5').then(r => r.json()).catch(() => []);
     const typeEl = $('dType'), pwrEl = $('dPwr'), chargeLabel = $('dChargeLabel');
     if (typeEl && chargeLabel) {
       if (s.charging) {
@@ -228,6 +237,8 @@ async function refreshStatus() {
     fitAllStats();
   } catch (e) {
     $('sDot').className = 'dot err'; $('sTxt').textContent = 'Fehler';
+  } finally {
+    _refreshStatusInFlight = false;
   }
 }
 
@@ -267,7 +278,7 @@ function renderTbl(el, rows, showDel = true) {
       <td class="num">${r.id}</td>
       <td>${fmtDate(r.start_ts).split(' ')[0]}</td>
       <td>${fmtTime(r.start_ts)} → ${r.end_ts ? fmtTime(r.end_ts) : '…'}</td>
-      ${hasVehicle ? `<td style="font-size:.72rem;font-family:var(--mono);color:var(--acc2)">${r.vehicle_id || 'v0'}</td>` : ''}
+      ${hasVehicle ? `<td style="font-size:.72rem;font-family:var(--mono);color:var(--acc2)">${escapeHtml(r.vehicle_id || 'v0')}</td>` : ''}
       <td>${fmt(r.soc_start, 0)}% → ${fmt(r.soc_end, 0)}%</td>
       <td>${typeBadge(r.charger_type, r.max_power_kw)}</td>
       <td class="g">${fmt(r.kwh_charged)} kWh</td>
@@ -279,13 +290,13 @@ function renderTbl(el, rows, showDel = true) {
       ${hasMeter ? `<td style="font-size:.72rem;color:#a78bfa;font-family:var(--mono)">${fmtMeter(r.meter_old)} → ${fmtMeter(r.meter_new)}</td>` : ''}
       <td>${locBadge(r.location, r.location_source)}${(r.provider==='manual'||r.created_mode==='manual')?' <span title="Manuell erfasst" style="background:rgba(100,200,255,.12);color:#64c8ff;border:1px solid rgba(100,200,255,.25);border-radius:3px;padding:1px 5px;font-size:.6rem;font-family:var(--mono)">✏</span>':''}</td>
       ${showDel ? `<td style="display:flex;gap:4px;padding:8px 4px">
-        <button onclick="editCost(${r.id},${r.kwh_charged || 0},${r.price_per_kwh || 0})"
+        <button onclick="event.stopPropagation();editCost(${r.id},${r.kwh_charged || 0},${r.price_per_kwh || 0})"
           style="background:rgba(0,180,255,.12);color:#00b4ff;border:1px solid rgba(0,180,255,.25);
           border-radius:6px;padding:3px 8px;font-size:.65rem;cursor:pointer" title="Kosten bearbeiten">✎</button>
-        <button onclick="editLocation(${r.id},${JSON.stringify(r.location||'unknown')})"
+        <button onclick="event.stopPropagation();editLocation(${r.id},${JSON.stringify(r.location||'unknown')})"
           style="background:rgba(61,220,151,.12);color:#3ddc97;border:1px solid rgba(61,220,151,.25);
           border-radius:6px;padding:3px 8px;font-size:.65rem;cursor:pointer" title="Standort ändern">📍</button>
-        <button onclick="delSession(${r.id})"
+        <button onclick="event.stopPropagation();delSession(${r.id})"
           style="background:rgba(239,68,68,.12);color:#ef4444;border:1px solid rgba(239,68,68,.25);
           border-radius:6px;padding:3px 8px;font-size:.65rem;cursor:pointer">✕</button>
       </td>` : ''}

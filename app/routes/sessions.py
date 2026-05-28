@@ -58,6 +58,7 @@ def api_sessions():
         request.args.get("month",type=int),
         request.args.get("location",default="all"),
         request.args.get("vehicle_id",default=None),
+        limit=request.args.get("limit",type=int,default=50),
     ))
 
 
@@ -104,7 +105,15 @@ def api_update_location(sid):
         if not existing:
             return jsonify({"ok": False, "error": "Session nicht gefunden"}), 404
         existing = dict(existing)
+        # Determine if location_source / location_confidence columns exist
+        _has_loc_source = "location_source" in existing
+        _has_loc_conf   = "location_confidence" in existing
+        _loc_source_sql = ", location_source='manual'" if _has_loc_source else ""
+        _loc_conf_sql   = ", location_confidence=100"  if _has_loc_conf   else ""
+        _manual_suffix  = _loc_source_sql + _loc_conf_sql
+        msg = "Standort geändert"
         if existing.get("cost_manual", 0) == 0:
+            repriced = False
             try:
                 from services.pricing_service import resolve_session_price, calculate_session_cost
                 from core.config import load_config
@@ -115,24 +124,31 @@ def api_update_location(sid):
                 if _pr["price_per_kwh"] is not None and kwh is not None:
                     new_cost = calculate_session_cost(float(kwh), _pr["price_per_kwh"])
                     con.execute(
-                        """UPDATE sessions SET location=?, price_per_kwh=?, cost_eur=?,
-                           price_source=?, price_confidence=?, charging_contract_id=?, charging_contract_name=?
-                           WHERE id=?""",
+                        "UPDATE sessions SET location=?, price_per_kwh=?, cost_eur=?,"
+                        " price_source=?, price_confidence=?, charging_contract_id=?,"
+                        " charging_contract_name=?" + _manual_suffix + " WHERE id=?",
                         (loc, _pr["price_per_kwh"], new_cost,
                          _pr.get("price_source"), _pr.get("price_confidence", 0),
                          _pr.get("contract_id"), _pr.get("contract_name"), sid))
+                    repriced = True
+                    msg = "Standort und Kosten aktualisiert"
                 else:
-                    con.execute("UPDATE sessions SET location=? WHERE id=?", (loc, sid))
+                    con.execute("UPDATE sessions SET location=?" + _manual_suffix + " WHERE id=?", (loc, sid))
             except Exception as _e:
                 log.debug("Reprice after location update failed: %s", _e)
-                con.execute("UPDATE sessions SET location=? WHERE id=?", (loc, sid))
+                con.execute("UPDATE sessions SET location=?" + _manual_suffix + " WHERE id=?", (loc, sid))
         else:
-            con.execute("UPDATE sessions SET location=? WHERE id=?", (loc, sid))
+            con.execute("UPDATE sessions SET location=?" + _manual_suffix + " WHERE id=?", (loc, sid))
+            msg = "Standort geändert. Manuelle Kosten wurden nicht überschrieben."
         con.commit()
+        updated = con.execute("SELECT * FROM sessions WHERE id=?", (sid,)).fetchone()
+        updated_dict = dict(updated) if updated else {}
     finally:
         close_db_if_owned(con)
     log.info("Session #%d Standort → %s", sid, loc)
-    return jsonify({"ok":True})
+    _audit("session_location_changed", f"session_id={sid} location={loc}", ip=request.remote_addr)
+    cost_manual_flag = bool(existing.get("cost_manual", 0))
+    return jsonify({"ok": True, "session": updated_dict, "cost_manual": cost_manual_flag, "message": msg})
 
 
 def _float_or_none(val):
@@ -199,9 +215,8 @@ def api_manual_session_create():
     if not _vehicle_id_valid_local(vehicle_id):
         return jsonify({"ok": False, "error": f"Unbekannte vehicle_id: {vehicle_id!r}"}), 400
 
-    location = (data.get("location") or "home").strip()
-    if location not in ("home", "extern", "unknown"):
-        return jsonify({"ok": False, "error": "Ungültiger Standort. Erlaubt: home, extern, unknown."}), 400
+    from core.location import normalize_location as _normalize_location
+    location = _normalize_location((data.get("location") or "home").strip())
 
     charger_type = (data.get("charger_type") or "unknown").strip()
     if charger_type not in ("ac", "dc", "unknown"):
@@ -404,9 +419,11 @@ def api_patch_session(sid):
     existing = dict(existing)
 
     # ── Enum validation ───────────────────────────────────────────────────────
-    if "location" in fields and fields["location"] not in ("home", "extern", "unknown"):
-        close_db_if_owned(con)
-        return jsonify({"ok": False, "error": "location muss home, extern oder unknown sein"}), 400
+    if "location" in fields:
+        from core.location import normalize_location
+        fields["location"] = normalize_location(fields["location"])
+        fields["location_source"] = "manual"
+        fields["location_confidence"] = 100
     if "charger_type" in fields and fields["charger_type"] not in ("ac", "dc", "unknown"):
         close_db_if_owned(con)
         return jsonify({"ok": False, "error": "charger_type muss ac, dc oder unknown sein"}), 400

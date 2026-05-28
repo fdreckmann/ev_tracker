@@ -88,14 +88,19 @@ def fetch_remote_info(force: bool = False) -> tuple[dict, bool]:
 
 def get_update_info(force: bool = False) -> dict:
     """Return the full update-info dict for the /api/update-info endpoint."""
-    from version import APP_VERSION, BUILD_DATE, CHANNEL
+    from version import APP_VERSION, ASSET_VERSION, BUILD_DATE, CHANNEL, GIT_BRANCH, GIT_COMMIT, COMMIT_SHORT, IMAGE_TAG
 
     current = APP_VERSION
     base: dict = {
         "ok": False,
         "current_version": current,
+        "asset_version": ASSET_VERSION,
         "build_date": BUILD_DATE,
         "channel": CHANNEL,
+        "branch": GIT_BRANCH,
+        "commit": GIT_COMMIT,
+        "commit_short": COMMIT_SHORT,
+        "image_tag": IMAGE_TAG,
         "update_available": False,
         "checked_at": datetime.utcnow().isoformat(timespec="seconds"),
         "remote_url": _REMOTE_URL,

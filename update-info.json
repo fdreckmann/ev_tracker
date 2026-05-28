@@ -1,29 +1,42 @@
 {
-  "latest_version": "2.0.53",
-  "release_date": "2026-05-27",
-  "channel": "beta",
-  "title": "Pricing-Core, Excel-Template-Export, Location-Update, API v1 Fixes",
+  "latest_version": "2.0.55",
+  "release_date": "2026-05-28",
+  "channel": "stable",
+  "title": "Stable Release 2.0.55 — Mobile-UI, Cache-Busting, XSS-Fixes",
   "summary": [
-    "Zentrale Preislogik (pricing_service) für alle Ladearten und Verträge",
-    "Excel-Template-Export: robuste Tabellenkopf-Erkennung, korrekte Spalten-Zuordnung",
-    "Location-Update neuberechnet Preis automatisch wenn cost_manual=0",
-    "API v1 PUT normalisiert Location/Ladeart und berechnet Preis neu",
-    "Preismetadaten (Quelle, Vertragsname) in Sessions und Excel-Export"
+    "Mobile-Menü vollständig repariert: alle Buttons und Schnellaktionen funktionieren",
+    "Cache-Busting für alle JS/CSS-Dateien (ASSET_VERSION-Suffix)",
+    "Status-Polling mit In-Flight-Guard und AbortController-Timeout (15s)",
+    "normalizeLocation() erkennt intern/internal/zuhause_laden/öffentlich",
+    "XSS-Fixes in Audit-Log, Ladeabo-Liste, Fahrzeug-Detail und Session-Formular",
+    "Mobile Schnellaktion Ladevorgang navigiert direkt zum Sessions-Tab",
+    "GitHub Actions: VERSION aus Git-Tag bei Prod-Releases",
+    "Menü-Reihenfolge: Dashboard | Konfiguration | Ladevorgänge | Export | Backup"
   ],
   "fixes": [
-    "match_column() nutzt TABLE_FIELDS für präzise Spalten-Erkennung (Preis/kWh, Preisquelle, Vertrag)",
-    "Summary-Zeilen (Ladezeit gesamt, Gesamtkosten) werden nicht mehr als Tabellenkopf erkannt",
-    "col_override unterstützt alte {\"1\": {\"field\": \"date\"}} und neue {\"1\": \"date\"} Formate",
-    "api_update_location: row_factory=sqlite3.Row verhindert TypeError bei dict()",
-    "API v1 POST/PUT: location/charger_type werden normalisiert (external→extern)",
-    "API v1 PUT: price_per_kwh ist jetzt erlaubtes Update-Feld, setzt cost_manual=1"
+    "version.py: ASSET_VERSION = APP_VERSION + commit/build/local Suffix",
+    "docker-build.yml: VERSION aus GITHUB_REF_NAME#v bei Tag-Builds",
+    "mobile.js: mobileNavTo('vehicles'), openDesktopConfigSection(), loadMobileSessions()",
+    "mobile.js: switchToDesktopSettings() blendet jetzt auch mobileVehicles aus",
+    "mobile.js: mobileMissingChargeAccept nutzt korrekte Form-IDs (msStart, msKwh, …)",
+    "mobile.js: mobileMissingChargeDismiss ruft loadMobileSessions() + refreshMobileDashboard()",
+    "index.html: openMobileSessionCreate escapeHtml fuer Fahrzeug-Options (v.id, v.name)",
+    "index.html: openMobileVehicleDetail escapeHtml fuer v.name, v.provider, v.id",
+    "index.html: Audit-Log escapeHtml fuer user_name, action, ip",
+    "index.html: deleteContract-Button nutzt data-id/data-name statt onclick-String",
+    "api.js: apiFetch mit AbortController-Timeout (15s default)",
+    "api.js: normalizeLocation erkennt intern/internal/zuhause_laden als home, oeffentlich als extern",
+    "status.js: In-Flight-Guard, Location-Throttling auf 60s, Sessions mit limit=5"
   ],
   "breaking_changes": [],
-  "migration_notes": [],
+  "migration_notes": [
+    "Keine DB-Migration noetig",
+    "Unraid CA-Template: https://github.com/fdreckmann/ev-tracker-unraid-app"
+  ],
   "update_instructions": [
     "docker compose pull",
     "docker compose up -d",
-    "Oder über Unraid/Portainer: Container auf 'latest' aktualisieren"
+    "docker image prune -f"
   ],
   "release_url": "https://github.com/fdreckmann/ev_tracker/releases/latest"
 }

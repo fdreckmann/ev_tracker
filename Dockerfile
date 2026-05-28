@@ -24,6 +24,22 @@ EXPOSE 8080
 ENV TZ=Europe/Berlin
 ENV HOME=/home/evtracker
 
+# Build-time metadata injected by GitHub Actions (see .github/workflows/docker-build.yml).
+# Falls back to "unknown" when building locally without --build-arg.
+ARG EV_TRACKER_VERSION=unknown
+ARG EV_TRACKER_BUILD=unknown
+ARG EV_TRACKER_CHANNEL=unknown
+ARG EV_TRACKER_COMMIT=unknown
+ARG EV_TRACKER_BRANCH=unknown
+ARG EV_TRACKER_IMAGE_TAG=unknown
+
+ENV EV_TRACKER_VERSION=$EV_TRACKER_VERSION
+ENV EV_TRACKER_BUILD=$EV_TRACKER_BUILD
+ENV EV_TRACKER_CHANNEL=$EV_TRACKER_CHANNEL
+ENV EV_TRACKER_COMMIT=$EV_TRACKER_COMMIT
+ENV EV_TRACKER_BRANCH=$EV_TRACKER_BRANCH
+ENV EV_TRACKER_IMAGE_TAG=$EV_TRACKER_IMAGE_TAG
+
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/health')" || exit 1
 

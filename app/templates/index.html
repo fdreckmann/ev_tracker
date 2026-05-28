@@ -11,9 +11,9 @@
 <title>EV Tracker – {{ cfg.car_name }}</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="/static/js/api.js"></script>
-<script src="/static/js/status.js"></script>
-<script src="/static/js/config.js"></script>
+<script src="/static/js/api.js?v={{ asset_version }}"></script>
+<script src="/static/js/status.js?v={{ asset_version }}"></script>
+<script src="/static/js/config.js?v={{ asset_version }}"></script>
 <style>
 :root{
   --bg:#080b10;--surf:#0e1319;--brd:#1c2430;--brd2:#253040;
@@ -664,8 +664,8 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 <!-- ── Nav ── -->
 <nav>
   <button class="active" onclick="tab('dashboard',this)">Dashboard</button>
-  <button onclick="tab('sessions',this)">Ladevorgänge</button>
   <button onclick="tab('config',this)">Konfiguration</button>
+  <button onclick="tab('sessions',this)">Ladevorgänge</button>
   <button onclick="tab('export',this)">Export</button>
   <button onclick="tab('backup',this)">Backup</button>
   <a href="/logout" id="navLogout" style="display:none;margin-left:auto;padding:8px 14px;font-size:.78rem;color:var(--mute);text-decoration:none;border-radius:8px;border:1px solid var(--brd)" title="">Abmelden</a>
@@ -2386,6 +2386,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             <div>
               <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Installiert</div>
               <div style="font-size:1.2rem;font-weight:700;color:#64ffda">v{{ app_version }}</div>
+              <div id="uiLocalMeta" style="margin-top:6px;font-size:.7rem;font-family:var(--mono);color:var(--mute);display:flex;flex-wrap:wrap;gap:6px 12px"></div>
             </div>
             <div id="updateStatusBadge" style="font-size:.75rem;font-family:var(--mono);color:var(--mute)">⏳ Prüfe…</div>
           </div>
@@ -3295,6 +3296,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     <button class="modal-close" onclick="closeModal()">✕ Schließen</button>
     <h2 id="modalTitle">Session Details</h2>
     <div class="modal-meta" id="modalMeta"></div>
+    <div id="modalActions" style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 4px"></div>
     <div class="modal-stats" id="modalStats"></div>
     <div class="card-title" style="margin-bottom:12px">Ladekurve</div>
     <div class="modal-chart"><canvas id="modalChart"></canvas></div>
@@ -3309,20 +3311,20 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 <!-- Toasts -->
 <div class="toasts" id="toasts"></div>
 
-<script src="/static/js/reports.js"></script>
-<script src="/static/js/export.js"></script>
-<script src="/static/js/sessions.js"></script>
-<script src="/static/js/vehicles.js"></script>
-<script src="/static/js/mobile.js"></script>
-<script src="/static/js/billing.js"></script>
-<script src="/static/js/templates.js"></script>
-<script src="/static/js/settings.js"></script>
+<script src="/static/js/reports.js?v={{ asset_version }}"></script>
+<script src="/static/js/export.js?v={{ asset_version }}"></script>
+<script src="/static/js/sessions.js?v={{ asset_version }}"></script>
+<script src="/static/js/vehicles.js?v={{ asset_version }}"></script>
+<script src="/static/js/mobile.js?v={{ asset_version }}"></script>
+<script src="/static/js/billing.js?v={{ asset_version }}"></script>
+<script src="/static/js/templates.js?v={{ asset_version }}"></script>
+<script src="/static/js/settings.js?v={{ asset_version }}"></script>
 <script>
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 // Cache-Buster: reload without query param if version changed
 (function(){
-  const v='{{ app_version }}';
+  const v='{{ asset_version }}';
   const stored=localStorage.getItem('ev_version');
   if(stored && stored!==v){
     localStorage.setItem('ev_version',v);
@@ -3640,16 +3642,21 @@ function buildExcelGrid(renderData){
       const cs   = c.cs > 1 ? ` colspan="${c.cs}"` : '';
       const id   = `gc_${c.r}_${c.c}`;
       const borderCol = isHeader ? 'rgba(255,213,0,.7)' : (isStart ? 'rgba(0,210,120,.6)' : '#2d2d2d');
+      // c.v comes from uploaded Excel cell values — escape to prevent XSS.
+      // c.bg/c.fg are CSS color values from Excel — escapeHtml prevents attribute injection.
+      const safeV  = escapeHtml(c.v  || '');
+      const safeBg = escapeHtml(bg);
+      const safeFg = escapeHtml(fg);
       return `<td id="${id}" data-col="${c.c}" data-row-num="${row.row}"${rs}${cs}
         onmousedown="onGridMouseDown(event,${row.row},${c.c})"
         onmousemove="onGridMouseMove(event,${row.row},${c.c})"
         onmouseup="onGridMouseUp(event,${row.row},${c.c})"
         onclick="onGridCellClick(event,${row.row},${c.c})"
-        style="background:${bg};color:${fg};font-weight:${fw};
+        style="background:${safeBg};color:${safeFg};font-weight:${fw};
                border:1px solid ${borderCol};
                padding:3px 7px;cursor:pointer;white-space:nowrap;
                max-width:160px;overflow:hidden;text-overflow:ellipsis"
-        title="${c.v||''}">${c.v||''}</td>`;
+        title="${safeV}">${safeV}</td>`;
     }).join('');
     // Row number cell with badges
     let numColor = '#555';
@@ -3842,9 +3849,9 @@ function refreshColumnMappingList(){
     const label = TABLE_FIELD_LABELS[field]||MAPPING_LABELS[field]||field;
     return `<div style="display:flex;align-items:center;gap:6px;font-size:.7rem;font-family:var(--mono);padding:3px 0">
       <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block"></span>
-      <span style="color:var(--mute);min-width:22px">Sp.${colLetter(ci)}</span>
-      <span style="color:#fff;flex:1">${label}</span>
-      <button onclick="clearColumnMapping(${ci})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:.75rem;padding:0 4px">✕</button>
+      <span style="color:var(--mute);min-width:22px">Sp.${escapeHtml(colLetter(ci))}</span>
+      <span style="color:#fff;flex:1">${escapeHtml(label)}</span>
+      <button onclick="clearColumnMapping(${Number(ci)})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:.75rem;padding:0 4px">✕</button>
     </div>`;
   }).join('');
 }
@@ -3902,9 +3909,9 @@ function refreshCellMappingList(){
   el.innerHTML = entries.map(([addr, field])=>{
     const label = HEADER_FIELD_LABELS[field] || field;
     return `<div style="display:flex;align-items:center;gap:6px;font-size:.7rem;font-family:var(--mono);padding:3px 0">
-      <span style="color:var(--mute);min-width:28px">${addr}</span>
-      <span style="color:#fff;flex:1">${label}</span>
-      <button onclick="removeCellMapping('${addr}')" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:.75rem;padding:0 4px">✕</button>
+      <span style="color:var(--mute);min-width:28px">${escapeHtml(addr)}</span>
+      <span style="color:#fff;flex:1">${escapeHtml(label)}</span>
+      <button data-addr="${escapeHtml(addr)}" onclick="removeCellMapping(this.dataset.addr)" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:.75rem;padding:0 4px">✕</button>
     </div>`;
   }).join('');
 }
@@ -4942,6 +4949,19 @@ function _renderUpdateInfo(r) {
   const avail = document.getElementById('updateInfoAvailable');
   const curr  = document.getElementById('updateInfoCurrent');
 
+  // Always populate local build metadata (branch/channel/commit/image_tag)
+  const metaEl = document.getElementById('uiLocalMeta');
+  if (metaEl) {
+    const mParts = [];
+    if (r.channel)       mParts.push('Channel: <span style="color:#64ffda">'+escapeHtml(r.channel)+'</span>');
+    if (r.branch)        mParts.push('Branch: <span style="color:#a78bfa">'+escapeHtml(r.branch)+'</span>');
+    if (r.image_tag)     mParts.push('Image: <span style="color:#60a5fa">'+escapeHtml(r.image_tag)+'</span>');
+    if (r.commit_short)  mParts.push('Commit: <span style="color:#94a3b8">'+escapeHtml(r.commit_short)+'</span>');
+    if (r.build_date)    mParts.push('Build: <span style="color:#94a3b8">'+escapeHtml(r.build_date)+'</span>');
+    if (r.remote_url)    mParts.push('Update-Check: <span style="color:#64748b">'+escapeHtml(r.remote_url)+'</span>');
+    metaEl.innerHTML = mParts.join(' &nbsp;·&nbsp; ');
+  }
+
   if (errEl) errEl.style.display = 'none';
   if (panel) panel.style.display = '';
 
@@ -5052,7 +5072,7 @@ async function loadVehicleLocationBadge(vid) {
     const label = labels[normStatus] || labels[loc.status] || 'Unbekannt';
     const src   = srcLabels[loc.source] || loc.source || '';
     const ago   = loc.last_update ? _timeAgo(loc.last_update) : '';
-    el.innerHTML = `<span title="${src}${ago ? ' · ' + ago : ''}" style="font-size:.8rem;color:var(--mute)">${icon} ${label}${src ? ' · ' + src : ''}${ago ? ' · ' + ago : ''}</span>`;
+    el.innerHTML = `<span title="${escapeHtml(src)}${ago ? ' · ' + escapeHtml(ago) : ''}" style="font-size:.8rem;color:var(--mute)">${icon} ${escapeHtml(label)}${src ? ' · ' + escapeHtml(src) : ''}${ago ? ' · ' + escapeHtml(ago) : ''}</span>`;
     el.style.display = '';
   } catch(e) { el.style.display = 'none'; }
 }
@@ -5340,7 +5360,7 @@ async function loadBackups(){
   // update cron info
   $('backupCron').value = data.cron||'';
   if(data.next_backup){
-    $('cronInfo').innerHTML=`<span style="color:var(--acc)">⏰ Nächstes Backup: ${data.next_backup}</span>`;
+    $('cronInfo').innerHTML=`<span style="color:var(--acc)">⏰ Nächstes Backup: ${escapeHtml(data.next_backup)}</span>`;
   } else if(data.cron) {
     $('cronInfo').textContent='⚠ Ungültiger Cron-Ausdruck';
   } else {
@@ -5354,17 +5374,17 @@ async function loadBackups(){
   el.innerHTML=`<table>
     <thead><tr><th>Dateiname</th><th>Größe</th><th>Erstellt</th><th></th></tr></thead>
     <tbody>${data.backups.map(b=>`<tr>
-      <td style="font-family:var(--mono);font-size:.75rem;color:#fff">${b.name}</td>
+      <td style="font-family:var(--mono);font-size:.75rem;color:#fff">${escapeHtml(b.name)}</td>
       <td style="font-family:var(--mono);font-size:.75rem">${(b.size/1024).toFixed(1)} KB</td>
-      <td style="font-family:var(--mono);font-size:.75rem">${b.modified.replace('T',' ')}</td>
+      <td style="font-family:var(--mono);font-size:.75rem">${escapeHtml((b.modified||'').replace('T',' '))}</td>
       <td style="display:flex;gap:5px;padding:8px 4px">
-        <button onclick="downloadBackup('${b.name}')"
+        <button data-bname="${escapeHtml(b.name)}" onclick="downloadBackup(this.dataset.bname)"
           style="background:rgba(0,180,255,.12);color:#00b4ff;border:1px solid rgba(0,180,255,.25);
           border-radius:6px;padding:3px 10px;font-size:.68rem;cursor:pointer">⬇</button>
-        <button onclick="restoreBackup('${b.name}')"
+        <button data-bname="${escapeHtml(b.name)}" onclick="restoreBackup(this.dataset.bname)"
           style="background:rgba(245,158,11,.12);color:#f59e0b;border:1px solid rgba(245,158,11,.25);
           border-radius:6px;padding:3px 10px;font-size:.68rem;cursor:pointer">↩ Restore</button>
-        <button onclick="deleteBackup('${b.name}')"
+        <button data-bname="${escapeHtml(b.name)}" onclick="deleteBackup(this.dataset.bname)"
           style="background:rgba(239,68,68,.12);color:#ef4444;border:1px solid rgba(239,68,68,.25);
           border-radius:6px;padding:3px 10px;font-size:.68rem;cursor:pointer">✕</button>
       </td>
@@ -5462,7 +5482,7 @@ async function loadUserList(){
     if(s==='active') return '<span style="background:rgba(61,220,151,.15);color:var(--acc);border-radius:4px;padding:1px 6px;font-size:.65rem">aktiv</span>';
     if(s==='invited') return '<span style="background:rgba(245,158,11,.15);color:var(--warn);border-radius:4px;padding:1px 6px;font-size:.65rem">eingeladen</span>';
     if(s==='disabled') return '<span style="background:rgba(239,68,68,.15);color:var(--danger);border-radius:4px;padding:1px 6px;font-size:.65rem">gesperrt</span>';
-    return `<span style="color:var(--mute);font-size:.65rem">${s||'—'}</span>`;
+    return `<span style="color:var(--mute);font-size:.65rem">${escapeHtml(s||'—')}</span>`;
   };
   el.innerHTML = users.map(u=>`
     <div style="display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:12px 14px">
@@ -5531,11 +5551,11 @@ async function saveUserModal(){
       closeUserModal();
       toast(r.invited?'Benutzer erstellt — Einladung via "✉ Einladen" senden':'Benutzer erstellt','ok');
       cfgSection('benutzer',null); loadUserList();
-    } else $('um_info').innerHTML=`<span style="color:var(--danger)">❌ ${r.error||'Fehler'}</span>`;
+    } else $('um_info').innerHTML=`<span style="color:var(--danger)">❌ ${escapeHtml(r.error||'Fehler')}</span>`;
   } else {
     const r=await apiFetch(`/api/users/${_editingUserId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());
     if(r.ok){ closeUserModal(); toast('Gespeichert','ok'); loadUserList(); }
-    else $('um_info').innerHTML=`<span style="color:var(--danger)">❌ ${r.error||'Fehler'}</span>`;
+    else $('um_info').innerHTML=`<span style="color:var(--danger)">❌ ${escapeHtml(r.error||'Fehler')}</span>`;
   }
 }
 
@@ -5557,7 +5577,7 @@ async function loadMyProfile(){
   const r=await apiFetch('/api/users/me').then(r=>r.json()).catch(()=>null);
   if(!r||r.error) return;
   const el=$('profileInfo');
-  if(el) el.innerHTML=`<strong style="color:#fff">${r.name}</strong> &nbsp;·&nbsp; ${r.email} &nbsp;·&nbsp; <span style="color:${r.role==='admin'?'var(--warn)':'var(--acc2)'}">${r.role==='admin'?'★ Admin':'Benutzer'}</span>`;
+  if(el) el.innerHTML=`<strong style="color:#fff">${escapeHtml(r.name||'')}</strong> &nbsp;·&nbsp; ${escapeHtml(r.email||'')} &nbsp;·&nbsp; <span style="color:${r.role==='admin'?'var(--warn)':'var(--acc2)'}">${r.role==='admin'?'★ Admin':'Benutzer'}</span>`;
   const totpSt=$('profTotpStatus');
   if(totpSt) totpSt.innerHTML=r.totp_enabled?'<span style="color:var(--acc2)">📱 2FA ist aktiv</span>':'Kein 2FA konfiguriert';
   const disBtn=$('profTotpDisableBtn');
@@ -5579,7 +5599,7 @@ async function generateBackupCodes(){
   if(!r||!r.ok){ toast('Fehler beim Generieren','err'); return; }
   const modal=$('backupCodesModal');
   const list=$('backupCodesList');
-  if(list) list.innerHTML=r.codes.map(c=>`<div style="font-family:var(--mono);font-size:1rem;letter-spacing:.1em;color:#fff;padding:4px 0">${c}</div>`).join('');
+  if(list) list.innerHTML=r.codes.map(c=>`<div style="font-family:var(--mono);font-size:1rem;letter-spacing:.1em;color:#fff;padding:4px 0">${escapeHtml(c||'')}</div>`).join('');
   if(modal) modal.style.display='flex';
   loadBackupCodeCount();
 }
@@ -5591,7 +5611,7 @@ async function changeMyPassword(){
   const r=await apiFetch('/api/users/me/password',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({current:cur,new:nw})}).then(r=>r.json());
   if(r.ok){ info.innerHTML='<span style="color:var(--acc)">✅ Gespeichert</span>'; $('prof_cur_pw').value=''; $('prof_new_pw').value=''; $('prof_new_pw2').value=''; }
-  else info.innerHTML=`<span style="color:var(--danger)">❌ ${r.error||'Fehler'}</span>`;
+  else info.innerHTML=`<span style="color:var(--danger)">❌ ${escapeHtml(r.error||'Fehler')}</span>`;
   setTimeout(()=>{ if(info) info.textContent=''; },3000);
 }
 
@@ -5825,7 +5845,7 @@ async function loadTariffPrices(){
     const r=await apiFetch('/api/tariff/prices').then(r=>r.json());
     if(!r.ok){body.textContent='❌ '+(r.error||'Fehler');return;}
     if(!r.prices||!r.prices.length){body.textContent='Keine Preisdaten verfügbar.';return;}
-    body.innerHTML=`<div style="color:var(--mute);font-size:.7rem;margin-bottom:8px">Provider: ${r.provider}</div>
+    body.innerHTML=`<div style="color:var(--mute);font-size:.7rem;margin-bottom:8px">Provider: ${escapeHtml(r.provider||'')}</div>
       <table style="width:100%;border-collapse:collapse">
       ${r.prices.map(p=>`<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
         <td style="padding:4px 8px">${(p.ts||'').slice(0,16).replace('T',' ')}</td>
@@ -6005,11 +6025,11 @@ async function loadContracts(){
         <div style="display:flex;gap:6px;flex-shrink:0">
           ${!c.is_default?`<button class="btn-s" style="font-size:.72rem;padding:4px 8px" onclick="setDefaultContract(${c.id})" data-requires-permission="public_charging:manage_contracts">⭐ Standard</button>`:''}
           <button class="btn-s" style="font-size:.72rem;padding:4px 8px" onclick="editContract(${c.id})" data-requires-permission="public_charging:manage_contracts">✏️</button>
-          <button class="btn-s" style="font-size:.72rem;padding:4px 8px;color:#f87171" onclick="deleteContract(${c.id},'${escapeHtml(c.name)}')" data-requires-permission="public_charging:manage_contracts">🗑️</button>
+          <button class="btn-s" style="font-size:.72rem;padding:4px 8px;color:#f87171" data-id="${c.id}" data-name="${escapeHtml(c.name)}" onclick="deleteContract(this.dataset.id,this.dataset.name)" data-requires-permission="public_charging:manage_contracts">🗑️</button>
         </div>
       </div>`).join('');
     applyPermissionVisibility();
-  }catch(e){ const el=$('contract_list'); if(el) el.innerHTML='<div style="color:#f87171;font-size:.78rem">'+e.message+'</div>'; }
+  }catch(e){ const el=$('contract_list'); if(el) el.innerHTML='<div style="color:#f87171;font-size:.78rem">'+escapeHtml(e.message||'Fehler')+'</div>'; }
 }
 
 async function loadBuiltinContracts(){
@@ -6734,10 +6754,10 @@ async function loadAuditLog(){
     <thead><tr><th>Zeit</th><th>Benutzer</th><th>Aktion</th><th>Details</th><th>IP</th></tr></thead>
     <tbody>${rows.map(r=>`<tr>
       <td style="font-family:var(--mono);font-size:.72rem;white-space:nowrap">${r.ts?r.ts.replace('T',' ').substring(0,19):''}</td>
-      <td style="font-family:var(--mono);font-size:.72rem;color:var(--acc)">${r.user_name||'—'}</td>
-      <td style="font-family:var(--mono);font-size:.72rem;color:var(--acc2)">${r.action||''}</td>
+      <td style="font-family:var(--mono);font-size:.72rem;color:var(--acc)">${escapeHtml(r.user_name||'—')}</td>
+      <td style="font-family:var(--mono);font-size:.72rem;color:var(--acc2)">${escapeHtml(r.action||'')}</td>
       <td style="font-family:var(--mono);font-size:.72rem;color:var(--mute)">${escapeHtml(r.details||'')}</td>
-      <td style="font-family:var(--mono);font-size:.72rem;color:var(--mute)">${r.ip||''}</td>
+      <td style="font-family:var(--mono);font-size:.72rem;color:var(--mute)">${escapeHtml(r.ip||'')}</td>
     </tr>`).join('')}</tbody>
   </table>`;
 }
@@ -6886,7 +6906,7 @@ async function openMobileSessionCreate() {
   const now = new Date();
   const iso = d => new Date(d - d.getTimezoneOffset()*60000).toISOString().slice(0,16);
   const vOpts = vehicles.length
-    ? vehicles.map(v=>`<option value="${v.id}">${v.name||v.id}</option>`).join('')
+    ? vehicles.map(v=>`<option value="${escapeHtml(v.id)}">${escapeHtml(v.name||v.id)}</option>`).join('')
     : '<option value="v0">Fahrzeug v0</option>';
 
   let defaultLoc = 'home';
@@ -7083,14 +7103,13 @@ async function submitMobileSession(force) {
   if (r.ok) {
     closeMobileSheet();
     toast('✅ Ladevorgang #'+r.id+' gespeichert','ok');
-    window._allSessions = null;
-    if (window._mobileCurrentSection==='sessions') renderMobileSessionCards();
-    if (window._mobileCurrentSection==='home') refreshMobileDashboard();
+    if (typeof loadMobileSessions === 'function') await loadMobileSessions();
+    if (typeof refreshMobileDashboard === 'function') refreshMobileDashboard();
   } else if (r.warning === 'overlap') {
-    if (res) res.innerHTML=`<p style="color:#f59e0b">⚠ ${r.message||'Überschneidung'}</p>`;
+    if (res) res.innerHTML=`<p style="color:#f59e0b">⚠ ${escapeHtml(r.message||'Überschneidung')}</p>`;
     if (overlapRow) overlapRow.style.display = 'block';
   } else {
-    if (res) res.innerHTML=`<p style="color:#ef4444">❌ ${r.error||'Fehler'}</p>`;
+    if (res) res.innerHTML=`<p style="color:#ef4444">❌ ${escapeHtml(r.error||'Fehler')}</p>`;
   }
 }
 
@@ -7117,12 +7136,12 @@ async function runMobileMeterTest() {
     el.innerHTML=`
       <div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:#64ffda">✅ OK</span></div>
       <div class="m-info-row"><span class="m-info-label">Zählerstand</span><span class="m-info-value">${r.value_kwh!=null?r.value_kwh.toFixed(3)+' kWh':'—'}</span></div>
-      <div class="m-info-row"><span class="m-info-label">Provider</span><span class="m-info-value">${r.provider||'—'}</span></div>
-      ${r.endpoint?`<div class="m-info-row"><span class="m-info-label">Endpoint</span><span class="m-info-value" style="font-size:11px">${r.endpoint}</span></div>`:''}`;
+      <div class="m-info-row"><span class="m-info-label">Provider</span><span class="m-info-value">${escapeHtml(r.provider||'—')}</span></div>
+      ${r.endpoint?`<div class="m-info-row"><span class="m-info-label">Endpoint</span><span class="m-info-value" style="font-size:11px">${escapeHtml(r.endpoint)}</span></div>`:''}`;
   } else {
     el.innerHTML=`
       <div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:#ef4444">❌ Fehler</span></div>
-      <div class="m-info-row"><span class="m-info-label">Nachricht</span><span class="m-info-value">${r.message||r.error||'Fehler'}</span></div>`;
+      <div class="m-info-row"><span class="m-info-label">Nachricht</span><span class="m-info-value">${escapeHtml(r.message||r.error||'Fehler')}</span></div>`;
   }
 }
 
@@ -7147,9 +7166,9 @@ async function runMobileConnectionTest() {
   const ok = r.ok||r.status==='ok'||r.success;
   el.innerHTML=`
     <div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:${ok?'#64ffda':'#ef4444'}">${ok?'✅ Verbunden':'❌ Fehler'}</span></div>
-    ${r.message?`<div class="m-info-row"><span class="m-info-label">Nachricht</span><span class="m-info-value">${r.message}</span></div>`:''}
-    ${r.provider?`<div class="m-info-row"><span class="m-info-label">Provider</span><span class="m-info-value">${r.provider}</span></div>`:''}
-    ${r.soc!=null?`<div class="m-info-row"><span class="m-info-label">SOC</span><span class="m-info-value">${r.soc}%</span></div>`:''}`;
+    ${r.message?`<div class="m-info-row"><span class="m-info-label">Nachricht</span><span class="m-info-value">${escapeHtml(r.message)}</span></div>`:''}
+    ${r.provider?`<div class="m-info-row"><span class="m-info-label">Provider</span><span class="m-info-value">${escapeHtml(r.provider)}</span></div>`:''}
+    ${r.soc!=null?`<div class="m-info-row"><span class="m-info-label">SOC</span><span class="m-info-value">${Number(r.soc).toFixed(0)}%</span></div>`:''}`;
 }
 
 // ─── Signatur verwalten ──────────────────────────────────
@@ -7201,14 +7220,20 @@ async function openMobileSystemStatus() {
     const el = document.getElementById('msSysResult'); if(!el) return;
     const rows = [];
     if(health) rows.push(`<div class="m-info-row"><span class="m-info-label">Health</span><span class="m-info-value" style="color:#64ffda">✅ OK</span></div>`);
-    if(status?.app_version) rows.push(`<div class="m-info-row"><span class="m-info-label">Version</span><span class="m-info-value">${status.app_version}</span></div>`);
-    if(status?.db_size_mb!=null) rows.push(`<div class="m-info-row"><span class="m-info-label">DB-Größe</span><span class="m-info-value">${status.db_size_mb} MB</span></div>`);
-    if(status?.backup_count!=null) rows.push(`<div class="m-info-row"><span class="m-info-label">Backups</span><span class="m-info-value">${status.backup_count}</span></div>`);
-    if(status?.session_count!=null) rows.push(`<div class="m-info-row"><span class="m-info-label">Sessions</span><span class="m-info-value">${status.session_count}</span></div>`);
+    const sv = status?.app_version || status?.version;
+    if(sv) rows.push(`<div class="m-info-row"><span class="m-info-label">Version</span><span class="m-info-value">${escapeHtml(String(sv))}</span></div>`);
+    const sch = status?.channel; if(sch) rows.push(`<div class="m-info-row"><span class="m-info-label">Channel</span><span class="m-info-value">${escapeHtml(sch)}</span></div>`);
+    const sbr = status?.branch;  if(sbr) rows.push(`<div class="m-info-row"><span class="m-info-label">Branch</span><span class="m-info-value" style="font-family:var(--mono);font-size:.75rem">${escapeHtml(sbr)}</span></div>`);
+    const scs = status?.commit_short; if(scs) rows.push(`<div class="m-info-row"><span class="m-info-label">Commit</span><span class="m-info-value" style="font-family:var(--mono);font-size:.75rem">${escapeHtml(scs)}</span></div>`);
+    const dbmb = status?.db_size_mb ?? (status?.db_size != null ? status.db_size/1024/1024 : null);
+    if(dbmb!=null) rows.push(`<div class="m-info-row"><span class="m-info-label">DB-Größe</span><span class="m-info-value">${Number(dbmb).toFixed(1)} MB</span></div>`);
+    if(status?.backup_count!=null) rows.push(`<div class="m-info-row"><span class="m-info-label">Backups</span><span class="m-info-value">${Number(status.backup_count)}</span></div>`);
+    const sc = status?.session_count ?? status?.sessions_count;
+    if(sc!=null) rows.push(`<div class="m-info-row"><span class="m-info-label">Sessions</span><span class="m-info-value">${Number(sc)}</span></div>`);
     el.innerHTML = rows.length ? rows.join('') : '<div class="m-info-row"><span class="m-info-label">Info</span><span class="m-info-value">Keine Daten verfügbar</span></div>';
   } catch(e) {
     const el=document.getElementById('msSysResult');
-    if(el) el.innerHTML=`<div class="m-info-row"><span class="m-info-label">Fehler</span><span class="m-info-value" style="color:#ef4444">${e.message}</span></div>`;
+    if(el) el.innerHTML=`<div class="m-info-row"><span class="m-info-label">Fehler</span><span class="m-info-value" style="color:#ef4444">${escapeHtml(e.message||'Fehler')}</span></div>`;
   }
 }
 
@@ -7235,10 +7260,10 @@ async function runMobileBackupCreate(btn) {
   if(el) el.innerHTML='<p style="color:#8892b0;font-size:13px;margin-bottom:8px">⏳ Erstelle Backup…</p>';
   const r=await apiFetch('/api/backup/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})}).then(x=>x.json()).catch(e=>({ok:false,error:e.message}));
   if(r.ok) {
-    if(el) el.innerHTML=`<div class="m-info-block"><div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:#64ffda">✅ Erstellt</span></div>${r.filename?`<div class="m-info-row"><span class="m-info-label">Datei</span><span class="m-info-value" style="font-size:11px">${r.filename}</span></div>`:''}</div>`;
+    if(el) el.innerHTML=`<div class="m-info-block"><div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:#64ffda">✅ Erstellt</span></div>${r.filename?`<div class="m-info-row"><span class="m-info-label">Datei</span><span class="m-info-value" style="font-size:11px">${escapeHtml(r.filename)}</span></div>`:''}</div>`;
     toast('Backup erstellt','ok');
   } else {
-    if(el) el.innerHTML=`<p style="color:#ef4444;margin-bottom:8px">❌ ${r.error||'Fehler'}</p>`;
+    if(el) el.innerHTML=`<p style="color:#ef4444;margin-bottom:8px">❌ ${escapeHtml(r.error||'Fehler')}</p>`;
     if(btn) btn.disabled=false;
   }
 }
@@ -7266,22 +7291,28 @@ async function openMobileVehicleDetail(vid) {
         <div style="height:100%;width:${soc}%;background:${soc>60?'#64ffda':soc>20?'#ffd740':'#ef4444'};border-radius:4px"></div>
       </div>
     </div>`:'';
+  const _safeVid = escapeHtml(v.id||'');
   openMobileSheet(`
-    <div class="m-sheet-title">🚗 ${v.name||v.id}</div>
+    <div class="m-sheet-title">🚗 ${escapeHtml(v.name||v.id)}</div>
     ${socHtml}
     <div class="m-info-block">
-      <div class="m-info-row"><span class="m-info-label">Provider</span><span class="m-info-value">${v.provider||'—'}</span></div>
-      <div class="m-info-row"><span class="m-info-label">Standort</span><span class="m-info-value">${locLabel}</span></div>
+      <div class="m-info-row"><span class="m-info-label">Provider</span><span class="m-info-value">${escapeHtml(v.provider||'—')}</span></div>
+      <div class="m-info-row"><span class="m-info-label">Standort</span><span class="m-info-value">${escapeHtml(locLabel)}</span></div>
       ${charging?'<div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:#64ffda">⚡ Lädt</span></div>':''}
-      ${lastPoll?`<div class="m-info-row"><span class="m-info-label">Letzter Poll</span><span class="m-info-value" style="font-size:12px">${typeof _timeAgo==='function'?_timeAgo(lastPoll):lastPoll}</span></div>`:''}
-      <div class="m-info-row"><span class="m-info-label">ID</span><span class="m-info-value" style="font-size:11px;font-family:var(--mono)">${v.id}</span></div>
+      ${lastPoll?`<div class="m-info-row"><span class="m-info-label">Letzter Poll</span><span class="m-info-value" style="font-size:12px">${typeof _timeAgo==='function'?_timeAgo(lastPoll):escapeHtml(lastPoll)}</span></div>`:''}
+      <div class="m-info-row"><span class="m-info-label">ID</span><span class="m-info-value" style="font-size:11px;font-family:var(--mono)">${_safeVid}</span></div>
     </div>
     <div class="m-grid-2" style="margin-top:4px">
-      <button class="m-btn-p" onclick="closeMobileSheet();openEditVehicleModal('${vid}')">✏ Bearbeiten</button>
+      <button class="m-btn-p" data-vid="${_safeVid}" id="_mvdEditBtn">✏ Bearbeiten</button>
       <button class="m-btn-s" onclick="closeMobileSheet();mobileNavTo('sessions')">📋 Sessions</button>
     </div>
     <button style="width:100%;margin-top:8px;padding:13px;border:1px solid #2d3147;border-radius:8px;background:transparent;color:#8892b0;cursor:pointer" onclick="closeMobileSheet()">Schließen</button>
   `);
+  const editBtn = document.getElementById('_mvdEditBtn');
+  if (editBtn) editBtn.addEventListener('click', function() {
+    closeMobileSheet();
+    if (typeof openEditVehicleModal === 'function') openEditVehicleModal(this.dataset.vid);
+  });
 }
 
 let _fabOpen = false;
@@ -7924,13 +7955,13 @@ function testNotifChannel(channel) {
       <button onclick="mobileNavTo('export')" style="padding:12px 8px;border-radius:8px;background:#1a3d6e;border:none;color:#64ffda;font-size:13px;cursor:pointer">
         📥 Export erstellen
       </button>
-      <button onclick="mobileQuickAddSession()" style="padding:12px 8px;border-radius:8px;background:#1a3d6e;border:none;color:#64ffda;font-size:13px;cursor:pointer">
+      <button onclick="mobileNavTo('sessions');setTimeout(mobileQuickAddSession,150)" style="padding:12px 8px;border-radius:8px;background:#1a3d6e;border:none;color:#64ffda;font-size:13px;cursor:pointer">
         ➕ Ladevorgang
       </button>
-      <button onclick="mobileNavTo('more');setTimeout(()=>cfgSection&&cfgSection('meter'),200)" style="padding:12px 8px;border-radius:8px;background:#1a3d6e;border:none;color:#64ffda;font-size:13px;cursor:pointer">
+      <button onclick="openMobileMeterTest()" style="padding:12px 8px;border-radius:8px;background:#1a3d6e;border:none;color:#64ffda;font-size:13px;cursor:pointer">
         🔌 Zähler testen
       </button>
-      <button onclick="showVehicleSelector&&showVehicleSelector()" style="padding:12px 8px;border-radius:8px;background:#1a3d6e;border:none;color:#64ffda;font-size:13px;cursor:pointer">
+      <button onclick="mobileNavTo('vehicles')" style="padding:12px 8px;border-radius:8px;background:#1a3d6e;border:none;color:#64ffda;font-size:13px;cursor:pointer">
         🚗 Fahrzeug
       </button>
     </div>

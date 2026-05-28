@@ -5,11 +5,13 @@ from __future__ import annotations
 
 _HOME_VALUES  = {
     "home", "zuhause", "at_home", "home_charging",
-    "garage", "local",
+    "garage", "local", "intern", "internal",
+    "zuhause_laden",
 }
 _EXTERN_VALUES = {
     "extern", "external", "not_home", "away", "unterwegs", "extern_charging",
     "outside", "remote", "roaming", "public", "charging_away", "travel",
+    "öffentlich",
 }
 _SKIP_VALUES  = {
     "unknown", "unavailable", "disabled", "none", "",
