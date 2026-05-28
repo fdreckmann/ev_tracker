@@ -1,4 +1,4 @@
-name: Build & Push Docker Image
+name: Test, Build & Push Docker Image
 
 on:
   push:
@@ -7,43 +7,54 @@ on:
       - dev
       - test
     tags:
-      - 'v*'
-
-  schedule:
-    - cron: '0 2 * * *'   # nightly um 02:00 UTC
-
+      - "v*"
   workflow_dispatch:
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/ev-tracker
+  IMAGE_NAME: 19121412/ev-tracker
 
 jobs:
   test:
+    name: Run tests
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt pytest pillow
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
 
       - name: Python syntax check
         run: python -m compileall -q app tests
 
       - name: JavaScript syntax check
-        run: for f in app/static/js/*.js; do node --check "$f"; done
+        run: |
+          for f in app/static/js/*.js; do
+            node --check "$f"
+          done
 
-      - name: Run tests
+      - name: Run pytest
         run: python -m pytest -q
 
+      - name: Ensure tests did not write to /data
+        run: |
+          if [ -d /data ] && [ "$(ls -A /data 2>/dev/null)" ]; then
+            echo "ERROR: Tests wrote files to /data:"
+            ls -la /data
+            exit 1
+          fi
+
   build-and-push:
+    name: Build and push Docker image
     runs-on: ubuntu-latest
     needs: test
 
@@ -51,67 +62,36 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set Docker tags
+        id: tags
+        run: |
+          SHA_SHORT=$(echo "${GITHUB_SHA}" | cut -c1-8)
+
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "tags=${IMAGE_NAME}:latest,${IMAGE_NAME}:${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          elif [ "${GITHUB_REF_NAME}" = "dev" ]; then
+            echo "tags=${IMAGE_NAME}:dev,${IMAGE_NAME}:dev-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+          elif [ "${GITHUB_REF_NAME}" = "test" ]; then
+            echo "tags=${IMAGE_NAME}:beta,${IMAGE_NAME}:test-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+          elif [ "${GITHUB_REF_NAME}" = "main" ]; then
+            echo "tags=${IMAGE_NAME}:beta,${IMAGE_NAME}:main-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tags=${IMAGE_NAME}:${GITHUB_REF_NAME}-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Set tags
-        id: tags
-        shell: bash
-        run: |
-          SHA_SHORT=$(echo "${GITHUB_SHA}" | cut -c1-8)
-
-          if [ "${GITHUB_EVENT_NAME}" = "schedule" ]; then
-            {
-              echo "tags<<EOF"
-              echo "${IMAGE_NAME}:nightly"
-              echo "${IMAGE_NAME}:nightly-${SHA_SHORT}"
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
-
-          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF_NAME}"
-            {
-              echo "tags<<EOF"
-              echo "${IMAGE_NAME}:latest"
-              echo "${IMAGE_NAME}:${VERSION}"
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
-
-          elif [ "${GITHUB_REF_NAME}" = "main" ]; then
-            {
-              echo "tags<<EOF"
-              echo "${IMAGE_NAME}:beta"
-              echo "${IMAGE_NAME}:main-${SHA_SHORT}"
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
-
-          elif [ "${GITHUB_REF_NAME}" = "dev" ]; then
-            {
-              echo "tags<<EOF"
-              echo "${IMAGE_NAME}:dev"
-              echo "${IMAGE_NAME}:dev-${SHA_SHORT}"
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
-
-          elif [ "${GITHUB_REF_NAME}" = "test" ]; then
-            {
-              echo "tags<<EOF"
-              echo "${IMAGE_NAME}:beta"
-              echo "${IMAGE_NAME}:beta-${SHA_SHORT}"
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
-
-          else
-            echo "Unsupported ref: ${GITHUB_REF_NAME}"
-            exit 1
-          fi
-
-      - name: Build and push
+      - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: ${{ steps.tags.outputs.tags }}
+          platforms: linux/amd64
