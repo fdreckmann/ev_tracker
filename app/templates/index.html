@@ -2386,6 +2386,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             <div>
               <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Installiert</div>
               <div style="font-size:1.2rem;font-weight:700;color:#64ffda">v{{ app_version }}</div>
+              <div id="uiLocalMeta" style="margin-top:6px;font-size:.7rem;font-family:var(--mono);color:var(--mute);display:flex;flex-wrap:wrap;gap:6px 12px"></div>
             </div>
             <div id="updateStatusBadge" style="font-size:.75rem;font-family:var(--mono);color:var(--mute)">⏳ Prüfe…</div>
           </div>
@@ -4948,6 +4949,19 @@ function _renderUpdateInfo(r) {
   const avail = document.getElementById('updateInfoAvailable');
   const curr  = document.getElementById('updateInfoCurrent');
 
+  // Always populate local build metadata (branch/channel/commit/image_tag)
+  const metaEl = document.getElementById('uiLocalMeta');
+  if (metaEl) {
+    const mParts = [];
+    if (r.channel)       mParts.push('Channel: <span style="color:#64ffda">'+escapeHtml(r.channel)+'</span>');
+    if (r.branch)        mParts.push('Branch: <span style="color:#a78bfa">'+escapeHtml(r.branch)+'</span>');
+    if (r.image_tag)     mParts.push('Image: <span style="color:#60a5fa">'+escapeHtml(r.image_tag)+'</span>');
+    if (r.commit_short)  mParts.push('Commit: <span style="color:#94a3b8">'+escapeHtml(r.commit_short)+'</span>');
+    if (r.build_date)    mParts.push('Build: <span style="color:#94a3b8">'+escapeHtml(r.build_date)+'</span>');
+    if (r.remote_url)    mParts.push('Update-Check: <span style="color:#64748b">'+escapeHtml(r.remote_url)+'</span>');
+    metaEl.innerHTML = mParts.join(' &nbsp;·&nbsp; ');
+  }
+
   if (errEl) errEl.style.display = 'none';
   if (panel) panel.style.display = '';
 
@@ -7207,10 +7221,16 @@ async function openMobileSystemStatus() {
     const el = document.getElementById('msSysResult'); if(!el) return;
     const rows = [];
     if(health) rows.push(`<div class="m-info-row"><span class="m-info-label">Health</span><span class="m-info-value" style="color:#64ffda">✅ OK</span></div>`);
-    if(status?.app_version) rows.push(`<div class="m-info-row"><span class="m-info-label">Version</span><span class="m-info-value">${escapeHtml(String(status.app_version))}</span></div>`);
-    if(status?.db_size_mb!=null) rows.push(`<div class="m-info-row"><span class="m-info-label">DB-Größe</span><span class="m-info-value">${Number(status.db_size_mb).toFixed(1)} MB</span></div>`);
+    const sv = status?.app_version || status?.version;
+    if(sv) rows.push(`<div class="m-info-row"><span class="m-info-label">Version</span><span class="m-info-value">${escapeHtml(String(sv))}</span></div>`);
+    const sch = status?.channel; if(sch) rows.push(`<div class="m-info-row"><span class="m-info-label">Channel</span><span class="m-info-value">${escapeHtml(sch)}</span></div>`);
+    const sbr = status?.branch;  if(sbr) rows.push(`<div class="m-info-row"><span class="m-info-label">Branch</span><span class="m-info-value" style="font-family:var(--mono);font-size:.75rem">${escapeHtml(sbr)}</span></div>`);
+    const scs = status?.commit_short; if(scs) rows.push(`<div class="m-info-row"><span class="m-info-label">Commit</span><span class="m-info-value" style="font-family:var(--mono);font-size:.75rem">${escapeHtml(scs)}</span></div>`);
+    const dbmb = status?.db_size_mb ?? (status?.db_size != null ? status.db_size/1024/1024 : null);
+    if(dbmb!=null) rows.push(`<div class="m-info-row"><span class="m-info-label">DB-Größe</span><span class="m-info-value">${Number(dbmb).toFixed(1)} MB</span></div>`);
     if(status?.backup_count!=null) rows.push(`<div class="m-info-row"><span class="m-info-label">Backups</span><span class="m-info-value">${Number(status.backup_count)}</span></div>`);
-    if(status?.session_count!=null) rows.push(`<div class="m-info-row"><span class="m-info-label">Sessions</span><span class="m-info-value">${Number(status.session_count)}</span></div>`);
+    const sc = status?.session_count ?? status?.sessions_count;
+    if(sc!=null) rows.push(`<div class="m-info-row"><span class="m-info-label">Sessions</span><span class="m-info-value">${Number(sc)}</span></div>`);
     el.innerHTML = rows.length ? rows.join('') : '<div class="m-info-row"><span class="m-info-label">Info</span><span class="m-info-value">Keine Daten verfügbar</span></div>';
   } catch(e) {
     const el=document.getElementById('msSysResult');

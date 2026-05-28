@@ -1,5 +1,5 @@
 """
-Tests for update API routes — including legacy compatibility.
+Tests for update API routes — including legacy compatibility and version metadata.
 """
 
 
@@ -35,3 +35,51 @@ class TestUpdateRoutes:
         """Legacy route must not return 404 — old installations may call it."""
         rv = authed_client.post("/api/update/pull")
         assert rv.status_code != 404
+
+    def test_update_info_contains_metadata_fields(self, authed_client):
+        """/api/update-info must include branch, channel, commit_short, image_tag."""
+        rv = authed_client.get("/api/update-info")
+        assert rv.status_code == 200
+        data = rv.get_json()
+        assert "channel" in data
+        assert "branch" in data
+        assert "commit" in data
+        assert "commit_short" in data
+        assert "image_tag" in data
+
+    def test_update_info_contains_remote_url(self, authed_client):
+        """/api/update-info must expose the remote URL being checked."""
+        rv = authed_client.get("/api/update-info")
+        data = rv.get_json()
+        assert "remote_url" in data
+
+
+class TestSystemStatus:
+    def test_system_status_has_version_fields(self, authed_client):
+        """/api/system/status must include app_version, channel, branch."""
+        rv = authed_client.get("/api/system/status")
+        assert rv.status_code == 200
+        data = rv.get_json()
+        assert data.get("ok") is True
+        assert "app_version" in data or "version" in data
+        assert "channel" in data
+        assert "branch" in data
+
+    def test_system_status_has_compat_aliases(self, authed_client):
+        """/api/system/status must have mobile-compat aliases: db_size_mb, session_count."""
+        rv = authed_client.get("/api/system/status")
+        data = rv.get_json()
+        assert "db_size_mb" in data
+        assert "session_count" in data
+
+    def test_system_status_db_size_mb_is_float(self, authed_client):
+        rv = authed_client.get("/api/system/status")
+        data = rv.get_json()
+        assert isinstance(data["db_size_mb"], (int, float))
+
+    def test_system_status_preserves_original_fields(self, authed_client):
+        """Original fields (db_size, sessions_count) must still be present."""
+        rv = authed_client.get("/api/system/status")
+        data = rv.get_json()
+        assert "db_size" in data
+        assert "sessions_count" in data

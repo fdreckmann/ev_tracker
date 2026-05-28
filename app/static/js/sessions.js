@@ -3,6 +3,9 @@
 //   showSessionDetail, closeModal,
 //   openAddSessionModal, closeAddSessionModal, submitAddSession,
 //   loadCharts, destroyCharts, chartDefaults
+//
+// All interactive functions are registered on window so inline onclick
+// handlers in dynamically-built table rows can reach them.
 
 async function editCost(id, kwh, currentPrice){
   var newPrice = prompt(
@@ -298,10 +301,28 @@ async function showSessionDetail(id){
   // Show action buttons in the detail modal
   var _modalActions = $('modalActions');
   if(_modalActions){
-    _modalActions.innerHTML = '<button onclick="event.stopPropagation();editLocation('+s.id+','+JSON.stringify(s.location||'unknown')+');closeModal()" '
-      +'style="background:rgba(61,220,151,.12);color:#3ddc97;border:1px solid rgba(61,220,151,.25);border-radius:6px;padding:5px 12px;font-size:.75rem;cursor:pointer">📍 Standort ändern</button>'
-      +' <button onclick="event.stopPropagation();editCost('+s.id+','+(s.kwh_charged||0)+','+(s.price_per_kwh||0)+')" '
-      +'style="background:rgba(0,180,255,.12);color:#00b4ff;border:1px solid rgba(0,180,255,.25);border-radius:6px;padding:5px 12px;font-size:.75rem;cursor:pointer">✎ Kosten</button>';
+    // Use data attributes to avoid quoting issues in onclick; functions are on window.
+    var _actLocBtn  = document.createElement('button');
+    _actLocBtn.textContent = '📍 Standort ändern';
+    _actLocBtn.style.cssText = 'background:rgba(61,220,151,.12);color:#3ddc97;border:1px solid rgba(61,220,151,.25);border-radius:6px;padding:5px 12px;font-size:.75rem;cursor:pointer';
+    _actLocBtn.addEventListener('click', function(ev){
+      ev.stopPropagation();
+      window.editLocation(s.id, s.location||'unknown').then(function(){
+        closeModal();
+        loadSessions();
+        if(typeof loadCharts==='function') loadCharts();
+      });
+    });
+    var _actCostBtn = document.createElement('button');
+    _actCostBtn.textContent = '✎ Kosten';
+    _actCostBtn.style.cssText = 'background:rgba(0,180,255,.12);color:#00b4ff;border:1px solid rgba(0,180,255,.25);border-radius:6px;padding:5px 12px;font-size:.75rem;cursor:pointer';
+    _actCostBtn.addEventListener('click', function(ev){
+      ev.stopPropagation();
+      window.editCost(s.id, s.kwh_charged||0, s.price_per_kwh||0);
+    });
+    _modalActions.innerHTML = '';
+    _modalActions.appendChild(_actLocBtn);
+    _modalActions.appendChild(_actCostBtn);
   }
 
   var fmtMeterVal = function(v){ return v!=null ? Number(v).toLocaleString('de',{minimumFractionDigits:3,maximumFractionDigits:3})+' kWh' : null; };
@@ -478,3 +499,13 @@ async function loadCharts(){
     options:Object.assign({}, chartDefaults(), {plugins:Object.assign({}, chartDefaults().plugins,{tooltip:{callbacks:{label:function(c){return c.raw+' kWh/100km';}}}})}),
   });
 }
+
+// ── Global registration ───────────────────────────────────────────────────────
+// Inline onclick attributes in dynamically-built rows need these on window.
+window.editCost        = editCost;
+window.editLocation    = editLocation;
+window.delSession      = delSession;
+window.showSessionDetail = showSessionDetail;
+window.closeModal      = closeModal;
+window.loadSessions    = loadSessions;
+window.loadCharts      = loadCharts;
