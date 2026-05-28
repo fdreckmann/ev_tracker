@@ -19,7 +19,7 @@ function mobileNavTo(section) {
   _mobileCurrentSection = section;
 
   // Alle Mobile-Sections ausblenden
-  var sections = ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore'];
+  var sections = ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore','mobileVehicles'];
   sections.forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.style.display = 'none';
@@ -38,7 +38,7 @@ function mobileNavTo(section) {
     var el = document.getElementById('mobileSessionCards');
     if (el) el.style.display = 'block';
     document.getElementById('mbnSessions')?.classList.add('active');
-    renderMobileSessionCards();
+    loadMobileSessions();
   } else if (section === 'analysis') {
     // Auf Desktop-Analyse-Bereich scrollen oder cfgSection aufrufen
     document.getElementById('mbnAnalysis')?.classList.add('active');
@@ -59,13 +59,18 @@ function mobileNavTo(section) {
     if (el) el.style.display = 'block';
     document.getElementById('mbnMore')?.classList.add('active');
     initMobileMore();
+  } else if (section === 'vehicles') {
+    var el = document.getElementById('mobileVehicles');
+    if (el) el.style.display = 'block';
+    document.getElementById('mbnVehicles')?.classList.add('active');
+    if (typeof loadMobileVehicleCards === 'function') loadMobileVehicleCards();
   }
 
   // Auf Mobile: Desktop-Hauptcontent ausblenden wenn wir eigene Section zeigen
   if (window.innerWidth <= 768) {
     var mainContent = document.getElementById('mainContent') || document.querySelector('.main-content') || document.querySelector('main');
     if (mainContent && section !== 'analysis') {
-      mainContent.style.display = (section === 'home' || section === 'sessions' || section === 'export' || section === 'more') ? 'none' : 'block';
+      mainContent.style.display = (section === 'home' || section === 'sessions' || section === 'export' || section === 'more' || section === 'vehicles') ? 'none' : 'block';
     }
   }
 }
@@ -249,12 +254,17 @@ function buildSessionCard(s, compact) {
   '</div>';
 }
 
+async function loadMobileSessions() {
+  var sessions = await apiFetch('/api/sessions').then(function(r) { return r.json(); }).catch(function() { return []; });
+  window._allSessions = sessions;
+  window._sessions = sessions;
+  renderMobileSessionCards();
+}
+
 async function mobileEditLocation(sessionId, current) {
   if (typeof window.editLocation === 'function') {
     await window.editLocation(sessionId, current);
-    // Refresh mobile views after change
-    window._allSessions = null;
-    if (typeof renderMobileSessionCards === 'function') renderMobileSessionCards();
+    await loadMobileSessions();
     if (typeof refreshMobileDashboard === 'function') refreshMobileDashboard();
   }
 }

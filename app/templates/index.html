@@ -6025,7 +6025,7 @@ async function loadContracts(){
         <div style="display:flex;gap:6px;flex-shrink:0">
           ${!c.is_default?`<button class="btn-s" style="font-size:.72rem;padding:4px 8px" onclick="setDefaultContract(${c.id})" data-requires-permission="public_charging:manage_contracts">⭐ Standard</button>`:''}
           <button class="btn-s" style="font-size:.72rem;padding:4px 8px" onclick="editContract(${c.id})" data-requires-permission="public_charging:manage_contracts">✏️</button>
-          <button class="btn-s" style="font-size:.72rem;padding:4px 8px;color:#f87171" onclick="deleteContract(${c.id},'${escapeHtml(c.name)}')" data-requires-permission="public_charging:manage_contracts">🗑️</button>
+          <button class="btn-s" style="font-size:.72rem;padding:4px 8px;color:#f87171" data-id="${c.id}" data-name="${escapeHtml(c.name)}" onclick="deleteContract(this.dataset.id,this.dataset.name)" data-requires-permission="public_charging:manage_contracts">🗑️</button>
         </div>
       </div>`).join('');
     applyPermissionVisibility();
@@ -6754,10 +6754,10 @@ async function loadAuditLog(){
     <thead><tr><th>Zeit</th><th>Benutzer</th><th>Aktion</th><th>Details</th><th>IP</th></tr></thead>
     <tbody>${rows.map(r=>`<tr>
       <td style="font-family:var(--mono);font-size:.72rem;white-space:nowrap">${r.ts?r.ts.replace('T',' ').substring(0,19):''}</td>
-      <td style="font-family:var(--mono);font-size:.72rem;color:var(--acc)">${r.user_name||'—'}</td>
-      <td style="font-family:var(--mono);font-size:.72rem;color:var(--acc2)">${r.action||''}</td>
+      <td style="font-family:var(--mono);font-size:.72rem;color:var(--acc)">${escapeHtml(r.user_name||'—')}</td>
+      <td style="font-family:var(--mono);font-size:.72rem;color:var(--acc2)">${escapeHtml(r.action||'')}</td>
       <td style="font-family:var(--mono);font-size:.72rem;color:var(--mute)">${escapeHtml(r.details||'')}</td>
-      <td style="font-family:var(--mono);font-size:.72rem;color:var(--mute)">${r.ip||''}</td>
+      <td style="font-family:var(--mono);font-size:.72rem;color:var(--mute)">${escapeHtml(r.ip||'')}</td>
     </tr>`).join('')}</tbody>
   </table>`;
 }

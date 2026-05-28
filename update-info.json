@@ -1,37 +1,33 @@
 {
-  "latest_version": "2.0.53",
-  "release_date": "2026-05-27",
+  "latest_version": "2.0.54",
+  "release_date": "2026-05-28",
   "channel": "beta",
-  "title": "Stable Release — Meter-vcfg, SSRF-Härtung, XSS-Fixes, pytest grün",
+  "title": "Beta Release — Cache-Busting, Status-Polling, Mobile-Fixes, XSS-Härtung",
   "summary": [
-    "Zähler-Logik komplett auf vcfg umgestellt (per-Fahrzeug Meter-Konfiguration)",
-    "SSRF-Schutz in cache_provider_image (localhost, 169.254.x, Private-IPs blockiert)",
-    "XSS-Härtung in allen JavaScript-Dateien und index.html Template",
-    "Debug-URL-Masking: Userinfo (user:password@host) und Query-Secrets werden maskiert",
-    "Fahrzeugbild-Priorität konsistent (manual > auto > Silhouette > Placeholder)",
-    "GitHub Actions: Tests vor Docker-Push, latest nur per v*-Tag",
-    "Unraid CA-Template in separates Repo ausgelagert",
-    "Full pytest grün (175 passed)"
+    "Cache-Busting für alle JS/CSS-Dateien (ASSET_VERSION-Suffix)",
+    "Status-Polling mit In-Flight-Guard und AbortController-Timeout",
+    "Mobile Fahrzeuge-Tab funktioniert jetzt vollständig",
+    "Mobile Standortänderung lädt Sessions zuverlässig neu",
+    "normalizeLocation() kennt jetzt intern/internal/zuhause_laden/öffentlich",
+    "XSS-Fixes im Audit-Log und Ladeabo-Liste",
+    "GitHub Actions: VERSION aus Git-Tag für Prod-Releases",
+    "Menü-Reihenfolge: Dashboard | Konfiguration | Ladevorgänge | Export | Backup"
   ],
   "fixes": [
-    "server.py: Meter-Home-Detection nutzt vcfg statt cfg (vcfg = fahrzeugspezifische Config)",
-    "server.py: FLASK_SECRET_KEY verhindert /data/.secret_key-Schreiben bei Tests",
-    "vehicle_image_service.py: _is_ssrf_blocked() schützt cache_provider_image()",
-    "meter_providers.py: sanitize_debug_url() maskiert Userinfo und Query-Secrets",
-    "backup_service.py: Funktions-Schatten behoben (_create_backup_impl)",
-    "index.html: escapeHtml() für r.name, r.email, r.error, r.filename, r.provider, e.message, b.name",
-    "index.html: buildExcelGrid() escapeHtml() für c.v, c.bg, c.fg (Excel-Zellwerte im Preview)",
-    "sessions.js: v.id/v.name in Option-Tags und s.id in modalTitle escaped",
-    "billing.js: r.month in Template-Literal escaped",
-    "reports.js: period_label, location_filter, triggered_by, status escaped",
-    "status.js: r.vehicle_id in Session-Tabelle escaped",
-    "tests/conftest.py: core.config.DATA_DIR wird jetzt korrekt gemockt (verhindert /data-Writes in CI)",
-    "GitHub Actions: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 für reproduzierbare CI-Läufe"
+    "version.py: ASSET_VERSION = APP_VERSION + commit/build/local Suffix",
+    "docker-build.yml: VERSION aus GITHUB_REF_NAME#v bei Tag-Builds (nicht mehr aus version.json)",
+    "mobile.js: mobileNavTo('vehicles') oeffnet Fahrzeugliste",
+    "mobile.js: loadMobileSessions() laedt Sessions neu nach Standortaenderung",
+    "api.js: normalizeLocation erkennt intern/internal/zuhause_laden als home, oeffentlich als extern",
+    "index.html: Audit-Log escapeHtml fuer user_name, action, ip",
+    "index.html: deleteContract-Button nutzt data-id/data-name statt onclick-String-Interpolation",
+    "api.js: apiFetch mit AbortController-Timeout (15s default)",
+    "status.js: In-Flight-Guard, Throttling der Location-Abfrage auf 60s, Sessions mit limit=5"
   ],
   "breaking_changes": [],
   "migration_notes": [
-    "Keine DB-Migration nötig — alle neuen Spalten werden automatisch ergänzt",
-    "Unraid CA-Template: jetzt unter https://github.com/fdreckmann/ev-tracker-unraid-app"
+    "Keine DB-Migration noetig",
+    "Unraid CA-Template: https://github.com/fdreckmann/ev-tracker-unraid-app"
   ],
   "update_instructions": [
     "docker compose pull",

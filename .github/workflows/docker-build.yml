@@ -74,9 +74,10 @@ jobs:
         run: |
           SHA_SHORT=$(echo "${GITHUB_SHA}" | cut -c1-8)
           BUILD_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          VERSION=$(python3 -c "import json; print(json.load(open('version.json'))['version'])" 2>/dev/null || echo "unknown")
+          VERSION_FROM_FILE=$(python3 -c "import json; print(json.load(open('version.json'))['version'])" 2>/dev/null || echo "unknown")
 
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
             CHANNEL=stable
             MAIN_TAG="${IMAGE_NAME}:latest"
             echo "tags=${IMAGE_NAME}:latest,${IMAGE_NAME}:${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
@@ -85,14 +86,17 @@ jobs:
             MAIN_TAG="${IMAGE_NAME}:dev"
             echo "tags=${IMAGE_NAME}:dev,${IMAGE_NAME}:dev-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
           elif [ "${GITHUB_REF_NAME}" = "test" ]; then
+            VERSION="${VERSION_FROM_FILE}"
             CHANNEL=beta
             MAIN_TAG="${IMAGE_NAME}:beta"
             echo "tags=${IMAGE_NAME}:beta,${IMAGE_NAME}:test-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
           elif [ "${GITHUB_REF_NAME}" = "main" ]; then
+            VERSION="${VERSION_FROM_FILE}"
             CHANNEL=beta
             MAIN_TAG="${IMAGE_NAME}:beta"
             echo "tags=${IMAGE_NAME}:beta,${IMAGE_NAME}:main-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
           else
+            VERSION="${VERSION_FROM_FILE}"
             CHANNEL=dev
             MAIN_TAG="${IMAGE_NAME}:${GITHUB_REF_NAME}-${SHA_SHORT}"
             echo "tags=${IMAGE_NAME}:${GITHUB_REF_NAME}-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
