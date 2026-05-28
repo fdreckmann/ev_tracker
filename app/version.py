@@ -32,4 +32,6 @@ IMAGE_TAG   = _env_or("EV_TRACKER_IMAGE_TAG", _data.get("image_tag", ""))
 # Short commit hash (first 8 chars)
 COMMIT_SHORT = GIT_COMMIT[:8] if GIT_COMMIT else ""
 
+ASSET_VERSION = APP_VERSION + "-" + (COMMIT_SHORT or BUILD_DATE.replace("-", "") or "local")
+
 CHANGELOG = []  # Legacy — kept for import compatibility

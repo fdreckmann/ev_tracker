@@ -11,7 +11,7 @@ from core.db import _get_db, close_db_if_owned, DB_PATH, DATA_DIR
 from core.config import load_config
 from core.security import require_login, has_permission, _current_user
 import core.state as _state
-from version import APP_VERSION, GIT_BRANCH, GIT_COMMIT, COMMIT_SHORT, CHANNEL, IMAGE_TAG
+from version import APP_VERSION, ASSET_VERSION, GIT_BRANCH, GIT_COMMIT, COMMIT_SHORT, CHANNEL, IMAGE_TAG
 
 health_bp = Blueprint("health", __name__)
 
@@ -127,6 +127,7 @@ def api_system_status():
         "image_tag": IMAGE_TAG,
         # Mobile-compat aliases
         "app_version": APP_VERSION,
+        "asset_version": ASSET_VERSION,
         "db_size_mb": round(db_size / 1024 / 1024, 2),
         "session_count": sessions_count,
         # Original fields kept for backward compat

@@ -11,9 +11,9 @@
 <title>EV Tracker – {{ cfg.car_name }}</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="/static/js/api.js"></script>
-<script src="/static/js/status.js"></script>
-<script src="/static/js/config.js"></script>
+<script src="/static/js/api.js?v={{ asset_version }}"></script>
+<script src="/static/js/status.js?v={{ asset_version }}"></script>
+<script src="/static/js/config.js?v={{ asset_version }}"></script>
 <style>
 :root{
   --bg:#080b10;--surf:#0e1319;--brd:#1c2430;--brd2:#253040;
@@ -664,8 +664,8 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 <!-- ── Nav ── -->
 <nav>
   <button class="active" onclick="tab('dashboard',this)">Dashboard</button>
-  <button onclick="tab('sessions',this)">Ladevorgänge</button>
   <button onclick="tab('config',this)">Konfiguration</button>
+  <button onclick="tab('sessions',this)">Ladevorgänge</button>
   <button onclick="tab('export',this)">Export</button>
   <button onclick="tab('backup',this)">Backup</button>
   <a href="/logout" id="navLogout" style="display:none;margin-left:auto;padding:8px 14px;font-size:.78rem;color:var(--mute);text-decoration:none;border-radius:8px;border:1px solid var(--brd)" title="">Abmelden</a>
@@ -3311,20 +3311,20 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 <!-- Toasts -->
 <div class="toasts" id="toasts"></div>
 
-<script src="/static/js/reports.js"></script>
-<script src="/static/js/export.js"></script>
-<script src="/static/js/sessions.js"></script>
-<script src="/static/js/vehicles.js"></script>
-<script src="/static/js/mobile.js"></script>
-<script src="/static/js/billing.js"></script>
-<script src="/static/js/templates.js"></script>
-<script src="/static/js/settings.js"></script>
+<script src="/static/js/reports.js?v={{ asset_version }}"></script>
+<script src="/static/js/export.js?v={{ asset_version }}"></script>
+<script src="/static/js/sessions.js?v={{ asset_version }}"></script>
+<script src="/static/js/vehicles.js?v={{ asset_version }}"></script>
+<script src="/static/js/mobile.js?v={{ asset_version }}"></script>
+<script src="/static/js/billing.js?v={{ asset_version }}"></script>
+<script src="/static/js/templates.js?v={{ asset_version }}"></script>
+<script src="/static/js/settings.js?v={{ asset_version }}"></script>
 <script>
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 // Cache-Buster: reload without query param if version changed
 (function(){
-  const v='{{ app_version }}';
+  const v='{{ asset_version }}';
   const stored=localStorage.getItem('ev_version');
   if(stored && stored!==v){
     localStorage.setItem('ev_version',v);
