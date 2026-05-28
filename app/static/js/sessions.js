@@ -37,19 +37,57 @@ async function loadSessions(){
 }
 
 async function editLocation(id, current){
-  var labels = {'home':'🏠 Zuhause','extern':'⚡ Extern','unknown':'— Unbekannt'};
-  var choice = prompt(
-    'Standort für Session #'+id+' ändern:\n\n1 = 🏠 Zuhause\n2 = ⚡ Extern\n3 = — Unbekannt\n\nAktuell: '+(labels[current]||current)+'\n\nZahl eingeben:'
-  );
-  if(!choice) return;
-  var map={'1':'home','2':'extern','3':'unknown'};
-  var loc=map[choice.trim()];
-  if(!loc){toast('Ungültige Eingabe — 1, 2 oder 3','err');return;}
-  var r=await apiFetch('/api/sessions/'+encodeURIComponent(id)+'/location',{method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({location:loc})}).then(function(r){return r.json();}).catch(function(){return {ok:false};});
-  if(r.ok){toast('Session #'+id+' → '+labels[loc]);loadSessions();}
-  else toast('Fehler beim Speichern','err');
+  return new Promise(function(resolve){
+    var labels = {'home':'🏠 Zuhause / Intern','extern':'⚡ Extern / Öffentlich','unknown':'— Unbekannt'};
+    var opts = [
+      {v:'home',   label:'🏠 Zuhause / Intern',  color:'#3ddc97', bg:'rgba(61,220,151,.15)'},
+      {v:'extern', label:'⚡ Extern / Öffentlich',color:'#f59e0b', bg:'rgba(245,158,11,.15)'},
+      {v:'unknown',label:'— Unbekannt',            color:'#64748b', bg:'rgba(100,116,139,.15)'},
+    ];
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999';
+    var box = document.createElement('div');
+    box.style.cssText = 'background:#1a2030;border:1px solid #2d3a4a;border-radius:12px;padding:24px 28px;min-width:280px;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.5)';
+    box.innerHTML = '<div style="font-size:.85rem;color:#94a3b8;margin-bottom:4px">Session #'+id+'</div>'
+      +'<div style="font-size:1rem;color:#e2e8f0;margin-bottom:16px;font-weight:600">Standort ändern</div>'
+      +'<div style="font-size:.75rem;color:#64748b;margin-bottom:12px">Aktuell: '+(labels[current]||current||'—')+'</div>';
+    var btnWrap = document.createElement('div');
+    btnWrap.style.cssText = 'display:flex;flex-direction:column;gap:8px';
+    opts.forEach(function(opt){
+      var btn = document.createElement('button');
+      btn.textContent = opt.label;
+      btn.style.cssText = 'background:'+opt.bg+';color:'+opt.color+';border:1px solid '+opt.color.replace(')',', .35)').replace('rgb','rgba')+';'
+        +'border-radius:8px;padding:10px 16px;font-size:.88rem;cursor:pointer;text-align:left;font-family:inherit;'
+        +(current===opt.v?'font-weight:700;box-shadow:0 0 0 2px '+opt.color.replace(')',', .4)').replace('rgb','rgba')+';':'');
+      btn.addEventListener('click', async function(){
+        document.body.removeChild(overlay);
+        var r = await apiFetch('/api/sessions/'+encodeURIComponent(id)+'/location',{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({location:opt.v})
+        }).then(function(x){return x.json();}).catch(function(){return {ok:false};});
+        if(r.ok){
+          var msg = r.message || ('Standort geändert: '+(labels[opt.v]||opt.v));
+          toast(msg);
+          loadSessions();
+          if(typeof loadCharts==='function') loadCharts();
+        } else {
+          toast((r.error||'Fehler beim Speichern'),'err');
+        }
+        resolve();
+      });
+      btnWrap.appendChild(btn);
+    });
+    var cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Abbrechen';
+    cancelBtn.style.cssText = 'background:transparent;color:#64748b;border:1px solid #2d3a4a;border-radius:8px;padding:8px 16px;font-size:.82rem;cursor:pointer;font-family:inherit;margin-top:4px';
+    cancelBtn.addEventListener('click', function(){document.body.removeChild(overlay);resolve();});
+    box.appendChild(btnWrap);
+    box.appendChild(document.createElement('div')).style.marginBottom = '4px';
+    box.appendChild(cancelBtn);
+    overlay.appendChild(box);
+    overlay.addEventListener('click', function(e){if(e.target===overlay){document.body.removeChild(overlay);resolve();}});
+    document.body.appendChild(overlay);
+  });
 }
 
 async function delSession(id){
@@ -257,6 +295,14 @@ async function showSessionDetail(id){
   var _ehS = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'').replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});};
   $('modalTitle').innerHTML = 'Session #'+_ehS(String(s.id))+' — '+new Date(s.start_ts).toLocaleDateString('de-DE') + manualBadge;
   $('modalMeta').innerHTML = dt(s.start_ts)+' → '+(s.end_ts?dt(s.end_ts):'läuft noch')+' &nbsp;·&nbsp; '+locBadge(s.location)+' &nbsp;·&nbsp; '+typeBadge(s.charger_type,s.max_power_kw);
+  // Show action buttons in the detail modal
+  var _modalActions = $('modalActions');
+  if(_modalActions){
+    _modalActions.innerHTML = '<button onclick="event.stopPropagation();editLocation('+s.id+','+JSON.stringify(s.location||'unknown')+');closeModal()" '
+      +'style="background:rgba(61,220,151,.12);color:#3ddc97;border:1px solid rgba(61,220,151,.25);border-radius:6px;padding:5px 12px;font-size:.75rem;cursor:pointer">📍 Standort ändern</button>'
+      +' <button onclick="event.stopPropagation();editCost('+s.id+','+(s.kwh_charged||0)+','+(s.price_per_kwh||0)+')" '
+      +'style="background:rgba(0,180,255,.12);color:#00b4ff;border:1px solid rgba(0,180,255,.25);border-radius:6px;padding:5px 12px;font-size:.75rem;cursor:pointer">✎ Kosten</button>';
+  }
 
   var fmtMeterVal = function(v){ return v!=null ? Number(v).toLocaleString('de',{minimumFractionDigits:3,maximumFractionDigits:3})+' kWh' : null; };
   var stats = [
