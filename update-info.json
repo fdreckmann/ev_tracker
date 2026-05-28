@@ -1,7 +1,7 @@
 {
   "latest_version": "2.0.53",
   "release_date": "2026-05-27",
-  "channel": "stable",
+  "channel": "beta",
   "title": "Stable Release — Meter-vcfg, SSRF-Härtung, XSS-Fixes, pytest grün",
   "summary": [
     "Zähler-Logik komplett auf vcfg umgestellt (per-Fahrzeug Meter-Konfiguration)",
@@ -11,7 +11,7 @@
     "Fahrzeugbild-Priorität konsistent (manual > auto > Silhouette > Placeholder)",
     "GitHub Actions: Tests vor Docker-Push, latest nur per v*-Tag",
     "Unraid CA-Template in separates Repo ausgelagert",
-    "Full pytest grün (169 Tests)"
+    "Full pytest grün (175 Tests gesammelt, 169 passed, 6 skipped)"
   ],
   "fixes": [
     "server.py: Meter-Home-Detection nutzt vcfg statt cfg (vcfg = fahrzeugspezifische Config)",

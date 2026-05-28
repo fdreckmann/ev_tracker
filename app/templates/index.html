@@ -3842,9 +3842,9 @@ function refreshColumnMappingList(){
     const label = TABLE_FIELD_LABELS[field]||MAPPING_LABELS[field]||field;
     return `<div style="display:flex;align-items:center;gap:6px;font-size:.7rem;font-family:var(--mono);padding:3px 0">
       <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block"></span>
-      <span style="color:var(--mute);min-width:22px">Sp.${colLetter(ci)}</span>
-      <span style="color:#fff;flex:1">${label}</span>
-      <button onclick="clearColumnMapping(${ci})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:.75rem;padding:0 4px">✕</button>
+      <span style="color:var(--mute);min-width:22px">Sp.${escapeHtml(colLetter(ci))}</span>
+      <span style="color:#fff;flex:1">${escapeHtml(label)}</span>
+      <button onclick="clearColumnMapping(${Number(ci)})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:.75rem;padding:0 4px">✕</button>
     </div>`;
   }).join('');
 }
@@ -3902,9 +3902,9 @@ function refreshCellMappingList(){
   el.innerHTML = entries.map(([addr, field])=>{
     const label = HEADER_FIELD_LABELS[field] || field;
     return `<div style="display:flex;align-items:center;gap:6px;font-size:.7rem;font-family:var(--mono);padding:3px 0">
-      <span style="color:var(--mute);min-width:28px">${addr}</span>
-      <span style="color:#fff;flex:1">${label}</span>
-      <button onclick="removeCellMapping('${addr}')" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:.75rem;padding:0 4px">✕</button>
+      <span style="color:var(--mute);min-width:28px">${escapeHtml(addr)}</span>
+      <span style="color:#fff;flex:1">${escapeHtml(label)}</span>
+      <button data-addr="${escapeHtml(addr)}" onclick="removeCellMapping(this.dataset.addr)" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:.75rem;padding:0 4px">✕</button>
     </div>`;
   }).join('');
 }
@@ -7117,12 +7117,12 @@ async function runMobileMeterTest() {
     el.innerHTML=`
       <div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:#64ffda">✅ OK</span></div>
       <div class="m-info-row"><span class="m-info-label">Zählerstand</span><span class="m-info-value">${r.value_kwh!=null?r.value_kwh.toFixed(3)+' kWh':'—'}</span></div>
-      <div class="m-info-row"><span class="m-info-label">Provider</span><span class="m-info-value">${r.provider||'—'}</span></div>
-      ${r.endpoint?`<div class="m-info-row"><span class="m-info-label">Endpoint</span><span class="m-info-value" style="font-size:11px">${r.endpoint}</span></div>`:''}`;
+      <div class="m-info-row"><span class="m-info-label">Provider</span><span class="m-info-value">${escapeHtml(r.provider||'—')}</span></div>
+      ${r.endpoint?`<div class="m-info-row"><span class="m-info-label">Endpoint</span><span class="m-info-value" style="font-size:11px">${escapeHtml(r.endpoint)}</span></div>`:''}`;
   } else {
     el.innerHTML=`
       <div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:#ef4444">❌ Fehler</span></div>
-      <div class="m-info-row"><span class="m-info-label">Nachricht</span><span class="m-info-value">${r.message||r.error||'Fehler'}</span></div>`;
+      <div class="m-info-row"><span class="m-info-label">Nachricht</span><span class="m-info-value">${escapeHtml(r.message||r.error||'Fehler')}</span></div>`;
   }
 }
 
@@ -7147,9 +7147,9 @@ async function runMobileConnectionTest() {
   const ok = r.ok||r.status==='ok'||r.success;
   el.innerHTML=`
     <div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:${ok?'#64ffda':'#ef4444'}">${ok?'✅ Verbunden':'❌ Fehler'}</span></div>
-    ${r.message?`<div class="m-info-row"><span class="m-info-label">Nachricht</span><span class="m-info-value">${r.message}</span></div>`:''}
-    ${r.provider?`<div class="m-info-row"><span class="m-info-label">Provider</span><span class="m-info-value">${r.provider}</span></div>`:''}
-    ${r.soc!=null?`<div class="m-info-row"><span class="m-info-label">SOC</span><span class="m-info-value">${r.soc}%</span></div>`:''}`;
+    ${r.message?`<div class="m-info-row"><span class="m-info-label">Nachricht</span><span class="m-info-value">${escapeHtml(r.message)}</span></div>`:''}
+    ${r.provider?`<div class="m-info-row"><span class="m-info-label">Provider</span><span class="m-info-value">${escapeHtml(r.provider)}</span></div>`:''}
+    ${r.soc!=null?`<div class="m-info-row"><span class="m-info-label">SOC</span><span class="m-info-value">${Number(r.soc).toFixed(0)}%</span></div>`:''}`;
 }
 
 // ─── Signatur verwalten ──────────────────────────────────
