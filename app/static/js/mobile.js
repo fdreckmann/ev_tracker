@@ -218,26 +218,45 @@ function renderMobileSessionCards() {
 }
 
 function buildSessionCard(s, compact) {
-  var date = s.date || (s.start_time ? s.start_time.split('T')[0] : '—');
+  var date = s.date || (s.start_time ? s.start_time.split('T')[0] : (s.start_ts ? s.start_ts.split('T')[0] : '—'));
   var kwh = parseFloat(s.kwh_charged || 0).toFixed(1);
   var cost = parseFloat(s.cost_eur || 0).toFixed(2);
   var loc = s.location || '';
-  var isHome = loc.toLowerCase().includes('home') || loc.toLowerCase().includes('zuhause') || loc === '';
+  var isHome = loc === 'home' || loc === '' || loc.toLowerCase().includes('home') || loc.toLowerCase().includes('zuhause');
   var cls = isHome ? 'home' : 'extern';
+  var locLabels = {'home':'🏠 Zuhause','extern':'⚡ Extern','unknown':'— Unbekannt'};
+  var locLabel = locLabels[loc] || (loc ? escapeHtml(loc) : '');
   var dur = s.duration || '';
-  var start = s.start_time ? s.start_time.slice(11,16) : '';
+  var start = (s.start_time || s.start_ts || '').slice(11,16);
+  var sid = s.id || 0;
 
-  return '<div class="session-card '+cls+'" onclick="mobileSessionDetail('+(s.id||0)+')">' +
+  var safeLoc = escapeHtml(loc || 'unknown');
+  // Use data-loc attribute to avoid quoting hell in onclick
+  var changeLocBtn = sid ? '<button data-sid="'+sid+'" data-loc="'+safeLoc+'" onclick="event.stopPropagation();mobileEditLocation(this.dataset.sid,this.dataset.loc)" '
+    +'style="background:rgba(61,220,151,.14);color:#3ddc97;border:1px solid rgba(61,220,151,.3);border-radius:6px;padding:4px 10px;font-size:.7rem;cursor:pointer">📍</button>' : '';
+
+  return '<div class="session-card '+cls+'" onclick="mobileSessionDetail('+sid+')">' +
     '<div class="session-card-header">' +
-      '<span class="session-card-date">'+date+(start ? ' · '+start : '')+'</span>' +
+      '<span class="session-card-date">'+escapeHtml(date)+(start ? ' · '+start : '')+'</span>' +
       '<span class="session-card-cost">'+cost+' €</span>' +
     '</div>' +
     '<div class="session-card-details">' +
       '<span>⚡ '+kwh+' kWh</span>' +
-      (dur ? '<span>⏱ '+dur+'</span>' : '') +
-      (loc ? '<span>📍 '+escapeHtml(loc)+'</span>' : '') +
+      (dur ? '<span>⏱ '+escapeHtml(dur)+'</span>' : '') +
+      (locLabel ? '<span>'+locLabel+'</span>' : '') +
+      (!compact && sid ? '<span style="margin-left:auto">'+changeLocBtn+'</span>' : '') +
     '</div>' +
   '</div>';
+}
+
+async function mobileEditLocation(sessionId, current) {
+  if (typeof window.editLocation === 'function') {
+    await window.editLocation(sessionId, current);
+    // Refresh mobile views after change
+    window._allSessions = null;
+    if (typeof renderMobileSessionCards === 'function') renderMobileSessionCards();
+    if (typeof refreshMobileDashboard === 'function') refreshMobileDashboard();
+  }
 }
 
 function mobileSessionDetail(sessionId) {
