@@ -24,12 +24,17 @@ class TestQuickActions:
 
     def test_meter_test_quick_action_uses_openMobileMeterTest(self):
         """Quick action 'Zähler testen' must call openMobileMeterTest()."""
-        # Verify the function is called somewhere in index.html near the quick actions block
         assert "openMobileMeterTest()" in _INDEX
 
     def test_vehicle_quick_action_uses_mobileNavTo(self):
         """Quick action 'Fahrzeug' must call mobileNavTo('vehicles')."""
         assert "mobileNavTo('vehicles')" in _INDEX
+
+    def test_ladevorgang_quick_action_navigates_to_sessions(self):
+        """Quick action 'Ladevorgang' must navigate to sessions tab before opening form."""
+        assert "mobileNavTo('sessions')" in _INDEX
+        # The button must navigate first, then open the form
+        assert "mobileNavTo('sessions');setTimeout(mobileQuickAddSession" in _INDEX
 
 
 class TestMobileMoreMenu:
