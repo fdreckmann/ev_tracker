@@ -43,8 +43,9 @@ async function loadBillingSummary(){
   if(!strip) return;
   try{
     const r = await apiFetch('/api/billing/summary').then(r=>r.json());
+    const _ehB = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'').replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});};
     strip.innerHTML = [
-      `<span>📅 <b>${r.month||''}</b></span>`,
+      `<span>📅 <b>${_ehB(r.month||'')}</b></span>`,
       `<span>⚡ kWh gesamt: <b>${(r.total_kwh||0).toFixed(2)}</b></span>`,
       `<span>💰 Kosten: <b>${(r.total_cost||0).toFixed(2)} €</b></span>`,
       `<span>💼 Erstattbar: <b>${(r.reimbursable_kwh||0).toFixed(2)} kWh</b></span>`,

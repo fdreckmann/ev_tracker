@@ -1,118 +1,56 @@
-# EV Tracker — GitHub Setup Anleitung
+# EV Tracker — GitHub Actions Setup
 
-## Schritt 1 — Personal Access Token erstellen
+Diese Anleitung beschreibt, wie GitHub Actions den Docker Build und Push auf Docker Hub automatisiert.
 
-1. GitHub.com → oben rechts dein Profilbild → **Settings**
-2. Ganz unten links → **Developer settings**
-3. **Personal access tokens** → **Tokens (classic)**
-4. **"Generate new token (classic)"**
-5. Einstellungen:
-   - Note: `ev-tracker-unraid`
-   - Expiration: `No expiration` (oder 1 Jahr)
-   - Scope: nur **`repo`** ankreuzen
-6. **"Generate token"** → Token kopieren und sicher speichern!
+## Voraussetzungen
 
----
+- GitHub-Repository: `fdreckmann/ev_tracker`
+- Docker Hub Account mit Repository `19121412/ev-tracker`
 
-## Schritt 2 — Privates Repository erstellen
+## Schritt 1 — Docker Hub Access Token erstellen
 
-1. GitHub.com → oben rechts **"+"** → **"New repository"**
-2. Einstellungen:
-   - Repository name: `ev-tracker`
-   - Visibility: **Private** ← wichtig!
-   - README: **nicht** ankreuzen
-3. **"Create repository"**
+1. hub.docker.com → Account Settings → **Security**
+2. **"New Access Token"** → Name: `github-actions` → Permissions: **Read & Write**
+3. Token kopieren
 
----
+## Schritt 2 — Secrets in GitHub hinterlegen
 
-## Schritt 3 — Lokalen Code auf GitHub hochladen
+GitHub → Repository → **Settings** → **Secrets and variables** → **Actions**:
 
-Auf deinem PC im entpackten ZIP-Ordner (ev-tracker-v4):
+| Secret | Wert |
+|--------|------|
+| `DOCKERHUB_USERNAME` | `19121412` |
+| `DOCKERHUB_TOKEN` | Access Token aus Schritt 1 |
 
-```bash
-cd /pfad/zum/ev-tracker-v4
+## Schritt 3 — Workflow
 
-git init
-git add .
-git commit -m "Initial commit — EV Tracker v4"
-git branch -M main
-git remote add origin https://github.com/DEIN-USERNAME/ev-tracker.git
-git push -u origin main
-```
+Der Workflow `.github/workflows/docker-build.yml` läuft automatisch:
 
-Beim Push nach Benutzername + Passwort gefragt:
-- Benutzername: dein GitHub Username
-- Passwort: **der Token aus Schritt 1** (nicht dein GitHub Passwort!)
+| Trigger | Tag |
+|---------|-----|
+| Push auf `main` | `:beta`, `:main-{sha}` |
+| Push auf `dev` | `:dev`, `:dev-{sha}` |
+| Push auf `test` | `:beta`, `:beta-{sha}` |
+| Git-Tag `v*` (z.B. `v2.0.53`) | `:latest`, `:v2.0.53` |
+| Nightly (02:00 UTC) | `:nightly` |
 
----
+> **Wichtig:** `:latest` wird nur bei einem expliziten Git-Tag `v*` erzeugt — nicht bei jedem Push auf `main`.
 
-## Schritt 4 — Unraid einrichten
-
-Im Unraid Terminal:
+## Schritt 4 — Stable Release erstellen
 
 ```bash
-# Git installieren (falls nicht vorhanden)
-which git || (echo "Git nicht gefunden — in Unraid Terminal: nerd-tools installieren")
-
-# Repository klonen
-cd /mnt/user/appdata
-git clone https://DEIN-USERNAME:DEIN-TOKEN@github.com/DEIN-USERNAME/ev-tracker.git ev-tracker-src
-
-# Token dauerhaft speichern
-cd ev-tracker-src
-git config credential.helper store
+# Version in version.json und update-info.json anpassen
+# channel auf "stable" setzen
+git tag v2.0.53
+git push origin v2.0.53
 ```
 
----
+GitHub Actions baut dann automatisch `:latest` und `:v2.0.53`.
 
-## Schritt 5 — Erstes Build & Start
+## Unraid CA Template
 
-```bash
-cd /mnt/user/appdata/ev-tracker-src
-docker build -t ev-tracker:latest .
-docker run -d --name ev-tracker --restart unless-stopped \
-  -p 8054:8080 \
-  -v /mnt/user/appdata/ev-tracker:/data \
-  -e DATA_DIR=/data \
-  -e TZ=Europe/Berlin \
-  ev-tracker:latest
-```
+Das Unraid Community Apps Template wird **separat** gepflegt:
 
----
+➡ https://github.com/fdreckmann/ev-tracker-unraid-app
 
-## Update-Workflow (ab jetzt immer so)
-
-```bash
-cd /mnt/user/appdata/ev-tracker-src && \
-git pull && \
-docker build -t ev-tracker:latest . && \
-docker stop ev-tracker && docker rm ev-tracker && \
-docker run -d --name ev-tracker --restart unless-stopped \
-  -p 8054:8080 \
-  -v /mnt/user/appdata/ev-tracker:/data \
-  -e DATA_DIR=/data \
-  -e TZ=Europe/Berlin \
-  ev-tracker:latest
-```
-
-**Daten bleiben erhalten** — nur der Code wird aktualisiert.
-
----
-
-## Änderungen pushen (wenn du Code angepasst hast)
-
-```bash
-cd /mnt/user/appdata/ev-tracker-src
-git add .
-git commit -m "Beschreibung der Änderung"
-git push
-```
-
----
-
-## .gitignore (bereits im Projekt enthalten)
-
-Folgende Dateien werden nicht auf GitHub hochgeladen:
-- `__pycache__/`
-- `*.pyc`
-- `/data/` (Datenbank, Config, Backups)
+Es muss nicht bei einem App-Release manuell synchronisiert werden.

@@ -721,7 +721,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     <div class="stat"><div class="sl">Standort</div><div class="sv" id="dLoc">—</div><div class="su">Auto Position</div></div>
     <div class="stat"><div class="sl">SOC</div><div class="sv g" id="dSoc">—</div><div class="su">Prozent</div></div>
     <div class="stat"><div class="sl">Kilometerstand</div><div class="sv b" id="dOdo">—</div><div class="su">km</div></div>
-    <div class="stat" id="dMeterTile" style="display:none"><div class="sl">Live-Zählerstand</div><div class="sv" id="dMeter" style="color:#a78bfa">—</div><div class="su">kWh</div></div>
+    <div class="stat" id="dMeterTile" style="display:none"><div class="sl">Live-Zählerstand</div><div class="sv" id="dMeter" style="color:#a78bfa">—</div><div class="su" id="dMeterSub">kWh</div></div>
     <div class="stat" id="dChargeTile"><div class="sl" id="dChargeLabel">Ladevorgang</div><div class="sv" id="dType">—</div><div class="su" id="dPwr">—</div></div>
     <div class="stat"><div class="sl">Datenquelle</div><div class="sv" id="dProviderName" style="font-size:.85rem">—</div><div class="su" id="dProviderSub">Provider</div></div>
     <div class="stat"><div class="sl">Letztes Update</div><div class="sv" id="dPoll" style="font-size:1rem">—</div><div class="su">HA Polling</div></div>
@@ -3842,9 +3842,9 @@ function refreshColumnMappingList(){
     const label = TABLE_FIELD_LABELS[field]||MAPPING_LABELS[field]||field;
     return `<div style="display:flex;align-items:center;gap:6px;font-size:.7rem;font-family:var(--mono);padding:3px 0">
       <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block"></span>
-      <span style="color:var(--mute);min-width:22px">Sp.${colLetter(ci)}</span>
-      <span style="color:#fff;flex:1">${label}</span>
-      <button onclick="clearColumnMapping(${ci})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:.75rem;padding:0 4px">✕</button>
+      <span style="color:var(--mute);min-width:22px">Sp.${escapeHtml(colLetter(ci))}</span>
+      <span style="color:#fff;flex:1">${escapeHtml(label)}</span>
+      <button onclick="clearColumnMapping(${Number(ci)})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:.75rem;padding:0 4px">✕</button>
     </div>`;
   }).join('');
 }
@@ -3902,9 +3902,9 @@ function refreshCellMappingList(){
   el.innerHTML = entries.map(([addr, field])=>{
     const label = HEADER_FIELD_LABELS[field] || field;
     return `<div style="display:flex;align-items:center;gap:6px;font-size:.7rem;font-family:var(--mono);padding:3px 0">
-      <span style="color:var(--mute);min-width:28px">${addr}</span>
-      <span style="color:#fff;flex:1">${label}</span>
-      <button onclick="removeCellMapping('${addr}')" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:.75rem;padding:0 4px">✕</button>
+      <span style="color:var(--mute);min-width:28px">${escapeHtml(addr)}</span>
+      <span style="color:#fff;flex:1">${escapeHtml(label)}</span>
+      <button data-addr="${escapeHtml(addr)}" onclick="removeCellMapping(this.dataset.addr)" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:.75rem;padding:0 4px">✕</button>
     </div>`;
   }).join('');
 }
@@ -5052,7 +5052,7 @@ async function loadVehicleLocationBadge(vid) {
     const label = labels[normStatus] || labels[loc.status] || 'Unbekannt';
     const src   = srcLabels[loc.source] || loc.source || '';
     const ago   = loc.last_update ? _timeAgo(loc.last_update) : '';
-    el.innerHTML = `<span title="${src}${ago ? ' · ' + ago : ''}" style="font-size:.8rem;color:var(--mute)">${icon} ${label}${src ? ' · ' + src : ''}${ago ? ' · ' + ago : ''}</span>`;
+    el.innerHTML = `<span title="${escapeHtml(src)}${ago ? ' · ' + escapeHtml(ago) : ''}" style="font-size:.8rem;color:var(--mute)">${icon} ${escapeHtml(label)}${src ? ' · ' + escapeHtml(src) : ''}${ago ? ' · ' + escapeHtml(ago) : ''}</span>`;
     el.style.display = '';
   } catch(e) { el.style.display = 'none'; }
 }
@@ -5340,7 +5340,7 @@ async function loadBackups(){
   // update cron info
   $('backupCron').value = data.cron||'';
   if(data.next_backup){
-    $('cronInfo').innerHTML=`<span style="color:var(--acc)">⏰ Nächstes Backup: ${data.next_backup}</span>`;
+    $('cronInfo').innerHTML=`<span style="color:var(--acc)">⏰ Nächstes Backup: ${escapeHtml(data.next_backup)}</span>`;
   } else if(data.cron) {
     $('cronInfo').textContent='⚠ Ungültiger Cron-Ausdruck';
   } else {
@@ -5354,17 +5354,17 @@ async function loadBackups(){
   el.innerHTML=`<table>
     <thead><tr><th>Dateiname</th><th>Größe</th><th>Erstellt</th><th></th></tr></thead>
     <tbody>${data.backups.map(b=>`<tr>
-      <td style="font-family:var(--mono);font-size:.75rem;color:#fff">${b.name}</td>
+      <td style="font-family:var(--mono);font-size:.75rem;color:#fff">${escapeHtml(b.name)}</td>
       <td style="font-family:var(--mono);font-size:.75rem">${(b.size/1024).toFixed(1)} KB</td>
-      <td style="font-family:var(--mono);font-size:.75rem">${b.modified.replace('T',' ')}</td>
+      <td style="font-family:var(--mono);font-size:.75rem">${escapeHtml((b.modified||'').replace('T',' '))}</td>
       <td style="display:flex;gap:5px;padding:8px 4px">
-        <button onclick="downloadBackup('${b.name}')"
+        <button data-bname="${escapeHtml(b.name)}" onclick="downloadBackup(this.dataset.bname)"
           style="background:rgba(0,180,255,.12);color:#00b4ff;border:1px solid rgba(0,180,255,.25);
           border-radius:6px;padding:3px 10px;font-size:.68rem;cursor:pointer">⬇</button>
-        <button onclick="restoreBackup('${b.name}')"
+        <button data-bname="${escapeHtml(b.name)}" onclick="restoreBackup(this.dataset.bname)"
           style="background:rgba(245,158,11,.12);color:#f59e0b;border:1px solid rgba(245,158,11,.25);
           border-radius:6px;padding:3px 10px;font-size:.68rem;cursor:pointer">↩ Restore</button>
-        <button onclick="deleteBackup('${b.name}')"
+        <button data-bname="${escapeHtml(b.name)}" onclick="deleteBackup(this.dataset.bname)"
           style="background:rgba(239,68,68,.12);color:#ef4444;border:1px solid rgba(239,68,68,.25);
           border-radius:6px;padding:3px 10px;font-size:.68rem;cursor:pointer">✕</button>
       </td>
@@ -5462,7 +5462,7 @@ async function loadUserList(){
     if(s==='active') return '<span style="background:rgba(61,220,151,.15);color:var(--acc);border-radius:4px;padding:1px 6px;font-size:.65rem">aktiv</span>';
     if(s==='invited') return '<span style="background:rgba(245,158,11,.15);color:var(--warn);border-radius:4px;padding:1px 6px;font-size:.65rem">eingeladen</span>';
     if(s==='disabled') return '<span style="background:rgba(239,68,68,.15);color:var(--danger);border-radius:4px;padding:1px 6px;font-size:.65rem">gesperrt</span>';
-    return `<span style="color:var(--mute);font-size:.65rem">${s||'—'}</span>`;
+    return `<span style="color:var(--mute);font-size:.65rem">${escapeHtml(s||'—')}</span>`;
   };
   el.innerHTML = users.map(u=>`
     <div style="display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:12px 14px">
@@ -5531,11 +5531,11 @@ async function saveUserModal(){
       closeUserModal();
       toast(r.invited?'Benutzer erstellt — Einladung via "✉ Einladen" senden':'Benutzer erstellt','ok');
       cfgSection('benutzer',null); loadUserList();
-    } else $('um_info').innerHTML=`<span style="color:var(--danger)">❌ ${r.error||'Fehler'}</span>`;
+    } else $('um_info').innerHTML=`<span style="color:var(--danger)">❌ ${escapeHtml(r.error||'Fehler')}</span>`;
   } else {
     const r=await apiFetch(`/api/users/${_editingUserId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json());
     if(r.ok){ closeUserModal(); toast('Gespeichert','ok'); loadUserList(); }
-    else $('um_info').innerHTML=`<span style="color:var(--danger)">❌ ${r.error||'Fehler'}</span>`;
+    else $('um_info').innerHTML=`<span style="color:var(--danger)">❌ ${escapeHtml(r.error||'Fehler')}</span>`;
   }
 }
 
@@ -5557,7 +5557,7 @@ async function loadMyProfile(){
   const r=await apiFetch('/api/users/me').then(r=>r.json()).catch(()=>null);
   if(!r||r.error) return;
   const el=$('profileInfo');
-  if(el) el.innerHTML=`<strong style="color:#fff">${r.name}</strong> &nbsp;·&nbsp; ${r.email} &nbsp;·&nbsp; <span style="color:${r.role==='admin'?'var(--warn)':'var(--acc2)'}">${r.role==='admin'?'★ Admin':'Benutzer'}</span>`;
+  if(el) el.innerHTML=`<strong style="color:#fff">${escapeHtml(r.name||'')}</strong> &nbsp;·&nbsp; ${escapeHtml(r.email||'')} &nbsp;·&nbsp; <span style="color:${r.role==='admin'?'var(--warn)':'var(--acc2)'}">${r.role==='admin'?'★ Admin':'Benutzer'}</span>`;
   const totpSt=$('profTotpStatus');
   if(totpSt) totpSt.innerHTML=r.totp_enabled?'<span style="color:var(--acc2)">📱 2FA ist aktiv</span>':'Kein 2FA konfiguriert';
   const disBtn=$('profTotpDisableBtn');
@@ -5579,7 +5579,7 @@ async function generateBackupCodes(){
   if(!r||!r.ok){ toast('Fehler beim Generieren','err'); return; }
   const modal=$('backupCodesModal');
   const list=$('backupCodesList');
-  if(list) list.innerHTML=r.codes.map(c=>`<div style="font-family:var(--mono);font-size:1rem;letter-spacing:.1em;color:#fff;padding:4px 0">${c}</div>`).join('');
+  if(list) list.innerHTML=r.codes.map(c=>`<div style="font-family:var(--mono);font-size:1rem;letter-spacing:.1em;color:#fff;padding:4px 0">${escapeHtml(c||'')}</div>`).join('');
   if(modal) modal.style.display='flex';
   loadBackupCodeCount();
 }
@@ -5591,7 +5591,7 @@ async function changeMyPassword(){
   const r=await apiFetch('/api/users/me/password',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({current:cur,new:nw})}).then(r=>r.json());
   if(r.ok){ info.innerHTML='<span style="color:var(--acc)">✅ Gespeichert</span>'; $('prof_cur_pw').value=''; $('prof_new_pw').value=''; $('prof_new_pw2').value=''; }
-  else info.innerHTML=`<span style="color:var(--danger)">❌ ${r.error||'Fehler'}</span>`;
+  else info.innerHTML=`<span style="color:var(--danger)">❌ ${escapeHtml(r.error||'Fehler')}</span>`;
   setTimeout(()=>{ if(info) info.textContent=''; },3000);
 }
 
@@ -5825,7 +5825,7 @@ async function loadTariffPrices(){
     const r=await apiFetch('/api/tariff/prices').then(r=>r.json());
     if(!r.ok){body.textContent='❌ '+(r.error||'Fehler');return;}
     if(!r.prices||!r.prices.length){body.textContent='Keine Preisdaten verfügbar.';return;}
-    body.innerHTML=`<div style="color:var(--mute);font-size:.7rem;margin-bottom:8px">Provider: ${r.provider}</div>
+    body.innerHTML=`<div style="color:var(--mute);font-size:.7rem;margin-bottom:8px">Provider: ${escapeHtml(r.provider||'')}</div>
       <table style="width:100%;border-collapse:collapse">
       ${r.prices.map(p=>`<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
         <td style="padding:4px 8px">${(p.ts||'').slice(0,16).replace('T',' ')}</td>
@@ -6009,7 +6009,7 @@ async function loadContracts(){
         </div>
       </div>`).join('');
     applyPermissionVisibility();
-  }catch(e){ const el=$('contract_list'); if(el) el.innerHTML='<div style="color:#f87171;font-size:.78rem">'+e.message+'</div>'; }
+  }catch(e){ const el=$('contract_list'); if(el) el.innerHTML='<div style="color:#f87171;font-size:.78rem">'+escapeHtml(e.message||'Fehler')+'</div>'; }
 }
 
 async function loadBuiltinContracts(){
@@ -7087,10 +7087,10 @@ async function submitMobileSession(force) {
     if (window._mobileCurrentSection==='sessions') renderMobileSessionCards();
     if (window._mobileCurrentSection==='home') refreshMobileDashboard();
   } else if (r.warning === 'overlap') {
-    if (res) res.innerHTML=`<p style="color:#f59e0b">⚠ ${r.message||'Überschneidung'}</p>`;
+    if (res) res.innerHTML=`<p style="color:#f59e0b">⚠ ${escapeHtml(r.message||'Überschneidung')}</p>`;
     if (overlapRow) overlapRow.style.display = 'block';
   } else {
-    if (res) res.innerHTML=`<p style="color:#ef4444">❌ ${r.error||'Fehler'}</p>`;
+    if (res) res.innerHTML=`<p style="color:#ef4444">❌ ${escapeHtml(r.error||'Fehler')}</p>`;
   }
 }
 
@@ -7117,12 +7117,12 @@ async function runMobileMeterTest() {
     el.innerHTML=`
       <div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:#64ffda">✅ OK</span></div>
       <div class="m-info-row"><span class="m-info-label">Zählerstand</span><span class="m-info-value">${r.value_kwh!=null?r.value_kwh.toFixed(3)+' kWh':'—'}</span></div>
-      <div class="m-info-row"><span class="m-info-label">Provider</span><span class="m-info-value">${r.provider||'—'}</span></div>
-      ${r.endpoint?`<div class="m-info-row"><span class="m-info-label">Endpoint</span><span class="m-info-value" style="font-size:11px">${r.endpoint}</span></div>`:''}`;
+      <div class="m-info-row"><span class="m-info-label">Provider</span><span class="m-info-value">${escapeHtml(r.provider||'—')}</span></div>
+      ${r.endpoint?`<div class="m-info-row"><span class="m-info-label">Endpoint</span><span class="m-info-value" style="font-size:11px">${escapeHtml(r.endpoint)}</span></div>`:''}`;
   } else {
     el.innerHTML=`
       <div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:#ef4444">❌ Fehler</span></div>
-      <div class="m-info-row"><span class="m-info-label">Nachricht</span><span class="m-info-value">${r.message||r.error||'Fehler'}</span></div>`;
+      <div class="m-info-row"><span class="m-info-label">Nachricht</span><span class="m-info-value">${escapeHtml(r.message||r.error||'Fehler')}</span></div>`;
   }
 }
 
@@ -7147,9 +7147,9 @@ async function runMobileConnectionTest() {
   const ok = r.ok||r.status==='ok'||r.success;
   el.innerHTML=`
     <div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:${ok?'#64ffda':'#ef4444'}">${ok?'✅ Verbunden':'❌ Fehler'}</span></div>
-    ${r.message?`<div class="m-info-row"><span class="m-info-label">Nachricht</span><span class="m-info-value">${r.message}</span></div>`:''}
-    ${r.provider?`<div class="m-info-row"><span class="m-info-label">Provider</span><span class="m-info-value">${r.provider}</span></div>`:''}
-    ${r.soc!=null?`<div class="m-info-row"><span class="m-info-label">SOC</span><span class="m-info-value">${r.soc}%</span></div>`:''}`;
+    ${r.message?`<div class="m-info-row"><span class="m-info-label">Nachricht</span><span class="m-info-value">${escapeHtml(r.message)}</span></div>`:''}
+    ${r.provider?`<div class="m-info-row"><span class="m-info-label">Provider</span><span class="m-info-value">${escapeHtml(r.provider)}</span></div>`:''}
+    ${r.soc!=null?`<div class="m-info-row"><span class="m-info-label">SOC</span><span class="m-info-value">${Number(r.soc).toFixed(0)}%</span></div>`:''}`;
 }
 
 // ─── Signatur verwalten ──────────────────────────────────
@@ -7201,14 +7201,14 @@ async function openMobileSystemStatus() {
     const el = document.getElementById('msSysResult'); if(!el) return;
     const rows = [];
     if(health) rows.push(`<div class="m-info-row"><span class="m-info-label">Health</span><span class="m-info-value" style="color:#64ffda">✅ OK</span></div>`);
-    if(status?.app_version) rows.push(`<div class="m-info-row"><span class="m-info-label">Version</span><span class="m-info-value">${status.app_version}</span></div>`);
-    if(status?.db_size_mb!=null) rows.push(`<div class="m-info-row"><span class="m-info-label">DB-Größe</span><span class="m-info-value">${status.db_size_mb} MB</span></div>`);
-    if(status?.backup_count!=null) rows.push(`<div class="m-info-row"><span class="m-info-label">Backups</span><span class="m-info-value">${status.backup_count}</span></div>`);
-    if(status?.session_count!=null) rows.push(`<div class="m-info-row"><span class="m-info-label">Sessions</span><span class="m-info-value">${status.session_count}</span></div>`);
+    if(status?.app_version) rows.push(`<div class="m-info-row"><span class="m-info-label">Version</span><span class="m-info-value">${escapeHtml(String(status.app_version))}</span></div>`);
+    if(status?.db_size_mb!=null) rows.push(`<div class="m-info-row"><span class="m-info-label">DB-Größe</span><span class="m-info-value">${Number(status.db_size_mb).toFixed(1)} MB</span></div>`);
+    if(status?.backup_count!=null) rows.push(`<div class="m-info-row"><span class="m-info-label">Backups</span><span class="m-info-value">${Number(status.backup_count)}</span></div>`);
+    if(status?.session_count!=null) rows.push(`<div class="m-info-row"><span class="m-info-label">Sessions</span><span class="m-info-value">${Number(status.session_count)}</span></div>`);
     el.innerHTML = rows.length ? rows.join('') : '<div class="m-info-row"><span class="m-info-label">Info</span><span class="m-info-value">Keine Daten verfügbar</span></div>';
   } catch(e) {
     const el=document.getElementById('msSysResult');
-    if(el) el.innerHTML=`<div class="m-info-row"><span class="m-info-label">Fehler</span><span class="m-info-value" style="color:#ef4444">${e.message}</span></div>`;
+    if(el) el.innerHTML=`<div class="m-info-row"><span class="m-info-label">Fehler</span><span class="m-info-value" style="color:#ef4444">${escapeHtml(e.message||'Fehler')}</span></div>`;
   }
 }
 
@@ -7235,10 +7235,10 @@ async function runMobileBackupCreate(btn) {
   if(el) el.innerHTML='<p style="color:#8892b0;font-size:13px;margin-bottom:8px">⏳ Erstelle Backup…</p>';
   const r=await apiFetch('/api/backup/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})}).then(x=>x.json()).catch(e=>({ok:false,error:e.message}));
   if(r.ok) {
-    if(el) el.innerHTML=`<div class="m-info-block"><div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:#64ffda">✅ Erstellt</span></div>${r.filename?`<div class="m-info-row"><span class="m-info-label">Datei</span><span class="m-info-value" style="font-size:11px">${r.filename}</span></div>`:''}</div>`;
+    if(el) el.innerHTML=`<div class="m-info-block"><div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:#64ffda">✅ Erstellt</span></div>${r.filename?`<div class="m-info-row"><span class="m-info-label">Datei</span><span class="m-info-value" style="font-size:11px">${escapeHtml(r.filename)}</span></div>`:''}</div>`;
     toast('Backup erstellt','ok');
   } else {
-    if(el) el.innerHTML=`<p style="color:#ef4444;margin-bottom:8px">❌ ${r.error||'Fehler'}</p>`;
+    if(el) el.innerHTML=`<p style="color:#ef4444;margin-bottom:8px">❌ ${escapeHtml(r.error||'Fehler')}</p>`;
     if(btn) btn.disabled=false;
   }
 }

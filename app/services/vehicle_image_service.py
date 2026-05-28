@@ -164,11 +164,46 @@ def get_manifest() -> dict:
 _AUTO_IMG_FRESHNESS_SECS = 12 * 3600  # 12 hours
 
 
+def _is_ssrf_blocked(url: str, ha_url: str = "") -> bool:
+    """
+    Return True if the URL targets a blocked host (SSRF protection).
+    Blocked: localhost, 127.x, ::1, 169.254.x (link-local/metadata).
+    Private ranges (10.x, 172.16-31.x, 192.168.x) are allowed only when
+    they match the configured ha_url host, otherwise blocked.
+    """
+    import urllib.parse
+    import ipaddress
+    try:
+        parsed = urllib.parse.urlparse(url)
+        host = parsed.hostname or ""
+        # Always block localhost and loopback
+        if host in ("localhost", "127.0.0.1", "::1") or host.startswith("127."):
+            return True
+        try:
+            ip = ipaddress.ip_address(host)
+            # Block link-local (169.254.x.x) and metadata IPs
+            if ip.is_link_local:
+                return True
+            # Block private ranges unless they match ha_url
+            if ip.is_private:
+                if ha_url:
+                    ha_parsed = urllib.parse.urlparse(ha_url)
+                    ha_host = ha_parsed.hostname or ""
+                    if ha_host == host:
+                        return False  # matches configured HA host — allow
+                return True
+        except ValueError:
+            pass  # not a plain IP — hostname, proceed
+    except Exception:
+        pass
+    return False
+
+
 def cache_provider_image(vid: str, image_url: str, source: str, config: dict) -> bool:
     """
     Download provider-supplied image URL server-side and save as auto.webp.
     Returns True on success, False otherwise.
-    Security: http/https only, no file:// or other schemes; 3 MB cap; MIME check; PIL validation.
+    Security: http/https only, no file:// or SSRF vectors; 3 MB cap; MIME check; PIL validation.
     """
     from core.db import DATA_DIR
 
@@ -183,6 +218,12 @@ def cache_provider_image(vid: str, image_url: str, source: str, config: dict) ->
     scheme = image_url.split("://")[0].lower() if "://" in image_url else ""
     if scheme not in ("http", "https"):
         log.warning("cache_provider_image: rejected non-http scheme %r for vid %s", scheme, vid)
+        return False
+
+    # SSRF protection
+    ha_url = config.get("ha_url", "") if config else ""
+    if _is_ssrf_blocked(image_url, ha_url):
+        log.warning("cache_provider_image: SSRF blocked for vid %s url %r", vid, image_url)
         return False
 
     base = DATA_DIR / "vehicles" / safe_vid

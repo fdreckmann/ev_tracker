@@ -125,12 +125,12 @@ async function loadReportHistory(){
         const recip = (() => { try { return JSON.parse(r.recipients||'[]').join(', '); } catch { return r.recipients||''; } })();
         const color = STATUS_COLORS[r.status]||'var(--mute)';
         return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
-          <td style="padding:5px 10px">${(r.sent_at||'').replace('T',' ').slice(0,16)}</td>
-          <td style="padding:5px 10px">${r.period_label || ((r.period_start||'') + ' – ' + (r.period_end||''))}</td>
-          <td style="padding:5px 10px">${LOC_LABELS[r.location_filter||'all']||r.location_filter||'alle'}</td>
+          <td style="padding:5px 10px">${escapeHtml((r.sent_at||'').replace('T',' ').slice(0,16))}</td>
+          <td style="padding:5px 10px">${escapeHtml(r.period_label || ((r.period_start||'') + ' – ' + (r.period_end||'')))}</td>
+          <td style="padding:5px 10px">${escapeHtml(LOC_LABELS[r.location_filter||'all']||r.location_filter||'alle')}</td>
           <td style="padding:5px 10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(recip)}">${escapeHtml(recip)}</td>
-          <td style="padding:5px 10px;color:${color};font-weight:600">${r.status||''}</td>
-          <td style="padding:5px 10px;color:var(--mute)">${r.triggered_by||''}</td>
+          <td style="padding:5px 10px;color:${color};font-weight:600">${escapeHtml(r.status||'')}</td>
+          <td style="padding:5px 10px;color:var(--mute)">${escapeHtml(r.triggered_by||'')}</td>
         </tr>`;
       }).join('')}</tbody></table>`;
   } catch(e){ body.textContent = '❌ '+e.message; }
@@ -155,10 +155,10 @@ async function loadReportArchive(){
       <tbody>${rows.map(r=>{
         const c=STATUS_COLORS[r.status]||'var(--mute)';
         return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
-          <td style="padding:5px 8px">${(r.created_at||'').slice(0,16).replace('T',' ')}</td>
+          <td style="padding:5px 8px">${escapeHtml((r.created_at||'').slice(0,16).replace('T',' '))}</td>
           <td style="padding:5px 8px">${escapeHtml(r.period_label||'')}</td>
-          <td style="padding:5px 8px">${r.location_filter||'all'}</td>
-          <td style="padding:5px 8px;color:${c};font-weight:600">${r.status||''}</td>
+          <td style="padding:5px 8px">${escapeHtml(r.location_filter||'all')}</td>
+          <td style="padding:5px 8px;color:${c};font-weight:600">${escapeHtml(r.status||'')}</td>
           <td style="padding:5px 8px;display:flex;gap:6px;flex-wrap:wrap">
             ${r.has_excel ? `<button onclick="downloadReport(${r.id},'excel')" class="btn-s" style="font-size:.7rem;padding:3px 8px">📥 XLSX</button>` : `<button class="btn-s" disabled style="font-size:.7rem;padding:3px 8px;opacity:.4;cursor:not-allowed" title="Kein XLSX für diesen Report">📥 XLSX</button>`}
             ${r.has_pdf   ? `<button onclick="downloadReport(${r.id},'pdf')"   class="btn-s" style="font-size:.7rem;padding:3px 8px">📄 PDF</button>`  : `<button class="btn-s" disabled style="font-size:.7rem;padding:3px 8px;opacity:.4;cursor:not-allowed" title="Kein PDF für diesen Report">📄 PDF</button>`}

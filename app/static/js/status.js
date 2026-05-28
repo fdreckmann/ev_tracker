@@ -197,16 +197,27 @@ async function refreshStatus() {
     // Live-Zählerstand from /api/meter/status (TTL-cached server-side)
     const meterTile = $('dMeterTile');
     const meterEl   = $('dMeter');
+    const meterSub  = $('dMeterSub');
     if (meterTile && meterEl) {
       if (meterResp && meterResp.source && meterResp.source !== 'none') {
+        const srcLabel = meterResp.source;
+        const timeStr  = meterResp.last_read ? meterResp.last_read.substring(11, 16) : '';
         if (meterResp.ok && meterResp.value_kwh != null) {
           meterEl.textContent = Number(meterResp.value_kwh).toLocaleString('de', {maximumFractionDigits: 1});
           meterEl.className = 'sv';
-          meterEl.title = 'Quelle: ' + meterResp.source + (meterResp.endpoint ? ' · ' + meterResp.endpoint : '');
+          meterEl.title = (meterResp.endpoint ? meterResp.endpoint : '');
+          if (meterSub) {
+            meterSub.textContent = srcLabel + ' · ✓' + (timeStr ? ' · ' + timeStr : '');
+            meterSub.style.color = '';
+          }
         } else {
           meterEl.textContent = '—';
           meterEl.className = 'sv err';
           meterEl.title = meterResp.error || 'Lesefehler';
+          if (meterSub) {
+            meterSub.textContent = srcLabel + ' · Fehler';
+            meterSub.style.color = 'var(--danger)';
+          }
         }
         meterTile.style.display = '';
       } else {
@@ -256,7 +267,7 @@ function renderTbl(el, rows, showDel = true) {
       <td class="num">${r.id}</td>
       <td>${fmtDate(r.start_ts).split(' ')[0]}</td>
       <td>${fmtTime(r.start_ts)} → ${r.end_ts ? fmtTime(r.end_ts) : '…'}</td>
-      ${hasVehicle ? `<td style="font-size:.72rem;font-family:var(--mono);color:var(--acc2)">${r.vehicle_id || 'v0'}</td>` : ''}
+      ${hasVehicle ? `<td style="font-size:.72rem;font-family:var(--mono);color:var(--acc2)">${escapeHtml(r.vehicle_id || 'v0')}</td>` : ''}
       <td>${fmt(r.soc_start, 0)}% → ${fmt(r.soc_end, 0)}%</td>
       <td>${typeBadge(r.charger_type, r.max_power_kw)}</td>
       <td class="g">${fmt(r.kwh_charged)} kWh</td>

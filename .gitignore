@@ -8,3 +8,4 @@ data/
 *.xlsx
 config.json
 .claude/
+.pytest_cache/

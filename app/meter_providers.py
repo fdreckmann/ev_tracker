@@ -1,10 +1,35 @@
 """Meter provider implementations for EV Tracker."""
 from __future__ import annotations
-import logging, time, re
+import logging, time, re, urllib.parse
 from dataclasses import dataclass, field
 from typing import Optional, Any
 
 log = logging.getLogger(__name__)
+
+_SECRET_PARAMS = frozenset({
+    "token", "apikey", "api_key", "key", "password", "pass",
+    "secret", "auth", "access_token",
+})
+
+def sanitize_debug_url(url: str) -> str:
+    """Mask secret query-string parameters and userinfo credentials in a URL before logging."""
+    if not url:
+        return url
+    try:
+        parsed = urllib.parse.urlparse(url)
+        # Strip userinfo (user:password@host)
+        netloc = parsed.netloc
+        if "@" in netloc:
+            netloc = netloc.split("@", 1)[1]
+            parsed = parsed._replace(netloc=netloc)
+        # Mask secret query params
+        if parsed.query:
+            qs = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+            masked = {k: ["***"] if k.lower() in _SECRET_PARAMS else v for k, v in qs.items()}
+            parsed = parsed._replace(query=urllib.parse.urlencode(masked, doseq=True))
+        return urllib.parse.urlunparse(parsed)
+    except Exception:
+        return url
 
 @dataclass
 class MeterResult:
@@ -63,7 +88,7 @@ def normalize_energy_value(raw: Any, unit: str = "auto", factor: float = 1.0) ->
 def _get_json(url: str, timeout: int = 8, auth=None, verify_ssl: bool = True, debug: list = None) -> Optional[dict]:
     import requests
     if debug is not None:
-        debug.append(f"GET {url}")
+        debug.append(f"GET {sanitize_debug_url(url)}")
     try:
         kwargs = {"timeout": timeout}
         if auth:
@@ -83,7 +108,7 @@ def _get_json(url: str, timeout: int = 8, auth=None, verify_ssl: bool = True, de
 def _get_text(url: str, timeout: int = 8, auth=None, debug: list = None) -> Optional[str]:
     import requests
     if debug is not None:
-        debug.append(f"GET {url}")
+        debug.append(f"GET {sanitize_debug_url(url)}")
     try:
         kwargs = {"timeout": timeout}
         if auth:
@@ -523,7 +548,7 @@ class TasmotaMeterProvider(BaseMeterProvider):
             data = _get_json(f"{self.base_url}{actual_ep}", timeout=self.timeout,
                              auth=auth, debug=None)
             # Log manually with masked URL
-            debug.append(f"GET {self.base_url}{debug_ep}")
+            debug.append(f"GET {sanitize_debug_url(self.base_url + debug_ep)}")
             if data is None:
                 debug.append(f"  → no data / error")
                 continue
