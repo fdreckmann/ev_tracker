@@ -51,7 +51,7 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 | ✎ Manuelle Korrektur | Kosten, Standort, kWh, SOC, KM-Stand und alle weiteren Felder pro Session bearbeitbar |
 | 📊 Dashboard | Live-Status, Charts, Ladekurve, kontextsensitive Ladeinfo |
 | 📱 Mobile App | PWA-fähig, Bottom-Navigation, Cards, Bottom Sheets, Schnellaktionen, installierbar |
-| 🚗 Fahrzeugbilder | Automatische Silhouette-Zuordnung nach Marke/Modell; manueller Bild-Upload hat immer Vorrang |
+| 🖼 Fahrzeugbilder | Automatische Silhouette-Zuordnung nach Marke/Modell; manueller Bild-Upload hat immer Vorrang |
 | 🔔 Push | Benachrichtigungen via Home Assistant notify, ntfy, Gotify, Telegram |
 | 💾 Backup | Manuell + automatisch per Cron-Zeitplan |
 | ⬆ Update-Check | Verfügbare Updates werden angezeigt; Update via Docker-Pull (kein In-App-Update) |
@@ -122,8 +122,8 @@ Preise werden **zeitgewichtet** über den Ladezeitraum gemittelt. Bestehende Hom
 | 📧 E-Mail-Versand | SMTP-Konfiguration, HTML-E-Mails mit Übersichtstabelle |
 | 📄 PDF-Export | Professioneller PDF-Report mit reportlab |
 | 🔑 API-Tokens | SHA-256-gesicherte Tokens mit Scopes, einmalige Anzeige |
-| 📡 MQTT | Home Assistant Auto-Discovery, ntfy, Gotify, Telegram |
-| 🔔 Regeln | DB-getriebene Benachrichtigungsregeln mit Ruhezeitfenstern |
+| 📡 MQTT | Home Assistant Auto-Discovery, Fahrzeugstatus-Publish |
+| 🔔 Regeln | DB-getriebene Benachrichtigungsregeln mit Ruhezeitfenstern (ntfy, Gotify, Telegram, MQTT, E-Mail, Webhook) |
 | 🔔 Notification-Bell | Ungelesene Benachrichtigungen als Badge — kein permanentes Polling ohne Berechtigung |
 
 ### Fahrzeug-Standorterkennung
@@ -351,10 +351,9 @@ Kein Secure-Cookie-Zwang, kein HSTS. Direkter HTTP-Zugriff im lokalen Netz.
 ## Preismodell
 
 ```
-🏠 Zuhause  → Fixer Heimtarif oder dynamisch (Tibber/Octopus/HA/EVCC)
-🔌 Extern AC → ENTSO-E Spot × AC-Faktor (Fallback: Fixpreis)
-⚡ Extern DC → ENTSO-E Spot × DC-Faktor (Fallback: Fixpreis)
-✎ Manuell   → Jede Session einzeln korrigierbar
+🏠 Zuhause  → Fixer Heimtarif oder dynamisch (Tibber/Octopus/HA/EVCC/Generic HTTP)
+🔌 Extern   → Ladeabo · EnBW · ENTSO-E Spot · Fixpreis (AC/DC getrennt konfigurierbar)
+✎ Manuell  → Jede Session einzeln korrigierbar
 ```
 
 Dynamische Preise werden **zeitgewichtet** über den Ladezeitraum gemittelt (z.B. 30 min zu 0,25 € + 30 min zu 0,35 € = 0,30 €/kWh). Bei API-Fehler greift automatisch der konfigurierte Fallback-Preis.
@@ -412,7 +411,7 @@ docker run -d --name ev-tracker -p 8054:8080 \
 | PDF | reportlab |
 | Authentifizierung | Flask-Session, pyotp (TOTP), py_webauthn (FIDO2), Authlib (OAuth) |
 | Fahrzeug-APIs | bimmer-connected, teslaPy, myrenaultapi, bluelinky u.v.m. |
-| Tarif-APIs | Tibber GraphQL, Octopus Energy REST, ENTSO-E, Home Assistant, EVCC |
+| Tarif-APIs | Tibber GraphQL, Octopus Energy REST, ENTSO-E, EnBW, Home Assistant, EVCC, Generic HTTP |
 | CI/CD | GitHub Actions → Docker Hub |
 | Hosting | Docker (Unraid, Synology, Proxmox, bare metal …) |
 
