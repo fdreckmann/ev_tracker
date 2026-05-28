@@ -8,7 +8,7 @@ from flask import Blueprint, jsonify, render_template, request, make_response
 
 from core.db import _get_db, close_db_if_owned, DATA_DIR
 from core.config import load_config, save_config, DEFAULT_CONFIG
-from version import APP_VERSION, CHANGELOG
+from version import APP_VERSION, ASSET_VERSION, CHANGELOG
 from core.security import (
     require_login, has_permission, _current_user, _audit,
     _has_users, _get_user_permissions, ALL_PERMISSIONS,
@@ -36,6 +36,7 @@ def index():
                            provider_fields=provider_fields,
                            provider_names={k:v.PROVIDER_NAME for k,v in PROVIDERS.items()},
                            app_version=APP_VERSION,
+                           asset_version=ASSET_VERSION,
                            changelog=CHANGELOG,
                            all_vehicles=get_all_vehicles(cfg),
                            current_user=_current_user()))

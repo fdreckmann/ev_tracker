@@ -58,6 +58,7 @@ def api_sessions():
         request.args.get("month",type=int),
         request.args.get("location",default="all"),
         request.args.get("vehicle_id",default=None),
+        limit=request.args.get("limit",type=int,default=50),
     ))
 
 

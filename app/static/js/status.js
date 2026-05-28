@@ -25,6 +25,9 @@ function fitAllStats() {
 window.addEventListener('resize', fitAllStats);
 
 // ── Status polling ────────────────────────────────────────────────────────────
+var _refreshStatusInFlight = false;
+var _lastLocationFetchTs = 0;
+
 function _applyLocationToTile(locEl, locStatus, locSrc, meterActive, locTitle) {
   const rawLoc = locStatus ? String(locStatus).trim().toLowerCase() : '';
   if (rawLoc === 'disabled') {
@@ -53,14 +56,20 @@ function _applyLocationToTile(locEl, locStatus, locSrc, meterActive, locTitle) {
 }
 
 async function refreshStatus() {
+  if (_refreshStatusInFlight) return;
+  _refreshStatusInFlight = true;
   try {
     const vid = window._activeVehicleId || 'v0';
-    // /api/status now calls refresh_vehicle_location_state internally (TTL-cached).
-    // We also fetch the location endpoint directly to get ha_debug and bypass the cache
-    // on the first call after page load.
+    // Throttle direct location endpoint to once per 60s to reduce server load.
+    const now = Date.now();
+    const fetchLoc = (now - _lastLocationFetchTs) >= 60000;
+    if (fetchLoc) _lastLocationFetchTs = now;
+    const locPromise = fetchLoc
+      ? apiFetch(`/api/vehicles/${encodeURIComponent(vid)}/location`, {cache: 'no-store'}).then(r => r.json()).catch(() => null)
+      : Promise.resolve(null);
     const [s, locResp, meterResp] = await Promise.all([
       apiFetch(`/api/status?vehicle_id=${encodeURIComponent(vid)}`, {cache: 'no-store'}).then(r => r.json()),
-      apiFetch(`/api/vehicles/${encodeURIComponent(vid)}/location`, {cache: 'no-store'}).then(r => r.json()).catch(() => null),
+      locPromise,
       apiFetch(`/api/meter/status?vehicle_id=${encodeURIComponent(vid)}`, {cache: 'no-store'}).then(r => r.json()).catch(() => null),
     ]);
     const dot = $('sDot'), txt = $('sTxt');
@@ -142,7 +151,7 @@ async function refreshStatus() {
       _applyLocationToTile(locEl, locStatus, locSrc, s.meter_home_det_active, locTitle);
     }
 
-    const rows = await fetch('/api/sessions').then(r => r.json()).catch(() => []);
+    const rows = await apiFetch('/api/sessions?limit=5').then(r => r.json()).catch(() => []);
     const typeEl = $('dType'), pwrEl = $('dPwr'), chargeLabel = $('dChargeLabel');
     if (typeEl && chargeLabel) {
       if (s.charging) {
@@ -228,6 +237,8 @@ async function refreshStatus() {
     fitAllStats();
   } catch (e) {
     $('sDot').className = 'dot err'; $('sTxt').textContent = 'Fehler';
+  } finally {
+    _refreshStatusInFlight = false;
   }
 }
 

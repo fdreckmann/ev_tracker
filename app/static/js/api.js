@@ -53,8 +53,16 @@ async function initCsrf() {
 
 function apiFetch(url, opts) {
   opts = opts || {};
+  var timeoutMs = opts.timeoutMs != null ? opts.timeoutMs : 15000;
+  delete opts.timeoutMs;
   opts.headers = opts.headers || {};
   if (csrfToken) opts.headers['X-CSRF-Token'] = csrfToken;
+  if (timeoutMs && typeof AbortController !== 'undefined') {
+    var ctrl = new AbortController();
+    opts.signal = opts.signal || ctrl.signal;
+    var tid = setTimeout(function() { ctrl.abort(); }, timeoutMs);
+    return fetch(url, opts).finally(function() { clearTimeout(tid); });
+  }
   return fetch(url, opts);
 }
 
