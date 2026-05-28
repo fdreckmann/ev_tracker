@@ -3640,16 +3640,21 @@ function buildExcelGrid(renderData){
       const cs   = c.cs > 1 ? ` colspan="${c.cs}"` : '';
       const id   = `gc_${c.r}_${c.c}`;
       const borderCol = isHeader ? 'rgba(255,213,0,.7)' : (isStart ? 'rgba(0,210,120,.6)' : '#2d2d2d');
+      // c.v comes from uploaded Excel cell values — escape to prevent XSS.
+      // c.bg/c.fg are CSS color values from Excel — escapeHtml prevents attribute injection.
+      const safeV  = escapeHtml(c.v  || '');
+      const safeBg = escapeHtml(bg);
+      const safeFg = escapeHtml(fg);
       return `<td id="${id}" data-col="${c.c}" data-row-num="${row.row}"${rs}${cs}
         onmousedown="onGridMouseDown(event,${row.row},${c.c})"
         onmousemove="onGridMouseMove(event,${row.row},${c.c})"
         onmouseup="onGridMouseUp(event,${row.row},${c.c})"
         onclick="onGridCellClick(event,${row.row},${c.c})"
-        style="background:${bg};color:${fg};font-weight:${fw};
+        style="background:${safeBg};color:${safeFg};font-weight:${fw};
                border:1px solid ${borderCol};
                padding:3px 7px;cursor:pointer;white-space:nowrap;
                max-width:160px;overflow:hidden;text-overflow:ellipsis"
-        title="${c.v||''}">${c.v||''}</td>`;
+        title="${safeV}">${safeV}</td>`;
     }).join('');
     // Row number cell with badges
     let numColor = '#555';

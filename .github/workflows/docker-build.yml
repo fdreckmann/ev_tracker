@@ -44,6 +44,7 @@ jobs:
 
       - name: Run pytest
         env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
           DATA_DIR: ${{ runner.temp }}/ev-tracker-data
           EV_TRACKER_UPDATE_CHECK_ENABLED: "false"
           FLASK_SECRET_KEY: "ci-test-secret-key"

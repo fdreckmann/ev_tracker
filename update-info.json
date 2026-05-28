@@ -11,7 +11,7 @@
     "Fahrzeugbild-Priorität konsistent (manual > auto > Silhouette > Placeholder)",
     "GitHub Actions: Tests vor Docker-Push, latest nur per v*-Tag",
     "Unraid CA-Template in separates Repo ausgelagert",
-    "Full pytest grün (175 Tests gesammelt, 169 passed, 6 skipped)"
+    "Full pytest grün (175 passed)"
   ],
   "fixes": [
     "server.py: Meter-Home-Detection nutzt vcfg statt cfg (vcfg = fahrzeugspezifische Config)",
@@ -20,10 +20,13 @@
     "meter_providers.py: sanitize_debug_url() maskiert Userinfo und Query-Secrets",
     "backup_service.py: Funktions-Schatten behoben (_create_backup_impl)",
     "index.html: escapeHtml() für r.name, r.email, r.error, r.filename, r.provider, e.message, b.name",
+    "index.html: buildExcelGrid() escapeHtml() für c.v, c.bg, c.fg (Excel-Zellwerte im Preview)",
     "sessions.js: v.id/v.name in Option-Tags und s.id in modalTitle escaped",
     "billing.js: r.month in Template-Literal escaped",
     "reports.js: period_label, location_filter, triggered_by, status escaped",
-    "status.js: r.vehicle_id in Session-Tabelle escaped"
+    "status.js: r.vehicle_id in Session-Tabelle escaped",
+    "tests/conftest.py: core.config.DATA_DIR wird jetzt korrekt gemockt (verhindert /data-Writes in CI)",
+    "GitHub Actions: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 für reproduzierbare CI-Läufe"
   ],
   "breaking_changes": [],
   "migration_notes": [
