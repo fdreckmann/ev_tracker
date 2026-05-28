@@ -2,6 +2,7 @@
 Tests for session creation, editing, location update, and repricing.
 """
 from datetime import datetime, timedelta
+from core.location import normalize_location
 
 
 def _make_session_data(year=2026, month=5, day=10, kwh=20.0, cost=6.0, manual=0):
@@ -107,3 +108,111 @@ class TestSessionRecalculate:
         sid = rv.get_json()["id"]
         rv2 = authed_client.post(f"/api/sessions/{sid}/recalculate-cost")
         assert rv2.status_code in (200, 400, 404)
+
+
+class TestLocationNormalize:
+    def test_normalize_intern(self):
+        assert normalize_location("intern") == "home"
+
+    def test_normalize_internal(self):
+        assert normalize_location("internal") == "home"
+
+    def test_normalize_zuhause_laden(self):
+        assert normalize_location("zuhause_laden") == "home"
+
+    def test_normalize_offentlich(self):
+        assert normalize_location("öffentlich") == "extern"
+
+    def test_normalize_external(self):
+        assert normalize_location("external") == "extern"
+
+    def test_normalize_extern(self):
+        assert normalize_location("extern") == "extern"
+
+    def test_normalize_home(self):
+        assert normalize_location("home") == "home"
+
+    def test_normalize_unknown_string(self):
+        assert normalize_location("INVALID_XYZ") == "unknown"
+
+
+class TestSessionLocationUpdateExtended:
+    def _create_session(self, client, cost_manual=0, cost=None):
+        data = _make_session_data(kwh=20.0, cost=cost or (6.0 if cost_manual else None), manual=cost_manual)
+        rv = client.post("/api/sessions/manual", json=data)
+        assert rv.status_code in (200, 201)
+        return rv.get_json()["id"]
+
+    def _get_session_row(self, app, sid):
+        from core.db import _get_db, close_db_if_owned
+        with app.app_context():
+            con = _get_db()
+            row = con.execute("SELECT * FROM sessions WHERE id=?", (sid,)).fetchone()
+            close_db_if_owned(con)
+        return dict(row) if row else {}
+
+    def test_intern_normalized_to_home(self, authed_client, app):
+        sid = self._create_session(authed_client)
+        rv = authed_client.post(f"/api/sessions/{sid}/location", json={"location": "intern"})
+        assert rv.status_code == 200
+        assert rv.get_json().get("ok") is True
+        row = self._get_session_row(app, sid)
+        assert row["location"] == "home"
+
+    def test_internal_normalized_to_home(self, authed_client, app):
+        sid = self._create_session(authed_client)
+        rv = authed_client.post(f"/api/sessions/{sid}/location", json={"location": "internal"})
+        assert rv.status_code == 200
+        row = self._get_session_row(app, sid)
+        assert row["location"] == "home"
+
+    def test_external_normalized_to_extern(self, authed_client, app):
+        sid = self._create_session(authed_client)
+        rv = authed_client.post(f"/api/sessions/{sid}/location", json={"location": "external"})
+        assert rv.status_code == 200
+        row = self._get_session_row(app, sid)
+        assert row["location"] == "extern"
+
+    def test_location_source_set_to_manual(self, authed_client, app):
+        sid = self._create_session(authed_client)
+        rv = authed_client.post(f"/api/sessions/{sid}/location", json={"location": "extern"})
+        assert rv.status_code == 200
+        row = self._get_session_row(app, sid)
+        assert row.get("location_source") == "manual"
+
+    def test_location_confidence_set_to_100(self, authed_client, app):
+        sid = self._create_session(authed_client)
+        rv = authed_client.post(f"/api/sessions/{sid}/location", json={"location": "home"})
+        assert rv.status_code == 200
+        row = self._get_session_row(app, sid)
+        assert row.get("location_confidence") == 100
+
+    def test_cost_manual_zero_allows_repricing(self, authed_client):
+        sid = self._create_session(authed_client, cost_manual=0)
+        rv = authed_client.post(f"/api/sessions/{sid}/location", json={"location": "extern"})
+        assert rv.status_code == 200
+        assert rv.get_json().get("ok") is True
+
+    def test_cost_manual_one_preserves_costs(self, authed_client, app):
+        sid = self._create_session(authed_client, cost_manual=1, cost=9.99)
+        row_before = self._get_session_row(app, sid)
+        original_cost = row_before.get("cost_eur")
+        rv = authed_client.post(f"/api/sessions/{sid}/location", json={"location": "extern"})
+        assert rv.status_code == 200
+        assert rv.get_json().get("ok") is True
+        row_after = self._get_session_row(app, sid)
+        assert row_after.get("cost_eur") == original_cost
+
+    def test_patch_location_intern_normalized(self, authed_client, app):
+        sid = self._create_session(authed_client)
+        rv = authed_client.patch(f"/api/sessions/{sid}", json={"location": "intern"})
+        assert rv.status_code == 200
+        row = self._get_session_row(app, sid)
+        assert row["location"] == "home"
+
+    def test_patch_location_sets_source_manual(self, authed_client, app):
+        sid = self._create_session(authed_client)
+        rv = authed_client.patch(f"/api/sessions/{sid}", json={"location": "home"})
+        assert rv.status_code == 200
+        row = self._get_session_row(app, sid)
+        assert row.get("location_source") == "manual"

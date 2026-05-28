@@ -279,13 +279,13 @@ function renderTbl(el, rows, showDel = true) {
       ${hasMeter ? `<td style="font-size:.72rem;color:#a78bfa;font-family:var(--mono)">${fmtMeter(r.meter_old)} → ${fmtMeter(r.meter_new)}</td>` : ''}
       <td>${locBadge(r.location, r.location_source)}${(r.provider==='manual'||r.created_mode==='manual')?' <span title="Manuell erfasst" style="background:rgba(100,200,255,.12);color:#64c8ff;border:1px solid rgba(100,200,255,.25);border-radius:3px;padding:1px 5px;font-size:.6rem;font-family:var(--mono)">✏</span>':''}</td>
       ${showDel ? `<td style="display:flex;gap:4px;padding:8px 4px">
-        <button onclick="editCost(${r.id},${r.kwh_charged || 0},${r.price_per_kwh || 0})"
+        <button onclick="event.stopPropagation();editCost(${r.id},${r.kwh_charged || 0},${r.price_per_kwh || 0})"
           style="background:rgba(0,180,255,.12);color:#00b4ff;border:1px solid rgba(0,180,255,.25);
           border-radius:6px;padding:3px 8px;font-size:.65rem;cursor:pointer" title="Kosten bearbeiten">✎</button>
-        <button onclick="editLocation(${r.id},${JSON.stringify(r.location||'unknown')})"
+        <button onclick="event.stopPropagation();editLocation(${r.id},${JSON.stringify(r.location||'unknown')})"
           style="background:rgba(61,220,151,.12);color:#3ddc97;border:1px solid rgba(61,220,151,.25);
           border-radius:6px;padding:3px 8px;font-size:.65rem;cursor:pointer" title="Standort ändern">📍</button>
-        <button onclick="delSession(${r.id})"
+        <button onclick="event.stopPropagation();delSession(${r.id})"
           style="background:rgba(239,68,68,.12);color:#ef4444;border:1px solid rgba(239,68,68,.25);
           border-radius:6px;padding:3px 8px;font-size:.65rem;cursor:pointer">✕</button>
       </td>` : ''}
