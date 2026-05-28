@@ -5,7 +5,6 @@ on:
     branches:
       - main
       - dev
-      - test
     tags:
       - "v*"
   workflow_dispatch:
@@ -77,25 +76,25 @@ jobs:
           VERSION_FROM_FILE=$(python3 -c "import json; print(json.load(open('version.json'))['version'])" 2>/dev/null || echo "unknown")
 
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            # Explicit release tag: latest + versioned tag + stable
             VERSION="${GITHUB_REF_NAME#v}"
             CHANNEL=stable
             MAIN_TAG="${IMAGE_NAME}:latest"
-            echo "tags=${IMAGE_NAME}:latest,${IMAGE_NAME}:${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "tags=${IMAGE_NAME}:latest,${IMAGE_NAME}:${GITHUB_REF_NAME},${IMAGE_NAME}:stable" >> "$GITHUB_OUTPUT"
+          elif [ "${GITHUB_REF_NAME}" = "main" ]; then
+            # main = staging / pre-release: stable tag only, never latest
+            VERSION="${VERSION_FROM_FILE}"
+            CHANNEL=stable
+            MAIN_TAG="${IMAGE_NAME}:stable"
+            echo "tags=${IMAGE_NAME}:stable,${IMAGE_NAME}:main-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
           elif [ "${GITHUB_REF_NAME}" = "dev" ]; then
+            # dev = ongoing development
+            VERSION="${VERSION_FROM_FILE}"
             CHANNEL=dev
             MAIN_TAG="${IMAGE_NAME}:dev"
             echo "tags=${IMAGE_NAME}:dev,${IMAGE_NAME}:dev-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
-          elif [ "${GITHUB_REF_NAME}" = "test" ]; then
-            VERSION="${VERSION_FROM_FILE}"
-            CHANNEL=beta
-            MAIN_TAG="${IMAGE_NAME}:beta"
-            echo "tags=${IMAGE_NAME}:beta,${IMAGE_NAME}:test-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
-          elif [ "${GITHUB_REF_NAME}" = "main" ]; then
-            VERSION="${VERSION_FROM_FILE}"
-            CHANNEL=beta
-            MAIN_TAG="${IMAGE_NAME}:beta"
-            echo "tags=${IMAGE_NAME}:beta,${IMAGE_NAME}:main-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
           else
+            # other branches (feature, hotfix, …)
             VERSION="${VERSION_FROM_FILE}"
             CHANNEL=dev
             MAIN_TAG="${IMAGE_NAME}:${GITHUB_REF_NAME}-${SHA_SHORT}"
