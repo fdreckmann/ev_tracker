@@ -17,4 +17,6 @@ Ablauf:
    ```
 4. Tests müssen vor dem Push grün sein (218+ passed).
 
-**Niemals direkt auf `main` pushen.**
+**Niemals direkt auf `main` pushen — auch nicht mit `git push origin HEAD:main`.**
+
+Nach jedem Task: nur Feature-Branch + `dev`. Kein Push auf `main`, auch nicht als "sync".
