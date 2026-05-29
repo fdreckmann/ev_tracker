@@ -5,7 +5,7 @@ Channels: email, mqtt, ntfy, gotify, webhook.
 import json
 import logging
 import threading
-from datetime import datetime, time as dtime
+from datetime import datetime, time as dtime, timezone
 
 log = logging.getLogger(__name__)
 
@@ -190,7 +190,7 @@ def _send_webhook(rule: dict, msg: dict, config: dict) -> bool:
     try:
         r = requests.post(url, json={
             "event": msg["event"], "title": msg["title"],
-            "body": msg["body"], "ts": datetime.utcnow().isoformat()
+            "body": msg["body"], "ts": datetime.now(timezone.utc).isoformat(timespec="seconds")
         }, timeout=10)
         return r.ok
     except Exception as e:
@@ -202,7 +202,7 @@ def _send_mqtt_event(rule: dict, msg: dict, config: dict) -> bool:
     try:
         from mqtt_publisher import publish_once
         topic = rule.get("recipient", "") or f"events/{msg['event']}"
-        return publish_once(config, topic, {"title": msg["title"], "body": msg["body"], "ts": datetime.utcnow().isoformat()})
+        return publish_once(config, topic, {"title": msg["title"], "body": msg["body"], "ts": datetime.now(timezone.utc).isoformat(timespec="seconds")})
     except Exception as e:
         log.warning("MQTT notification error: %s", e)
         return False

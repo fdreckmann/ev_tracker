@@ -125,3 +125,29 @@ class TestXSS:
     def test_normalizeLocation_oeffentlich(self):
         """normalizeLocation must map 'öffentlich' to extern."""
         assert "'öffentlich'" in _API_JS
+
+
+class TestMobileNavPanelHiding:
+    def test_setDesktopPanelsVisible_defined(self):
+        """setDesktopPanelsVisible must be defined in mobile.js."""
+        assert "function setDesktopPanelsVisible" in _MOBILE_JS
+
+    def test_setDesktopPanelsVisible_targets_panel_class(self):
+        """setDesktopPanelsVisible must use querySelectorAll('.panel')."""
+        assert "querySelectorAll('.panel')" in _MOBILE_JS
+
+    def test_no_broken_mainContent_selector_in_mobile_js(self):
+        """mobile.js must not use the defunct getElementById('mainContent') pattern."""
+        assert "getElementById('mainContent')" not in _MOBILE_JS
+
+    def test_no_broken_mainContent_selector_in_index(self):
+        """index.html must not use getElementById('mainContent') for show/hide."""
+        assert "getElementById('mainContent')" not in _INDEX
+
+    def test_mobileNavTo_uses_setDesktopPanelsVisible(self):
+        """mobileNavTo must call setDesktopPanelsVisible."""
+        assert "setDesktopPanelsVisible" in _MOBILE_JS
+
+    def test_switchToDesktopSettings_uses_setDesktopPanelsVisible(self):
+        """switchToDesktopSettings must call setDesktopPanelsVisible(true)."""
+        assert "setDesktopPanelsVisible(true)" in _MOBILE_JS

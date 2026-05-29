@@ -114,8 +114,12 @@ def api_add_vehicle():
     if not has_permission(_current_user(), "vehicles:create"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: vehicles:create"}), 403
     from services.vehicle_service import get_vehicle_tracker_funcs
+    from providers import PROVIDERS
     _start_vehicle_tracker, _stop_vehicle_tracker = get_vehicle_tracker_funcs()
     data = request.json or {}
+    provider = data.get("provider", "ha")
+    if provider not in PROVIDERS:
+        return jsonify({"ok": False, "error": f"Unbekannter Provider: {provider}"}), 400
     cfg  = load_config()
     extras = list(cfg.get("extra_vehicles", []))
     vid = f"v_{uuid.uuid4().hex[:12]}"
@@ -168,6 +172,11 @@ def api_update_vehicle(vid):
         save_config(cfg)
         return jsonify({"ok": True})
     data   = request.get_json(silent=True) or {}
+    # Validate provider if being changed
+    if "provider" in data:
+        from providers import PROVIDERS as _PROVIDERS
+        if data["provider"] not in _PROVIDERS:
+            return jsonify({"ok": False, "error": f"Unbekannter Provider: {data['provider']}"}), 400
     # Strip empty/masked password fields so stored secrets survive
     from providers import get_config_fields
     try:

@@ -15,6 +15,12 @@
 var _mobileCurrentSection = 'home';
 var _mobileLang = 'de';
 
+function setDesktopPanelsVisible(visible) {
+  document.querySelectorAll('.panel').forEach(function(p) {
+    p.style.display = visible ? '' : 'none';
+  });
+}
+
 function mobileNavTo(section) {
   _mobileCurrentSection = section;
 
@@ -66,12 +72,10 @@ function mobileNavTo(section) {
     if (typeof loadMobileVehicleCards === 'function') loadMobileVehicleCards();
   }
 
-  // Auf Mobile: Desktop-Hauptcontent ausblenden wenn wir eigene Section zeigen
-  if (window.innerWidth <= 768) {
-    var mainContent = document.getElementById('mainContent') || document.querySelector('.main-content') || document.querySelector('main');
-    if (mainContent && section !== 'analysis') {
-      mainContent.style.display = (section === 'home' || section === 'sessions' || section === 'export' || section === 'more' || section === 'vehicles') ? 'none' : 'block';
-    }
+  // Auf Mobile: Desktop-Panels ausblenden wenn wir eigene Mobile-Section zeigen
+  if (window.innerWidth <= 768 && section !== 'analysis') {
+    var isMobileSection = ['home','sessions','export','more','vehicles'].indexOf(section) >= 0;
+    setDesktopPanelsVisible(!isMobileSection);
   }
 }
 
@@ -84,9 +88,8 @@ function openDesktopConfigSection(sectionId) {
 }
 
 function switchToDesktopSettings() {
-  // Zeige Desktop-Ansicht wieder
-  var mainContent = document.getElementById('mainContent') || document.querySelector('.main-content') || document.querySelector('main');
-  if (mainContent) mainContent.style.display = '';
+  // Zeige Desktop-Panels wieder
+  setDesktopPanelsVisible(true);
   // Blende Mobile-Sections aus
   ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore','mobileVehicles'].forEach(function(id) {
     var el = document.getElementById(id);
@@ -504,8 +507,7 @@ window.addEventListener('resize', function() {
       var el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
-    var mainContent = document.getElementById('mainContent') || document.querySelector('.main-content') || document.querySelector('main');
-    if (mainContent) mainContent.style.display = '';
+    setDesktopPanelsVisible(true);
   } else {
     // Mobile: aktuelle Section anzeigen
     mobileNavTo(_mobileCurrentSection || 'home');

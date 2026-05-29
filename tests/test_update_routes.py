@@ -83,3 +83,24 @@ class TestSystemStatus:
         data = rv.get_json()
         assert "db_size" in data
         assert "sessions_count" in data
+
+    def test_update_info_no_empty_version_fields(self, authed_client):
+        """/api/update-info must not return empty strings for branch/commit/image_tag."""
+        rv = authed_client.get("/api/update-info")
+        assert rv.status_code == 200
+        data = rv.get_json()
+        assert data.get("branch", "") != "", "branch must not be empty"
+        assert data.get("commit", "") != "", "commit must not be empty"
+        assert data.get("image_tag", "") != "", "image_tag must not be empty"
+
+    def test_update_info_fallback_values(self, authed_client):
+        """/api/update-info must show fallback strings when env vars are absent."""
+        rv = authed_client.get("/api/update-info")
+        data = rv.get_json()
+        branch = data.get("branch", "")
+        commit = data.get("commit", "")
+        image_tag = data.get("image_tag", "")
+        # Must be either a real value or one of the known fallbacks
+        assert branch in ("local/source",) or len(branch) > 0
+        assert commit in ("unknown",) or len(commit) > 0
+        assert image_tag in ("unknown",) or len(image_tag) > 0

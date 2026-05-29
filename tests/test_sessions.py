@@ -216,3 +216,53 @@ class TestSessionLocationUpdateExtended:
         assert rv.status_code == 200
         row = self._get_session_row(app, sid)
         assert row.get("location_source") == "manual"
+
+
+class TestVehicleProviderValidation:
+    """POST /api/vehicles and PUT /api/vehicles/<vid> must reject unknown providers."""
+
+    def test_add_vehicle_valid_provider(self, authed_client):
+        rv = authed_client.post("/api/vehicles", json={
+            "name": "Test HA Vehicle",
+            "provider": "ha",
+        })
+        assert rv.status_code == 200
+        body = rv.get_json()
+        assert body.get("ok") is True
+        assert "id" in body
+
+    def test_add_vehicle_invalid_provider_rejected(self, authed_client):
+        rv = authed_client.post("/api/vehicles", json={
+            "name": "Invalid",
+            "provider": "manual",
+        })
+        assert rv.status_code == 400
+        body = rv.get_json()
+        assert body.get("ok") is False
+        assert "Provider" in body.get("error", "") or "provider" in body.get("error", "").lower()
+
+    def test_add_vehicle_unknown_provider_rejected(self, authed_client):
+        rv = authed_client.post("/api/vehicles", json={
+            "name": "Invalid",
+            "provider": "totally_fake_provider_xyz",
+        })
+        assert rv.status_code == 400
+        body = rv.get_json()
+        assert body.get("ok") is False
+
+    def test_update_vehicle_invalid_provider_rejected(self, authed_client):
+        # First create a valid vehicle
+        create_rv = authed_client.post("/api/vehicles", json={
+            "name": "Valid Vehicle",
+            "provider": "ha",
+        })
+        assert create_rv.status_code == 200
+        vid = create_rv.get_json()["id"]
+
+        # Now try to update it with an invalid provider
+        rv = authed_client.put(f"/api/vehicles/{vid}", json={
+            "provider": "manual",
+        })
+        assert rv.status_code == 400
+        body = rv.get_json()
+        assert body.get("ok") is False

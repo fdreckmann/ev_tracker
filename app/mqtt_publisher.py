@@ -5,7 +5,7 @@ Optional dependency: paho-mqtt. Gracefully disabled if not installed.
 import json
 import logging
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 
 log = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ def test_connection(config: dict) -> dict:
     try:
         client = _build_client(config)
         base  = _base_topic(config)
-        client.publish(f"{base}/status", json.dumps({"status": "test", "ts": datetime.utcnow().isoformat()}))
+        client.publish(f"{base}/status", json.dumps({"status": "test", "ts": datetime.now(timezone.utc).isoformat(timespec="seconds")}))
         client.disconnect()
         return {"ok": True, "message": f"Verbunden mit {config['mqtt_host']}:{config.get('mqtt_port',1883)}"}
     except Exception as e:
@@ -92,8 +92,8 @@ def publish_vehicle_state(config: dict, vehicle_id: str, state: dict) -> bool:
         if key in state:
             publish_once(config, f"vehicles/{vehicle_id}/{key}", state[key])
     publish_once(config, f"vehicles/{vehicle_id}/last_update",
-                 datetime.utcnow().isoformat())
-    publish_once(config, "status", {"status": "online", "ts": datetime.utcnow().isoformat()})
+                 datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    publish_once(config, "status", {"status": "online", "ts": datetime.now(timezone.utc).isoformat(timespec="seconds")})
     return base_ok
 
 
@@ -107,7 +107,7 @@ def publish_session_update(config: dict, session: dict) -> bool:
         "cost":     session.get("cost_eur") or 0,
         "soc_end":  session.get("soc_end"),
         "location": session.get("location"),
-        "ts":       datetime.utcnow().isoformat(),
+        "ts":       datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
     ok = publish_once(config, "sessions/current/state",    payload["state"])
     publish_once(config, "sessions/current/kwh",       payload["kwh"])
@@ -122,7 +122,7 @@ def publish_report_status(config: dict, report_info: dict) -> bool:
     payload = {
         "status":  report_info.get("status", "unknown"),
         "period":  report_info.get("period_label", ""),
-        "ts":      datetime.utcnow().isoformat(),
+        "ts":      datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
     publish_once(config, "reports/last/status", payload["status"])
     publish_once(config, "reports/last/period", payload["period"])

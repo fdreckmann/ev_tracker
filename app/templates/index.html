@@ -7345,8 +7345,7 @@ window.addEventListener('resize', function() {
       const el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
-    const mainContent = document.getElementById('mainContent') || document.querySelector('.main-content') || document.querySelector('main');
-    if (mainContent) mainContent.style.display = '';
+    if (typeof setDesktopPanelsVisible === 'function') setDesktopPanelsVisible(true);
   } else {
     // Mobile: aktuelle Section anzeigen
     mobileNavTo(_mobileCurrentSection || 'home');
