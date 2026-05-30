@@ -5501,7 +5501,7 @@ async function loadUserList(){
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
         ${(u.status==='invited'||!u.totp_enabled)?`<button class="btn-s" style="font-size:.72rem;padding:5px 10px" onclick="inviteUser(${u.id})">✉ Einladen</button>`:''}
-        ${hasPermission('users:manage_permissions')?`<button onclick="openUserRolesModal(${u.id},${JSON.stringify(u.name||'')})" style="padding:4px 8px;border-radius:4px;background:#1a3d6e;border:none;color:#64ffda;cursor:pointer;font-size:11px">🔑 Rollen</button>`:''}
+        ${hasPermission('users:manage_permissions')?`<button data-uid="${u.id}" data-uname="${escapeHtml(u.name||'')}" onclick="openUserRolesModal(+this.dataset.uid,this.dataset.uname)" style="padding:4px 8px;border-radius:4px;background:#1a3d6e;border:none;color:#64ffda;cursor:pointer;font-size:11px">🔑 Rollen</button>`:''}
         <button class="btn-s" style="font-size:.72rem;padding:5px 12px" onclick="openEditUserModal(${u.id})">✏ Bearbeiten</button>
       </div>
     </div>
@@ -7558,8 +7558,8 @@ function renderPermissionsCheckboxes(checkedPerms) {
     <div style="margin-bottom:16px">
       <div style="font-weight:600;color:#64ffda;margin-bottom:8px;font-size:12px;text-transform:uppercase;letter-spacing:0.5px">
         ${escRoles(group.name)}
-        <button onclick="selectAllGroupPerms('${escRoles(group.name).replace(/'/g,'&apos;')}')" style="margin-left:8px;padding:2px 6px;font-size:10px;background:#1a3d6e;border:none;color:#64ffda;border-radius:3px;cursor:pointer">Alle</button>
-        <button onclick="deselectAllGroupPerms('${escRoles(group.name).replace(/'/g,'&apos;')}')" style="padding:2px 6px;font-size:10px;background:#2d3147;border:none;color:#8892b0;border-radius:3px;cursor:pointer">Keine</button>
+        <button data-group="${escRoles(group.name)}" onclick="selectAllGroupPerms(this.dataset.group)" style="margin-left:8px;padding:2px 6px;font-size:10px;background:#1a3d6e;border:none;color:#64ffda;border-radius:3px;cursor:pointer">Alle</button>
+        <button data-group="${escRoles(group.name)}" onclick="deselectAllGroupPerms(this.dataset.group)" style="padding:2px 6px;font-size:10px;background:#2d3147;border:none;color:#8892b0;border-radius:3px;cursor:pointer">Keine</button>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
         ${(group.permissions||[]).map(p => `
