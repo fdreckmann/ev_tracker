@@ -266,3 +266,112 @@ class TestVehicleProviderValidation:
         assert rv.status_code == 400
         body = rv.get_json()
         assert body.get("ok") is False
+
+
+class TestV0ProviderValidation:
+    """PUT /api/vehicles/v0 must reject unknown providers."""
+
+    def test_v0_valid_provider_accepted(self, authed_client):
+        rv = authed_client.put("/api/vehicles/v0", json={"provider": "ha"})
+        assert rv.status_code == 200
+        assert rv.get_json().get("ok") is True
+
+    def test_v0_invalid_provider_rejected(self, authed_client):
+        rv = authed_client.put("/api/vehicles/v0", json={"provider": "manual"})
+        assert rv.status_code == 400
+        body = rv.get_json()
+        assert body.get("ok") is False
+
+    def test_v0_unknown_provider_not_saved(self, authed_client, app):
+        from core.config import load_config
+        with app.app_context():
+            before = load_config().get("provider", "ha")
+        rv = authed_client.put("/api/vehicles/v0", json={"provider": "totally_fake_xyz"})
+        assert rv.status_code == 400
+        with app.app_context():
+            after = load_config().get("provider", "ha")
+        assert after == before
+
+
+class TestConfigProviderValidation:
+    """POST /api/config must reject unknown providers."""
+
+    def test_config_valid_provider_accepted(self, authed_client):
+        rv = authed_client.post("/api/config", json={"provider": "ha"})
+        assert rv.status_code == 200
+        assert rv.get_json().get("ok") is True
+
+    def test_config_invalid_provider_rejected(self, authed_client):
+        rv = authed_client.post("/api/config", json={"provider": "manual"})
+        assert rv.status_code == 400
+        body = rv.get_json()
+        assert body.get("ok") is False
+
+    def test_config_unknown_provider_not_saved(self, authed_client, app):
+        from core.config import load_config
+        with app.app_context():
+            before = load_config().get("provider", "ha")
+        rv = authed_client.post("/api/config", json={"provider": "totally_fake_xyz"})
+        assert rv.status_code == 400
+        with app.app_context():
+            after = load_config().get("provider", "ha")
+        assert after == before
+
+
+class TestNumericConfigValidation:
+    """POST /api/config must reject invalid numeric values."""
+
+    def test_valid_numeric_saved(self, authed_client):
+        rv = authed_client.post("/api/config", json={"home_radius_m": 150.0})
+        assert rv.status_code == 200
+
+    def test_invalid_float_rejected(self, authed_client):
+        rv = authed_client.post("/api/config", json={"home_radius_m": "abc"})
+        assert rv.status_code == 400
+        assert rv.get_json().get("ok") is False
+
+    def test_zero_home_radius_rejected(self, authed_client):
+        rv = authed_client.post("/api/config", json={"home_radius_m": 0})
+        assert rv.status_code == 400
+
+    def test_negative_price_rejected(self, authed_client):
+        rv = authed_client.post("/api/config", json={"price_per_kwh_home": -1.0})
+        assert rv.status_code == 400
+
+    def test_zero_price_accepted(self, authed_client):
+        rv = authed_client.post("/api/config", json={"price_per_kwh_home": 0.0})
+        assert rv.status_code == 200
+
+    def test_zero_poll_interval_rejected(self, authed_client):
+        rv = authed_client.post("/api/config", json={"poll_interval": 0})
+        assert rv.status_code == 400
+
+    def test_invalid_poll_interval_not_saved(self, authed_client, app):
+        from core.config import load_config
+        with app.app_context():
+            before = load_config().get("poll_interval")
+        rv = authed_client.post("/api/config", json={"poll_interval": "abc"})
+        assert rv.status_code == 400
+        with app.app_context():
+            after = load_config().get("poll_interval")
+        assert after == before
+
+
+class TestVersionCommitSplit:
+    """commit and commit_short must be distinct fields in /api/update-info."""
+
+    def test_commit_short_is_short(self, authed_client):
+        rv = authed_client.get("/api/update-info")
+        data = rv.get_json()
+        cs = data.get("commit_short", "")
+        # Either it's the fallback "unknown" or it's ≤ 8 chars
+        assert cs == "unknown" or len(cs) <= 8
+
+    def test_commit_and_commit_short_differ_when_full_sha(self, authed_client, monkeypatch):
+        import version
+        monkeypatch.setattr(version, "DISPLAY_COMMIT", "abcdef1234567890")
+        monkeypatch.setattr(version, "DISPLAY_COMMIT_SHORT", "abcdef12")
+        rv = authed_client.get("/api/update-info")
+        data = rv.get_json()
+        assert data.get("commit") == "abcdef1234567890"
+        assert data.get("commit_short") == "abcdef12"

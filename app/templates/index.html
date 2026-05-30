@@ -5237,15 +5237,19 @@ async function loadPasskeys(){
       el.innerHTML='<div style="font-size:.73rem;font-family:var(--mono);color:var(--mute)">Keine Passkeys registriert</div>';
       return;
     }
-    el.innerHTML = r.credentials.map(c=>`
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(255,255,255,.04);border:1px solid var(--brd);border-radius:8px;margin-bottom:6px">
+    el.innerHTML = r.credentials.map(c=>{
+      const safeName    = escapeHtml(String(c.name || 'Unbenannter Passkey'));
+      const safeCreated = escapeHtml(String(c.created_at || '').substring(0,10));
+      const safeUsed    = c.last_used_at ? '· Zuletzt: ' + escapeHtml(String(c.last_used_at).substring(0,10)) : '';
+      const safeId      = parseInt(c.id, 10) || 0;
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(255,255,255,.04);border:1px solid var(--brd);border-radius:8px;margin-bottom:6px">
         <div>
-          <div style="font-size:.78rem;font-family:var(--mono);color:#fff">🔑 ${c.name}</div>
-          <div style="font-size:.68rem;font-family:var(--mono);color:var(--mute)">Erstellt: ${c.created_at?.substring(0,10)} ${c.last_used_at?'· Zuletzt: '+c.last_used_at.substring(0,10):''}</div>
+          <div style="font-size:.78rem;font-family:var(--mono);color:#fff">🔑 ${safeName}</div>
+          <div style="font-size:.68rem;font-family:var(--mono);color:var(--mute)">Erstellt: ${safeCreated} ${safeUsed}</div>
         </div>
-        <button onclick="deletePasskey(${c.id})" style="background:rgba(255,79,90,.1);border:1px solid rgba(255,79,90,.3);color:var(--danger);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.72rem">✕ Entfernen</button>
-      </div>
-    `).join('');
+        <button onclick="deletePasskey(${safeId})" style="background:rgba(255,79,90,.1);border:1px solid rgba(255,79,90,.3);color:var(--danger);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.72rem">✕ Entfernen</button>
+      </div>`;
+    }).join('');
   } catch(e){ console.error(e); }
 }
 
@@ -5328,14 +5332,14 @@ async function showWebAuthnConfig(){
     const r = await apiFetch('/api/auth/passkey/webauthn-config').then(x=>x.json());
     if(!r.ok){ box.textContent = r.error; box.style.display=''; return; }
     box.innerHTML = [
-      `<b>RP-ID:</b> ${r.webauthn_rp_id}`,
-      `<b>Origin:</b> ${r.webauthn_origin}`,
-      `<b>oauth_base_url:</b> ${r.oauth_base_url}`,
-      `<b>request.host:</b> ${r.request_host}`,
-      `<b>X-Forwarded-Proto:</b> ${r.x_forwarded_proto}`,
-      `<b>X-Forwarded-Host:</b> ${r.x_forwarded_host}`,
+      `<b>RP-ID:</b> ${escapeHtml(String(r.webauthn_rp_id||''))}`,
+      `<b>Origin:</b> ${escapeHtml(String(r.webauthn_origin||''))}`,
+      `<b>oauth_base_url:</b> ${escapeHtml(String(r.oauth_base_url||''))}`,
+      `<b>request.host:</b> ${escapeHtml(String(r.request_host||''))}`,
+      `<b>X-Forwarded-Proto:</b> ${escapeHtml(String(r.x_forwarded_proto||''))}`,
+      `<b>X-Forwarded-Host:</b> ${escapeHtml(String(r.x_forwarded_host||''))}`,
       `<b>Reverse-Proxy-Modus:</b> ${r.reverse_proxy_mode ? 'Ja' : 'Nein'}`,
-      `<span style="color:var(--acc)">${r.hint}</span>`,
+      `<span style="color:var(--acc)">${escapeHtml(String(r.hint||''))}</span>`,
     ].join('<br>');
     box.style.display = '';
   } catch(e){ box.textContent = e.message; box.style.display=''; }

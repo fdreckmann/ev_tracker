@@ -149,6 +149,11 @@ def api_update_vehicle(vid):
     }
     if vid == "v0":
         data = request.get_json(silent=True) or {}
+        # Validate provider before saving
+        if "provider" in data:
+            from providers import PROVIDERS as _PROVIDERS
+            if data["provider"] not in _PROVIDERS:
+                return jsonify({"ok": False, "error": f"Unbekannter Provider: {data['provider']}"}), 400
         cfg  = load_config()
         # Determine password fields for v0's provider
         try:

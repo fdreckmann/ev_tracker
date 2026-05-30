@@ -35,8 +35,9 @@ COMMIT_SHORT = GIT_COMMIT[:8] if GIT_COMMIT else ""
 ASSET_VERSION = APP_VERSION + "-" + (COMMIT_SHORT or BUILD_DATE.replace("-", "") or "local")
 
 # Display fallbacks — never empty, shown in UI and /api/update-info
-DISPLAY_BRANCH    = GIT_BRANCH    or "local/source"
-DISPLAY_COMMIT    = COMMIT_SHORT  or "unknown"
-DISPLAY_IMAGE_TAG = IMAGE_TAG     or "unknown"
+DISPLAY_BRANCH       = GIT_BRANCH   or "local/source"
+DISPLAY_COMMIT       = GIT_COMMIT   or "unknown"   # full SHA
+DISPLAY_COMMIT_SHORT = COMMIT_SHORT or "unknown"   # 8-char short SHA
+DISPLAY_IMAGE_TAG    = IMAGE_TAG    or "unknown"
 
 CHANGELOG = []  # Legacy — kept for import compatibility
