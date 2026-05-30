@@ -53,7 +53,7 @@ async function editLocation(id, current){
     box.style.cssText = 'background:#1a2030;border:1px solid #2d3a4a;border-radius:12px;padding:24px 28px;min-width:280px;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.5)';
     box.innerHTML = '<div style="font-size:.85rem;color:#94a3b8;margin-bottom:4px">Session #'+id+'</div>'
       +'<div style="font-size:1rem;color:#e2e8f0;margin-bottom:16px;font-weight:600">Standort ändern</div>'
-      +'<div style="font-size:.75rem;color:#64748b;margin-bottom:12px">Aktuell: '+(labels[current]||current||'—')+'</div>';
+      +'<div style="font-size:.75rem;color:#64748b;margin-bottom:12px">Aktuell: '+escapeHtml(labels[current]||current||'—')+'</div>';
     var btnWrap = document.createElement('div');
     btnWrap.style.cssText = 'display:flex;flex-direction:column;gap:8px';
     opts.forEach(function(opt){
