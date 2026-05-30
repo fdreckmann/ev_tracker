@@ -375,3 +375,126 @@ class TestVersionCommitSplit:
         data = rv.get_json()
         assert data.get("commit") == "abcdef1234567890"
         assert data.get("commit_short") == "abcdef12"
+
+
+class TestConfigValidatorUnit:
+    """Unit tests for core.config_validator.validate_config_patch."""
+
+    def _validator(self):
+        from core.config_validator import validate_config_patch
+        return validate_config_patch
+
+    def test_non_dict_raises(self):
+        validate = self._validator()
+        import pytest
+        with pytest.raises(ValueError):
+            validate("not a dict")
+
+    def test_valid_floats_coerced(self):
+        validate = self._validator()
+        result = validate({"battery_capacity_kwh": "60.5", "price_per_kwh_home": "0.32"})
+        assert result["battery_capacity_kwh"] == 60.5
+        assert result["price_per_kwh_home"] == 0.32
+
+    def test_invalid_float_raises(self):
+        validate = self._validator()
+        import pytest
+        with pytest.raises(ValueError, match="battery_capacity_kwh"):
+            validate({"battery_capacity_kwh": "not_a_number"})
+
+    def test_zero_on_strictly_positive_raises(self):
+        validate = self._validator()
+        import pytest
+        with pytest.raises(ValueError):
+            validate({"battery_capacity_kwh": 0})
+
+    def test_zero_on_nonneg_accepted(self):
+        validate = self._validator()
+        result = validate({"price_per_kwh_home": 0})
+        assert result["price_per_kwh_home"] == 0.0
+
+    def test_negative_nonneg_raises(self):
+        validate = self._validator()
+        import pytest
+        with pytest.raises(ValueError):
+            validate({"price_per_kwh_home": -1.0})
+
+    def test_valid_int_coerced(self):
+        validate = self._validator()
+        result = validate({"poll_interval": "30"})
+        assert result["poll_interval"] == 30
+        assert isinstance(result["poll_interval"], int)
+
+    def test_float_string_for_int_accepted(self):
+        validate = self._validator()
+        result = validate({"poll_interval": "60.0"})
+        assert result["poll_interval"] == 60
+
+    def test_invalid_int_raises(self):
+        validate = self._validator()
+        import pytest
+        with pytest.raises(ValueError, match="poll_interval"):
+            validate({"poll_interval": "abc"})
+
+    def test_zero_poll_interval_raises(self):
+        validate = self._validator()
+        import pytest
+        with pytest.raises(ValueError):
+            validate({"poll_interval": 0})
+
+    def test_empty_string_passes_through(self):
+        validate = self._validator()
+        result = validate({"battery_capacity_kwh": "", "poll_interval": ""})
+        assert result["battery_capacity_kwh"] == ""
+        assert result["poll_interval"] == ""
+
+    def test_none_passes_through(self):
+        validate = self._validator()
+        result = validate({"battery_capacity_kwh": None})
+        assert result["battery_capacity_kwh"] is None
+
+    def test_masked_value_passes_through(self):
+        validate = self._validator()
+        result = validate({"some_field": "********"})
+        assert result["some_field"] == "********"
+
+    def test_valid_lat_lon(self):
+        validate = self._validator()
+        result = validate({"home_lat": "52.52", "home_lon": "13.405"})
+        assert result["home_lat"] == "52.52"
+        assert result["home_lon"] == "13.405"
+
+    def test_lat_out_of_range_raises(self):
+        validate = self._validator()
+        import pytest
+        with pytest.raises(ValueError):
+            validate({"home_lat": "91.0"})
+
+    def test_lon_out_of_range_raises(self):
+        validate = self._validator()
+        import pytest
+        with pytest.raises(ValueError):
+            validate({"home_lon": "181.0"})
+
+    def test_lat_lon_empty_string_accepted(self):
+        validate = self._validator()
+        result = validate({"home_lat": "", "home_lon": ""})
+        assert result["home_lat"] == ""
+        assert result["home_lon"] == ""
+
+    def test_unknown_provider_raises(self):
+        validate = self._validator()
+        import pytest
+        with pytest.raises(ValueError, match="totally_fake"):
+            validate({"provider": "totally_fake"})
+
+    def test_valid_provider_accepted(self):
+        validate = self._validator()
+        result = validate({"provider": "ha"})
+        assert result["provider"] == "ha"
+
+    def test_unknown_fields_pass_through(self):
+        validate = self._validator()
+        result = validate({"some_string_field": "hello", "some_bool": True})
+        assert result["some_string_field"] == "hello"
+        assert result["some_bool"] is True
