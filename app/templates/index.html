@@ -3368,7 +3368,7 @@ async function testEntsoe(){
   const r=await apiFetch('/api/entsoe/test',{method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({entsoe_api_key:key})}).then(r=>r.json());
-  if(r.ok) res.innerHTML=`<span style="color:var(--acc)">✅ ${r.price_kwh.toFixed(4)} €/kWh (${r.price_mwh} €/MWh) — DE Spotpreis</span>`;
+  if(r.ok) res.innerHTML=`<span style="color:var(--acc)">✅ ${Number(r.price_kwh).toFixed(4)} €/kWh (${Number(r.price_mwh).toFixed(2)} €/MWh) — DE Spotpreis</span>`;
   else res.innerHTML=`<span style="color:var(--danger)">❌ ${escapeHtml(r.error||'')}</span>`;
 }
 
@@ -4655,8 +4655,8 @@ async function loadSignatureStatus(){
           <img src="/api/signature/image?t=${Date.now()}" alt="Unterschrift"
                style="max-height:60px;max-width:200px;border:1px solid var(--brd);border-radius:6px;background:#fff;padding:4px;object-fit:contain">
           <div style="font-size:.72rem;font-family:var(--mono);color:var(--mute)">
-            Quelle: ${src}<br>
-            ${r.created_at?'Erstellt: '+r.created_at.substring(0,10):''}
+            Quelle: ${escapeHtml(src)}<br>
+            ${r.created_at?'Erstellt: '+escapeHtml(String(r.created_at).substring(0,10)):''}
           </div>
         </div>`;
       const del = $('sigDelBtn');
