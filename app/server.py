@@ -15,6 +15,9 @@ from core.location import effective_session_location, normalize_location
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
+# Prevent urllib3/requests from logging Authorization headers at DEBUG level
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("requests").setLevel(logging.WARNING)
 
 # ── Core module imports ───────────────────────────────────────────────────────
 from core.db import _get_db, close_db_if_owned, DB_PATH, DATA_DIR

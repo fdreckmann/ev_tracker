@@ -33,10 +33,12 @@ _SECRET_GLOBAL_KEYS: frozenset[str] = frozenset({
     "smtp_password",
     "smtp_google_client_secret", "smtp_google_refresh_token", "smtp_google_access_token",
     "smtp_ms_client_secret", "smtp_ms_refresh_token", "smtp_ms_access_token",
-    # Notification channels
+    # Notification channels (long-form and short-form legacy aliases)
     "notification_ntfy_token",
     "notification_gotify_token",
     "notification_telegram_bot_token",
+    "ntfy_token",    # short-form legacy alias — per CLAUDE.md must be explicit
+    "gotify_token",  # short-form legacy alias — per CLAUDE.md must be explicit
     # Tariff / energy APIs
     "entsoe_api_key",
     "octopus_api_key",
