@@ -2,7 +2,8 @@
 External REST API v1 routes (Bearer token auth).
 """
 import json
-from datetime import datetime
+from datetime import datetime, timezone
+
 
 from flask import Blueprint, jsonify, request
 
@@ -108,7 +109,7 @@ def api_v1_status():
 
     token_row, err_resp, code = _require_api_token("system:read")
     if err_resp: return err_resp, code
-    return jsonify({"status": "ok", "version": APP_VERSION, "ts": datetime.utcnow().isoformat()})
+    return jsonify({"status": "ok", "version": APP_VERSION, "ts": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()})
 
 
 @api_v1_bp.route("/api/v1/vehicles")

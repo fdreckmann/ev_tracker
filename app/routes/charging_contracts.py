@@ -1,6 +1,7 @@
 """CRUD API for charging contracts (public charging price agreements)."""
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, timezone
+
 
 from flask import Blueprint, jsonify, request
 
@@ -54,7 +55,7 @@ def api_create_contract():
     name = (data.get("name") or "").strip()
     if not name:
         return jsonify({"error": "name erforderlich"}), 400
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     con = _get_db()
     try:
         # Prevent duplicate names
@@ -112,7 +113,7 @@ def api_update_contract(cid: int):
     name = (data.get("name") or "").strip()
     if not name:
         return jsonify({"error": "name erforderlich"}), 400
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     con = _get_db()
     try:
         if not con.execute("SELECT id FROM charging_contracts WHERE id=?", (cid,)).fetchone():

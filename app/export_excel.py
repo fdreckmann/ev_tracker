@@ -1,4 +1,4 @@
-import os, sys, sqlite3, shutil, json, re
+import os, sys, sqlite3, shutil, json, re, copy
 import re as _re_formula
 
 _RE_RANGE_FORMULA = re.compile(r'[A-Za-z]+\d+:[A-Za-z]+\d+')
@@ -801,10 +801,10 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
             c = ws.cell(row=ds, column=ci)
             try:
                 tstyles[ci] = {
-                    "font":      c.font.copy()      if c.font      else None,
-                    "fill":      c.fill.copy()      if c.fill      else None,
-                    "border":    c.border.copy()    if c.border    else None,
-                    "alignment": c.alignment.copy() if c.alignment else None,
+                    "font":      copy.copy(c.font)      if c.font      else None,
+                    "fill":      copy.copy(c.fill)      if c.fill      else None,
+                    "border":    copy.copy(c.border)    if c.border    else None,
+                    "alignment": copy.copy(c.alignment) if c.alignment else None,
                 }
             except Exception:
                 pass
@@ -843,10 +843,10 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
             try:
                 _c = ws.cell(row=style_row, column=ci)
                 _rstyles[ci] = {
-                    "font":          _c.font.copy()      if _c.font      else None,
-                    "fill":          _c.fill.copy()      if _c.fill      else None,
-                    "border":        _c.border.copy()    if _c.border    else None,
-                    "alignment":     _c.alignment.copy() if _c.alignment else None,
+                    "font":          copy.copy(_c.font)      if _c.font      else None,
+                    "fill":          copy.copy(_c.fill)      if _c.fill      else None,
+                    "border":        copy.copy(_c.border)    if _c.border    else None,
+                    "alignment":     copy.copy(_c.alignment) if _c.alignment else None,
                     "number_format": _c.number_format,
                 }
             except Exception:

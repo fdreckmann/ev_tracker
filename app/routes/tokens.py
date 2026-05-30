@@ -3,7 +3,8 @@ API token management routes (user-facing UI).
 """
 import json
 import secrets as _sec
-from datetime import datetime
+from datetime import datetime, timezone
+
 
 from flask import Blueprint, jsonify, request
 
@@ -54,7 +55,7 @@ def api_tokens_create():
         (name, token_hash, token_prefix, scopes, expires_at, created_by, created_at, is_active)
         VALUES (?,?,?,?,?,?,?,1)""",
         (name, _hash_token(raw), prefix, json.dumps(scopes),
-         expires_at, user["id"] if user else None, datetime.utcnow().isoformat()))
+         expires_at, user["id"] if user else None, datetime.now(timezone.utc).replace(tzinfo=None).isoformat()))
     token_id = cur.lastrowid
     con.commit()
     close_db_if_owned(con)

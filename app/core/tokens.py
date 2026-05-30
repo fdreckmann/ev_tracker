@@ -6,7 +6,8 @@ Usage:
 """
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timezone
+
 
 from flask import jsonify, request
 
@@ -30,11 +31,11 @@ def _check_api_token(raw: str):
         (_hash_token(raw),)).fetchone()
     if row:
         expires = row["expires_at"]
-        if expires and datetime.utcnow().isoformat() > expires:
+        if expires and datetime.now(timezone.utc).replace(tzinfo=None).isoformat() > expires:
             close_db_if_owned(con)
             return None
         con.execute("UPDATE api_tokens SET last_used_at=? WHERE id=?",
-                    (datetime.utcnow().isoformat(), row["id"]))
+                    (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), row["id"]))
         con.commit()
     close_db_if_owned(con)
     return dict(row) if row else None

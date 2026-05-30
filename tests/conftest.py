@@ -4,7 +4,8 @@ Shared pytest fixtures for EV Tracker tests.
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
+
 from pathlib import Path
 
 import pytest
@@ -147,7 +148,7 @@ def authed_client(app):
     client = app.test_client()
     with app.app_context():
         from core.db import _get_db, close_db_if_owned
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         pw = _TEST_PW_HASH or "pbkdf2:sha256:1$test$0000000000000000000000000000000000000000000000000000000000000000"
         con = _get_db()
         con.execute("""INSERT OR IGNORE INTO users

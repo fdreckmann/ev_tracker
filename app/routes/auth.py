@@ -7,7 +7,8 @@ import json
 import secrets
 import sqlite3
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
 
 import requests
 
@@ -45,7 +46,7 @@ def login_page():
         email = request.form.get("email", "").strip().lower()
         pw    = request.form.get("password", "")
         user  = _get_user_by_email(email)
-        now_dt = datetime.utcnow()
+        now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
         # Generic error to prevent user enumeration
         if not user or user.get("status") == "disabled":
             error = "Anmeldung fehlgeschlagen"
@@ -196,7 +197,7 @@ def setup_page():
         elif _password_ok(pw):
             error = _password_ok(pw)
         else:
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
             con = _get_db()
             try:
                 cur = con.execute(
@@ -248,7 +249,7 @@ def forgot_password_page():
         from services.email_service import _send_email, _email_html, _email_btn
         token = secrets.token_urlsafe(32)
         token_hash = hashlib.sha256(token.encode()).hexdigest()
-        now_dt = datetime.utcnow()
+        now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
         expires = (now_dt + timedelta(hours=1)).isoformat()
         con = _get_db()
         # Invalidate old tokens for this user
@@ -273,7 +274,7 @@ def forgot_password_page():
 @auth_bp.route("/reset-password/<token>", methods=["GET", "POST"])
 def reset_password_page(token):
     token_hash = hashlib.sha256(token.encode()).hexdigest()
-    now_iso = datetime.utcnow().isoformat()
+    now_iso = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     con = _get_db()
     row = con.execute(
         "SELECT * FROM password_reset_tokens WHERE token_hash=? AND used_at IS NULL AND expires_at > ?",
@@ -296,7 +297,7 @@ def reset_password_page(token):
         close_db_if_owned(con)
         return render_template("reset_password.html", token=token, invalid=False,
                                error="Passwörter stimmen nicht überein")
-    now_iso2 = datetime.utcnow().isoformat()
+    now_iso2 = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     con.execute("UPDATE users SET password_hash=?,updated_at=?,failed_attempts=0,locked_until=NULL WHERE id=?",
                 (_hash_password(pw), now_iso2, row["user_id"]))
     con.execute("UPDATE password_reset_tokens SET used_at=? WHERE id=?", (now_iso2, row["id"]))
@@ -310,7 +311,7 @@ def reset_password_page(token):
 @auth_bp.route("/invite/<token>", methods=["GET", "POST"])
 def accept_invite_page(token):
     token_hash = hashlib.sha256(token.encode()).hexdigest()
-    now_iso = datetime.utcnow().isoformat()
+    now_iso = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     con = _get_db()
     row = con.execute(
         "SELECT * FROM invite_tokens WHERE token_hash=? AND used_at IS NULL AND expires_at > ?",
@@ -340,7 +341,7 @@ def accept_invite_page(token):
         return render_template("accept_invite.html", token=token, invalid=False,
                                user_name=user.get("name", ""),
                                error="Passwörter stimmen nicht überein")
-    now_iso2 = datetime.utcnow().isoformat()
+    now_iso2 = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     new_status = "active" if user.get("status") == "invited" else user.get("status", "active")
     con.execute("UPDATE users SET password_hash=?,status=?,updated_at=? WHERE id=?",
                 (_hash_password(pw), new_status, now_iso2, user["id"]))
@@ -553,7 +554,7 @@ def api_passkey_register_complete():
                  user["email"], rp_id, origin, len(cred_id), cred_id[:12])
 
         con = _get_db()
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         con.execute(
             "INSERT INTO webauthn_credentials (user_id, credential_id, public_key, sign_count, name, created_at) VALUES (?,?,?,?,?,?)",
             (user["id"], cred_id, pub_key, verification.sign_count, cred_name, now)
@@ -740,7 +741,7 @@ def api_passkey_login_complete():
             require_user_verification=False,
         )
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         con.execute(
             "UPDATE webauthn_credentials SET sign_count=?, last_used_at=? WHERE credential_id=?",
             (verification.new_sign_count, now, cred_id_b64)
@@ -786,7 +787,7 @@ def _oauth_finish(email: str):
     session["user_role"]  = user["role"]
     session["user_name"]  = user["name"]
     session.permanent     = True
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     con = _get_db()
     con.execute("UPDATE users SET last_login_at=? WHERE id=?", (now, user["id"]))
     con.commit(); close_db_if_owned(con)

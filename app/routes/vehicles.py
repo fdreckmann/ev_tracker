@@ -6,7 +6,8 @@ import os
 import re
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
+
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request, send_file
@@ -493,7 +494,7 @@ def api_delete_vehicle(vid):
             new_extras.append({**v,
                 "active": False,
                 "archived": True,
-                "deleted_at": datetime.utcnow().isoformat(timespec="seconds"),
+                "deleted_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds"),
             })
         else:
             new_extras.append(v)

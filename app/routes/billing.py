@@ -2,7 +2,8 @@
 Billing configuration and summary routes.
 """
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timezone
+
 
 from flask import Blueprint, jsonify, request
 
@@ -36,7 +37,7 @@ def api_billing_config_save(vehicle_id):
     if not has_permission(_current_user(), "billing:configure"):
         return jsonify({"error": "Keine Berechtigung"}), 403
     data    = request.get_json(force=True) or {}
-    now_iso = datetime.utcnow().isoformat()
+    now_iso = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     con     = _get_db()
     existing = con.execute("SELECT vehicle_id FROM billing_config WHERE vehicle_id=?", (vehicle_id,)).fetchone()
     recipients = json.dumps(data.get("recipients", []))

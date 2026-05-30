@@ -2,7 +2,8 @@
 Admin routes: permissions, roles, user-role assignments, current user permissions.
 """
 import re
-from datetime import datetime
+from datetime import datetime, timezone
+
 
 from flask import Blueprint, jsonify, request
 
@@ -87,7 +88,7 @@ def api_admin_roles_create():
         return jsonify({"ok": False, "error": "Ungültiger Rollenname"}), 400
     desc  = (body.get("description") or "").strip()[:200]
     perms = [p for p in (body.get("permissions") or []) if p in ALL_PERMISSIONS]
-    now_iso = datetime.utcnow().isoformat()
+    now_iso = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     con = _get_db()
     try:
         cur = con.execute(
@@ -122,7 +123,7 @@ def api_admin_roles_update(role_id):
     name  = (body.get("name") or role["name"]).strip()
     desc  = (body.get("description") or role["description"] or "").strip()[:200]
     perms = [p for p in (body.get("permissions") or []) if p in ALL_PERMISSIONS]
-    now_iso = datetime.utcnow().isoformat()
+    now_iso = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     try:
         con.execute("UPDATE roles SET name=?, description=?, updated_at=? WHERE id=?",
                     (name, desc, now_iso, role_id))

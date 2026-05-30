@@ -447,7 +447,7 @@ def init_db():
 
     def _mark_migration(name: str):
         con.execute("INSERT OR IGNORE INTO schema_migrations (migration, applied_at) VALUES (?,?)",
-                    (name, datetime.utcnow().isoformat()))
+                    (name, datetime.now(timezone.utc).replace(tzinfo=None).isoformat()))
 
     # Vehicle access scope — vehicle_id must be TEXT (not INTEGER) since IDs are strings like "v0"
     # Migration: recreate table with correct type if old schema had INTEGER
@@ -712,7 +712,7 @@ def init_db():
             pass
 
     # Seed default roles
-    now_iso = datetime.utcnow().isoformat()
+    now_iso = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     default_roles = [
         ("admin",    "Vollzugriff",                    1),
         ("user",     "Normaler Benutzer",               1),
@@ -1038,7 +1038,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                     acc = st.get("location_accuracy") if precision == "exact" else None
                     if precision == "rounded" and lat is not None:
                         lat = round(lat, 3); lon = round(lon, 3) if lon else lon
-                    now_ts = datetime.utcnow().isoformat(timespec="seconds")
+                    now_ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
                     cur.execute(
                         "INSERT INTO vehicle_location_history "
                         "(vehicle_id, timestamp, location_status, source, latitude, longitude, accuracy_m) "
@@ -1046,7 +1046,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                         (vehicle_id, now_ts, normalize_location(st["location_status"]),
                          st.get("location_source",""), lat, lon, acc))
                     # Cleanup old entries beyond retention period
-                    cutoff = (datetime.utcnow() - timedelta(days=retention)).isoformat(timespec="seconds")
+                    cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=retention)).isoformat(timespec="seconds")
                     cur.execute("DELETE FROM vehicle_location_history WHERE vehicle_id=? AND timestamp<?",
                                 (vehicle_id, cutoff))
                     con.commit()
@@ -1084,7 +1084,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                     _mhd_res = _read_meter_impl(vcfg)
                     if _mhd_res.value is not None:
                         mhd_start_val = _mhd_res.value
-                        mhd_start_ts  = datetime.utcnow().isoformat(timespec="seconds")
+                        mhd_start_ts  = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
                         st["meter_home_det_start_val"] = mhd_start_val
                         st["meter_home_det_start_ts"]  = mhd_start_ts
                         log.debug("[%s] Meter-Home-Detection Referenzwert: %.3f kWh", vehicle_id, mhd_start_val)
@@ -1174,7 +1174,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                                 _mhd_max_h = float(vcfg.get("meter_home_detection_max_delta_kwh_per_hour", 30.0))
                                 # Validate time window
                                 try:
-                                    _mhd_age_min = (datetime.utcnow() - datetime.fromisoformat(_mhd_start_ts)).total_seconds() / 60
+                                    _mhd_age_min = (datetime.now(timezone.utc).replace(tzinfo=None) - datetime.fromisoformat(_mhd_start_ts)).total_seconds() / 60
                                 except Exception:
                                     _mhd_age_min = 0
                                 # Rate sanity: delta per hour
@@ -1268,7 +1268,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                             _mhd_rate_ok = True
                             if _mhd_start_ts:
                                 try:
-                                    _mhd_age_min = (datetime.utcnow() - datetime.fromisoformat(_mhd_start_ts)).total_seconds() / 60
+                                    _mhd_age_min = (datetime.now(timezone.utc).replace(tzinfo=None) - datetime.fromisoformat(_mhd_start_ts)).total_seconds() / 60
                                     if _mhd_age_min > 0:
                                         _rate = _mhd_delta_end / (_mhd_age_min / 60)
                                         if _rate > _mhd_max_h:
@@ -1343,7 +1343,8 @@ def tracker_loop(vehicle_id: str = "v0"):
                         _sess_start = cur.execute(
                             "SELECT start_ts FROM sessions WHERE id=?", (session_id,)).fetchone()
                         if _sess_start and _sess_start[0]:
-                            from datetime import datetime as _dt
+                            from datetime import datetime as _dt, timezone
+
                             _s = _dt.fromisoformat(_sess_start[0])
                             _e = datetime.now()
                             _avg = _tp.get_average_price(_s, _e)
@@ -2113,7 +2114,8 @@ _EN_MONTHS_FULL = ["January","February","March","April","May","June",
 
 def _month_period(ym_str):
     """Build a period dict for a single YYYY-MM string."""
-    from datetime import date
+    from datetime import date, timezone
+
     try:
         year, month = int(ym_str[:4]), int(ym_str[5:7])
         start = date(year, month, 1)
@@ -2129,7 +2131,8 @@ def _month_period(ym_str):
 
 def calculate_report_period(schedule_type, period_mode, now, config):
     """Return dict with start, end (date objects), label_de, label_en, period_key."""
-    from datetime import date, timedelta
+    from datetime import date, timedelta, timezone
+
     today = now.date() if hasattr(now, 'date') else now
 
     if period_mode == "single_month":
@@ -2231,7 +2234,8 @@ def calculate_report_periods(schedule_type, period_mode, now, config):
 
 
 def _get_report_sessions(start_date, end_date, location_filter="all", vehicle_filter="all"):
-    from datetime import timedelta
+    from datetime import timedelta, timezone
+
     where  = ["end_ts IS NOT NULL", "start_ts >= ?", "start_ts < ?"]
     params = [start_date.isoformat(), (end_date + timedelta(days=1)).isoformat()]
     _loc_norm = normalize_location(location_filter) if location_filter not in ("all",) else location_filter
@@ -2408,7 +2412,7 @@ def _log_report_history(period_info, cfg, status, error, triggered_by):
              location_filter,vehicle_filter,recipients,status,error,triggered_by,
              period_label,period_mode)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (datetime.utcnow().isoformat(),
+            (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
              cfg.get("report_email_schedule_type","monthly"),
              period_info["start"].isoformat(), period_info["end"].isoformat(),
              period_info["period_key"],
@@ -2538,7 +2542,8 @@ def _next_report_seconds(cfg, now=None):
     try: t_hour, t_min = [int(x) for x in t_str.split(":")]
     except Exception: t_hour, t_min = 8, 0
     today = now.date()
-    from datetime import date, timedelta
+    from datetime import date, timedelta, timezone
+
 
     if stype == "daily":
         fire = datetime.combine(today, datetime.min.time()).replace(hour=t_hour, minute=t_min)
@@ -2629,7 +2634,7 @@ def _save_report_record(vehicle_id, period_info, loc_filter, veh_filter, status,
         (created_at, vehicle_id, period_start, period_end, period_label, period_mode,
          location_filter, vehicle_filter, status, created_by, excel_bytes, pdf_bytes, summary_json)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (datetime.utcnow().isoformat(),
+        (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
          vehicle_id,
          period_info["start"].isoformat(), period_info["end"].isoformat(),
          period_info.get("label_de", ""), period_info.get("period_key",""),

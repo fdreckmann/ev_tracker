@@ -9,7 +9,8 @@ from __future__ import annotations
 import logging
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
+
 
 import requests
 
@@ -102,7 +103,7 @@ def get_update_info(force: bool = False) -> dict:
         "commit_short": DISPLAY_COMMIT_SHORT,
         "image_tag": DISPLAY_IMAGE_TAG,
         "update_available": False,
-        "checked_at": datetime.utcnow().isoformat(timespec="seconds"),
+        "checked_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds"),
         "remote_url": _REMOTE_URL,
         "cache_hit": False,
         "reason": None,

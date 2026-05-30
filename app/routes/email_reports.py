@@ -3,7 +3,8 @@ Email report configuration and sending routes.
 """
 import json
 import calendar as _calendar
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
 from threading import Timer
 
 from flask import Blueprint, jsonify, request
@@ -26,7 +27,8 @@ _EN_MONTHS_FULL = ["January", "February", "March", "April", "May", "June",
 
 def _month_period(ym_str):
     """Build a period dict for a single YYYY-MM string."""
-    from datetime import date
+    from datetime import date, timezone
+
     try:
         year, month = int(ym_str[:4]), int(ym_str[5:7])
         start = date(year, month, 1)
@@ -42,7 +44,8 @@ def _month_period(ym_str):
 
 def calculate_report_period(schedule_type, period_mode, now, config):
     """Return dict with start, end (date objects), label_de, label_en, period_key."""
-    from datetime import date, timedelta
+    from datetime import date, timedelta, timezone
+
     today = now.date() if hasattr(now, 'date') else now
 
     if period_mode == "single_month":
@@ -146,7 +149,8 @@ def calculate_report_periods(schedule_type, period_mode, now, config):
 
 def _get_report_sessions(start_date, end_date, location_filter="all", vehicle_filter="all"):
     import sqlite3
-    from datetime import timedelta
+    from datetime import timedelta, timezone
+
     from core.db import DB_PATH
     where  = ["end_ts IS NOT NULL", "start_ts >= ?", "start_ts < ?"]
     params = [start_date.isoformat(), (end_date + timedelta(days=1)).isoformat()]
@@ -328,7 +332,7 @@ def _log_report_history(period_info, cfg, status, error, triggered_by):
              location_filter,vehicle_filter,recipients,status,error,triggered_by,
              period_label,period_mode)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (datetime.utcnow().isoformat(),
+            (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
              cfg.get("report_email_schedule_type", "monthly"),
              period_info["start"].isoformat(), period_info["end"].isoformat(),
              period_info["period_key"],
@@ -465,7 +469,8 @@ def _next_report_seconds(cfg, now=None):
     try: t_hour, t_min = [int(x) for x in t_str.split(":")]
     except Exception: t_hour, t_min = 8, 0
     today = now.date()
-    from datetime import date, timedelta
+    from datetime import date, timedelta, timezone
+
 
     if stype == "daily":
         fire = datetime.combine(today, datetime.min.time()).replace(hour=t_hour, minute=t_min)
