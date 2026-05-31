@@ -2412,15 +2412,15 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <div id="cfgsec-version-info" class="cfg-section" style="display:none">
         <div class="cfg-sec-title">Version &amp; Update</div>
 
-        <!-- Current version -->
+        <!-- Installierte Version — statischer Fallback, JS füllt Details nach -->
         <div class="card" style="margin-bottom:14px">
-          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-            <div>
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <div style="flex:1;min-width:0">
               <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Installiert</div>
-              <div style="font-size:1.2rem;font-weight:700;color:#64ffda">v{{ app_version }}</div>
-              <div id="uiLocalMeta" style="margin-top:6px;font-size:.7rem;font-family:var(--mono);color:var(--mute);display:flex;flex-wrap:wrap;gap:6px 12px"></div>
+              <div id="uiVersionDisplay" style="font-size:1.2rem;font-weight:700;color:#64ffda">v{{ app_version }}</div>
+              <div id="uiLocalMeta" style="margin-top:8px;font-size:.7rem;font-family:var(--mono);color:var(--mute);display:flex;flex-direction:column;gap:3px"></div>
             </div>
-            <div id="updateStatusBadge" style="font-size:.75rem;font-family:var(--mono);color:var(--mute)">⏳ Prüfe…</div>
+            <div id="updateStatusBadge" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);flex-shrink:0">⏳ Prüfe…</div>
           </div>
         </div>
 
@@ -2458,7 +2458,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         </div>
 
         <div id="updateInfoError" style="display:none;font-size:.78rem;font-family:var(--mono);color:var(--mute);padding:12px;background:var(--bg);border-radius:8px;border:1px solid var(--brd)">
-          ⚠ Update-Informationen konnten nicht geladen werden.
+          ⚠ Update-Informationen konnten nicht geladen werden. Lokale Build-Infos sind oben sichtbar.
         </div>
 
         <button class="btn-s" style="font-size:.78rem;margin-top:8px" onclick="loadUpdateInfo(true)">🔄 Jetzt prüfen</button>
@@ -5009,6 +5009,16 @@ function _showUpdateError(detail) {
   if (errEl) errEl.style.display = '';
 }
 
+function _fmtBuildUtc(utcStr) {
+  // Format a UTC ISO timestamp string to Europe/Berlin local time for display.
+  if (!utcStr || !utcStr.includes('T')) return utcStr || '';
+  try {
+    return new Intl.DateTimeFormat('de-DE', {
+      dateStyle: 'short', timeStyle: 'medium', timeZone: 'Europe/Berlin'
+    }).format(new Date(utcStr));
+  } catch(e) { return utcStr; }
+}
+
 function _renderUpdateInfo(r) {
   const badge = document.getElementById('updateStatusBadge');
   const panel = document.getElementById('updateInfoPanel');
@@ -5016,49 +5026,81 @@ function _renderUpdateInfo(r) {
   const avail = document.getElementById('updateInfoAvailable');
   const curr  = document.getElementById('updateInfoCurrent');
 
-  // Always populate local build metadata (branch/channel/commit/image_tag)
+  // Update the displayed version number from API (replaces static Jinja fallback)
+  const verEl = document.getElementById('uiVersionDisplay');
+  if (verEl && (r.version || r.current_version)) {
+    verEl.textContent = 'v' + (r.version || r.current_version);
+  }
+
+  // Always populate local build metadata (shown even when remote check fails)
   const metaEl = document.getElementById('uiLocalMeta');
   if (metaEl) {
-    const mParts = [];
-    if (r.channel)       mParts.push('Channel: <span style="color:#64ffda">'+escapeHtml(r.channel)+'</span>');
-    if (r.branch)        mParts.push('Branch: <span style="color:#a78bfa">'+escapeHtml(r.branch)+'</span>');
-    if (r.image_tag)     mParts.push('Image: <span style="color:#60a5fa">'+escapeHtml(r.image_tag)+'</span>');
-    if (r.commit_short)  mParts.push('Commit: <span style="color:#94a3b8">'+escapeHtml(r.commit_short)+'</span>');
-    if (r.build_date)    mParts.push('Build: <span style="color:#94a3b8">'+escapeHtml(r.build_date)+'</span>');
-    if (r.remote_url)    mParts.push('Update-Check: <span style="color:#64748b">'+escapeHtml(r.remote_url)+'</span>');
-    metaEl.innerHTML = mParts.join(' &nbsp;·&nbsp; ');
+    const row = (label, val, color) =>
+      `<div><span style="color:var(--mute)">${label}:</span> <span style="color:${color||'#94a3b8'}">${escapeHtml(String(val))}</span></div>`;
+    const rows = [];
+    if (r.channel)       rows.push(row('Channel',    r.channel,    '#64ffda'));
+    if (r.image_tag)     rows.push(row('Image',      r.image_tag,  '#60a5fa'));
+    if (r.branch)        rows.push(row('Branch',     r.branch,     '#a78bfa'));
+    if (r.commit_short)  rows.push(row('Commit',     r.commit_short,'#94a3b8'));
+    if (r.asset_version) rows.push(row('Asset',      r.asset_version,'#64748b'));
+    const buildLocal = r.build_local || _fmtBuildUtc(r.build_utc || r.build_date);
+    const buildUtc   = r.build_utc || r.build_date;
+    if (buildLocal)      rows.push(row('Build (Berlin)', buildLocal, '#94a3b8'));
+    if (buildUtc && buildUtc !== buildLocal)
+                         rows.push(row('Build (UTC)',  buildUtc,    '#64748b'));
+    if (r.build_source && r.build_source !== 'local')
+                         rows.push(row('Quelle',      r.build_source, '#64748b'));
+    if (r.github_run_id) rows.push(row('Run',         r.github_run_id,'#64748b'));
+    if (r.remote_url)    rows.push(row('Update-URL',  r.remote_url, '#64748b'));
+    metaEl.innerHTML = rows.join('');
   }
 
   if (errEl) errEl.style.display = 'none';
   if (panel) panel.style.display = '';
 
   if (!r.ok) {
-    if (badge) badge.textContent = '⚠ Prüfung fehlgeschlagen';
+    const reason = r.reason || '';
+    if (reason === 'remote_unreachable') {
+      if (badge) badge.innerHTML = '<span style="color:#ef4444">⚠ Remote nicht erreichbar</span>';
+    } else if (reason === 'update_check_disabled') {
+      if (badge) badge.innerHTML = '<span style="color:#64748b">— Update-Prüfung deaktiviert</span>';
+    } else {
+      if (badge) badge.textContent = '⚠ Prüfung fehlgeschlagen';
+    }
     if (panel) panel.style.display = 'none';
     if (errEl) errEl.style.display = '';
     return;
   }
 
+  // ok=true: update_check_disabled (no remote fetch attempted)
+  if (r.update_check_disabled) {
+    if (badge) badge.innerHTML = '<span style="color:#64748b">— Update-Prüfung deaktiviert</span>';
+    if (avail) avail.style.display = 'none';
+    if (curr)  curr.style.display  = '';
+    const det = document.getElementById('uiCurrentDetail');
+    if (det) det.textContent = 'Automatische Prüfung deaktiviert.';
+    return;
+  }
+
+  const checkedStr = r.checked_at_local || r.checked_at || '';
+  const cacheStr   = r.cache_hit ? ' (Cache)' : '';
+
   if (r.update_available) {
     if (badge) badge.innerHTML = '<span style="color:#f59e0b">⬆ Update: v'+escapeHtml(r.current_version)+' → v'+escapeHtml(r.latest_version)+'</span>';
     if (avail) avail.style.display = '';
     if (curr)  curr.style.display  = 'none';
-    // Title
     const title = document.getElementById('uiTitle');
     if (title) title.textContent = 'v'+r.latest_version+': '+(r.title||'');
-    // Summary
-    _renderList('uiSummary', r.summary, '✨', '#64ffda', 'Was ist neu');
-    _renderList('uiFixes',   r.fixes,   '🔧', '#a78bfa', 'Bugfixes');
-    _renderList('uiBreaking', r.breaking_changes, '⚠️', '#ef4444', 'Breaking Changes');
-    _renderList('uiMigration', r.migration_notes, 'ℹ️', '#94a3b8', 'Migration');
-    // Instructions
+    _renderList('uiSummary',  r.summary,           '✨', '#64ffda', 'Was ist neu');
+    _renderList('uiFixes',    r.fixes,              '🔧', '#a78bfa', 'Bugfixes');
+    _renderList('uiBreaking', r.breaking_changes,   '⚠️', '#ef4444', 'Breaking Changes');
+    _renderList('uiMigration',r.migration_notes,    'ℹ️', '#94a3b8', 'Migration');
     const instr = document.getElementById('uiInstructions');
     if (instr && r.update_instructions && r.update_instructions.length) {
       instr.innerHTML = r.update_instructions.map(function(l){
         return '<div style="margin-bottom:3px">› <code style="background:var(--bg);padding:1px 4px;border-radius:3px">'+escapeHtml(l)+'</code></div>';
       }).join('');
     }
-    // Release URL
     const ru = document.getElementById('uiReleaseUrl');
     if (ru && r.release_url) { ru.href = r.release_url; ru.style.display=''; }
   } else {
@@ -5071,12 +5113,11 @@ function _renderUpdateInfo(r) {
       if (badge) badge.innerHTML = '<span style="color:#f59e0b">⚠ Remote-Metadaten veraltet: Installiert v'
         +escapeHtml(r.current_version)+', Remote v'+escapeHtml(r.latest_version||'?')+'</span>';
       if (det) det.textContent = r.warning || ('Remote: v'+(r.latest_version||'?')+' · Installiert: v'+r.current_version);
-    } else if (r.reason === 'remote_unreachable') {
-      if (badge) badge.innerHTML = '<span style="color:#ef4444">⚠ Remote nicht erreichbar</span>';
-      if (det) det.textContent = 'Update-Server konnte nicht erreicht werden.';
     } else {
       if (badge) badge.innerHTML = '<span style="color:#3ddc97">✅ Aktuell (v'+escapeHtml(r.current_version)+')</span>';
-      if (det) det.textContent = 'Neueste Version: v'+(r.latest_version||r.current_version) + (r.release_date ? ' · '+r.release_date : '');
+      if (det) det.textContent = 'Neueste Version: v'+(r.latest_version||r.current_version)
+        + (r.release_date ? ' · '+r.release_date : '')
+        + (checkedStr ? ' · Geprüft: '+checkedStr+cacheStr : '');
     }
   }
 }
@@ -7296,6 +7337,8 @@ async function openMobileSystemStatus() {
     const sch = status?.channel; if(sch) rows.push(`<div class="m-info-row"><span class="m-info-label">Channel</span><span class="m-info-value">${escapeHtml(sch)}</span></div>`);
     const sbr = status?.branch;  if(sbr) rows.push(`<div class="m-info-row"><span class="m-info-label">Branch</span><span class="m-info-value" style="font-family:var(--mono);font-size:.75rem">${escapeHtml(sbr)}</span></div>`);
     const scs = status?.commit_short; if(scs) rows.push(`<div class="m-info-row"><span class="m-info-label">Commit</span><span class="m-info-value" style="font-family:var(--mono);font-size:.75rem">${escapeHtml(scs)}</span></div>`);
+    const simg = status?.image_tag; if(simg && simg !== 'unknown') rows.push(`<div class="m-info-row"><span class="m-info-label">Image</span><span class="m-info-value" style="font-family:var(--mono);font-size:.72rem">${escapeHtml(simg)}</span></div>`);
+    const sbuild = status?.build_utc || status?.build_date; if(sbuild) rows.push(`<div class="m-info-row"><span class="m-info-label">Build</span><span class="m-info-value" style="font-size:.72rem">${escapeHtml(sbuild)}</span></div>`);
     const dbmb = status?.db_size_mb ?? (status?.db_size != null ? status.db_size/1024/1024 : null);
     if(dbmb!=null) rows.push(`<div class="m-info-row"><span class="m-info-label">DB-Größe</span><span class="m-info-value">${Number(dbmb).toFixed(1)} MB</span></div>`);
     if(status?.backup_count!=null) rows.push(`<div class="m-info-row"><span class="m-info-label">Backups</span><span class="m-info-value">${Number(status.backup_count)}</span></div>`);

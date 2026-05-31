@@ -20,6 +20,7 @@ log = logging.getLogger(__name__)
 _REMOTE_URL = "https://raw.githubusercontent.com/fdreckmann/ev_tracker/main/update-info.json"
 _REQUEST_TIMEOUT = 5  # seconds
 _CACHE_TTL = 6 * 3600  # 6 hours
+_BUILD_TZ = "Europe/Berlin"
 
 _cache: dict = {"data": None, "ts": 0.0}
 
@@ -63,6 +64,29 @@ def _is_older(remote: str, current: str) -> bool:
         return False
 
 
+def _to_berlin(utc_str: str) -> str:
+    """Convert a UTC ISO timestamp string to a Europe/Berlin formatted string.
+
+    Accepts strings with or without trailing 'Z'. Returns the original string
+    (or empty string for empty input) if conversion fails.
+    """
+    if not utc_str:
+        return ""
+    try:
+        from zoneinfo import ZoneInfo
+        s = utc_str.strip()
+        if "T" in s:
+            # Full ISO datetime — parse with explicit UTC offset
+            s = s.rstrip("Z") + "+00:00"
+            dt = datetime.fromisoformat(s)
+            local = dt.astimezone(ZoneInfo(_BUILD_TZ))
+            return local.strftime("%d.%m.%Y, %H:%M:%S")
+        # Date-only string (e.g. "2026-05-28") — return as-is
+        return s
+    except Exception:
+        return utc_str
+
+
 def fetch_remote_info(force: bool = False) -> tuple[dict, bool]:
     """Fetch update metadata from GitHub with caching.
 
@@ -89,21 +113,41 @@ def fetch_remote_info(force: bool = False) -> tuple[dict, bool]:
 
 def get_update_info(force: bool = False) -> dict:
     """Return the full update-info dict for the /api/update-info endpoint."""
-    from version import APP_VERSION, ASSET_VERSION, BUILD_DATE, CHANNEL, GIT_BRANCH, GIT_COMMIT, COMMIT_SHORT, IMAGE_TAG, DISPLAY_BRANCH, DISPLAY_COMMIT, DISPLAY_COMMIT_SHORT, DISPLAY_IMAGE_TAG
+    from version import (APP_VERSION, ASSET_VERSION, BUILD_DATE, BUILD_DATE_UTC,
+                         CHANNEL, GIT_BRANCH, GIT_COMMIT, COMMIT_SHORT, IMAGE_TAG,
+                         DISPLAY_BRANCH, DISPLAY_COMMIT, DISPLAY_COMMIT_SHORT,
+                         DISPLAY_IMAGE_TAG, BUILD_SOURCE, GITHUB_RUN_ID, GITHUB_REF)
 
     current = APP_VERSION
+
+    # Compute check timestamps in both UTC and local time
+    _now = datetime.now(timezone.utc)
+    _now_utc = _now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    _now_local = _to_berlin(_now_utc)
+
     base: dict = {
         "ok": False,
+        # Local build info — always present regardless of remote check result
+        "version": current,                     # explicit alias for current_version
         "current_version": current,
         "asset_version": ASSET_VERSION,
-        "build_date": BUILD_DATE,
+        "build_date": BUILD_DATE,               # kept for backward compat
+        "build_utc": BUILD_DATE_UTC,            # explicit UTC alias
+        "build_local": _to_berlin(BUILD_DATE_UTC),
+        "build_timezone": _BUILD_TZ,
+        "build_source": BUILD_SOURCE,
+        "github_run_id": GITHUB_RUN_ID,
+        "github_ref": GITHUB_REF,
         "channel": CHANNEL,
         "branch": DISPLAY_BRANCH,
         "commit": DISPLAY_COMMIT,
         "commit_short": DISPLAY_COMMIT_SHORT,
         "image_tag": DISPLAY_IMAGE_TAG,
+        # Remote check status
         "update_available": False,
-        "checked_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds"),
+        "checked_at": _now_utc,                 # kept for backward compat
+        "checked_at_utc": _now_utc,
+        "checked_at_local": _now_local,
         "remote_url": _REMOTE_URL,
         "cache_hit": False,
         "reason": None,

@@ -9,6 +9,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ .
 COPY version.json .
+COPY build-info.json .
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 # Create non-root user (UID 10001) with a writable home.

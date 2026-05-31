@@ -107,6 +107,36 @@ jobs:
           echo "sha_short=${SHA_SHORT}"        >> "$GITHUB_OUTPUT"
           echo "main_tag=${MAIN_TAG}"          >> "$GITHUB_OUTPUT"
 
+      - name: Generate build-info.json
+        run: |
+          python3 - <<'PYEOF'
+import json, sys
+version  = "${{ steps.tags.outputs.version }}"
+channel  = "${{ steps.tags.outputs.channel }}"
+build_ts = "${{ steps.tags.outputs.build_ts }}"
+sha      = "${{ github.sha }}"
+sha_short= "${{ steps.tags.outputs.sha_short }}"
+main_tag = "${{ steps.tags.outputs.main_tag }}"
+ref_name = "${{ github.ref_name }}"
+run_id   = "${{ github.run_id }}"
+ref      = "${{ github.ref }}"
+
+info = {
+    "version":       version,
+    "channel":       channel,
+    "branch":        ref_name,
+    "commit":        sha,
+    "commit_short":  sha_short,
+    "image_tag":     main_tag,
+    "build_utc":     build_ts,
+    "build_source":  "github_actions",
+    "github_run_id": run_id,
+    "github_ref":    ref,
+}
+json.dump(info, open("build-info.json", "w"), indent=2)
+print("build-info.json written:", json.dumps(info, indent=2))
+PYEOF
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 

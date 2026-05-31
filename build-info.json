@@ -1,0 +1,12 @@
+{
+  "version": "2.0.55",
+  "channel": "local",
+  "branch": "local/source",
+  "commit": "",
+  "commit_short": "",
+  "image_tag": "local",
+  "build_utc": "",
+  "build_source": "local",
+  "github_run_id": "",
+  "github_ref": ""
+}
