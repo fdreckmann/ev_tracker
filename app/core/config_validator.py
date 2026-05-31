@@ -30,6 +30,16 @@ _FLOATS: frozenset[str] = frozenset({
     "missing_charge_min_soc_gain_percent",
     "missing_charge_min_kwh",
     "missing_charge_default_consumption_kwh_per_100km",
+    "missing_charge_expected_consumption_kwh_per_100km",
+    "missing_charge_min_missing_kwh",
+    "missing_charge_min_missing_soc_percent",
+    "missing_charge_min_plausible_consumption_kwh_per_100km",
+    "missing_charge_max_plausible_consumption_kwh_per_100km",
+    "missing_charge_energy_balance_min_deviation_percent",
+    "missing_charge_consumption_min_history_km",
+    "official_consumption_kwh_per_100km",
+    "official_range_km",
+    "official_consumption_factor",
     "tariff_fallback_price",
     "octopus_gbp_eur_factor",
     "generic_tariff_factor",
@@ -60,6 +70,9 @@ _INTS: frozenset[str] = frozenset({
     "report_email_custom_days",
     "enbw_price_cache_minutes",
     "missing_charge_min_gap_minutes",
+    "missing_charge_min_distance_km",
+    "missing_charge_consumption_history_days",
+    "missing_charge_consumption_min_segments",
 })
 
 # Range constraints: field → (min_value, allow_equal_to_min)

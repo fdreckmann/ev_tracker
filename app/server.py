@@ -650,6 +650,16 @@ def init_db():
                    ON missing_charge_candidates(vehicle_id, status)""")
     for _col, _typedef in [
         ("accepted_session_id", "INTEGER"),
+        ("candidate_type", "TEXT"),
+        ("expected_consumption_kwh_per_100km", "REAL"),
+        ("observed_consumption_kwh_per_100km", "REAL"),
+        ("expected_energy_kwh", "REAL"),
+        ("observed_energy_kwh", "REAL"),
+        ("estimated_missing_soc_percent", "REAL"),
+        ("expected_consumption_source", "TEXT"),
+        ("expected_consumption_confidence", "REAL"),
+        ("historical_sample_distance_km", "REAL"),
+        ("historical_sample_segments", "INTEGER"),
     ]:
         try:
             con.execute(f"ALTER TABLE missing_charge_candidates ADD COLUMN {_col} {_typedef}")
