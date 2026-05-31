@@ -108,34 +108,34 @@ jobs:
           echo "main_tag=${MAIN_TAG}"          >> "$GITHUB_OUTPUT"
 
       - name: Generate build-info.json
+        env:
+          BI_VERSION:   ${{ steps.tags.outputs.version }}
+          BI_CHANNEL:   ${{ steps.tags.outputs.channel }}
+          BI_BUILD_TS:  ${{ steps.tags.outputs.build_ts }}
+          BI_SHA:       ${{ github.sha }}
+          BI_SHA_SHORT: ${{ steps.tags.outputs.sha_short }}
+          BI_MAIN_TAG:  ${{ steps.tags.outputs.main_tag }}
+          BI_REF_NAME:  ${{ github.ref_name }}
+          BI_RUN_ID:    ${{ github.run_id }}
+          BI_REF:       ${{ github.ref }}
         run: |
-          python3 - <<'PYEOF'
-import json, sys
-version  = "${{ steps.tags.outputs.version }}"
-channel  = "${{ steps.tags.outputs.channel }}"
-build_ts = "${{ steps.tags.outputs.build_ts }}"
-sha      = "${{ github.sha }}"
-sha_short= "${{ steps.tags.outputs.sha_short }}"
-main_tag = "${{ steps.tags.outputs.main_tag }}"
-ref_name = "${{ github.ref_name }}"
-run_id   = "${{ github.run_id }}"
-ref      = "${{ github.ref }}"
-
-info = {
-    "version":       version,
-    "channel":       channel,
-    "branch":        ref_name,
-    "commit":        sha,
-    "commit_short":  sha_short,
-    "image_tag":     main_tag,
-    "build_utc":     build_ts,
-    "build_source":  "github_actions",
-    "github_run_id": run_id,
-    "github_ref":    ref,
-}
-json.dump(info, open("build-info.json", "w"), indent=2)
-print("build-info.json written:", json.dumps(info, indent=2))
-PYEOF
+          python3 -c "
+          import json, os
+          info = {
+              'version':       os.environ['BI_VERSION'],
+              'channel':       os.environ['BI_CHANNEL'],
+              'branch':        os.environ['BI_REF_NAME'],
+              'commit':        os.environ['BI_SHA'],
+              'commit_short':  os.environ['BI_SHA_SHORT'],
+              'image_tag':     os.environ['BI_MAIN_TAG'],
+              'build_utc':     os.environ['BI_BUILD_TS'],
+              'build_source':  'github_actions',
+              'github_run_id': os.environ['BI_RUN_ID'],
+              'github_ref':    os.environ['BI_REF'],
+          }
+          json.dump(info, open('build-info.json', 'w'), indent=2)
+          print('build-info.json written:', json.dumps(info, indent=2))
+          "
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
