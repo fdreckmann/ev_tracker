@@ -17,7 +17,8 @@ from pathlib import Path
 def _make_api_token(app, scopes=None):
     import secrets
     from core.db import _get_db, close_db_if_owned
-    from datetime import datetime
+    from datetime import datetime, timezone
+
     raw = "evtk_" + secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(raw.encode()).hexdigest()
     prefix = raw[:8]
@@ -29,7 +30,7 @@ def _make_api_token(app, scopes=None):
             (name, token_hash, token_prefix, scopes, is_active, created_at)
             VALUES (?,?,?,?,?,?)""",
             ("blocker-test", token_hash, prefix,
-             json.dumps(scopes), 1, datetime.utcnow().isoformat()))
+             json.dumps(scopes), 1, datetime.now(timezone.utc).replace(tzinfo=None).isoformat()))
         con.commit()
         close_db_if_owned(con)
     return raw

@@ -58,15 +58,17 @@ def api_save_config():
     if not has_permission(_current_user(), "settings:edit"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: settings:edit"}), 403
     data = request.json or {}
-    cfg  = load_config()
-    floats = {"battery_capacity_kwh","price_per_kwh_home","price_per_kwh_ac","price_per_kwh_dc",
-              "dc_threshold_kw","entsoe_ac_markup","entsoe_dc_markup","home_radius_m"}
-    ints = {"poll_interval"}
+    try:
+        from core.config_validator import validate_config_patch
+        data = validate_config_patch(data)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    cfg = load_config()
     # Build set of accepted keys: DEFAULT_CONFIG + current provider's field IDs
     accepted_keys = set(DEFAULT_CONFIG.keys())
     try:
         from providers import get_config_fields
-        provider_id = data.get("provider", cfg.get("provider","ha"))
+        provider_id = data.get("provider", cfg.get("provider", "ha"))
         for f in get_config_fields(provider_id):
             accepted_keys.add(f["id"])
     except Exception:
@@ -76,12 +78,6 @@ def api_save_config():
             v = data[key]
             if _is_masked(v):
                 continue  # never overwrite stored secret with the mask placeholder
-            if key in floats and v != "":
-                try: v = float(v)
-                except (ValueError, TypeError): pass
-            elif key in ints:
-                try: v = int(v)
-                except (ValueError, TypeError): pass
             cfg[key] = v
     save_config(cfg)
     if any(str(k).startswith("smtp_") for k in data):

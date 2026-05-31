@@ -144,8 +144,8 @@ async function loadExportTemplates(){
     div.style.cssText='display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:12px 14px';
     // Always show Load button; manage buttons only for export:templates_manage
     const manageBtns = canManage
-      ? `<button class="btn-g" style="font-size:.72rem;padding:5px 12px" onclick="setDefaultTemplate('${tid}')">★</button>
-         <button class="btn-d" style="font-size:.72rem;padding:5px 12px" onclick="deleteExportTemplate('${tid}')">✕</button>`
+      ? `<button class="btn-g" style="font-size:.72rem;padding:5px 12px" data-tid="${tid}" onclick="setDefaultTemplate(this.dataset.tid)">★</button>
+         <button class="btn-d" style="font-size:.72rem;padding:5px 12px" data-tid="${tid}" onclick="deleteExportTemplate(this.dataset.tid)">✕</button>`
       : '';
     div.innerHTML=`
       <div style="flex:1">
@@ -154,7 +154,7 @@ async function loadExportTemplates(){
           ${colCount} Spalten · ${cellCount} Einzelzellen ${defBadge}
         </div>
       </div>
-      <button class="btn-s" style="font-size:.72rem;padding:5px 12px" onclick="loadExportTemplate('${tid}')">📂 Laden</button>
+      <button class="btn-s" style="font-size:.72rem;padding:5px 12px" data-tid="${tid}" onclick="loadExportTemplate(this.dataset.tid)">📂 Laden</button>
       ${manageBtns}
     `;
     div.querySelector('div[style*="font-weight:700"]').textContent=t.name||'';

@@ -6,7 +6,8 @@ import os
 import re
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
+
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request, send_file
@@ -149,6 +150,11 @@ def api_update_vehicle(vid):
     }
     if vid == "v0":
         data = request.get_json(silent=True) or {}
+        # Validate provider before saving
+        if "provider" in data:
+            from providers import PROVIDERS as _PROVIDERS
+            if data["provider"] not in _PROVIDERS:
+                return jsonify({"ok": False, "error": f"Unbekannter Provider: {data['provider']}"}), 400
         cfg  = load_config()
         # Determine password fields for v0's provider
         try:
@@ -488,7 +494,7 @@ def api_delete_vehicle(vid):
             new_extras.append({**v,
                 "active": False,
                 "archived": True,
-                "deleted_at": datetime.utcnow().isoformat(timespec="seconds"),
+                "deleted_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds"),
             })
         else:
             new_extras.append(v)

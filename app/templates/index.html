@@ -3368,7 +3368,7 @@ async function testEntsoe(){
   const r=await apiFetch('/api/entsoe/test',{method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({entsoe_api_key:key})}).then(r=>r.json());
-  if(r.ok) res.innerHTML=`<span style="color:var(--acc)">✅ ${r.price_kwh.toFixed(4)} €/kWh (${r.price_mwh} €/MWh) — DE Spotpreis</span>`;
+  if(r.ok) res.innerHTML=`<span style="color:var(--acc)">✅ ${Number(r.price_kwh).toFixed(4)} €/kWh (${Number(r.price_mwh).toFixed(2)} €/MWh) — DE Spotpreis</span>`;
   else res.innerHTML=`<span style="color:var(--danger)">❌ ${escapeHtml(r.error||'')}</span>`;
 }
 
@@ -4655,8 +4655,8 @@ async function loadSignatureStatus(){
           <img src="/api/signature/image?t=${Date.now()}" alt="Unterschrift"
                style="max-height:60px;max-width:200px;border:1px solid var(--brd);border-radius:6px;background:#fff;padding:4px;object-fit:contain">
           <div style="font-size:.72rem;font-family:var(--mono);color:var(--mute)">
-            Quelle: ${src}<br>
-            ${r.created_at?'Erstellt: '+r.created_at.substring(0,10):''}
+            Quelle: ${escapeHtml(src)}<br>
+            ${r.created_at?'Erstellt: '+escapeHtml(String(r.created_at).substring(0,10)):''}
           </div>
         </div>`;
       const del = $('sigDelBtn');
@@ -5237,15 +5237,19 @@ async function loadPasskeys(){
       el.innerHTML='<div style="font-size:.73rem;font-family:var(--mono);color:var(--mute)">Keine Passkeys registriert</div>';
       return;
     }
-    el.innerHTML = r.credentials.map(c=>`
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(255,255,255,.04);border:1px solid var(--brd);border-radius:8px;margin-bottom:6px">
+    el.innerHTML = r.credentials.map(c=>{
+      const safeName    = escapeHtml(String(c.name || 'Unbenannter Passkey'));
+      const safeCreated = escapeHtml(String(c.created_at || '').substring(0,10));
+      const safeUsed    = c.last_used_at ? '· Zuletzt: ' + escapeHtml(String(c.last_used_at).substring(0,10)) : '';
+      const safeId      = parseInt(c.id, 10) || 0;
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(255,255,255,.04);border:1px solid var(--brd);border-radius:8px;margin-bottom:6px">
         <div>
-          <div style="font-size:.78rem;font-family:var(--mono);color:#fff">🔑 ${c.name}</div>
-          <div style="font-size:.68rem;font-family:var(--mono);color:var(--mute)">Erstellt: ${c.created_at?.substring(0,10)} ${c.last_used_at?'· Zuletzt: '+c.last_used_at.substring(0,10):''}</div>
+          <div style="font-size:.78rem;font-family:var(--mono);color:#fff">🔑 ${safeName}</div>
+          <div style="font-size:.68rem;font-family:var(--mono);color:var(--mute)">Erstellt: ${safeCreated} ${safeUsed}</div>
         </div>
-        <button onclick="deletePasskey(${c.id})" style="background:rgba(255,79,90,.1);border:1px solid rgba(255,79,90,.3);color:var(--danger);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.72rem">✕ Entfernen</button>
-      </div>
-    `).join('');
+        <button onclick="deletePasskey(${safeId})" style="background:rgba(255,79,90,.1);border:1px solid rgba(255,79,90,.3);color:var(--danger);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.72rem">✕ Entfernen</button>
+      </div>`;
+    }).join('');
   } catch(e){ console.error(e); }
 }
 
@@ -5328,14 +5332,14 @@ async function showWebAuthnConfig(){
     const r = await apiFetch('/api/auth/passkey/webauthn-config').then(x=>x.json());
     if(!r.ok){ box.textContent = r.error; box.style.display=''; return; }
     box.innerHTML = [
-      `<b>RP-ID:</b> ${r.webauthn_rp_id}`,
-      `<b>Origin:</b> ${r.webauthn_origin}`,
-      `<b>oauth_base_url:</b> ${r.oauth_base_url}`,
-      `<b>request.host:</b> ${r.request_host}`,
-      `<b>X-Forwarded-Proto:</b> ${r.x_forwarded_proto}`,
-      `<b>X-Forwarded-Host:</b> ${r.x_forwarded_host}`,
+      `<b>RP-ID:</b> ${escapeHtml(String(r.webauthn_rp_id||''))}`,
+      `<b>Origin:</b> ${escapeHtml(String(r.webauthn_origin||''))}`,
+      `<b>oauth_base_url:</b> ${escapeHtml(String(r.oauth_base_url||''))}`,
+      `<b>request.host:</b> ${escapeHtml(String(r.request_host||''))}`,
+      `<b>X-Forwarded-Proto:</b> ${escapeHtml(String(r.x_forwarded_proto||''))}`,
+      `<b>X-Forwarded-Host:</b> ${escapeHtml(String(r.x_forwarded_host||''))}`,
       `<b>Reverse-Proxy-Modus:</b> ${r.reverse_proxy_mode ? 'Ja' : 'Nein'}`,
-      `<span style="color:var(--acc)">${r.hint}</span>`,
+      `<span style="color:var(--acc)">${escapeHtml(String(r.hint||''))}</span>`,
     ].join('<br>');
     box.style.display = '';
   } catch(e){ box.textContent = e.message; box.style.display=''; }
@@ -5497,7 +5501,7 @@ async function loadUserList(){
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
         ${(u.status==='invited'||!u.totp_enabled)?`<button class="btn-s" style="font-size:.72rem;padding:5px 10px" onclick="inviteUser(${u.id})">✉ Einladen</button>`:''}
-        ${hasPermission('users:manage_permissions')?`<button onclick="openUserRolesModal(${u.id},${JSON.stringify(u.name||'')})" style="padding:4px 8px;border-radius:4px;background:#1a3d6e;border:none;color:#64ffda;cursor:pointer;font-size:11px">🔑 Rollen</button>`:''}
+        ${hasPermission('users:manage_permissions')?`<button data-uid="${u.id}" data-uname="${escapeHtml(u.name||'')}" onclick="openUserRolesModal(+this.dataset.uid,this.dataset.uname)" style="padding:4px 8px;border-radius:4px;background:#1a3d6e;border:none;color:#64ffda;cursor:pointer;font-size:11px">🔑 Rollen</button>`:''}
         <button class="btn-s" style="font-size:.72rem;padding:5px 12px" onclick="openEditUserModal(${u.id})">✏ Bearbeiten</button>
       </div>
     </div>
@@ -7554,8 +7558,8 @@ function renderPermissionsCheckboxes(checkedPerms) {
     <div style="margin-bottom:16px">
       <div style="font-weight:600;color:#64ffda;margin-bottom:8px;font-size:12px;text-transform:uppercase;letter-spacing:0.5px">
         ${escRoles(group.name)}
-        <button onclick="selectAllGroupPerms('${escRoles(group.name).replace(/'/g,'&apos;')}')" style="margin-left:8px;padding:2px 6px;font-size:10px;background:#1a3d6e;border:none;color:#64ffda;border-radius:3px;cursor:pointer">Alle</button>
-        <button onclick="deselectAllGroupPerms('${escRoles(group.name).replace(/'/g,'&apos;')}')" style="padding:2px 6px;font-size:10px;background:#2d3147;border:none;color:#8892b0;border-radius:3px;cursor:pointer">Keine</button>
+        <button data-group="${escRoles(group.name)}" onclick="selectAllGroupPerms(this.dataset.group)" style="margin-left:8px;padding:2px 6px;font-size:10px;background:#1a3d6e;border:none;color:#64ffda;border-radius:3px;cursor:pointer">Alle</button>
+        <button data-group="${escRoles(group.name)}" onclick="deselectAllGroupPerms(this.dataset.group)" style="padding:2px 6px;font-size:10px;background:#2d3147;border:none;color:#8892b0;border-radius:3px;cursor:pointer">Keine</button>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
         ${(group.permissions||[]).map(p => `

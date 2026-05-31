@@ -4,7 +4,8 @@ User management and profile routes.
 import hashlib
 import secrets
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
 
 from flask import Blueprint, jsonify, request, session, url_for
 
@@ -43,7 +44,7 @@ def api_create_user():
     invite_mode = not pw  # no password → create as invited
     if not name or not email:
         return jsonify({"ok": False, "error": "Name und E-Mail erforderlich"})
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     try:
         con = _get_db()
         if invite_mode:
@@ -78,7 +79,7 @@ def api_update_user(uid):
     user = _get_user_by_id(uid)
     if not user:
         return jsonify({"ok": False, "error": "Nicht gefunden"}), 404
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     con = _get_db()
     for field in ("name","role","status"):
         if field in data:
@@ -108,7 +109,7 @@ def api_delete_user(uid):
 def api_admin_reset_2fa(uid):
     if not has_permission(_current_user(), "users:manage_2fa"):
         return jsonify({"error": "Keine Berechtigung: users:manage_2fa"}), 403
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     con = _get_db()
     con.execute("UPDATE users SET totp_secret='',totp_enabled=0,updated_at=? WHERE id=?", (now, uid))
     con.commit(); close_db_if_owned(con)
@@ -126,7 +127,7 @@ def api_invite_user(uid):
         return jsonify({"ok": False, "error": "Benutzer nicht gefunden"}), 404
     token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(token.encode()).hexdigest()
-    now_dt = datetime.utcnow()
+    now_dt = datetime.now(timezone.utc).replace(tzinfo=None)
     expires = (now_dt + timedelta(hours=48)).isoformat()
     con = _get_db()
     # Invalidate old invite tokens
@@ -176,7 +177,7 @@ def api_change_password():
     pw_err = _password_ok(new_pw)
     if pw_err:
         return jsonify({"ok": False, "error": pw_err})
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     con = _get_db()
     con.execute("UPDATE users SET password_hash=?,updated_at=? WHERE id=?",
                 (_hash_password(new_pw), now, user["id"]))
@@ -205,7 +206,7 @@ def api_my_totp_confirm():
     import pyotp
     if not pyotp.TOTP(secret).verify(code, valid_window=1):
         return jsonify({"ok": False, "error": "Ungültiger Code — bitte erneut versuchen"})
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     con = _get_db()
     con.execute("UPDATE users SET totp_secret=?,totp_enabled=1,updated_at=? WHERE id=?",
                 (secret, now, user["id"]))
@@ -219,7 +220,7 @@ def api_my_totp_disable():
     user = _current_user()
     if not user:
         return jsonify({"error": "Nicht eingeloggt"}), 401
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     con = _get_db()
     con.execute("UPDATE users SET totp_secret='',totp_enabled=0,updated_at=? WHERE id=?",
                 (now, user["id"]))
@@ -235,7 +236,7 @@ def api_generate_backup_codes():
         return jsonify({"error": "Nicht eingeloggt"}), 401
     raw_codes = [secrets.token_hex(4).upper() for _ in range(8)]
     formatted = [f"{c[:4]}-{c[4:]}" for c in raw_codes]
-    now_iso = datetime.utcnow().isoformat()
+    now_iso = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     con = _get_db()
     con.execute("DELETE FROM totp_backup_codes WHERE user_id=?", (user["id"],))
     for code in raw_codes:

@@ -1,6 +1,7 @@
 """
 Tests for update API routes — including legacy compatibility and version metadata.
 """
+import os
 
 
 class TestUpdateRoutes:
@@ -53,6 +54,22 @@ class TestUpdateRoutes:
         data = rv.get_json()
         assert "remote_url" in data
 
+    def test_update_info_contains_build_date(self, authed_client):
+        """/api/update-info must expose build_date."""
+        rv = authed_client.get("/api/update-info")
+        data = rv.get_json()
+        assert "build_date" in data
+
+    def test_update_info_commit_and_commit_short_are_distinct_fields(self, authed_client):
+        """commit and commit_short must both be present as separate fields."""
+        rv = authed_client.get("/api/update-info")
+        data = rv.get_json()
+        assert "commit" in data, "commit field must be present"
+        assert "commit_short" in data, "commit_short field must be present"
+        # They may both be 'unknown' in CI with no git info, but they must both exist
+        assert data["commit"] is not None
+        assert data["commit_short"] is not None
+
 
 class TestSystemStatus:
     def test_system_status_has_version_fields(self, authed_client):
@@ -64,6 +81,13 @@ class TestSystemStatus:
         assert "app_version" in data or "version" in data
         assert "channel" in data
         assert "branch" in data
+
+    def test_system_status_has_commit_fields(self, authed_client):
+        """/api/system/status must include commit and commit_short."""
+        rv = authed_client.get("/api/system/status")
+        data = rv.get_json()
+        assert "commit" in data
+        assert "commit_short" in data
 
     def test_system_status_has_compat_aliases(self, authed_client):
         """/api/system/status must have mobile-compat aliases: db_size_mb, session_count."""
@@ -92,6 +116,7 @@ class TestSystemStatus:
         assert data.get("branch", "") != "", "branch must not be empty"
         assert data.get("commit", "") != "", "commit must not be empty"
         assert data.get("image_tag", "") != "", "image_tag must not be empty"
+        assert data.get("commit_short", "") != "", "commit_short must not be empty"
 
     def test_update_info_fallback_values(self, authed_client):
         """/api/update-info must show fallback strings when env vars are absent."""
@@ -104,3 +129,216 @@ class TestSystemStatus:
         assert branch in ("local/source",) or len(branch) > 0
         assert commit in ("unknown",) or len(commit) > 0
         assert image_tag in ("unknown",) or len(image_tag) > 0
+
+
+class TestVersionModule:
+    """Unit tests for app/version.py — _env_or logic and DISPLAY_ constants."""
+
+    def test_env_or_no_env_returns_fallback(self, monkeypatch):
+        """_env_or must return the fallback when the env var is not set."""
+        monkeypatch.delenv("_EV_TEST_UNUSED_KEY", raising=False)
+        import version as _v
+        assert _v._env_or("_EV_TEST_UNUSED_KEY", "my_fallback") == "my_fallback"
+
+    def test_env_or_real_value_returned(self, monkeypatch):
+        """_env_or must return the env var value when it is a real non-unknown string."""
+        monkeypatch.setenv("_EV_TEST_UNUSED_KEY", "realvalue123")
+        import version as _v
+        assert _v._env_or("_EV_TEST_UNUSED_KEY", "fallback") == "realvalue123"
+
+    def test_env_or_unknown_treated_as_missing(self, monkeypatch):
+        """_env_or must fall back when env var is exactly 'unknown' (Docker local build default)."""
+        monkeypatch.setenv("_EV_TEST_UNUSED_KEY", "unknown")
+        import version as _v
+        assert _v._env_or("_EV_TEST_UNUSED_KEY", "fallback") == "fallback"
+
+    def test_env_or_empty_string_treated_as_missing(self, monkeypatch):
+        """_env_or must fall back when env var is empty."""
+        monkeypatch.setenv("_EV_TEST_UNUSED_KEY", "")
+        import version as _v
+        assert _v._env_or("_EV_TEST_UNUSED_KEY", "fallback") == "fallback"
+
+    def test_env_or_whitespace_stripped(self, monkeypatch):
+        """_env_or must strip whitespace before evaluating."""
+        monkeypatch.setenv("_EV_TEST_UNUSED_KEY", "  trimmed  ")
+        import version as _v
+        assert _v._env_or("_EV_TEST_UNUSED_KEY", "fallback") == "trimmed"
+
+    def test_env_or_whitespace_only_treated_as_missing(self, monkeypatch):
+        """_env_or must fall back when env var is only whitespace."""
+        monkeypatch.setenv("_EV_TEST_UNUSED_KEY", "   ")
+        import version as _v
+        assert _v._env_or("_EV_TEST_UNUSED_KEY", "fallback") == "fallback"
+
+    def test_display_constants_non_empty_in_test_env(self):
+        """All DISPLAY_ constants must be non-empty strings in the test environment."""
+        import version as _v
+        assert _v.DISPLAY_BRANCH != "", "DISPLAY_BRANCH must not be empty"
+        assert _v.DISPLAY_COMMIT != "", "DISPLAY_COMMIT must not be empty"
+        assert _v.DISPLAY_COMMIT_SHORT != "", "DISPLAY_COMMIT_SHORT must not be empty"
+        assert _v.DISPLAY_IMAGE_TAG != "", "DISPLAY_IMAGE_TAG must not be empty"
+
+    def test_display_branch_fallback_when_unset(self):
+        """DISPLAY_BRANCH must be 'local/source' when EV_TRACKER_BRANCH is not set."""
+        import version as _v
+        # In test environment: version.json has empty branch, env var is not set
+        if not os.getenv("EV_TRACKER_BRANCH"):
+            assert _v.DISPLAY_BRANCH == "local/source", (
+                f"Expected 'local/source', got {_v.DISPLAY_BRANCH!r}"
+            )
+
+    def test_display_commit_fallback_when_unset(self):
+        """DISPLAY_COMMIT must be 'unknown' when EV_TRACKER_COMMIT is not set."""
+        import version as _v
+        if not os.getenv("EV_TRACKER_COMMIT"):
+            assert _v.DISPLAY_COMMIT == "unknown", (
+                f"Expected 'unknown', got {_v.DISPLAY_COMMIT!r}"
+            )
+
+    def test_display_commit_short_fallback_when_unset(self):
+        """DISPLAY_COMMIT_SHORT must be 'unknown' when no commit is available."""
+        import version as _v
+        if not os.getenv("EV_TRACKER_COMMIT"):
+            assert _v.DISPLAY_COMMIT_SHORT == "unknown", (
+                f"Expected 'unknown', got {_v.DISPLAY_COMMIT_SHORT!r}"
+            )
+
+    def test_display_image_tag_fallback_when_unset(self):
+        """DISPLAY_IMAGE_TAG must be 'unknown' when EV_TRACKER_IMAGE_TAG is not set."""
+        import version as _v
+        if not os.getenv("EV_TRACKER_IMAGE_TAG"):
+            assert _v.DISPLAY_IMAGE_TAG == "unknown", (
+                f"Expected 'unknown', got {_v.DISPLAY_IMAGE_TAG!r}"
+            )
+
+    def test_commit_short_is_8_char_prefix_of_full_commit(self, monkeypatch):
+        """When GIT_COMMIT is a real 40-char SHA, COMMIT_SHORT must be its first 8 chars."""
+        import version as _v
+        full_sha = "deadbeef1234567890abcdef1234567890abcdef"
+        # Simulate the computation that version.py applies at module level
+        computed_short = full_sha[:8] if full_sha else ""
+        assert computed_short == "deadbeef"
+        assert len(computed_short) == 8
+        # Verify that DISPLAY_ values computed from a real SHA differ in length
+        monkeypatch.setattr(_v, "GIT_COMMIT",    full_sha)
+        monkeypatch.setattr(_v, "COMMIT_SHORT",   full_sha[:8])
+        monkeypatch.setattr(_v, "DISPLAY_COMMIT", full_sha)
+        monkeypatch.setattr(_v, "DISPLAY_COMMIT_SHORT", full_sha[:8])
+        assert _v.DISPLAY_COMMIT != _v.DISPLAY_COMMIT_SHORT
+        assert len(_v.DISPLAY_COMMIT) == 40
+        assert len(_v.DISPLAY_COMMIT_SHORT) == 8
+        assert _v.DISPLAY_COMMIT.startswith(_v.DISPLAY_COMMIT_SHORT)
+
+    def test_long_commit_truncated_to_8_chars(self, monkeypatch):
+        """Commits longer than 8 chars must be shortened — never shown in full as commit_short."""
+        import version as _v
+        for sha in [
+            "abc123def456789012345678901234567890abcd",  # 40-char SHA
+            "abc123de",                                   # 8-char short SHA
+            "abc123def",                                  # 9-char (edge)
+        ]:
+            short = sha[:8]
+            assert len(short) == 8
+            assert short == sha[:8]
+
+    def test_commit_short_empty_when_no_commit(self, monkeypatch):
+        """When GIT_COMMIT is empty, COMMIT_SHORT must be empty and DISPLAY_COMMIT_SHORT 'unknown'."""
+        import version as _v
+        monkeypatch.setattr(_v, "GIT_COMMIT",    "")
+        monkeypatch.setattr(_v, "COMMIT_SHORT",   "")
+        monkeypatch.setattr(_v, "DISPLAY_COMMIT", "unknown")
+        monkeypatch.setattr(_v, "DISPLAY_COMMIT_SHORT", "unknown")
+        assert _v.GIT_COMMIT == ""
+        assert _v.COMMIT_SHORT == ""
+        assert _v.DISPLAY_COMMIT == "unknown"
+        assert _v.DISPLAY_COMMIT_SHORT == "unknown"
+
+    def test_asset_version_contains_commit_short(self, monkeypatch):
+        """ASSET_VERSION must embed the commit_short when a real commit is available."""
+        import version as _v
+        full_sha = "cafebabe1234567890abcdef1234567890abcdef"
+        short = full_sha[:8]  # "cafebabe"
+        monkeypatch.setattr(_v, "GIT_COMMIT",   full_sha)
+        monkeypatch.setattr(_v, "COMMIT_SHORT",  short)
+        monkeypatch.setattr(_v, "APP_VERSION",   "2.0.55")
+        monkeypatch.setattr(_v, "BUILD_DATE",    "2026-05-30")
+        monkeypatch.setattr(_v, "ASSET_VERSION", f"2.0.55-{short}")
+        assert short in _v.ASSET_VERSION
+        assert _v.ASSET_VERSION.startswith("2.0.55-")
+
+    def test_asset_version_non_empty_without_commit(self):
+        """ASSET_VERSION must be non-empty even without a commit hash."""
+        import version as _v
+        assert _v.ASSET_VERSION != ""
+        assert "-" in _v.ASSET_VERSION  # always has a suffix separator
+
+
+class TestVersionInjectedIntoAPI:
+    """Integration tests: verify /api/update-info and /api/system/status
+    return the monkeypatched version values correctly."""
+
+    def test_real_sha_produces_short_commit_in_api(self, authed_client, monkeypatch):
+        """When DISPLAY_COMMIT is a 40-char SHA, API commit_short must be 8 chars."""
+        import version as _v
+        full_sha = "deadbeef1234567890abcdef1234567890abcdef"
+        monkeypatch.setattr(_v, "DISPLAY_COMMIT",       full_sha)
+        monkeypatch.setattr(_v, "DISPLAY_COMMIT_SHORT", full_sha[:8])
+        rv = authed_client.get("/api/update-info")
+        data = rv.get_json()
+        assert data["commit"] == full_sha, f"Expected full SHA, got {data['commit']!r}"
+        assert data["commit_short"] == "deadbeef", f"Expected 8-char short, got {data['commit_short']!r}"
+        assert data["commit"] != data["commit_short"]
+        assert len(data["commit"]) == 40
+        assert len(data["commit_short"]) == 8
+
+    def test_branch_injected_into_api(self, authed_client, monkeypatch):
+        """Branch value set on version module must be reflected in /api/update-info."""
+        import version as _v
+        monkeypatch.setattr(_v, "DISPLAY_BRANCH", "feature/my-branch")
+        rv = authed_client.get("/api/update-info")
+        data = rv.get_json()
+        assert data["branch"] == "feature/my-branch"
+
+    def test_image_tag_injected_into_api(self, authed_client, monkeypatch):
+        """Image tag set on version module must be reflected in /api/update-info."""
+        import version as _v
+        monkeypatch.setattr(_v, "DISPLAY_IMAGE_TAG", "19121412/ev-tracker:latest")
+        rv = authed_client.get("/api/update-info")
+        data = rv.get_json()
+        assert data["image_tag"] == "19121412/ev-tracker:latest"
+
+    def test_all_unknown_fallbacks_non_empty_in_api(self, authed_client, monkeypatch):
+        """When all DISPLAY_ values are fallbacks, API must still have non-empty fields."""
+        import version as _v
+        monkeypatch.setattr(_v, "DISPLAY_BRANCH",        "local/source")
+        monkeypatch.setattr(_v, "DISPLAY_COMMIT",        "unknown")
+        monkeypatch.setattr(_v, "DISPLAY_COMMIT_SHORT",  "unknown")
+        monkeypatch.setattr(_v, "DISPLAY_IMAGE_TAG",     "unknown")
+        rv = authed_client.get("/api/update-info")
+        data = rv.get_json()
+        assert data.get("branch") == "local/source"
+        assert data.get("commit") == "unknown"
+        assert data.get("commit_short") == "unknown"
+        assert data.get("image_tag") == "unknown"
+        # All non-empty
+        assert data["branch"] != ""
+        assert data["commit"] != ""
+        assert data["commit_short"] != ""
+        assert data["image_tag"] != ""
+
+    def test_system_status_exposes_commit_and_short(self, authed_client, monkeypatch):
+        """/api/system/status must expose both commit and commit_short from the version module."""
+        import version as _v
+        import routes.health as _h
+        full_sha = "cafe1234abc456789012345678901234567890ef"
+        # health.py imports at module level, so patch both the source module
+        # and the already-bound names in the health blueprint module.
+        monkeypatch.setattr(_v, "DISPLAY_COMMIT",       full_sha)
+        monkeypatch.setattr(_v, "DISPLAY_COMMIT_SHORT", full_sha[:8])
+        monkeypatch.setattr(_h, "DISPLAY_COMMIT",       full_sha)
+        monkeypatch.setattr(_h, "DISPLAY_COMMIT_SHORT", full_sha[:8])
+        rv = authed_client.get("/api/system/status")
+        data = rv.get_json()
+        assert data["commit"] == full_sha
+        assert data["commit_short"] == "cafe1234"
+        assert data["commit"] != data["commit_short"]

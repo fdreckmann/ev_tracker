@@ -2,7 +2,8 @@
 Report archive, creation, download, send and approval routes.
 """
 import json
-from datetime import datetime
+from datetime import datetime, timezone
+
 from io import BytesIO
 
 from flask import Blueprint, jsonify, request, Response
@@ -291,7 +292,7 @@ def api_report_send(report_id):
                 load_config(), db_path=DB_PATH)
         except Exception: pass
         return jsonify({"ok": False, "error": "; ".join(errors)})
-    now_iso = datetime.utcnow().isoformat()
+    now_iso = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     _con = _get_db()
     _con.execute("UPDATE reports SET status='sent', sent_at=?, recipients=? WHERE id=?",
                  (now_iso, json.dumps(recipients), report_id))

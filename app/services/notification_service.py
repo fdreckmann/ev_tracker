@@ -21,7 +21,8 @@ import json
 import logging
 import threading
 import time
-from datetime import datetime, time as dtime
+from datetime import datetime, time as dtime, timezone
+
 
 log = logging.getLogger(__name__)
 
@@ -133,7 +134,7 @@ def _notify_sync(
 
     cfg = load_config()
     con = _get_db()
-    now_iso = datetime.utcnow().isoformat(timespec="seconds")
+    now_iso = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
 
     try:
         # Per-event-type kill switch
@@ -182,7 +183,7 @@ def _notify_sync(
                                                   vehicle_id, data or {}, action_url)
 
         sent_any = any(v for v in channel_results.values())
-        now_sent = datetime.utcnow().isoformat(timespec="seconds")
+        now_sent = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
         status = "sent" if (sent_any or not channel_results) else "failed"
         if quiet:
             status = "pending"  # kept in inbox, not sent

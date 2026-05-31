@@ -1,5 +1,6 @@
 """Missing charge candidate API routes."""
-from datetime import datetime
+from datetime import datetime, timezone
+
 
 from flask import Blueprint, jsonify, request
 
@@ -71,7 +72,7 @@ def api_dismiss_missing_charge(cid):
     user = _current_user()
     if not has_permission(user, "sessions:manual_add"):
         return jsonify({"error": "Keine Berechtigung: sessions:manual_add"}), 403
-    now = datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
     con = _get_db()
     updated = con.execute(
         "UPDATE missing_charge_candidates SET status='dismissed',updated_at=? WHERE id=? AND status='open'",
@@ -92,7 +93,7 @@ def api_ignore_missing_charge(cid):
     user = _current_user()
     if not has_permission(user, "sessions:manual_add"):
         return jsonify({"error": "Keine Berechtigung: sessions:manual_add"}), 403
-    now = datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
     con = _get_db()
     updated = con.execute(
         "UPDATE missing_charge_candidates SET status='ignored',updated_at=? WHERE id=?",
@@ -121,7 +122,7 @@ def api_accept_missing_charge(cid):
         close_db_if_owned(con)
         return jsonify({"error": "Nicht gefunden"}), 404
     candidate = _row_to_dict(row, cur)
-    now = datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
     # Mark as in_review — becomes 'accepted' only when the manual session is actually saved.
     # This prevents ghost acceptances if the user closes the dialog without saving.
     con.execute(

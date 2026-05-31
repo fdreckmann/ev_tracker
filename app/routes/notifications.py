@@ -1,7 +1,8 @@
 """
 Notification rules routes + inbox API + settings API.
 """
-from datetime import datetime
+from datetime import datetime, timezone
+
 
 from flask import Blueprint, jsonify, request
 
@@ -31,7 +32,7 @@ def api_notif_rules_create():
     if not has_permission(_current_user(), "notifications:configure"):
         return jsonify({"error": "Keine Berechtigung"}), 403
     data = request.get_json(force=True) or {}
-    now_iso = datetime.utcnow().isoformat()
+    now_iso = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     con = _get_db()
     cur = con.execute("""INSERT INTO notification_rules
         (name,enabled,event_type,channel,vehicle_filter,user_filter,recipient,
@@ -62,7 +63,7 @@ def api_notif_rules_update(rule_id):
     if not has_permission(_current_user(), "notifications:configure"):
         return jsonify({"error": "Keine Berechtigung"}), 403
     data = request.get_json(force=True) or {}
-    now_iso = datetime.utcnow().isoformat()
+    now_iso = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     allowed = {"name", "enabled", "event_type", "channel", "vehicle_filter", "user_filter",
                "recipient", "threshold", "quiet_hours_enabled", "quiet_hours_start", "quiet_hours_end"}
     updates = {k: v for k, v in data.items() if k in allowed}

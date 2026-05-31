@@ -1,7 +1,8 @@
 """
 Signature management routes.
 """
-from datetime import datetime
+from datetime import datetime, timezone
+
 from flask import Blueprint, jsonify, request, send_file
 
 from core.db import _get_db, close_db_if_owned, DATA_DIR
@@ -80,7 +81,7 @@ def api_signature_upload():
     except Exception as e:
         return jsonify({"ok": False, "error": f"Bildverarbeitung fehlgeschlagen: {e}"}), 500
     cfg = load_config()
-    cfg["signature"] = {"source": "upload", "created_at": datetime.utcnow().isoformat()}
+    cfg["signature"] = {"source": "upload", "created_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}
     save_config(cfg)
     _audit("signature_upload", ip=request.remote_addr)
     return jsonify({"ok": True})
@@ -113,7 +114,7 @@ def api_signature_draw():
     except Exception as e:
         return jsonify({"ok": False, "error": f"Fehler beim Speichern: {e}"}), 500
     cfg = load_config()
-    cfg["signature"] = {"source": "draw", "created_at": datetime.utcnow().isoformat()}
+    cfg["signature"] = {"source": "draw", "created_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat()}
     save_config(cfg)
     _audit("signature_draw", ip=request.remote_addr)
     return jsonify({"ok": True})

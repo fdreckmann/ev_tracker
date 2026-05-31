@@ -293,7 +293,7 @@ function renderTbl(el, rows, showDel = true) {
         <button onclick="event.stopPropagation();editCost(${r.id},${r.kwh_charged || 0},${r.price_per_kwh || 0})"
           style="background:rgba(0,180,255,.12);color:#00b4ff;border:1px solid rgba(0,180,255,.25);
           border-radius:6px;padding:3px 8px;font-size:.65rem;cursor:pointer" title="Kosten bearbeiten">✎</button>
-        <button onclick="event.stopPropagation();editLocation(${r.id},${JSON.stringify(r.location||'unknown')})"
+        <button data-sid="${r.id}" data-loc="${escapeHtml(r.location||'unknown')}" onclick="event.stopPropagation();editLocation(+this.dataset.sid,this.dataset.loc)"
           style="background:rgba(61,220,151,.12);color:#3ddc97;border:1px solid rgba(61,220,151,.25);
           border-radius:6px;padding:3px 8px;font-size:.65rem;cursor:pointer" title="Standort ändern">📍</button>
         <button onclick="event.stopPropagation();delSession(${r.id})"

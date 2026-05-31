@@ -14,7 +14,8 @@ Usage:
 import functools
 import hashlib
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
+
 
 import flask
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -376,7 +377,7 @@ def _audit(action: str, details: str = "", ip: str = "") -> None:
         con = _get_db()
         con.execute(
             "INSERT INTO audit_log (ts, action, details, ip, user_id) VALUES (?,?,?,?,?)",
-            (datetime.utcnow().isoformat(), action, details.strip(), ip, uid))
+            (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), action, details.strip(), ip, uid))
         con.commit()
         close_db_if_owned(con)
     except Exception:

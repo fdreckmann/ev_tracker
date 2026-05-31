@@ -1,4 +1,4 @@
-import os, sys, sqlite3, shutil, json, re
+import os, sys, sqlite3, shutil, json, re, copy
 import re as _re_formula
 
 _RE_RANGE_FORMULA = re.compile(r'[A-Za-z]+\d+:[A-Za-z]+\d+')
@@ -78,7 +78,7 @@ def _detect_footer_start_row(ws, ds, max_row, col_map):
     if footer_rows:
         return min(footer_rows)
     return max_row + 1     # no footer detected
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import openpyxl
 from openpyxl.cell.cell import MergedCell
@@ -466,6 +466,7 @@ def to_row(s, idx, lang="de"):
         "charger_type": charger_type,
         "price_source":          s.get("price_source"),
         "charging_contract_name": s.get("charging_contract_name"),
+        "charging_contract_id":  s.get("charging_contract_id"),
     }
     # Calculate charge_power_kw = kwh / duration_h
     kwh = s.get("kwh_charged")
@@ -548,7 +549,8 @@ def compute_header_values(sessions, year, month, header_info=None, lang="de"):
     ext_kwh    = sum(s.get("kwh_charged") or 0 for s in ext_s)
     home_cost  = sum(s.get("cost_eur")    or 0 for s in home_s)
     ext_cost   = sum(s.get("cost_eur")    or 0 for s in ext_s)
-    total_kwh  = home_kwh + ext_kwh
+    total_kwh  = sum(s.get("kwh_charged") or 0 for s in sessions)
+    total_cost = sum(s.get("cost_eur")    or 0 for s in sessions)
     n = len(sessions)
     # Sum per-session km differences where both odo values are present
     total_km = 0
@@ -586,7 +588,7 @@ def compute_header_values(sessions, year, month, header_info=None, lang="de"):
     # Localized month name and period
     month_name = MONTH_NAMES.get(lang, MONTH_NAMES["de"])[month]
     month_year = f"{month_name} {year}"
-    _now_utc = datetime.utcnow()
+    _now_utc = datetime.now(timezone.utc)
     export_date_str = _now_utc.strftime(DATE_FORMATS.get(lang, "%d.%m.%Y"))
     last_day = _cal.monthrange(year, month)[1]
     if lang == "en":
@@ -605,7 +607,7 @@ def compute_header_values(sessions, year, month, header_info=None, lang="de"):
         "export_period":            export_period,
         "total_sessions":           n,
         "total_kwh":                round(total_kwh, 2),
-        "total_cost":               home_cost + ext_cost,
+        "total_cost":               total_cost,
         "total_home_kwh":           home_kwh,
         "total_external_kwh":       ext_kwh,
         "total_home_cost":          home_cost,
@@ -799,10 +801,10 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
             c = ws.cell(row=ds, column=ci)
             try:
                 tstyles[ci] = {
-                    "font":      c.font.copy()      if c.font      else None,
-                    "fill":      c.fill.copy()      if c.fill      else None,
-                    "border":    c.border.copy()    if c.border    else None,
-                    "alignment": c.alignment.copy() if c.alignment else None,
+                    "font":      copy.copy(c.font)      if c.font      else None,
+                    "fill":      copy.copy(c.fill)      if c.fill      else None,
+                    "border":    copy.copy(c.border)    if c.border    else None,
+                    "alignment": copy.copy(c.alignment) if c.alignment else None,
                 }
             except Exception:
                 pass
@@ -841,10 +843,10 @@ def export_with_template(year, month, sessions, location, col_override=None, sta
             try:
                 _c = ws.cell(row=style_row, column=ci)
                 _rstyles[ci] = {
-                    "font":          _c.font.copy()      if _c.font      else None,
-                    "fill":          _c.fill.copy()      if _c.fill      else None,
-                    "border":        _c.border.copy()    if _c.border    else None,
-                    "alignment":     _c.alignment.copy() if _c.alignment else None,
+                    "font":          copy.copy(_c.font)      if _c.font      else None,
+                    "fill":          copy.copy(_c.fill)      if _c.fill      else None,
+                    "border":        copy.copy(_c.border)    if _c.border    else None,
+                    "alignment":     copy.copy(_c.alignment) if _c.alignment else None,
                     "number_format": _c.number_format,
                 }
             except Exception:
@@ -1184,7 +1186,8 @@ def export_builtin(year, month, sessions, location, config=None, lang="de"):
     home_cost = sum(s.get("cost_eur")    or 0 for s in home_s)
     ext_cost  = sum(s.get("cost_eur")    or 0 for s in ext_s)
     total_km  = ((sessions[-1].get("odo_end") or 0) - (sessions[0].get("odo_start") or 0)) if n else 0
-    total_kwh = home_kwh + ext_kwh
+    total_kwh = sum(s.get("kwh_charged") or 0 for s in sessions)
+    total_cost_all = sum(s.get("cost_eur") or 0 for s in sessions)
     verbrauch = round(total_kwh / total_km * 100, 1) if total_km > 0 else None
     hv2 = compute_header_values(sessions, year, month, lang=lang)
     total_h_val = round(hv2.get("total_charging_hours") or 0, 2)
@@ -1198,7 +1201,7 @@ def export_builtin(year, month, sessions, location, config=None, lang="de"):
             ("Total kWh",               total_kwh,      '0.00 "kWh"'),
             (f"  🏠 {t_export('home', lang)} kWh", home_kwh, '0.00 "kWh"'),
             (f"  ⚡ {t_export('external', lang)} kWh", ext_kwh, '0.00 "kWh"'),
-            ("Total cost",              home_cost+ext_cost, "€#,##0.00"),
+            ("Total cost",              total_cost_all, "€#,##0.00"),
             (f"  🏠 {t_export('home', lang)} cost", home_cost, "€#,##0.00"),
             ("Odometer start",          sessions[0].get("odo_start") if n else "-", '#,##0 "km"'),
             ("Odometer end",            sessions[-1].get("odo_end")  if n else "-", '#,##0 "km"'),
@@ -1216,7 +1219,7 @@ def export_builtin(year, month, sessions, location, config=None, lang="de"):
             ("Gesamt kWh",              total_kwh,      '0.00 "kWh"'),
             (f"  🏠 Zuhause kWh",       home_kwh,       '0.00 "kWh"'),
             (f"  ⚡ Extern kWh",        ext_kwh,        '0.00 "kWh"'),
-            ("Gesamtkosten",            home_cost+ext_cost, "€#,##0.00"),
+            ("Gesamtkosten",            total_cost_all, "€#,##0.00"),
             (f"  🏠 Zuhause Kosten",    home_cost,      "€#,##0.00"),
             ("KM Monatsanfang",         sessions[0].get("odo_start") if n else "-", '#,##0 "km"'),
             ("KM Monatsende",           sessions[-1].get("odo_end")  if n else "-", '#,##0 "km"'),

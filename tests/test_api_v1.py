@@ -3,7 +3,8 @@ Tests for API v1 token-authenticated endpoints.
 """
 import hashlib
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
 
 
 def _create_token(app, scopes=None):
@@ -22,7 +23,7 @@ def _create_token(app, scopes=None):
             (name, token_hash, token_prefix, scopes, is_active, created_at)
             VALUES (?,?,?,?,?,?)""",
             ("test-token", token_hash, prefix,
-             json.dumps(scopes), 1, datetime.utcnow().isoformat()))
+             json.dumps(scopes), 1, datetime.now(timezone.utc).replace(tzinfo=None).isoformat()))
         con.commit()
         close_db_if_owned(con)
     return raw

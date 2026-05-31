@@ -2,7 +2,8 @@
 Admin dashboard and audit log routes.
 """
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
 
 from flask import Blueprint, jsonify, request
 
@@ -21,8 +22,8 @@ def api_admin_dashboard():
     active  = con.execute("SELECT COUNT(*) FROM users WHERE status='active'").fetchone()[0]
     invited = con.execute("SELECT COUNT(*) FROM users WHERE status='invited'").fetchone()[0]
     locked  = con.execute("SELECT COUNT(*) FROM users WHERE locked_until IS NOT NULL AND locked_until > ?",
-                          (datetime.utcnow().isoformat(),)).fetchone()[0]
-    since24 = (datetime.utcnow() - timedelta(hours=24)).isoformat()
+                          (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),)).fetchone()[0]
+    since24 = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=24)).isoformat()
     failures = con.execute(
         "SELECT COUNT(*) FROM audit_log WHERE action='login_failed' AND ts > ?", (since24,)).fetchone()[0]
     lockouts = con.execute(

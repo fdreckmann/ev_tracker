@@ -7,7 +7,8 @@ given driven distance), a missing-charge candidate is created for user review.
 """
 from __future__ import annotations
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
+
 
 log = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ def save_snapshot(vehicle_id: str, soc, odometer_km, range_km,
     """Persist a vehicle state snapshot. Returns the new row id, or None if skipped."""
     if soc is None and odometer_km is None:
         return None
-    now = datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
     cur = con.cursor()
     cur.execute(
         """INSERT INTO vehicle_snapshots
@@ -193,7 +194,7 @@ def check_for_missing_charge(vehicle_id: str, new_snap_id: int, cfg: dict, con) 
     reason = ", ".join(reason_parts)
 
     # ── Insert candidate ──────────────────────────────────────────────────────
-    now = datetime.utcnow().isoformat(timespec="seconds")
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
     cur.execute(
         """INSERT INTO missing_charge_candidates
            (vehicle_id, snapshot_before_id, snapshot_after_id, start_ts, end_ts,

@@ -18,7 +18,8 @@ pdf_export_bp = Blueprint("pdf_export", __name__)
 @pdf_export_bp.route("/api/export/pdf", methods=["POST"])
 @require_login
 def api_export_pdf():
-    from datetime import datetime
+    from datetime import datetime, timezone
+
     if not has_permission(_current_user(), "export:pdf"):
         return jsonify({"error": "Keine Berechtigung"}), 403
     data = request.get_json(force=True) or {}
@@ -97,7 +98,7 @@ def api_export_pdf():
     token = _sec.token_urlsafe(32)
     _state.pdf_tokens[token] = {
         "bytes":   pdf_bytes,
-        "expires": datetime.utcnow().timestamp() + 1800,
+        "expires": datetime.now(timezone.utc).timestamp() + 1800,
         "filename": "EV_Report.pdf",
     }
 
@@ -116,9 +117,10 @@ def api_export_pdf():
 # ── GET /api/export/pdf/download/<token> ──────────────────────────────────────
 @pdf_export_bp.route("/api/export/pdf/download/<token>")
 def api_export_pdf_download(token):
-    from datetime import datetime
+    from datetime import datetime, timezone
+
     entry = _state.pdf_tokens.get(token)
-    if not entry or datetime.utcnow().timestamp() > entry["expires"]:
+    if not entry or datetime.now(timezone.utc).timestamp() > entry["expires"]:
         _state.pdf_tokens.pop(token, None)
         return jsonify({"error": "Token abgelaufen oder ungültig"}), 404
     fname = entry.get("filename", "EV_Report.pdf")
