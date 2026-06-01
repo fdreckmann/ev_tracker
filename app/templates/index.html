@@ -912,7 +912,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <!-- 3. Fahrzeuge -->
       <div class="cfg-grp-label">Fahrzeuge</div>
       <button class="cfg-nav-btn cfg-nav-sub active" onclick="cfgSection('fahrzeuge',this)">🚗 Fahrzeuge</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('verbindung',this)">🔌 Provider &amp; API</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('verbindung',this)">🔌 Integrationen &amp; API</button>
 
       <!-- 4. Laden & Kosten -->
       <div class="cfg-grp-label">Laden &amp; Kosten</div>
@@ -959,7 +959,44 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
       <!-- VERBINDUNG -->
       <div id="cfgsec-verbindung" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">Fahrzeug &amp; Datenquelle</div>
+        <div class="cfg-sec-title">Integrationen &amp; API-Übersicht</div>
+        <div style="background:var(--info-bg);border:1px solid var(--brd);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:.82rem;line-height:1.6">
+          Provider/API werden <strong>pro Fahrzeug</strong> eingerichtet:
+          <a href="#" onclick="cfgSection('fahrzeuge',document.querySelector('#cfgNav [onclick*=fahrzeuge]'));return false" style="color:var(--acc2)">Konfiguration → Fahrzeuge</a>.
+          Diese Übersicht zeigt nur, welche Datenquelle welche Werte liefert — sie ändert keine Konfiguration.
+          <div style="margin-top:10px">
+            <button class="btn-g" type="button" onclick="openEditVehicleModal('v0')">🚗 Primärfahrzeug bearbeiten</button>
+          </div>
+        </div>
+
+        <div class="sec-lbl">API-Funktionsübersicht</div>
+        <div class="tbl-wrap" style="margin-bottom:18px">
+          <table>
+            <thead><tr>
+              <th>Provider</th><th>SOC</th><th>Kilometer</th><th>Ladestatus</th>
+              <th>Ladeleistung</th><th>Standort</th><th>Bild</th><th>Lade-Typ</th><th>Besonderheiten</th>
+            </tr></thead>
+            <tbody>
+            {% for p in all_providers %}
+              <tr>
+                <td style="color:var(--ink);font-weight:600">{{ p.provider_name }}</td>
+                <td>{% if p.soc %}✅{% else %}—{% endif %}</td>
+                <td>{% if p.odometer %}✅{% else %}—{% endif %}</td>
+                <td>{% if p.charging_state %}✅{% else %}—{% endif %}</td>
+                <td>{% if p.charge_power %}✅{% else %}—{% endif %}</td>
+                <td>{% if p.location %}✅{% else %}—{% endif %}</td>
+                <td>{% if p.image %}✅{% else %}—{% endif %}</td>
+                <td>{% if p.charge_type %}✅{% else %}—{% endif %}</td>
+                <td style="color:var(--mute);font-size:.72rem">{% if p.notes %}{{ p.notes|join('; ') }}{% endif %}{% if p.official_api %} · offizielle API{% endif %}{% if p.requires_oauth %} · OAuth{% endif %}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <details style="margin-top:8px">
+          <summary style="cursor:pointer;color:var(--mute);font-size:.74rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;padding:8px 0">Erweitert: Primärfahrzeug (v0) global konfigurieren — Kompatibilität</summary>
+          <div style="margin-top:14px">
         <div class="form-grid">
           <div class="fg full"><label>Fahrzeugname</label>
             <input id="c_car" value="{{ cfg.car_name }}"></div>
@@ -1018,6 +1055,8 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           <button class="btn-p" onclick="saveConfig()">💾 Speichern</button>
           <button class="btn-s" onclick="loadConfig()">↺ Zurücksetzen</button>
         </div>
+          </div>
+        </details>
       </div>
 
       <!-- LADEVORGANG-ERKENNUNG -->
@@ -2910,7 +2949,12 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       </select>
     </div>
 
-    <div id="vm_fields" style="display:grid;gap:10px;margin-bottom:16px"></div>
+    <div id="vm_fields" style="display:grid;gap:10px;margin-bottom:12px"></div>
+
+    <div style="margin-bottom:16px">
+      <button class="btn-g" type="button" onclick="testVehicleConnection()">🔌 Verbindung testen</button>
+      <div id="vm_conn_result" style="display:none;margin-top:10px;font-size:.8rem;border-radius:8px;padding:10px 13px"></div>
+    </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
       <div>

@@ -9,6 +9,9 @@ _ROOT = Path(__file__).parent.parent
 _INDEX = (_ROOT / "app" / "templates" / "index.html").read_text()
 _MOBILE_JS = (_ROOT / "app" / "static" / "js" / "mobile.js").read_text()
 _API_JS = (_ROOT / "app" / "static" / "js" / "api.js").read_text()
+_VEHICLES_JS = (_ROOT / "app" / "static" / "js" / "vehicles.js").read_text()
+_CONNECTIONS_PY = (_ROOT / "app" / "routes" / "connections.py").read_text()
+_BASE_PY = (_ROOT / "app" / "providers" / "base.py").read_text()
 
 
 class TestQuickActions:
@@ -219,6 +222,72 @@ class TestXSS:
     def test_normalizeLocation_oeffentlich(self):
         """normalizeLocation must map 'öffentlich' to extern."""
         assert "'öffentlich'" in _API_JS
+
+
+class TestProviderVehicleUI:
+    """Phase D — provider matrix, per-vehicle test-connection button, ******** resolution."""
+
+    def test_vehicle_modal_has_test_connection_button(self):
+        """Vehicle modal must contain the test-connection button."""
+        assert "testVehicleConnection()" in _INDEX
+
+    def test_vehicle_modal_has_result_div(self):
+        """Vehicle modal must contain #vm_conn_result for displaying test results."""
+        assert "vm_conn_result" in _INDEX
+
+    def test_vehicles_js_has_test_function(self):
+        """vehicles.js must define testVehicleConnection."""
+        assert "function testVehicleConnection" in _VEHICLES_JS
+
+    def test_vehicles_js_has_reset_function(self):
+        """vehicles.js must define _resetVehicleConnTest."""
+        assert "_resetVehicleConnTest" in _VEHICLES_JS
+
+    def test_vehicles_js_tracks_test_state(self):
+        """vehicles.js must maintain _vehicleConnTested state variable."""
+        assert "_vehicleConnTested" in _VEHICLES_JS
+
+    def test_vehicles_js_save_warning_when_untested(self):
+        """saveVehicleModal must warn when connection is untested."""
+        assert "_vehicleConnTested" in _VEHICLES_JS
+        assert "confirm(" in _VEHICLES_JS
+
+    def test_test_connection_posts_to_correct_route(self):
+        """testVehicleConnection must POST to /api/vehicles/test-connection."""
+        assert "/api/vehicles/test-connection" in _VEHICLES_JS
+
+    def test_connections_py_has_vehicle_test_route(self):
+        """connections.py must define /api/vehicles/test-connection route."""
+        assert "/api/vehicles/test-connection" in _CONNECTIONS_PY
+
+    def test_connections_py_resolves_masked_passwords(self):
+        """Vehicle test route must handle ******** masked passwords."""
+        assert "_MASK" in _CONNECTIONS_PY
+        assert '("", _MASK' in _CONNECTIONS_PY or "in ('', _MASK" in _CONNECTIONS_PY or "_MASK, None" in _CONNECTIONS_PY
+
+    def test_connections_py_returns_status_field(self):
+        """Vehicle test route must return status: ok/partial/error."""
+        assert '"ok"' in _CONNECTIONS_PY or "'ok'" in _CONNECTIONS_PY
+        assert '"partial"' in _CONNECTIONS_PY or "'partial'" in _CONNECTIONS_PY
+        assert '"error"' in _CONNECTIONS_PY or "'error'" in _CONNECTIONS_PY
+
+    def test_base_provider_has_image_capability(self):
+        """ProviderCapabilities must include image field."""
+        assert "image" in _BASE_PY
+        assert "image:          bool = False" in _BASE_PY or "image: bool = False" in _BASE_PY
+
+    def test_capability_summary_includes_image(self):
+        """capability_summary must include image in returned dict."""
+        assert '"image"' in _BASE_PY or "'image'" in _BASE_PY
+
+    def test_integrations_section_in_index(self):
+        """cfgsec-verbindung section must exist in index.html."""
+        assert "cfgsec-verbindung" in _INDEX
+
+    def test_legacy_global_provider_config_still_present(self):
+        """Legacy global provider config fields must still be present (backward compat)."""
+        assert "ha_url" in _INDEX
+        assert "ha_token" in _INDEX
 
 
 class TestMobileNavPanelHiding:

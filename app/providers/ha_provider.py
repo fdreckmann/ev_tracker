@@ -17,6 +17,7 @@ class HomeAssistantProvider(BaseProvider):
         charge_power   = True,
         location       = True,
         charge_type    = True,
+        image          = True,
         notes          = ["Alle Funktionen verfügbar je nach konfigurierten Sensoren"]
     )
 

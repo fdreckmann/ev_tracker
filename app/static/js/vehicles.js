@@ -127,6 +127,7 @@ async function openEditVehicleModal(vid) {
 
 async function loadVehicleModalFields(existingVehicle) {
   existingVehicle = existingVehicle || null;
+  _resetVehicleConnTest();
   var provider = $('vm_provider').value;
   var fields = await fetch('/api/providers/'+provider+'/fields').then(function(r){return r.json();}).catch(function(){return [];});
   var container = $('vm_fields');
@@ -150,6 +151,61 @@ async function loadVehicleModalFields(existingVehicle) {
 
 function closeVehicleModal() {
   $('vehicleModal').style.display = 'none';
+}
+
+// null | 'ok' | 'partial' | 'fail' — reset whenever fields change.
+var _vehicleConnTested = null;
+
+function _resetVehicleConnTest() {
+  _vehicleConnTested = null;
+  var box = $('vm_conn_result');
+  if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+}
+
+// Test the connection with the *currently entered* (unsaved) fields.
+async function testVehicleConnection() {
+  var box = $('vm_conn_result');
+  var provider = $('vm_provider').value;
+  var fields = await fetch('/api/providers/' + provider + '/fields').then(function(r){return r.json();}).catch(function(){return [];});
+  var payload = { provider: provider };
+  if (_editingVehicleId) payload.vehicle_id = _editingVehicleId;
+  fields.forEach(function(f){ var el = $('vmf_' + f.id); if (el) payload[f.id] = el.value; });
+  if (($('vm_home_lat')||{}).value) payload.home_lat = $('vm_home_lat').value.trim();
+  if (($('vm_home_lon')||{}).value) payload.home_lon = $('vm_home_lon').value.trim();
+  if (box) {
+    box.style.display = ''; box.style.background = 'var(--surf2)';
+    box.style.border = '1px solid var(--brd)'; box.style.color = 'var(--mute)';
+    box.innerHTML = '⏳ Teste Verbindung…';
+  }
+  var r;
+  try {
+    r = await apiFetch('/api/vehicles/test-connection', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}).then(function(x){return x.json();});
+  } catch(e) { r = {ok:false, status:'error', message:'Netzwerkfehler'}; }
+  _vehicleConnTested = r.status || (r.ok ? 'ok' : 'fail');
+  if (!box) return;
+  var col = {ok:'var(--acc)', partial:'var(--warn)', error:'var(--danger)', fail:'var(--danger)'}[_vehicleConnTested] || 'var(--danger)';
+  var bg  = {ok:'rgba(61,220,151,.12)', partial:'rgba(245,158,11,.12)', error:'rgba(239,68,68,.12)', fail:'rgba(239,68,68,.12)'}[_vehicleConnTested] || 'rgba(239,68,68,.12)';
+  box.style.color = col; box.style.background = bg; box.style.border = '1px solid ' + col;
+  var _eh = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'');};
+  if (r.ok) {
+    var d = r.data || {};
+    var rows = [];
+    var add = function(lbl, val, unit){ rows.push((val!==null&&val!==undefined&&val!=='' ? '✅ ' : '— ') + lbl + ': ' + (val!==null&&val!==undefined&&val!=='' ? val + (unit||'') : 'nicht verfügbar')); };
+    add('SOC', d.soc, ' %');
+    add('Kilometer', d.odometer!=null ? Math.round(d.odometer).toLocaleString('de') : null, ' km');
+    rows.push((d.charging!=null ? '✅' : '—') + ' Ladestatus: ' + (d.charging===true ? 'lädt' : d.charging===false ? 'lädt nicht' : 'nicht verfügbar'));
+    add('Ladeleistung', d.charge_power, ' kW');
+    add('Standort', d.location);
+    rows.push((d.image ? '✅' : '—') + ' Bild: ' + (d.image ? 'verfügbar' : 'nicht verfügbar'));
+    var head = _vehicleConnTested === 'ok' ? '✅ Verbindung erfolgreich' : '⚠️ Verbindung ok, aber einige Daten fehlen';
+    box.innerHTML = '<div style="font-weight:600;margin-bottom:6px">' + head + '</div>' +
+      (r.message ? '<div style="margin-bottom:6px;color:var(--mute)">' + _eh(r.message) + '</div>' : '') +
+      '<div style="display:grid;gap:2px;font-family:var(--mono);font-size:.75rem;color:var(--txt)">' +
+      rows.map(function(x){return '<div>' + _eh(x) + '</div>';}).join('') + '</div>';
+  } else {
+    box.innerHTML = '<div style="font-weight:600;margin-bottom:4px">❌ Verbindung fehlgeschlagen</div>' +
+      '<div style="color:var(--txt)">' + _eh(r.message || 'Unbekannter Fehler') + '</div>';
+  }
 }
 
 async function saveVehicleModal() {
@@ -186,6 +242,11 @@ async function saveVehicleModal() {
       data[f.id] = el.value;
     }
   });
+
+  // Warn (but allow) when the connection was never successfully tested.
+  if (_vehicleConnTested !== 'ok' && _vehicleConnTested !== 'partial') {
+    if (!confirm('Verbindung wurde nicht erfolgreich getestet. Trotzdem speichern?')) return;
+  }
 
   // v0 uses car_name instead of name in backend config
   if (_editingVehicleId === 'v0') {

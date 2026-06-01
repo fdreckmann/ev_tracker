@@ -56,6 +56,89 @@ def api_test():
         return jsonify({"ok": False, "message": str(e)})
 
 
+@connections_bp.route("/api/vehicles/test-connection", methods=["POST"])
+@require_login
+def api_vehicle_test():
+    """Test a vehicle's provider connection with the *currently entered* (unsaved)
+    fields. Masked/empty password fields fall back to the stored secret of the
+    vehicle being edited (or the global v0 config). Never saves anything.
+
+    Returns {ok, status: ok|partial|error, message, data:{soc,odometer,charging,
+    charge_power,location,image}, capabilities, provider}.
+    """
+    if not has_permission(_current_user(), "providers:test"):
+        return jsonify({"ok": False, "status": "error",
+                        "message": "Keine Berechtigung: providers:test"}), 403
+    data = request.get_json(silent=True) or {}
+    cfg = load_config()
+    _MASK = "********"
+    vid = data.get("vehicle_id") or "v0"
+
+    # Stored config used to resolve masked secrets.
+    if vid and vid != "v0":
+        stored = next((v for v in cfg.get("extra_vehicles", []) if v.get("id") == vid), {}) or {}
+    else:
+        stored = cfg
+    provider_id = data.get("provider") or stored.get("provider") or cfg.get("provider", "ha")
+
+    # Base = global cfg + stored vehicle, then the unsaved body overrides.
+    test_cfg = {**cfg, **stored}
+    for k, v in data.items():
+        if k == "vehicle_id":
+            continue
+        test_cfg[k] = v
+    test_cfg["provider"] = provider_id
+
+    # Resolve masked/empty password fields back to the stored secret.
+    try:
+        from providers import get_config_fields
+        for f in get_config_fields(provider_id):
+            if f.get("type") == "password":
+                key = f["id"]
+                if test_cfg.get(key) in ("", _MASK, None):
+                    test_cfg[key] = stored.get(key) or cfg.get(key, "")
+    except Exception:
+        pass
+    for sk in ("ha_token", "tronity_client_secret", "enode_client_secret",
+               "smartcar_access_token", "tesla_access_token", "vw_password"):
+        if test_cfg.get(sk) in ("", _MASK, None):
+            test_cfg[sk] = stored.get(sk) or cfg.get(sk, "")
+
+    try:
+        from providers import get_provider
+        provider = get_provider(provider_id, test_cfg)
+        result = provider.test_connection() or {}
+        ok = bool(result.get("ok"))
+        message = result.get("message", "")
+        readable = {}
+        if ok:
+            try:
+                stt = provider.get_state()
+                readable = {
+                    "soc":          getattr(stt, "soc", None),
+                    "odometer":     getattr(stt, "odometer", None),
+                    "charging":     getattr(stt, "charging", None),
+                    "charge_power": getattr(stt, "charge_power", None),
+                    "location":     getattr(stt, "location", None),
+                    "image":        bool(getattr(stt, "image_url", None)),
+                }
+            except Exception:
+                readable = {}
+        try:
+            caps = provider.capability_summary()
+        except Exception:
+            caps = {}
+        # green = ok with core data, yellow = ok but core data missing, red = fail
+        status = "error"
+        if ok:
+            has_core = readable.get("soc") is not None or readable.get("charging") is not None
+            status = "ok" if has_core else "partial"
+        return jsonify({"ok": ok, "status": status, "message": message,
+                        "data": readable, "capabilities": caps, "provider": provider_id})
+    except Exception as e:
+        return jsonify({"ok": False, "status": "error", "message": str(e)})
+
+
 @connections_bp.route("/api/meter/test", methods=["POST"])
 @require_login
 def api_meter_test():
