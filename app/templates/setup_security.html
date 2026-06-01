@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EV Tracker — Sicherheit einrichten</title>
+<style>
+  :root{--bg:#0b0f14;--card:#111820;--brd:#1e2a35;--accent:#00d278;--acc2:#00b4ff;
+    --mute:#5a7080;--danger:#ff4f5a;--warn:#f59e0b;--mono:'JetBrains Mono','Fira Mono',monospace}
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:#e0eaf2;font-family:system-ui,sans-serif;
+    min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+  .card{background:var(--card);border:1px solid var(--brd);border-radius:16px;
+    padding:40px 44px;width:100%;max-width:460px}
+  .logo{text-align:center;margin-bottom:28px}
+  .logo .icon{font-size:3rem}
+  .logo h1{font-size:1.4rem;font-weight:700;margin-top:10px}
+  .logo p{font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-top:6px}
+  .step{font-size:.65rem;font-family:var(--mono);color:var(--acc2);text-transform:uppercase;
+    letter-spacing:.12em;margin-bottom:20px;text-align:center}
+  .sec-card{background:rgba(255,255,255,.03);border:1px solid var(--brd);border-radius:12px;
+    padding:20px 22px;margin-bottom:14px}
+  .sec-card h3{font-size:.88rem;font-weight:600;margin-bottom:6px}
+  .sec-card p{font-size:.73rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px;line-height:1.6}
+  .btn{display:block;width:100%;background:var(--accent);color:#041810;font-weight:700;
+    font-size:.88rem;border:none;border-radius:8px;padding:12px;cursor:pointer;
+    transition:opacity .15s;margin-top:4px;text-align:center;text-decoration:none}
+  .btn:hover{opacity:.88}
+  .btn-s{background:rgba(0,210,120,.1);color:var(--accent);border:1px solid rgba(0,210,120,.3)}
+  .btn-skip{background:transparent;color:var(--mute);border:1px solid var(--brd);
+    font-size:.82rem;padding:11px;margin-top:8px}
+  .btn-skip:hover{color:#e0eaf2;border-color:rgba(255,255,255,.2)}
+  input[type=text]{width:100%;background:#0d1520;border:1px solid var(--brd);border-radius:8px;
+    color:#e0eaf2;font-size:.88rem;padding:10px 14px;outline:none;transition:border-color .15s}
+  input[type=text]:focus{border-color:var(--acc2)}
+  .info{background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:8px;
+    color:var(--acc2);font-size:.74rem;font-family:var(--mono);padding:12px 14px;
+    margin-bottom:20px;line-height:1.6}
+  .msg{font-size:.75rem;font-family:var(--mono);padding:8px 12px;border-radius:6px;
+    margin-top:10px;display:none}
+  .msg.ok{background:rgba(0,210,120,.1);color:var(--accent);border:1px solid rgba(0,210,120,.25)}
+  .msg.err{background:rgba(255,79,90,.1);color:var(--danger);border:1px solid rgba(255,79,90,.25)}
+  #totpQrWrap{display:none;margin-top:12px}
+  #totpQrWrap img{display:block;margin:0 auto 10px;border-radius:8px}
+  #totpSecret{font-size:.68rem;font-family:var(--mono);color:var(--mute);text-align:center;
+    margin-bottom:12px;word-break:break-all}
+  .confirm-row{display:flex;gap:8px;margin-top:10px}
+  .confirm-row input{flex:1}
+  .confirm-row button{flex-shrink:0;background:var(--acc2);color:#fff;border:none;
+    border-radius:8px;padding:10px 16px;cursor:pointer;font-size:.82rem;font-weight:600}
+  #passkeyMsg{font-size:.73rem;font-family:var(--mono);color:var(--accent);
+    margin-top:10px;display:none}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <div class="icon">🔐</div>
+    <h1>EV Tracker</h1>
+    <p>Ersteinrichtung</p>
+  </div>
+  <div class="step">Schritt 2 von 2 — Sicherheit einrichten (optional)</div>
+
+  <div class="info">
+    Schütze dein Konto mit einem zweiten Faktor.<br>
+    Du kannst diesen Schritt jederzeit überspringen und später in<br>
+    <strong>Einstellungen → Mein Konto</strong> nachholen.
+  </div>
+
+  <!-- TOTP -->
+  <div class="sec-card">
+    <h3>📱 Zwei-Faktor-Authentifizierung (TOTP)</h3>
+    <p>Einmalcodes per Authenticator-App (Google Authenticator, Authy, …).<br>
+      Kein Handy = kein Login-Problem, denn 2FA bleibt optional.</p>
+    <button class="btn btn-s" onclick="startTotp()">📱 2FA einrichten</button>
+    <div id="totpQrWrap">
+      <div id="totpQrImg"></div>
+      <div id="totpSecret"></div>
+      <div class="confirm-row">
+        <input type="text" id="totpCode" placeholder="6-stelligen Code eingeben" autocomplete="one-time-code" inputmode="numeric" maxlength="6">
+        <button onclick="confirmTotp()">✓ Bestätigen</button>
+      </div>
+    </div>
+    <div id="totpMsg" class="msg"></div>
+  </div>
+
+  <!-- Passkey -->
+  <div class="sec-card">
+    <h3>🔑 Passkey (Fingerabdruck / Face ID / Hardware-Key)</h3>
+    <p>Passwortlos einloggen — schneller und sicherer als ein Passwort.</p>
+    <button class="btn btn-s" onclick="addPasskey()">🔑 Passkey hinzufügen</button>
+    <div id="passkeyMsg"></div>
+  </div>
+
+  <a href="/" class="btn btn-skip">Jetzt überspringen → Zum Dashboard</a>
+</div>
+
+<script>
+let csrfToken = '';
+(async()=>{try{const r=await fetch('/api/csrf-token').then(r=>r.json());csrfToken=r.token||'';}catch(e){}})();
+
+async function apiFetch(url, opts={}){
+  const h = {'Content-Type':'application/json','X-CSRF-Token':csrfToken,...(opts.headers||{})};
+  const r = await fetch(url,{...opts,headers:h});
+  return r.json();
+}
+
+// ── TOTP ──────────────────────────────────────────────────────────────────────
+async function startTotp(){
+  const r = await apiFetch('/api/users/me/totp/setup',{method:'POST'});
+  if(!r.ok){showMsg('totpMsg',r.error||'Fehler','err');return;}
+  const wrap = document.getElementById('totpQrWrap');
+  const qrUrl = `https://chart.googleapis.com/chart?chs=180x180&cht=qr&chl=${encodeURIComponent(r.uri)}`;
+  document.getElementById('totpQrImg').innerHTML =
+    `<img src="${qrUrl}" style="border-radius:8px;border:4px solid #fff" width="180" height="180" alt="QR-Code">`;
+  document.getElementById('totpSecret').textContent = 'Manuell: ' + r.secret;
+  wrap.style.display = 'block';
+}
+
+async function confirmTotp(){
+  const code = document.getElementById('totpCode').value.trim();
+  if(code.length !== 6){showMsg('totpMsg','Bitte 6-stelligen Code eingeben','err');return;}
+  const r = await apiFetch('/api/users/me/totp/confirm',{method:'POST',body:JSON.stringify({code})});
+  if(r.ok){
+    showMsg('totpMsg','✓ 2FA erfolgreich aktiviert','ok');
+    document.getElementById('totpQrWrap').style.display='none';
+  } else {
+    showMsg('totpMsg',r.error||'Falscher Code','err');
+  }
+}
+
+// ── Passkey ───────────────────────────────────────────────────────────────────
+function _b64uToBuffer(s){s=s.replace(/-/g,'+').replace(/_/g,'/');const b=atob(s);return Uint8Array.from(b,c=>c.charCodeAt(0)).buffer;}
+function _bufToB64u(buf){return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');}
+
+async function addPasskey(){
+  const msg = document.getElementById('passkeyMsg');
+  msg.style.display='none';
+  if(!window.PublicKeyCredential){showMsg2(msg,'Dieser Browser unterstützt keine Passkeys');return;}
+  const name = prompt('Name für diesen Passkey (z.B. "MacBook Touch ID"):') || 'Passkey';
+  if(!name) return;
+  try {
+    const beginRes = await apiFetch('/api/auth/passkey/register/begin',{method:'POST'});
+    if(!beginRes.ok) throw new Error(beginRes.error||'Fehler');
+    const opts = beginRes.options;
+    opts.challenge = _b64uToBuffer(opts.challenge);
+    opts.user.id   = _b64uToBuffer(opts.user.id);
+    if(opts.excludeCredentials)
+      opts.excludeCredentials = opts.excludeCredentials.map(c=>({...c,id:_b64uToBuffer(c.id)}));
+    const cred = await navigator.credentials.create({publicKey: opts});
+    const body = {
+      name,
+      id: cred.id,
+      rawId: _bufToB64u(cred.rawId),
+      type: cred.type,
+      response:{
+        clientDataJSON:    _bufToB64u(cred.response.clientDataJSON),
+        attestationObject: _bufToB64u(cred.response.attestationObject),
+      }
+    };
+    const res = await apiFetch('/api/auth/passkey/register/complete',{method:'POST',body:JSON.stringify(body)});
+    msg.textContent = res.ok ? '✓ Passkey gespeichert' : (res.error||'Fehler beim Speichern');
+    msg.style.display='block';
+  } catch(e){
+    msg.textContent = e.name==='NotAllowedError' ? 'Abgebrochen.' : (e.message||String(e));
+    msg.style.display='block';
+  }
+}
+function showMsg2(el,text){el.textContent=text;el.style.display='block';}
+
+function showMsg(id, text, type){
+  const el=document.getElementById(id);
+  el.textContent=text; el.className='msg '+type; el.style.display='block';
+}
+</script>
+</body>
+</html>

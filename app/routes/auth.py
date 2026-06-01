@@ -223,8 +223,22 @@ def setup_page():
                 cfg["auth_totp_secret"]   = ""
                 save_config(cfg)
                 _audit("setup_complete", f"admin={email}", ip=request.remote_addr)
-                return redirect(url_for("auth.login_page"))
+                # Auto-login so the security wizard step can use authenticated routes
+                session["user_id"]    = user_id
+                session["user_email"] = email
+                session["user_role"]  = "admin"
+                session["user_name"]  = name
+                session["csrf_token"] = secrets.token_hex(32)
+                session.permanent     = True
+                return redirect(url_for("auth.setup_security_page"))
     return render_template("setup.html", error=error, has_old_auth=has_old_auth)
+
+
+@auth_bp.route("/setup/security", methods=["GET"])
+@require_login
+def setup_security_page():
+    """Step 2 of initial setup — optional TOTP / Passkey (skippable)."""
+    return render_template("setup_security.html")
 
 
 # ── Password Reset ────────────────────────────────────────────────────────────
