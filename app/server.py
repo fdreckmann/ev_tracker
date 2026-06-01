@@ -501,7 +501,9 @@ def init_db():
         triggered_by  TEXT DEFAULT 'auto'
     )""")
     # Migrate: add columns if missing
-    for _col in ["period_label TEXT", "period_mode TEXT"]:
+    for _col in ["period_label TEXT", "period_mode TEXT",
+                 "attachment_excel INTEGER DEFAULT 0", "template_id TEXT",
+                 "template_name TEXT", "template_warnings TEXT", "excel_error TEXT"]:
         try: con.execute(f"ALTER TABLE email_report_history ADD COLUMN {_col}")
         except Exception: pass
 

@@ -239,6 +239,7 @@ DEFAULT_CONFIG = {
     "report_email_language":         "auto",
     "report_email_include_signature": False,
     "report_email_template_id":      None,
+    "report_email_multi_month_excel_mode": "standard_multi_sheet",  # standard_multi_sheet | template_per_month_zip
     "report_email_last_sent_key":    "",
     "report_email_single_month":     "",
     "report_email_months":           [],

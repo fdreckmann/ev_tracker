@@ -82,10 +82,6 @@ def _parse_export_params(args_or_body, is_json=False):
 @require_login
 def api_export():
     import io as _io_exp
-    import secrets
-    from datetime import datetime
-    from pathlib import Path
-    from export_excel import export
     user = _current_user()
     if not has_permission(user, "export:create"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: export:create"}), 403
@@ -94,32 +90,11 @@ def api_export():
         return _err
     loc = request.args.get("location", "all")
     cfg = load_config()
-    if override is None:
-        saved = cfg.get("template_column_mapping") or cfg.get("template_mapping") or {}
-        if isinstance(saved, dict) and saved:
-            override = {k: v for k, v in saved.items() if v}
-        else:
-            override = None
-    start_row = cfg.get("template_start_row")
-    header_row = cfg.get("template_header_row")
-    # Backward compat: template_start_row without header_row
-    if start_row and not header_row:
-        try:
-            header_row = int(start_row) - 1
-        except (ValueError, TypeError):
-            pass
+    # Optional request-supplied column override (legacy/API): feed it through the
+    # shared helper by injecting it as the active column mapping on a cfg copy.
+    if override is not None:
+        cfg = {**cfg, "template_column_mapping": {k: v for k, v in override.items() if v}}
     lang = request.args.get("lang") or cfg.get("export_language", "de")
-    _raw_cm = cfg.get("template_cell_mapping") or {}
-    cell_mapping = _raw_cm if isinstance(_raw_cm, dict) else {}
-    sheet = cfg.get("template_sheet") or None
-    header_info = {
-        "fahrer":            cfg.get("template_fahrer", ""),
-        "kennzeichen":       cfg.get("template_kennzeichen", ""),
-        "abteilung":         cfg.get("template_abteilung", ""),
-        "kostenstelle":      cfg.get("template_kostenstelle", ""),
-        "price_per_kwh":     cfg.get("price_per_kwh_home", 0.30),
-        "meter_start_value": cfg.get("template_meter_start", 0.0),
-    }
     include_sig_param = request.args.get("include_signature")
     if include_sig_param is not None:
         include_signature = include_sig_param.lower() in ("true", "1", "yes")
@@ -138,27 +113,23 @@ def api_export():
         import logging as _log_mod
         _log_mod.getLogger(__name__).warning(
             "Template hash mismatch: template=%s mapping=%s", _tmpl_hash, _map_hash)
-    footer_start_row = cfg.get("template_footer_start_row")
-    sig_mapping = cfg.get("signature_mapping") or {}
-    # Backward compat: "cell" → "anchor_cell" in signature_mapping
-    if sig_mapping and "cell" in sig_mapping and "anchor_cell" not in sig_mapping:
-        sig_mapping = dict(sig_mapping)
-        sig_mapping["anchor_cell"] = sig_mapping["cell"]
 
-    SIGNATURE_PATH = _SIGNATURE_PATH
-
+    # Build via the shared helper so manual / archived / e-mail reports stay identical.
+    from services.report_excel_service import build_report_excel_bytes, ReportExcelError
+    from datetime import date as _date
+    period_info = {"start": _date(y, m, 1)}
     try:
-        xlsx_bytes = export(y, m, loc, col_override=override, start_row=start_row, header_row=header_row,
-                      header_info=header_info,
-                      cell_mapping=cell_mapping, sheet=sheet,
-                      include_signature=include_signature,
-                      signature_path=str(SIGNATURE_PATH) if SIGNATURE_PATH.exists() else None,
-                      signature_mapping=sig_mapping, lang=lang,
-                      footer_start_row=footer_start_row)
+        xlsx_bytes, _w = build_report_excel_bytes(
+            period_info, loc, "all", cfg, lang,
+            include_signature=include_signature, template_id="active")
         filename = f"EV_Ladeprotokoll_{y:04d}-{m:02d}.xlsx"
         return send_file(_io_exp.BytesIO(xlsx_bytes), as_attachment=True,
                          download_name=filename,
                          mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    except ReportExcelError as ree:
+        code = 409 if ree.code == "hash_mismatch" else 500
+        return jsonify({"ok": False, "error": str(ree),
+                        "hash_mismatch": ree.code == "hash_mismatch"}), code
     except Exception as e:
         import logging
         logging.getLogger(__name__).exception("Export fehlgeschlagen")

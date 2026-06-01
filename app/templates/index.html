@@ -1417,7 +1417,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             <!-- Options -->
             <div style="display:flex;flex-wrap:wrap;gap:18px">
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.82rem">
-                <input type="checkbox" id="rep_include_excel" checked> Excel-Anhang
+                <input type="checkbox" id="rep_include_excel" checked onchange="onRepExcelToggle()"> Excel-Anhang
               </label>
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.82rem">
                 <input type="checkbox" id="rep_include_summary" checked> HTML-Zusammenfassung in Mail
@@ -1425,6 +1425,30 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.82rem">
                 <input type="checkbox" id="rep_include_signature"> Signatur einfügen
               </label>
+            </div>
+
+            <!-- Excel template selection (shown when Excel-Anhang aktiv) -->
+            <div id="rep_excel_block" style="border:1px solid var(--brd);border-radius:8px;padding:14px;background:var(--surf2)">
+              <div style="font-size:.78rem;font-weight:600;margin-bottom:10px;color:var(--mute)">📎 Excel-Anhang — Vorlage</div>
+              <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end;max-width:560px">
+                <div>
+                  <label class="cfg-lbl">Template</label>
+                  <select id="rep_template_id" onchange="loadReportTemplateStatus()" style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
+                    <option value="active">Aktives Export-Template verwenden</option>
+                    <option value="builtin:standard">Standard-Report ohne Vorlage</option>
+                  </select>
+                </div>
+                <button class="btn-s" onclick="cfgSection('export-tpl',null)" style="white-space:nowrap">📝 Template &amp; Mapping öffnen</button>
+              </div>
+              <div id="rep_template_status" style="margin-top:10px;font-size:.74rem;font-family:var(--mono);color:var(--mute)">⏳ Lade Template-Status…</div>
+              <div id="rep_multi_month_row" style="margin-top:12px;display:none">
+                <label class="cfg-lbl">Mehrere Monate</label>
+                <select id="rep_multi_month_mode" style="width:100%;max-width:360px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
+                  <option value="standard_multi_sheet">Standard-Multi-Sheet-Report (eine Datei, ein Blatt pro Monat)</option>
+                  <option value="template_per_month_zip">Pro Monat eine Vorlage (ZIP-Anhang)</option>
+                </select>
+                <div style="font-size:.72rem;color:var(--mute);margin-top:6px">Mehrere Monate verwenden standardmäßig den Standard-Multi-Sheet-Report.</div>
+              </div>
             </div>
             <div>
               <label class="cfg-lbl">Sprache</label>
@@ -1439,7 +1463,8 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px" data-requires-permission="reports:configure">
               <button class="btn-p" onclick="saveReportConfig()">💾 Speichern</button>
               <button class="btn-s" onclick="sendReportNow(false)" data-requires-permission="reports:send">📤 Jetzt senden</button>
-              <button class="btn-s" onclick="sendReportNow(true)" data-requires-permission="reports:send">🧪 Testreport</button>
+              <button class="btn-s" onclick="sendReportTestMail()" data-requires-permission="reports:send">✉️ Testmail senden</button>
+              <button class="btn-s" onclick="downloadReportExcelPreview()" data-requires-permission="reports:send">📥 Excel-Vorschau</button>
               <button class="btn-s" onclick="loadReportHistory()" data-requires-permission="reports:history">📋 Versandhistorie</button>
               <span id="rep_status" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);align-self:center"></span>
             </div>
@@ -5987,6 +6012,7 @@ function onRepScheduleTypeChange(){
   if (smr) smr.style.display = pmode === 'single_month' ? '' : 'none';
   const mmr = $('rep_months_row');
   if (mmr) mmr.style.display = pmode === 'multiple_months' ? '' : 'none';
+  if (typeof onRepExcelToggle === 'function') onRepExcelToggle();
 }
 
 

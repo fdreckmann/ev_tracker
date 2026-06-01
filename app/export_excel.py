@@ -1245,8 +1245,12 @@ def export_builtin(year, month, sessions, location, config=None, lang="de"):
 def export(year, month, location="all", col_override=None, start_row=None, header_row=None, header_info=None,
            cell_mapping=None, sheet=None,
            include_signature=False, signature_path=None, signature_mapping=None,
-           lang="de", return_warnings=False, footer_start_row=None):
-    """Export sessions to XLSX. Returns bytes or (bytes, warnings) if return_warnings=True."""
+           lang="de", return_warnings=False, footer_start_row=None, force_builtin=False):
+    """Export sessions to XLSX. Returns bytes or (bytes, warnings) if return_warnings=True.
+
+    force_builtin=True ignores the uploaded template.xlsx and always produces the
+    built-in standard report (used by report_email_template_id='builtin:standard').
+    """
     sessions = fetch_sessions(year, month, location)
     warnings_list = []
 
@@ -1259,7 +1263,7 @@ def export(year, month, location="all", col_override=None, start_row=None, heade
     ):
         warnings_list.append("Signaturposition nicht definiert")
 
-    if TEMPLATE_PATH.exists():
+    if TEMPLATE_PATH.exists() and not force_builtin:
         path = export_with_template(year, month, sessions, location, col_override, start_row,
                                     header_row=header_row,
                                     header_info=header_info,
