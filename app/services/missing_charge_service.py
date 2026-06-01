@@ -17,6 +17,7 @@ vehicle data and finally a global default (see get_expected_consumption).
 Candidates are only *suggestions* — no real session is ever created automatically.
 """
 from __future__ import annotations
+import json
 import logging
 from datetime import datetime, timezone, timedelta
 
@@ -426,6 +427,58 @@ def check_for_missing_charge(vehicle_id: str, new_snap_id: int, cfg: dict, con) 
     if cand["candidate_type"] == "energy_balance" and suggested_location == "unknown":
         suggested_location = "extern"
 
+    # ── Meter fusion: did a Wallbox/Zähler rise in the same window? ────────────
+    evidence: dict = {"signals": [cand["candidate_type"]]}
+    if cand["candidate_type"] == "energy_balance":
+        evidence["expected_consumption"] = {
+            "value": cand["expected_consumption_kwh_per_100km"],
+            "observed": cand["observed_consumption_kwh_per_100km"],
+            "source": cand["expected_consumption_source"],
+            "confidence": cand["expected_consumption_confidence"],
+        }
+    base_confidence = cand["base_confidence"]
+    meter_delta_kwh: float | None = None
+    meter_confirmed = 0
+    if cfg.get("missing_charge_meter_fusion_enabled", True):
+        try:
+            from services.meter_snapshot_service import (
+                find_meter_delta, meter_type_confidence, is_ev_meter)
+            md = find_meter_delta(vehicle_id, prev_ts, new_ts, con)
+        except Exception:
+            md = None
+        if md:
+            delta = md["delta_kwh"]
+            min_d = float(cfg.get("missing_charge_meter_min_delta_kwh", 1.0))
+            max_d = float(cfg.get("missing_charge_meter_max_delta_kwh", 150.0))
+            mtype = cfg.get("meter_type", "unknown")
+            if min_d <= delta <= max_d:
+                mconf = meter_type_confidence(mtype)
+                meter_delta_kwh = delta
+                evidence["signals"].append("meter_delta")
+                evidence["meter"] = {
+                    "source": md["source"], "meter_type": mtype,
+                    "start_value": md["start_value"], "end_value": md["end_value"],
+                    "delta_kwh": delta, "confidence": mconf,
+                    "start_ts": md["start_ts"], "end_ts": md["end_ts"],
+                }
+                if is_ev_meter(mtype):
+                    # Strong confirmation: trust the measured energy and home location.
+                    meter_confirmed = 1
+                    estimated_kwh = delta
+                    suggested_location = "home"
+                    base_confidence = max(base_confidence, 90)
+                else:
+                    # House-total / unknown: weak evidence, never force home.
+                    base_confidence += int(round(mconf * 10))
+            elif delta < min_d:
+                # No meaningful rise on a home meter → supports an external stop.
+                evidence["signals"].append("meter_no_change")
+                evidence["meter"] = {
+                    "source": md["source"], "meter_type": mtype,
+                    "delta_kwh": delta, "confidence": 0.0,
+                    "start_ts": md["start_ts"], "end_ts": md["end_ts"],
+                }
+
     # ── Charger type suggestion ───────────────────────────────────────────────
     gap_hours = gap_minutes / 60.0
     avg_power_kw = round(estimated_kwh / gap_hours, 2) if gap_hours > 0 else None
@@ -438,10 +491,15 @@ def check_for_missing_charge(vehicle_id: str, new_snap_id: int, cfg: dict, con) 
     if gap_hours > 8 and avg_power_kw and avg_power_kw < 1.5 and estimated_kwh > 20:
         suggested_charger_type = "unknown"
 
-    confidence = cand["base_confidence"]
+    confidence = base_confidence
     if suggested_location != "unknown":
         confidence += 10
     confidence = max(5, min(confidence, 95))
+
+    reason = cand["reason"]
+    if meter_confirmed and meter_delta_kwh is not None:
+        reason = f"{reason} · Zähler bestätigt +{meter_delta_kwh:.1f} kWh"
+    evidence_json = json.dumps(evidence, ensure_ascii=False)
 
     # ── Insert candidate ──────────────────────────────────────────────────────
     now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
@@ -456,19 +514,21 @@ def check_for_missing_charge(vehicle_id: str, new_snap_id: int, cfg: dict, con) 
             observed_consumption_kwh_per_100km, expected_energy_kwh,
             observed_energy_kwh, estimated_missing_soc_percent,
             expected_consumption_source, expected_consumption_confidence,
-            historical_sample_distance_km, historical_sample_segments)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            historical_sample_distance_km, historical_sample_segments,
+            evidence_json, meter_delta_kwh, meter_confirmed)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             vehicle_id, prev_id, new_snap_id, prev_ts, new_ts,
             prev_soc, new_soc, prev_odo, new_odo, driven_km,
             estimated_kwh, cand["estimated_consumption_kwh"], cand["estimated_battery_delta_kwh"],
             avg_power_kw, suggested_charger_type, suggested_location,
-            confidence, cand["reason"], "open", now, now,
+            confidence, reason, "open", now, now,
             cand["candidate_type"], cand["expected_consumption_kwh_per_100km"],
             cand["observed_consumption_kwh_per_100km"], cand["expected_energy_kwh"],
             cand["observed_energy_kwh"], cand["estimated_missing_soc_percent"],
             cand["expected_consumption_source"], cand["expected_consumption_confidence"],
             cand["historical_sample_distance_km"], cand["historical_sample_segments"],
+            evidence_json, meter_delta_kwh, meter_confirmed,
         ),
     )
     con.commit()
@@ -505,6 +565,8 @@ def check_for_missing_charge(vehicle_id: str, new_snap_id: int, cfg: dict, con) 
             message = (f"Das Fahrzeug war von {st_label} bis {en_label} offline. SOC "
                        f"stieg von {prev_soc:.0f}% auf {new_soc:.0f}%. Geschätzte "
                        f"Ladung: {estimated_kwh:.1f} kWh.")
+        if meter_confirmed and meter_delta_kwh is not None:
+            message += f" Per Zähler bestätigt (+{meter_delta_kwh:.1f} kWh)."
         notify(
             type="missing_charge_candidate_created",
             severity="warning",
