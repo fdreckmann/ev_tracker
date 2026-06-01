@@ -4794,63 +4794,101 @@ function _fmtTs(ts){
   return new Date(ts).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
 }
 
-function _energyBalanceDetail(c){
-  if(c.candidate_type!=='energy_balance') return '';
-  const exp = c.expected_consumption_kwh_per_100km, obs = c.observed_consumption_kwh_per_100km;
-  const srcMap = {historical:'aus Fahrhistorie berechnet', blended_historical_official:'aus Historie + Fahrzeugdaten',
-                  official:'offizieller Fahrzeugwert mit Korrekturfaktor', global_default:'Standardwert'};
-  const srcTxt = srcMap[c.expected_consumption_source]||'';
-  const histTxt = (c.expected_consumption_source==='historical'||c.expected_consumption_source==='blended_historical_official')
-                  && c.historical_sample_distance_km ? `, aus ${Math.round(c.historical_sample_distance_km).toLocaleString('de')} km Historie` : '';
-  return `<div style="font-size:.74rem;color:var(--mute);margin-top:6px;line-height:1.5">
-    Die Fahrt wirkt energetisch unplausibel. Erwarteter Verbrauch
-    <strong style="color:#fff">${exp!=null?exp.toFixed(1):'?'} kWh/100km</strong>${srcTxt?` (${srcTxt}${histTxt})`:''},
-    tatsächlich nur <strong style="color:#fff">${obs!=null?obs.toFixed(1):'?'} kWh/100km</strong>.
-    Vermutlich wurde unterwegs ca. <strong style="color:#fff">${c.estimated_kwh!=null?c.estimated_kwh.toFixed(1):'?'} kWh</strong> geladen.
-  </div>`;
+function _candidateEvidence(c){
+  try{ return c.evidence_json ? JSON.parse(c.evidence_json) : null; }catch(e){ return null; }
+}
+
+function _candidateConfirmed(c){ return c.meter_confirmed==1 || c.meter_confirmed===true; }
+
+// Why is a charge suspected? Returns {icon, color, headline, body}.
+function _candidateKind(c){
+  if(_candidateConfirmed(c)){
+    return {icon:'🔌', color:'#3ddc97',
+      headline:'Ladevorgang per Zähler bestätigt',
+      body:`Zähler/Wallbox bestätigt im Zeitraum <strong style="color:#fff">+${(c.meter_delta_kwh||0).toFixed(1)} kWh</strong>.`};
+  }
+  if(c.candidate_type==='energy_balance'){
+    const km = c.driven_km!=null ? Math.round(c.driven_km).toLocaleString('de')+' km' : 'die gefahrene Strecke';
+    return {icon:'⚠', color:'#f59e0b',
+      headline:'Vermutlicher Zwischenladestopp',
+      body:`Für ${km} wirkt der SOC-Verlust zu gering. Vermutlich gab es einen Zwischenladestopp.`};
+  }
+  return {icon:'⚠', color:'#f59e0b',
+    headline:'Möglicher fehlender Ladevorgang',
+    body:`Fahrzeugdaten waren alt. SOC ist von ${c.soc_start!=null?c.soc_start.toFixed(0):'?'} % auf ${c.soc_end!=null?c.soc_end.toFixed(0):'?'} % gestiegen.`};
+}
+
+function _consSrcText(src){
+  return ({historical:'aus Fahrhistorie', blended_historical_official:'aus Historie + Fahrzeugdaten',
+           official:'offizieller Fahrzeugwert', global_default:'Standardwert'})[src]||'';
+}
+
+// Full evidence breakdown for the expandable "Details" panel.
+function _evidenceRows(c){
+  const r=[];
+  const row=(l,v)=>{ if(v) r.push(`<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0"><span style="color:var(--mute)">${l}</span><span style="color:var(--text);text-align:right">${v}</span></div>`); };
+  row('Zeitraum', `${_fmtTs(c.start_ts)} → ${_fmtTs(c.end_ts)}`);
+  row('SOC', `${c.soc_start!=null?c.soc_start.toFixed(0):'?'} % → ${c.soc_end!=null?c.soc_end.toFixed(0):'?'} %`);
+  if(c.odo_start!=null&&c.odo_end!=null) row('Kilometerstand', `${Math.round(c.odo_start).toLocaleString('de')} → ${Math.round(c.odo_end).toLocaleString('de')} km`);
+  if(c.driven_km!=null) row('Strecke', `${Math.round(c.driven_km).toLocaleString('de')} km`);
+  if(c.expected_consumption_kwh_per_100km!=null){
+    const src=_consSrcText(c.expected_consumption_source);
+    row('Erwarteter Verbrauch', `${c.expected_consumption_kwh_per_100km.toFixed(1)} kWh/100km${src?` <span style="color:var(--mute)">(${src})</span>`:''}`);
+  }
+  if(c.observed_consumption_kwh_per_100km!=null) row('Beobachteter Verbrauch', `${c.observed_consumption_kwh_per_100km.toFixed(1)} kWh/100km`);
+  row('Geschätzte fehlende Energie', c.estimated_kwh!=null?`${c.estimated_kwh.toFixed(1)} kWh`:'');
+  const evd=_candidateEvidence(c);
+  const mtMap={ev_wallbox:'Wallbox', ev_dedicated_meter:'EV-Zähler', house_total:'Haus-Gesamtzähler', unknown:'Zähler'};
+  if(c.meter_delta_kwh!=null && evd && evd.meter){
+    row('Zähler-Delta', `+${c.meter_delta_kwh.toFixed(1)} kWh <span style="color:var(--mute)">(${mtMap[evd.meter.meter_type]||'Zähler'})</span>`);
+  }
+  const locLabel=c.suggested_location==='home'?'🏠 Zuhause':c.suggested_location==='extern'?'⚡ Extern':'❓ Unbekannt';
+  row('Standort-Vorschlag', locLabel);
+  row('Konfidenz', `${c.confidence} %`);
+  if(evd && evd.meter && evd.meter.meter_type==='house_total' && !_candidateConfirmed(c)
+     && evd.signals && evd.signals.indexOf('meter_delta')>=0){
+    r.push(`<div style="margin-top:6px;color:var(--mute);font-style:italic">Zählerquelle ist Haus-Gesamtzähler – Bestätigung ist weniger sicher.</div>`);
+  }
+  return r.join('');
+}
+
+function _signalBadges(c){
+  const evd=_candidateEvidence(c); if(!evd||!evd.signals) return '';
+  const map={soc_gain:'SOC-Sprung', energy_balance:'Energie-Bilanz', meter_delta:'Zähler +kWh', meter_no_change:'kein Zähler-Anstieg'};
+  return evd.signals.map(s=>`<span style="font-size:.62rem;font-family:var(--mono);background:rgba(255,255,255,.05);color:var(--mute);border:1px solid var(--brd);border-radius:4px;padding:1px 6px">${map[s]||s}</span>`).join(' ');
 }
 
 function _renderCandidateCard(c){
+  const k=_candidateKind(c);
   const confColor = c.confidence>=80?'#3ddc97':c.confidence>=60?'#f59e0b':'#ef4444';
-  const locLabel = c.suggested_location==='home'?'🏠 Zuhause':c.suggested_location==='extern'?'⚡ Extern':'❓ Unbekannt';
-  const typeLabel = c.suggested_charger_type==='dc'?'DC-Schnellladen':c.suggested_charger_type==='ac'?'AC-Laden':'Unbekannt';
-  const isEnergy = c.candidate_type==='energy_balance';
-  const headline = isEnergy ? '⚠ Vermutlicher Zwischenladestopp' : '⚠ Möglicher fehlender Ladevorgang';
-  const distInfo = (isEnergy && c.driven_km!=null) ? `&nbsp;·&nbsp; ${Math.round(c.driven_km).toLocaleString('de')} km` : '';
-  const odoInfo = (c.odo_start!=null&&c.odo_end!=null)
-    ? `<span style="font-size:.72rem;color:var(--mute)">${Math.round(c.odo_start).toLocaleString('de')} → ${Math.round(c.odo_end).toLocaleString('de')} km</span>`
-    : '';
-  return `<div style="background:var(--bg);border:1px solid rgba(245,158,11,.3);border-radius:10px;padding:14px 16px;margin-bottom:10px">
+  const border = _candidateConfirmed(c)?'rgba(61,220,151,.35)':'rgba(245,158,11,.3)';
+  const btn='border-radius:7px;padding:5px 12px;font-size:.75rem;cursor:pointer;white-space:nowrap';
+  const sbtn=`background:none;border:1px solid var(--brd);color:var(--mute);${btn}`;
+  return `<div id="cand-card-${c.id}" style="background:var(--bg);border:1px solid ${border};border-radius:10px;padding:14px 16px;margin-bottom:10px">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;flex-wrap:wrap">
       <div style="flex:1;min-width:0">
-        <div style="font-size:.78rem;font-family:var(--mono);color:#f59e0b;margin-bottom:4px">${headline}</div>
-        <div style="font-size:.82rem;color:var(--text);margin-bottom:2px">${_fmtTs(c.start_ts)} → ${_fmtTs(c.end_ts)}</div>
+        <div style="font-size:.78rem;font-family:var(--mono);color:${k.color};margin-bottom:4px">${k.icon} ${k.headline}</div>
+        <div style="font-size:.82rem;color:var(--text);margin-bottom:4px">${k.body}</div>
         <div style="font-size:.78rem;color:var(--mute);margin-bottom:6px">
-          SOC ${c.soc_start!=null?c.soc_start.toFixed(0):'?'}% → ${c.soc_end!=null?c.soc_end.toFixed(0):'?'}%
-          &nbsp;·&nbsp; ca. <strong style="color:#fff">${c.estimated_kwh!=null?c.estimated_kwh.toFixed(1):'?'} kWh</strong>${distInfo}
-          &nbsp;·&nbsp; ${locLabel} &nbsp;·&nbsp; ${typeLabel}
+          ${_fmtTs(c.start_ts)} → ${_fmtTs(c.end_ts)} &nbsp;·&nbsp;
+          ca. <strong style="color:#fff">${c.estimated_kwh!=null?c.estimated_kwh.toFixed(1):'?'} kWh</strong>${c.meter_delta_kwh!=null?` &nbsp;·&nbsp; Zähler +${c.meter_delta_kwh.toFixed(1)} kWh`:''}
         </div>
-        ${odoInfo}
-        ${_energyBalanceDetail(c)}
-        <div style="margin-top:4px">
-          <span style="font-size:.68rem;background:rgba(245,158,11,.1);color:#f59e0b;border:1px solid rgba(245,158,11,.3);border-radius:4px;padding:2px 6px">
-            Konfidenz: ${c.confidence}%
-          </span>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px">${_signalBadges(c)}</div>
+        <div>
+          <span style="font-size:.68rem;background:rgba(255,255,255,.05);color:${confColor};border:1px solid var(--brd);border-radius:4px;padding:2px 6px">Konfidenz: ${c.confidence}%</span>
+        </div>
+        <div id="cand-det-${c.id}" style="display:none;margin-top:10px;font-size:.74rem;border-top:1px solid var(--brd);padding-top:8px">
+          ${_evidenceRows(c)}
+          <div style="margin-top:8px">
+            <button onclick="ignoreCandidate(${c.id})" style="background:none;border:none;color:#ef4444;font-size:.72rem;cursor:pointer;opacity:.8;padding:0">Nie wieder vorschlagen</button>
+          </div>
         </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
-        <button onclick="openCandidateAcceptDialog(${c.id})"
-          style="background:rgba(61,220,151,.15);color:#3ddc97;border:1px solid rgba(61,220,151,.3);border-radius:7px;padding:5px 12px;font-size:.75rem;cursor:pointer;white-space:nowrap">
-          ✏ Übernehmen
-        </button>
-        <button onclick="dismissCandidate(${c.id})"
-          style="background:none;border:1px solid var(--brd);border-radius:7px;padding:5px 12px;font-size:.75rem;color:var(--mute);cursor:pointer">
-          Ignorieren
-        </button>
-        <button onclick="ignoreCandidate(${c.id})"
-          style="background:none;border:1px solid var(--brd);border-radius:7px;padding:5px 12px;font-size:.75rem;color:#ef4444;cursor:pointer;opacity:.7">
-          Nie wieder
-        </button>
+        <button onclick="openCandidateAcceptDialog(${c.id})" style="background:rgba(61,220,151,.15);color:#3ddc97;border:1px solid rgba(61,220,151,.3);${btn}">✏ Übernehmen</button>
+        <button onclick="dismissCandidate(${c.id})" style="${sbtn}">Ablehnen</button>
+        <button onclick="laterCandidate(${c.id})" style="${sbtn}">Später</button>
+        <button onclick="toggleCandidateDetails(${c.id})" style="${sbtn}">Details</button>
       </div>
     </div>
   </div>`;
@@ -4877,19 +4915,14 @@ async function loadMissingChargeCandidates(){
     if(hintEl){
       const c = rows[0];
       const more = rows.length>1 ? ` (${rows.length} gesamt)` : '';
-      const isEnergy = c.candidate_type==='energy_balance';
-      const hintTitle = isEnergy ? '⚠ Vermutlicher Zwischenladestopp erkannt' : '⚠ Möglicher fehlender Ladevorgang erkannt';
-      const hintBody = isEnergy
-        ? `Fahrt ${_fmtTs(c.start_ts)} – ${_fmtTs(c.end_ts)}: ${c.driven_km!=null?Math.round(c.driven_km).toLocaleString('de')+' km':''} bei
-           SOC ${c.soc_start!=null?c.soc_start.toFixed(0):'?'}% → ${c.soc_end!=null?c.soc_end.toFixed(0):'?'}% passt nicht zum SOC-Verlust.
-           Vermutlich unterwegs ca. <strong>${c.estimated_kwh!=null?c.estimated_kwh.toFixed(1):'?'} kWh</strong> geladen.`
-        : `Offline ${_fmtTs(c.start_ts)} – ${_fmtTs(c.end_ts)}.
-           SOC ${c.soc_start!=null?c.soc_start.toFixed(0):'?'}% → ${c.soc_end!=null?c.soc_end.toFixed(0):'?'}%.
-           Geschätzte Energie: <strong>${c.estimated_kwh!=null?c.estimated_kwh.toFixed(1):'?'} kWh</strong>.`;
-      hintEl.innerHTML = `<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.35);border-radius:12px;padding:16px 18px">
-        <div style="font-size:.8rem;font-family:var(--mono);color:#f59e0b;font-weight:600;margin-bottom:6px">${hintTitle}${more}</div>
-        <div style="font-size:.82rem;color:var(--text);margin-bottom:10px">
-          ${hintBody}
+      const k = _candidateKind(c);
+      const bg = _candidateConfirmed(c) ? 'rgba(61,220,151,.08)' : 'rgba(245,158,11,.08)';
+      const bd = _candidateConfirmed(c) ? 'rgba(61,220,151,.35)' : 'rgba(245,158,11,.35)';
+      hintEl.innerHTML = `<div style="background:${bg};border:1px solid ${bd};border-radius:12px;padding:16px 18px">
+        <div style="font-size:.8rem;font-family:var(--mono);color:${k.color};font-weight:600;margin-bottom:6px">${k.icon} ${k.headline}${more}</div>
+        <div style="font-size:.82rem;color:var(--text);margin-bottom:6px">${k.body}</div>
+        <div style="font-size:.78rem;color:var(--mute);margin-bottom:10px">
+          ${_fmtTs(c.start_ts)} – ${_fmtTs(c.end_ts)} · SOC ${c.soc_start!=null?c.soc_start.toFixed(0):'?'}% → ${c.soc_end!=null?c.soc_end.toFixed(0):'?'}% · ca. <strong style="color:#fff">${c.estimated_kwh!=null?c.estimated_kwh.toFixed(1):'?'} kWh</strong>${c.meter_delta_kwh!=null?` · Zähler +${c.meter_delta_kwh.toFixed(1)} kWh`:''}
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button onclick="openCandidateAcceptDialog(${c.id})"
@@ -4902,7 +4935,7 @@ async function loadMissingChargeCandidates(){
           </button>
           <button onclick="dismissCandidate(${c.id},true)"
             style="background:none;color:var(--mute);border:1px solid var(--brd);border-radius:8px;padding:6px 14px;font-size:.78rem;cursor:pointer">
-            Ignorieren
+            Ablehnen
           </button>
         </div>
       </div>`;
@@ -4927,6 +4960,19 @@ async function ignoreCandidate(id){
   else toast('Fehler: '+(r.error||'unbekannt'), 'err');
 }
 
+// "Später": snooze locally for this view — the candidate stays open and
+// reappears on the next reload.
+function laterCandidate(id){
+  const el = document.getElementById('cand-card-'+id);
+  if(el) el.style.display='none';
+  toast('Später erneut anzeigen');
+}
+
+function toggleCandidateDetails(id){
+  const el = document.getElementById('cand-det-'+id);
+  if(el) el.style.display = (el.style.display==='none' || !el.style.display) ? 'block' : 'none';
+}
+
 async function openCandidateAcceptDialog(id){
   const r = await apiFetch('/api/missing-charges/'+id+'/accept',{method:'POST'}).then(x=>x.json()).catch(()=>({ok:false}));
   if(!r.ok){ toast('Fehler: '+(r.error||'unbekannt'), 'err'); return; }
@@ -4944,7 +4990,9 @@ async function openCandidateAcceptDialog(id){
     if($('as_location')&&c.suggested_location) $('as_location').value = c.suggested_location;
     if($('as_charger_type')&&c.suggested_charger_type) $('as_charger_type').value = c.suggested_charger_type;
     if($('as_max_power')&&c.estimated_avg_power_kw) $('as_max_power').value = c.estimated_avg_power_kw.toFixed(1);
-    if($('as_reason'))   $('as_reason').value   = 'Offline-Abweichung erkannt';
+    if($('as_reason'))   $('as_reason').value   = _candidateConfirmed(c) ? 'Per Zähler bestätigter Ladevorgang'
+                                                  : (c.candidate_type==='energy_balance' ? 'Vermuteter Zwischenladestopp'
+                                                  : 'Offline-Ladevorgang erkannt');
     if($('as_note'))     $('as_note').value      = 'Kandidat #'+id+': '+escapeHtml(c.reason||'');
     if(typeof _asRecalc === 'function') _asRecalc();
   }, 150);

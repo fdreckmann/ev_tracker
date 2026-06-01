@@ -54,6 +54,49 @@ class TestMobileMoreMenu:
         """Fahrzeugliste in Mehr-Menü must call mobileNavTo('vehicles')."""
         assert "mobileNavTo('vehicles')" in _MOBILE_JS
 
+
+class TestMissingChargeEvidenceUI:
+    """Phase B — candidate cards explain SOC-jump / energy-balance / meter."""
+
+    def test_kind_helper_present(self):
+        assert "function _candidateKind" in _INDEX
+        assert "function _candidateConfirmed" in _INDEX
+        assert "function _candidateEvidence" in _INDEX
+
+    def test_three_evidence_kinds_explained(self):
+        # A) SOC-jump, B) energy-balance, C) meter-confirmed headlines
+        assert "Möglicher fehlender Ladevorgang" in _INDEX
+        assert "Vermutlicher Zwischenladestopp" in _INDEX
+        assert "Ladevorgang per Zähler bestätigt" in _INDEX
+
+    def test_evidence_rows_cover_required_fields(self):
+        for label in ("Zeitraum", "Strecke", "Erwarteter Verbrauch",
+                      "Beobachteter Verbrauch", "Zähler-Delta",
+                      "Standort-Vorschlag", "Konfidenz"):
+            assert label in _INDEX, label
+
+    def test_four_actions_present(self):
+        assert "✏ Übernehmen" in _INDEX
+        assert "function laterCandidate" in _INDEX
+        assert "function toggleCandidateDetails" in _INDEX
+        # accept / dismiss / ignore routes still wired
+        assert "openCandidateAcceptDialog(" in _INDEX
+        assert "dismissCandidate(" in _INDEX
+        assert "ignoreCandidate(" in _INDEX
+
+    def test_house_meter_weak_hint(self):
+        assert "Haus-Gesamtzähler" in _INDEX
+
+    def test_accept_takes_meter_kwh_and_home(self):
+        # prefill uses estimated_kwh (meter delta when confirmed) + suggested_location
+        assert "$('as_kwh').value" in _INDEX
+        assert "$('as_location').value = c.suggested_location" in _INDEX
+
+    def test_mobile_hint_is_type_aware(self):
+        assert "meter_confirmed" in _MOBILE_JS
+        assert "Vermutlicher Zwischenladestopp" in _MOBILE_JS
+        assert "per zähler bestätigt" in _MOBILE_JS.lower()
+
     def test_openDesktopConfigSection_switches_tab(self):
         """openDesktopConfigSection must invoke tab('config', ...) and cfgSection."""
         assert "tab('config'" in _MOBILE_JS

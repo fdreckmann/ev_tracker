@@ -183,19 +183,28 @@ async function refreshMobileDashboard() {
       if (mcEl) {
         if (mc && mc.length > 0) {
           var c = mc[0];
-          var fmtTs = function(ts){
-            if(!ts) return '—';
-            return new Date(ts).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-          };
+          var confirmed = (c.meter_confirmed==1 || c.meter_confirmed===true);
+          var title, color, bd, bg;
+          if (confirmed) {
+            title = '🔌 Ladevorgang per Zähler bestätigt'; color = '#3ddc97';
+            bg = 'rgba(61,220,151,.1)'; bd = 'rgba(61,220,151,.35)';
+          } else if (c.candidate_type === 'energy_balance') {
+            title = '⚠ Vermutlicher Zwischenladestopp'; color = '#f59e0b';
+            bg = 'rgba(245,158,11,.1)'; bd = 'rgba(245,158,11,.35)';
+          } else {
+            title = '⚠ Fehlender Ladevorgang möglich'; color = '#f59e0b';
+            bg = 'rgba(245,158,11,.1)'; bd = 'rgba(245,158,11,.35)';
+          }
+          var meterLine = (c.meter_delta_kwh!=null) ? ' · Zähler +' + c.meter_delta_kwh.toFixed(1) + ' kWh' : '';
           mcEl.style.display = '';
-          mcEl.innerHTML = '<div style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.35);border-radius:10px;padding:12px 14px;margin:10px 0">' +
-            '<div style="font-size:.75rem;color:#f59e0b;font-weight:600;margin-bottom:4px">⚠ Fehlender Ladevorgang möglich</div>' +
+          mcEl.innerHTML = '<div style="background:' + bg + ';border:1px solid ' + bd + ';border-radius:10px;padding:12px 14px;margin:10px 0">' +
+            '<div style="font-size:.75rem;color:' + color + ';font-weight:600;margin-bottom:4px">' + title + '</div>' +
             '<div style="font-size:.78rem;color:#cdd6f4;margin-bottom:8px">' +
             'SOC ' + (c.soc_start!=null?c.soc_start.toFixed(0):'?') + '% → ' + (c.soc_end!=null?c.soc_end.toFixed(0):'?') + '% · ' +
-            'ca. ' + (c.estimated_kwh!=null?c.estimated_kwh.toFixed(1):'?') + ' kWh</div>' +
+            'ca. ' + (c.estimated_kwh!=null?c.estimated_kwh.toFixed(1):'?') + ' kWh' + meterLine + '</div>' +
             '<div style="display:flex;gap:8px">' +
             '<button onclick="mobileMissingChargeAccept(' + c.id + ')" style="flex:1;background:rgba(61,220,151,.15);color:#3ddc97;border:1px solid rgba(61,220,151,.3);border-radius:7px;padding:7px 10px;font-size:.75rem;cursor:pointer">✏ Übernehmen</button>' +
-            '<button onclick="mobileMissingChargeDismiss(' + c.id + ')" style="flex:1;background:none;color:#8892b0;border:1px solid #2a3050;border-radius:7px;padding:7px 10px;font-size:.75rem;cursor:pointer">Ignorieren</button>' +
+            '<button onclick="mobileMissingChargeDismiss(' + c.id + ')" style="flex:1;background:none;color:#8892b0;border:1px solid #2a3050;border-radius:7px;padding:7px 10px;font-size:.75rem;cursor:pointer">Ablehnen</button>' +
             '</div></div>';
         } else {
           mcEl.style.display = 'none';
