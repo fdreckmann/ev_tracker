@@ -76,29 +76,29 @@ jobs:
           VERSION_FROM_FILE=$(python3 -c "import json; print(json.load(open('version.json'))['version'])" 2>/dev/null || echo "unknown")
 
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            # Explicit release tag: latest + versioned tag + stable
+            # v* tag → latest + stable + versioned tag (e.g. v2.0.55)
             VERSION="${GITHUB_REF_NAME#v}"
             CHANNEL=stable
             MAIN_TAG="${IMAGE_NAME}:latest"
-            echo "tags=${IMAGE_NAME}:latest,${IMAGE_NAME}:${GITHUB_REF_NAME},${IMAGE_NAME}:stable" >> "$GITHUB_OUTPUT"
+            echo "tags=${IMAGE_NAME}:latest,${IMAGE_NAME}:stable,${IMAGE_NAME}:${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           elif [ "${GITHUB_REF_NAME}" = "main" ]; then
-            # main = staging / pre-release: stable tag only, never latest
+            # main → stable
             VERSION="${VERSION_FROM_FILE}"
             CHANNEL=stable
             MAIN_TAG="${IMAGE_NAME}:stable"
-            echo "tags=${IMAGE_NAME}:stable,${IMAGE_NAME}:main-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+            echo "tags=${IMAGE_NAME}:stable" >> "$GITHUB_OUTPUT"
           elif [ "${GITHUB_REF_NAME}" = "dev" ]; then
-            # dev = ongoing development
+            # dev → dev
             VERSION="${VERSION_FROM_FILE}"
             CHANNEL=dev
             MAIN_TAG="${IMAGE_NAME}:dev"
-            echo "tags=${IMAGE_NAME}:dev,${IMAGE_NAME}:dev-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+            echo "tags=${IMAGE_NAME}:dev" >> "$GITHUB_OUTPUT"
           else
-            # other branches (feature, hotfix, …)
+            # other branches: no push (only test job runs)
             VERSION="${VERSION_FROM_FILE}"
             CHANNEL=dev
-            MAIN_TAG="${IMAGE_NAME}:${GITHUB_REF_NAME}-${SHA_SHORT}"
-            echo "tags=${IMAGE_NAME}:${GITHUB_REF_NAME}-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
+            MAIN_TAG="${IMAGE_NAME}:dev"
+            echo "tags=" >> "$GITHUB_OUTPUT"
           fi
 
           echo "version=${VERSION}"            >> "$GITHUB_OUTPUT"
@@ -150,7 +150,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
+          push: ${{ steps.tags.outputs.tags != '' }}
           tags: ${{ steps.tags.outputs.tags }}
           platforms: linux/amd64
           build-args: |
