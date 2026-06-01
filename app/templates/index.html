@@ -1709,10 +1709,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
                     <option value="all">Alle Fahrzeuge</option>
                   </select></div>
                 <div><label class="cfg-lbl">Standort</label>
-                  <select id="recalc_location" style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
-                    <option value="home">🏠 Nur Zuhause</option>
-                    <option value="all">Alle</option>
-                  </select></div>
+                  <div style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--mute);font-size:.82rem">🏠 Nur Zuhause</div></div>
                 <button class="btn-s" onclick="recalculateTariff()" style="white-space:nowrap">🔄 Neu berechnen</button>
               </div>
               <span id="recalc_status" style="display:block;margin-top:6px;font-size:.73rem;font-family:var(--mono);color:var(--mute)"></span>
@@ -6138,12 +6135,11 @@ async function recalculateTariff(){
   const st = $('recalc_status');
   const month    = $('recalc_month')?.value||'';
   const vehicle  = $('recalc_vehicle')?.value||'v0';
-  const location = $('recalc_location')?.value||'home';
   if(st){st.textContent='⏳ Berechne…';st.style.color='var(--mute)';}
   try{
     const r = await apiFetch('/api/tariffs/recalculate',{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({vehicle_id:vehicle, month:month||undefined, location_filter:location})
+      body:JSON.stringify({vehicle_id:vehicle, month:month||undefined, location_filter:'home'})
     }).then(r=>r.json());
     if(r.ok){
       st.textContent=`✅ ${r.updated} Sessions aktualisiert${r.errors?', '+r.errors+' Fehler':''}`;

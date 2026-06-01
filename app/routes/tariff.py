@@ -100,7 +100,9 @@ def api_tariff_recalculate():
     data = request.get_json(force=True) or {}
     vehicle_id      = data.get("vehicle_id", "v0")
     month           = data.get("month")           # "2026-05"
-    location_filter = data.get("location_filter", "home")
+    # Recalculation applies the *home* tariff. External sessions are priced via
+    # charge subscriptions/cards, so they must never be overwritten here.
+    location_filter = "home"
     cfg = load_config()
     try:
         from tariff_providers import get_tariff_provider
