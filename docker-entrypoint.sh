@@ -29,10 +29,13 @@ fi
 # Mode A: already non-root (user: set in compose or equivalent)
 # Verify /data is writable before starting to fail fast with a clear message.
 if ! test -w "$DATA_DIR" 2>/dev/null; then
-    echo "ERROR: $DATA_DIR is not writable for current user (UID $(id -u))" >&2
-    echo "Fix: ensure /data is owned by UID $(id -u)" >&2
-    echo "Unraid: chown -R 99:100 /mnt/user/appdata/ev-tracker  (for PUID=99)" >&2
-    echo "Other:  chown -R 10001:100 /mnt/user/appdata/ev-tracker" >&2
+    _UID="$(id -u)"
+    _GID="$(id -g)"
+    echo "ERROR: $DATA_DIR is not writable for current user (UID $_UID)" >&2
+    echo "Run this on the host to fix ownership:" >&2
+    echo "  chown -R $_UID:$_GID /mnt/user/appdata/ev-tracker" >&2
+    echo "Or switch to root-start mode: remove 'user:' from docker-compose.yml" >&2
+    echo "  and set PUID=$_UID PGID=$_GID in your .env" >&2
     exit 1
 fi
 
