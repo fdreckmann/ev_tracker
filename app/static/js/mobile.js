@@ -199,12 +199,12 @@ async function refreshMobileDashboard() {
           mcEl.style.display = '';
           mcEl.innerHTML = '<div style="background:' + bg + ';border:1px solid ' + bd + ';border-radius:10px;padding:12px 14px;margin:10px 0">' +
             '<div style="font-size:.75rem;color:' + color + ';font-weight:600;margin-bottom:4px">' + title + '</div>' +
-            '<div style="font-size:.78rem;color:#cdd6f4;margin-bottom:8px">' +
+            '<div style="font-size:.78rem;color:var(--ink);margin-bottom:8px">' +
             'SOC ' + (c.soc_start!=null?c.soc_start.toFixed(0):'?') + '% → ' + (c.soc_end!=null?c.soc_end.toFixed(0):'?') + '% · ' +
             'ca. ' + (c.estimated_kwh!=null?c.estimated_kwh.toFixed(1):'?') + ' kWh' + meterLine + '</div>' +
             '<div style="display:flex;gap:8px">' +
             '<button onclick="mobileMissingChargeAccept(' + c.id + ')" style="flex:1;background:rgba(61,220,151,.15);color:#3ddc97;border:1px solid rgba(61,220,151,.3);border-radius:7px;padding:7px 10px;font-size:.75rem;cursor:pointer">✏ Übernehmen</button>' +
-            '<button onclick="mobileMissingChargeDismiss(' + c.id + ')" style="flex:1;background:none;color:#8892b0;border:1px solid #2a3050;border-radius:7px;padding:7px 10px;font-size:.75rem;cursor:pointer">Ablehnen</button>' +
+            '<button onclick="mobileMissingChargeDismiss(' + c.id + ')" style="flex:1;background:none;color:var(--mute);border:1px solid var(--brd2);border-radius:7px;padding:7px 10px;font-size:.75rem;cursor:pointer">Ablehnen</button>' +
             '</div></div>';
         } else {
           mcEl.style.display = 'none';
@@ -221,7 +221,7 @@ function renderMobileRecentSessions(sessions) {
   var el = document.getElementById('mobileRecentSessions');
   if (!el) return;
   if (!sessions || sessions.length === 0) {
-    el.innerHTML = '<p style="color:#8892b0;font-size:13px">Keine Ladevorgänge vorhanden.</p>';
+    el.innerHTML = '<p style="color:var(--mute);font-size:13px">Keine Ladevorgänge vorhanden.</p>';
     return;
   }
   el.innerHTML = sessions.map(function(s) { return buildSessionCard(s, true); }).join('');
@@ -236,7 +236,7 @@ function renderMobileSessionCards() {
   if (!el) return;
   var sessions = window._allSessions || window._sessions || [];
   if (!sessions || sessions.length === 0) {
-    el.innerHTML = '<p style="color:#8892b0">Keine Ladevorgänge vorhanden.</p>';
+    el.innerHTML = '<p style="color:var(--mute)">Keine Ladevorgänge vorhanden.</p>';
     return;
   }
   el.innerHTML = sessions.slice().reverse().map(function(s) { return buildSessionCard(s, false); }).join('');
@@ -406,17 +406,17 @@ async function doMobileExportPreview() {
         html += '<tr style="background:'+(isData?'transparent':'#1a2030')+'">';
         cells.slice(0, 6).forEach(function(c) {
           var v = c == null ? '' : String(c);
-          html += '<td style="padding:4px 6px;border:1px solid #2d3147;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escapeHtml(v)+'</td>';
+          html += '<td style="padding:4px 6px;border:1px solid var(--brd2);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escapeHtml(v)+'</td>';
         });
         html += '</tr>';
       });
       html += '</table></div>';
     } else {
-      html += '<p style="color:#8892b0;font-size:13px">Keine Vorschau verfügbar.</p>';
+      html += '<p style="color:var(--mute);font-size:13px">Keine Vorschau verfügbar.</p>';
     }
 
     if (_mobileExportToken) {
-      html += '<button data-href="/api/export/download/'+encodeURIComponent(_mobileExportToken||'')+'" onclick="window.location.href=this.dataset.href" style="width:100%;padding:12px;border-radius:8px;background:#3d5afe;border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;margin-top:8px">📥 Diese Datei herunterladen</button>';
+      html += '<button data-href="/api/export/download/'+encodeURIComponent(_mobileExportToken||'')+'" onclick="window.location.href=this.dataset.href" style="width:100%;padding:12px;border-radius:8px;background:#3d5afe;border:none;color:var(--ink);font-size:14px;font-weight:600;cursor:pointer;margin-top:8px">📥 Diese Datei herunterladen</button>';
     }
 
     if (resultEl) resultEl.innerHTML = html;
@@ -476,7 +476,7 @@ function initMobileMore() {
     var el = document.getElementById(id);
     if (!el) return;
     el.innerHTML = items.map(function(item) {
-      return '<button onclick="('+item.action.toString()+')()" style="display:block;width:100%;text-align:left;padding:12px;margin-bottom:4px;border-radius:6px;background:transparent;border:1px solid #2d3147;color:#e6f1ff;font-size:14px;cursor:pointer">'+item.label+'</button>';
+      return '<button onclick="('+item.action.toString()+')()" style="display:block;width:100%;text-align:left;padding:12px;margin-bottom:4px;border-radius:6px;background:transparent;border:1px solid var(--brd2);color:var(--ink);font-size:14px;cursor:pointer">'+item.label+'</button>';
     }).join('');
   });
 }

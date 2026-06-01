@@ -9,27 +9,97 @@
 <meta name="apple-mobile-web-app-title" content="EV Tracker">
 <link rel="manifest" href="/static/manifest.json">
 <title>EV Tracker – {{ cfg.car_name }}</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="/static/js/api.js?v={{ asset_version }}"></script>
 <script src="/static/js/status.js?v={{ asset_version }}"></script>
 <script src="/static/js/config.js?v={{ asset_version }}"></script>
+<script>
+// Theme (system|dark|light) — applied before paint to avoid a flash.
+(function(){
+  function resolve(pref){
+    if(pref==='dark') return 'dark';
+    if(pref==='light') return 'light';
+    return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+  }
+  window.applyTheme = function(pref){
+    pref = pref || localStorage.getItem('theme') || 'system';
+    var resolved = resolve(pref);
+    var de = document.documentElement;
+    de.setAttribute('data-theme', resolved);
+    de.setAttribute('data-theme-pref', pref);
+    var mc = document.querySelector('meta[name="theme-color"]');
+    if(mc){
+      var bg = getComputedStyle(de).getPropertyValue('--bg').trim();
+      if(bg) mc.setAttribute('content', bg);
+    }
+    if(document.querySelectorAll) document.querySelectorAll('[data-theme-opt]').forEach(function(b){
+      b.classList.toggle('active', b.getAttribute('data-theme-opt')===pref);
+    });
+  };
+  window.setTheme = function(pref){ localStorage.setItem('theme', pref); window.applyTheme(pref); };
+  try{ window.applyTheme(); }catch(e){ document.documentElement.setAttribute('data-theme','dark'); }
+  // Re-apply once the toggle controls exist so their active state syncs.
+  document.addEventListener('DOMContentLoaded', function(){ try{ window.applyTheme(); }catch(e){} });
+  if(window.matchMedia){ try{
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(){
+      if((localStorage.getItem('theme')||'system')==='system') window.applyTheme('system');
+    });
+  }catch(e){} }
+})();
+</script>
 <style>
-:root{
-  --bg:#080b10;--surf:#0e1319;--brd:#1c2430;--brd2:#253040;
-  --txt:#c8d4e3;--mute:#4a5c72;--acc:#3ddc97;--acc2:#00b4ff;
-  --warn:#f59e0b;--danger:#ef4444;--home:#3ddc97;--ext:#f59e0b;
-  --mono:'DM Mono',monospace;--sans:'Syne',sans-serif;--r:12px;
+:root,:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#080b10;--bg2:#0e1319;--surf:#0e1319;--surf2:#161c25;--card:#0e1319;
+  --brd:#1c2430;--brd2:#253040;--chip:#222c3a;
+  --txt:#c8d4e3;--text:#c8d4e3;--ink:#f1f6fc;--mute:#6b7a90;
+  --acc:#3ddc97;--acc2:#00b4ff;--warn:#f59e0b;--danger:#ef4444;
+  --home:#3ddc97;--ext:#f59e0b;--m-accent:#3d5afe;
+  --info-bg:#13243b;--ok-bg:#10241c;--warn-bg:#241c0c;--danger-bg:#2a1414;
+  --shadow:rgba(0,0,0,.4);
+  --mono:'DM Mono',ui-monospace,monospace;
+  --sans:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --display:'Syne',var(--sans);--r:12px;
+}
+:root[data-theme="light"]{
+  color-scheme:light;
+  --bg:#f3f6fb;--bg2:#ffffff;--surf:#ffffff;--surf2:#eef2f8;--card:#ffffff;
+  --brd:#dde3ec;--brd2:#c8d2e0;--chip:#e7ecf3;
+  --txt:#2b3650;--text:#2b3650;--ink:#0f1720;--mute:#5a6b82;
+  --acc:#0e9f6e;--acc2:#0284c7;--warn:#b45309;--danger:#dc2626;
+  --home:#0e9f6e;--ext:#b45309;--m-accent:#3d5afe;
+  --info-bg:#dbeafe;--ok-bg:#d1fae5;--warn-bg:#fef3c7;--danger-bg:#fee2e2;
+  --shadow:rgba(15,23,42,.14);
+  --mono:'DM Mono',ui-monospace,monospace;
+  --sans:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --display:'Syne',var(--sans);--r:12px;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--txt);font-family:var(--sans);min-height:100vh;overflow-x:hidden}
+body{background:var(--bg);color:var(--txt);font-family:var(--sans);font-size:15px;line-height:1.55;
+  min-height:100vh;overflow-x:hidden;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  transition:background .2s ease,color .2s ease}
+/* Tabular figures for all numeric/monospace UI so columns line up */
+.sv,.su,td,th,.stat,table,input,.mono,[class*="num"]{font-variant-numeric:tabular-nums}
+.logo h1,.modal h2{font-family:var(--display)}
+/* Slightly heavier, less sparse small labels for legibility */
+label,.sl,.card-title,.cfg-sec-title,.chart-title,thead th{font-weight:500;letter-spacing:.06em}
 body::before{content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
   background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
   background-size:256px;opacity:.35}
 body::after{content:'';position:fixed;top:-300px;left:50%;transform:translateX(-50%);
   width:800px;height:500px;z-index:0;pointer-events:none;
   background:radial-gradient(ellipse at center,rgba(61,220,151,.07) 0%,transparent 70%)}
+:root[data-theme="light"] body::before{opacity:.05}
+:root[data-theme="light"] body::after{opacity:.5}
 .shell{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:0 24px 80px}
+
+/* Theme switch (header) */
+.theme-seg{display:flex;gap:2px;background:var(--surf);border:1px solid var(--brd);border-radius:999px;padding:3px}
+.theme-seg button{background:none;border:none;cursor:pointer;font-size:.9rem;line-height:1;
+  padding:5px 9px;border-radius:999px;color:var(--mute);transition:all .15s}
+.theme-seg button:hover{color:var(--txt)}
+.theme-seg button.active{background:var(--brd2);color:var(--ink)}
 
 /* Header */
 header{display:flex;align-items:center;justify-content:space-between;padding:32px 0 28px;
@@ -37,7 +107,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:32p
 .logo{display:flex;align-items:center;gap:14px}
 .logo-ic{width:42px;height:42px;background:linear-gradient(135deg,var(--acc),var(--acc2));
   border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px}
-.logo h1{font-size:1.1rem;font-weight:700;color:#fff}
+.logo h1{font-size:1.1rem;font-weight:700;color:var(--ink)}
 .logo p{font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-top:1px}
 .pill{display:flex;align-items:center;gap:8px;background:var(--surf);
   border:1px solid var(--brd);border-radius:999px;padding:8px 16px 8px 10px;
@@ -55,7 +125,7 @@ nav{display:flex;gap:4px;background:var(--surf);border:1px solid var(--brd);
 nav button{background:none;border:none;cursor:pointer;font-family:var(--sans);font-size:.82rem;
   font-weight:600;color:var(--mute);padding:8px 18px;border-radius:8px;transition:all .18s}
 nav button:hover{color:var(--txt)}
-nav button.active{background:var(--brd2);color:#fff}
+nav button.active{background:var(--brd2);color:var(--ink)}
 
 /* Panels */
 .panel{display:none;animation:fadeUp .22s ease}
@@ -72,7 +142,7 @@ nav button.active{background:var(--brd2);color:#fff}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:18px}
 .stat{background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:16px 18px}
 .sl{font-size:.67rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.1em;margin-bottom:7px}
-.sv{font-size:1.55rem;font-weight:800;color:#fff;line-height:1;white-space:nowrap;overflow:hidden}
+.sv{font-size:1.55rem;font-weight:800;color:var(--ink);line-height:1;white-space:nowrap;overflow:hidden}
 .sv.g{color:var(--acc)}.sv.b{color:var(--acc2)}.sv.w{color:var(--warn)}.sv.r{color:var(--danger)}
 .su{font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-top:3px}
 
@@ -112,7 +182,7 @@ button{font-family:var(--sans);font-weight:600;border:none;cursor:pointer;
 .btn-p{background:var(--acc);color:#041810;padding:10px 22px}
 .btn-p:hover{background:#5aeaaa;transform:translateY(-1px)}
 .btn-s{background:var(--brd2);color:var(--txt);padding:10px 20px}
-.btn-s:hover{background:#2d3d52}
+.btn-s:hover{background:var(--brd2)}
 .btn-g{background:transparent;border:1px solid var(--brd2);color:var(--mute);padding:9px 18px}
 .btn-g:hover{border-color:var(--acc);color:var(--acc)}
 .btn-d{background:rgba(239,68,68,.12);color:var(--danger);padding:10px 20px;border:1px solid rgba(239,68,68,.25)}
@@ -131,7 +201,7 @@ thead th{text-align:left;font-size:.65rem;text-transform:uppercase;letter-spacin
 tbody tr{border-bottom:1px solid var(--brd);transition:background .1s}
 tbody tr:hover{background:rgba(255,255,255,.02)}
 td{padding:11px 12px;color:var(--txt)}
-td.num{color:#fff;font-weight:500}
+td.num{color:var(--ink);font-weight:500}
 td.g{color:var(--acc)}td.w{color:var(--warn)}
 .loc-home{color:var(--home);font-size:.72rem}
 .loc-ext{color:var(--ext);font-size:.72rem}
@@ -148,7 +218,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   text-align:center;cursor:pointer;transition:all .2s;background:var(--bg);margin-top:14px}
 .drop-zone:hover,.drop-zone.drag{border-color:var(--acc2);background:rgba(0,180,255,.04)}
 .dz-icon{font-size:2rem;margin-bottom:10px;opacity:.6}
-.dz-title{font-size:.88rem;font-weight:700;color:#fff;margin-bottom:5px}
+.dz-title{font-size:.88rem;font-weight:700;color:var(--ink);margin-bottom:5px}
 .dz-sub{font-size:.73rem;font-family:var(--mono);color:var(--mute)}
 #tplFile{display:none}
 
@@ -187,7 +257,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   font-weight:500;color:var(--mute);padding:9px 12px;border-radius:8px;transition:all .15s;
   text-align:left;width:100%}
 .cfg-nav-btn:hover{color:var(--txt);background:var(--brd)}
-.cfg-nav-btn.active{background:var(--brd2);color:#fff}
+.cfg-nav-btn.active{background:var(--brd2);color:var(--ink)}
 /* Grouped sidebar sub-items */
 .cfg-nav-sub{padding-left:22px;font-size:.78rem}
 .cfg-grp-label{font-size:.58rem;font-family:var(--mono);font-weight:700;color:#4a5568;
@@ -234,8 +304,8 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   background:var(--brd2);border:none;color:var(--txt);
   border-radius:6px;padding:5px 12px;cursor:pointer;font-size:.8rem;
 }
-.modal-close:hover{background:var(--danger);color:#fff}
-.modal h2{font-size:1rem;font-weight:700;color:#fff;margin-bottom:6px}
+.modal-close:hover{background:var(--danger);color:var(--ink)}
+.modal h2{font-size:1rem;font-weight:700;color:var(--ink);margin-bottom:6px}
 .modal-meta{font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:20px}
 .modal-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:20px}
 .modal-chart{height:240px;margin-bottom:16px}
@@ -257,7 +327,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   gap: 2px;
   background: transparent;
   border: none;
-  color: #8892b0;
+  color: var(--mute);
   cursor: pointer;
   padding: 6px 4px;
   font-size: 11px;
@@ -347,7 +417,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   }
   .settings-group-header {
     padding: 14px 16px;
-    background: #1e2230;
+    background: var(--surf2);
     cursor: pointer;
     display: flex;
     justify-content: space-between;
@@ -367,7 +437,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   .settings-group-body {
     display: none;
     padding: 12px;
-    background: #161825;
+    background: var(--surf2);
   }
   .settings-group-body.open {
     display: block;
@@ -381,8 +451,8 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     left: 0;
     right: 0;
     z-index: 1000;
-    background: #1a1d2e;
-    border-top: 1px solid #2d3147;
+    background: var(--surf);
+    border-top: 1px solid var(--brd2);
     height: 60px;
     align-items: stretch;
   }
@@ -409,7 +479,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
   /* Karten-Grundstil */
   .mobile-card {
-    background: #1e2230;
+    background: var(--surf2);
     border-radius: 12px;
     padding: 16px;
     margin-bottom: 12px;
@@ -418,18 +488,18 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   .mobile-card h3 {
     margin: 0 0 10px 0;
     font-size: 14px;
-    color: #8892b0;
+    color: var(--mute);
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
   .mobile-card .value {
     font-size: 22px;
     font-weight: 700;
-    color: #e6f1ff;
+    color: var(--ink);
   }
   .mobile-card .label {
     font-size: 12px;
-    color: #8892b0;
+    color: var(--mute);
     margin-top: 2px;
   }
   .stat-row {
@@ -442,7 +512,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
   /* Session-Karte */
   .session-card {
-    background: #1e2230;
+    background: var(--surf2);
     border-radius: 10px;
     padding: 14px;
     margin-bottom: 8px;
@@ -465,7 +535,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   .session-card-date {
     font-size: 13px;
     font-weight: 600;
-    color: #e6f1ff;
+    color: var(--ink);
   }
   .session-card-cost {
     font-size: 14px;
@@ -476,7 +546,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     display: flex;
     gap: 16px;
     font-size: 12px;
-    color: #8892b0;
+    color: var(--mute);
   }
   .session-card-details span::before {
     margin-right: 3px;
@@ -504,7 +574,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 .m-sheet-overlay.open { display: flex; }
 .m-sheet {
   width: 100%;
-  background: #1a1d2e;
+  background: var(--surf);
   border-radius: 16px 16px 0 0;
   padding: 8px 16px 40px;
   max-height: 88vh;
@@ -513,24 +583,24 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 }
 .m-handle {
   width: 36px; height: 4px;
-  background: #3d4166;
+  background: var(--brd2);
   border-radius: 2px;
   margin: 8px auto 16px;
 }
 .m-sheet-title {
   font-size: 17px; font-weight: 700;
-  margin-bottom: 16px; color: #e6f1ff;
+  margin-bottom: 16px; color: var(--ink);
 }
 .m-field { margin-bottom: 12px; }
 .m-field label {
-  display: block; font-size: 11px; color: #8892b0;
+  display: block; font-size: 11px; color: var(--mute);
   margin-bottom: 4px; font-weight: 600;
   text-transform: uppercase; letter-spacing: .4px;
 }
 .m-field input, .m-field select, .m-field textarea {
   width: 100%; padding: 10px 12px;
-  background: #0e1319; border: 1px solid #2d3147;
-  border-radius: 8px; color: #e6f1ff;
+  background: var(--bg2); border: 1px solid var(--brd2);
+  border-radius: 8px; color: var(--ink);
   font-size: 14px; font-family: var(--sans);
 }
 .m-field input:focus, .m-field select:focus {
@@ -546,23 +616,23 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 .m-btn-p:active { opacity: .85; }
 .m-btn-s {
   padding: 13px 20px;
-  background: transparent; border: 1px solid #2d3147;
-  border-radius: 8px; color: #8892b0;
+  background: transparent; border: 1px solid var(--brd2);
+  border-radius: 8px; color: var(--mute);
   font-size: 15px; cursor: pointer;
 }
 .m-info-block {
-  background: #0e1319; border: 1px solid #2d3147;
+  background: var(--bg2); border: 1px solid var(--brd2);
   border-radius: 8px; padding: 4px 12px;
   margin-bottom: 12px;
 }
 .m-info-row {
   display: flex; justify-content: space-between;
-  padding: 8px 0; border-bottom: 1px solid #1c2430;
+  padding: 8px 0; border-bottom: 1px solid var(--brd);
   font-size: 13px;
 }
 .m-info-row:last-child { border-bottom: none; }
-.m-info-label { color: #8892b0; }
-.m-info-value { color: #e6f1ff; font-weight: 600; max-width: 60%; text-align: right; word-break: break-word; }
+.m-info-label { color: var(--mute); }
+.m-info-value { color: var(--ink); font-weight: 600; max-width: 60%; text-align: right; word-break: break-word; }
 .m-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
 /* ── Floating Action Button ── */
@@ -614,17 +684,17 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #1e2230;
-  border: 1px solid #2d3147;
+  background: var(--surf2);
+  border: 1px solid var(--brd2);
   border-radius: 24px;
   padding: 8px 14px 8px 10px;
   cursor: pointer;
   font-size: 13px;
-  color: #e6f1ff;
+  color: var(--ink);
   white-space: nowrap;
   box-shadow: 0 2px 8px rgba(0,0,0,.3);
 }
-.fab-item:active { background: #2d3147; }
+.fab-item:active { background: var(--chip); }
 
 /* ── Skeleton Loaders ── */
 @keyframes shimmer {
@@ -654,6 +724,11 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     </div>
   </div>
   <div style="display:flex;gap:10px;align-items:center">
+    <div class="theme-seg" id="themeSeg" title="Darstellung">
+      <button data-theme-opt="system" onclick="setTheme('system')" title="System">🖥️</button>
+      <button data-theme-opt="light" onclick="setTheme('light')" title="Hell">☀️</button>
+      <button data-theme-opt="dark" onclick="setTheme('dark')" title="Dunkel">🌙</button>
+    </div>
     <div class="pill">
       <span class="dot" id="sDot"></span>
       <span id="sTxt" style="font-family:var(--mono)">Verbinde…</span>
@@ -673,9 +748,9 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
 <!-- Notification Top Hint — only visible when unread notifications exist -->
 <div id="notifTopHint" style="display:none;position:fixed;top:10px;right:14px;z-index:1200">
-  <button id="notifTopBtn" onclick="toggleNotifCenter()" style="background:var(--card);border:1px solid var(--brd);border-radius:20px;padding:4px 12px 4px 10px;cursor:pointer;font-size:.78rem;color:#e0eaf2;display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,.4)">
+  <button id="notifTopBtn" onclick="toggleNotifCenter()" style="background:var(--card);border:1px solid var(--brd);border-radius:20px;padding:4px 12px 4px 10px;cursor:pointer;font-size:.78rem;color:var(--ink);display:flex;align-items:center;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,.4)">
     🔔 <span id="notifTopText">Benachrichtigungen</span>
-    <span id="notifBadge" style="background:#ef4444;color:#fff;border-radius:50%;font-size:.65rem;min-width:18px;height:18px;line-height:18px;text-align:center;font-weight:700;display:inline-block;padding:0 3px">0</span>
+    <span id="notifBadge" style="background:#ef4444;color:var(--ink);border-radius:50%;font-size:.65rem;min-width:18px;height:18px;line-height:18px;text-align:center;font-weight:700;display:inline-block;padding:0 3px">0</span>
   </button>
 </div>
 
@@ -701,7 +776,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   <!-- Vehicle image card -->
   <div id="dashVehicleCard" style="display:flex;align-items:center;gap:16px;background:var(--card);border:1px solid var(--brd);border-radius:12px;padding:14px 18px;margin-bottom:14px">
     <img id="dashVehicleImg" src="/static/vehicle_images/placeholder_car.svg"
-         alt="Fahrzeug" style="height:70px;width:auto;border-radius:8px;object-fit:contain;background:#1e2030"
+         alt="Fahrzeug" style="height:70px;width:auto;border-radius:8px;object-fit:contain;background:var(--surf2)"
          onerror="this.src='/static/vehicle_images/placeholder_car.svg'">
     <div>
       <div style="font-weight:600;font-size:1rem" id="dashVehicleName">{{ cfg.car_name }}</div>
@@ -1346,7 +1421,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <div class="card">
           <div class="card-title">💼 Abrechnung / Arbeitgeber-Erstattung</div>
           <!-- Summary strip -->
-          <div id="billing_summary_strip" style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:18px;padding:14px;background:#1e2030;border-radius:8px;font-size:.8rem">
+          <div id="billing_summary_strip" style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:18px;padding:14px;background:var(--surf2);border-radius:8px;font-size:.8rem">
             <span>⏳ Lade…</span>
           </div>
           <!-- Wizard tabs -->
@@ -1444,7 +1519,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <div class="card">
           <div class="card-title">📁 Report-Archiv</div>
           <!-- Create report strip -->
-          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:18px;padding:14px;background:#1e2030;border-radius:8px">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:18px;padding:14px;background:var(--surf2);border-radius:8px">
             <div><label class="cfg-lbl" style="margin-bottom:4px">Zeitraum-Modus</label>
               <select id="arc_period_mode" onchange="onArcPeriodModeChange()" style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:7px;color:var(--txt);font-size:.82rem">
                 <option value="previous_period">Vorheriger Monat</option>
@@ -1668,7 +1743,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           </div>
 
           <!-- Add/Edit form -->
-          <div id="contract_form" style="display:none;padding:14px;background:#1e2030;border-radius:8px;margin-bottom:18px">
+          <div id="contract_form" style="display:none;padding:14px;background:var(--surf2);border-radius:8px;margin-bottom:18px">
             <div style="font-size:.82rem;font-weight:600;margin-bottom:12px" id="contract_form_title">Neues Ladeabo</div>
             <input type="hidden" id="cf_id">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
@@ -1728,7 +1803,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <!-- D) EnBW Live Price -->
         <div class="card">
           <div class="card-title">🔴 EnBW Live-Preisabfrage <span style="font-size:.7rem;color:#f59e0b;font-weight:400;text-transform:none;letter-spacing:0">(inoffiziell / experimentell)</span></div>
-          <div style="font-size:.78rem;color:#f59e0b;background:#2d1f00;border:1px solid #7c4f00;border-radius:6px;padding:10px;margin-bottom:14px">
+          <div style="font-size:.78rem;color:#f59e0b;background:var(--warn-bg);border:1px solid #7c4f00;border-radius:6px;padding:10px;margin-bottom:14px">
             ⚠️ Diese Funktion nutzt eine <strong>inoffizielle, nicht dokumentierte API</strong> von EnBW. Sie kann sich jederzeit ohne Vorwarnung ändern oder abgeschaltet werden.
             Nur aktivieren wenn EVSE-IDs in Sessions vorhanden sind und ein gültiger API-Key vorliegt.
           </div>
@@ -1766,7 +1841,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           <div class="card-title">🔑 API-Tokens</div>
           <p style="font-size:.8rem;color:var(--mute);margin:0 0 16px">Externe Anwendungen können über Bearer-Tokens auf die /api/v1/ API zugreifen.</p>
           <!-- Create form -->
-          <div style="padding:14px;background:#1e2030;border-radius:8px;margin-bottom:18px">
+          <div style="padding:14px;background:var(--surf2);border-radius:8px;margin-bottom:18px">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:end;margin-bottom:12px">
               <div><label class="cfg-lbl">Token-Name</label>
                 <input type="text" id="api_token_name" placeholder="Mein Script"
@@ -1780,7 +1855,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             <button class="btn-p" onclick="createApiToken()" data-requires-permission="api_tokens:create">➕ Token erstellen</button>
           </div>
           <!-- New token display (shown after creation) -->
-          <div id="api_token_new_display" style="display:none;padding:14px;background:#162032;border:1px solid #3b82f6;border-radius:8px;margin-bottom:18px">
+          <div id="api_token_new_display" style="display:none;padding:14px;background:var(--surf2);border:1px solid #3b82f6;border-radius:8px;margin-bottom:18px">
             <div style="font-size:.8rem;color:#f59e0b;margin-bottom:6px;font-weight:600">⚠️ Token wird nur einmalig angezeigt. Jetzt kopieren!</div>
             <code id="api_token_new_value" style="font-size:.85rem;color:#6ee7b7;word-break:break-all"></code>
             <button onclick="navigator.clipboard?.writeText($('api_token_new_value').textContent); this.textContent='✅ Kopiert'"
@@ -1834,7 +1909,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
               </label>
             </div>
             <!-- Topic overview -->
-            <div style="padding:12px;background:#1a1a2e;border-radius:8px;font-size:.72rem;font-family:var(--mono);color:var(--mute)">
+            <div style="padding:12px;background:var(--surf2);border-radius:8px;font-size:.72rem;font-family:var(--mono);color:var(--mute)">
               <div style="color:#6ee7b7;margin-bottom:6px;font-weight:600">📋 Topics (Basis-Topic/…)</div>
               <div>vehicles/&lt;id&gt;/soc &nbsp;·&nbsp; vehicles/&lt;id&gt;/location &nbsp;·&nbsp; vehicles/&lt;id&gt;/charging</div>
               <div>sessions/current/state &nbsp;·&nbsp; sessions/current/kwh &nbsp;·&nbsp; sessions/current/cost</div>
@@ -1879,7 +1954,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <div class="card">
           <div class="card-title">📋 Ereignisse &amp; Regeln</div>
           <!-- Create rule form -->
-          <div style="padding:14px;background:#1e2030;border-radius:8px;margin-bottom:18px">
+          <div style="padding:14px;background:var(--surf2);border-radius:8px;margin-bottom:18px">
             <div style="font-size:.82rem;font-weight:600;margin-bottom:10px;color:var(--txt)">Neue Regel</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
               <div><label class="cfg-lbl">Name</label>
@@ -2466,7 +2541,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <!-- Backup Codes Modal -->
       <div id="backupCodesModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
         <div style="background:var(--surf);border:1px solid var(--brd);border-radius:16px;padding:32px;max-width:360px;width:100%;margin:16px">
-          <div style="font-weight:700;font-size:1rem;color:#fff;margin-bottom:8px">🔑 Backup-Codes</div>
+          <div style="font-weight:700;font-size:1rem;color:var(--ink);margin-bottom:8px">🔑 Backup-Codes</div>
           <div style="font-size:.75rem;font-family:var(--mono);color:var(--warn);margin-bottom:16px">⚠ Codes sicher aufbewahren! Sie werden nur einmal angezeigt.</div>
           <div id="backupCodesList" style="background:var(--bg);border:1px solid var(--brd);border-radius:8px;padding:16px;margin-bottom:16px"></div>
           <button class="btn-p" style="font-size:.78rem;padding:8px 18px" onclick="$('backupCodesModal').style.display='none'">Schließen</button>
@@ -2477,13 +2552,13 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <div id="cfgsec-roles" class="cfg-section" style="display:none">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
           <h3 style="margin:0;font-size:.85rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.12em">🔐 Rollen &amp; Berechtigungen</h3>
-          <button onclick="openCreateRoleModal()" style="padding:8px 14px;border-radius:6px;background:#3d5afe;border:none;color:#fff;cursor:pointer;font-size:13px">
+          <button onclick="openCreateRoleModal()" style="padding:8px 14px;border-radius:6px;background:#3d5afe;border:none;color:var(--ink);cursor:pointer;font-size:13px">
             + Neue Rolle
           </button>
         </div>
 
         <div id="rolesList">
-          <p style="color:#8892b0;font-size:.78rem;font-family:var(--mono)">Lade Rollen…</p>
+          <p style="color:var(--mute);font-size:.78rem;font-family:var(--mono)">Lade Rollen…</p>
         </div>
       </div>
 
@@ -2493,45 +2568,45 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
 <!-- Modal: Rolle erstellen/bearbeiten -->
 <div id="roleEditModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2000;overflow-y:auto">
-  <div style="max-width:700px;margin:40px auto;background:#1a1d2e;border-radius:12px;padding:24px">
+  <div style="max-width:700px;margin:40px auto;background:var(--surf);border-radius:12px;padding:24px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <h3 id="roleEditTitle" style="margin:0;color:#e6f1ff">Rolle bearbeiten</h3>
-      <button onclick="closeRoleEditModal()" style="background:transparent;border:none;color:#8892b0;font-size:20px;cursor:pointer">✕</button>
+      <h3 id="roleEditTitle" style="margin:0;color:var(--ink)">Rolle bearbeiten</h3>
+      <button onclick="closeRoleEditModal()" style="background:transparent;border:none;color:var(--mute);font-size:20px;cursor:pointer">✕</button>
     </div>
 
     <div style="margin-bottom:12px">
-      <label style="display:block;margin-bottom:4px;font-size:13px;color:#8892b0">Rollenname</label>
-      <input type="text" id="roleEditName" placeholder="z.B. Buchhaltung" style="width:100%;padding:8px;border-radius:6px;background:#2d3147;border:1px solid #3d4166;color:#e6f1ff;box-sizing:border-box">
+      <label style="display:block;margin-bottom:4px;font-size:13px;color:var(--mute)">Rollenname</label>
+      <input type="text" id="roleEditName" placeholder="z.B. Buchhaltung" style="width:100%;padding:8px;border-radius:6px;background:var(--chip);border:1px solid var(--brd2);color:var(--ink);box-sizing:border-box">
     </div>
     <div style="margin-bottom:16px">
-      <label style="display:block;margin-bottom:4px;font-size:13px;color:#8892b0">Beschreibung</label>
-      <input type="text" id="roleEditDesc" placeholder="Kurze Beschreibung" style="width:100%;padding:8px;border-radius:6px;background:#2d3147;border:1px solid #3d4166;color:#e6f1ff;box-sizing:border-box">
+      <label style="display:block;margin-bottom:4px;font-size:13px;color:var(--mute)">Beschreibung</label>
+      <input type="text" id="roleEditDesc" placeholder="Kurze Beschreibung" style="width:100%;padding:8px;border-radius:6px;background:var(--chip);border:1px solid var(--brd2);color:var(--ink);box-sizing:border-box">
     </div>
 
     <div id="rolePermissionsGrid" style="max-height:400px;overflow-y:auto">
-      <p style="color:#8892b0">Lade Berechtigungen…</p>
+      <p style="color:var(--mute)">Lade Berechtigungen…</p>
     </div>
 
     <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
-      <button onclick="closeRoleEditModal()" style="padding:8px 16px;border-radius:6px;background:#2d3147;border:none;color:#8892b0;cursor:pointer">Abbrechen</button>
-      <button onclick="saveRoleEdit()" style="padding:8px 16px;border-radius:6px;background:#3d5afe;border:none;color:#fff;cursor:pointer;font-weight:600">Speichern</button>
+      <button onclick="closeRoleEditModal()" style="padding:8px 16px;border-radius:6px;background:var(--chip);border:none;color:var(--mute);cursor:pointer">Abbrechen</button>
+      <button onclick="saveRoleEdit()" style="padding:8px 16px;border-radius:6px;background:#3d5afe;border:none;color:var(--ink);cursor:pointer;font-weight:600">Speichern</button>
     </div>
   </div>
 </div>
 
 <!-- Modal: Rollen einem User zuweisen -->
 <div id="userRolesModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2000">
-  <div style="max-width:500px;margin:100px auto;background:#1a1d2e;border-radius:12px;padding:24px">
+  <div style="max-width:500px;margin:100px auto;background:var(--surf);border-radius:12px;padding:24px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <h3 id="userRolesModalTitle" style="margin:0;color:#e6f1ff">Rollen zuweisen</h3>
-      <button onclick="closeUserRolesModal()" style="background:transparent;border:none;color:#8892b0;font-size:20px;cursor:pointer">✕</button>
+      <h3 id="userRolesModalTitle" style="margin:0;color:var(--ink)">Rollen zuweisen</h3>
+      <button onclick="closeUserRolesModal()" style="background:transparent;border:none;color:var(--mute);font-size:20px;cursor:pointer">✕</button>
     </div>
     <div id="userRolesList" style="margin-bottom:16px">
-      <p style="color:#8892b0">Lade…</p>
+      <p style="color:var(--mute)">Lade…</p>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button onclick="closeUserRolesModal()" style="padding:8px 16px;border-radius:6px;background:#2d3147;border:none;color:#8892b0;cursor:pointer">Abbrechen</button>
-      <button onclick="saveUserRoles()" style="padding:8px 16px;border-radius:6px;background:#3d5afe;border:none;color:#fff;cursor:pointer;font-weight:600">Speichern</button>
+      <button onclick="closeUserRolesModal()" style="padding:8px 16px;border-radius:6px;background:var(--chip);border:none;color:var(--mute);cursor:pointer">Abbrechen</button>
+      <button onclick="saveUserRoles()" style="padding:8px 16px;border-radius:6px;background:#3d5afe;border:none;color:var(--ink);cursor:pointer;font-weight:600">Speichern</button>
     </div>
   </div>
 </div>
@@ -2684,7 +2759,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <option value="home">Nur Zuhause</option>
         <option value="extern">Nur Extern</option>
       </select>
-      <select id="expLang" style="font-size:.75rem;padding:6px 8px;background:var(--inp);color:var(--text);border:1px solid var(--brd);border-radius:6px" onchange="saveExportLang()">
+      <select id="expLang" style="font-size:.75rem;padding:6px 8px;background:var(--bg2);color:var(--text);border:1px solid var(--brd);border-radius:6px" onchange="saveExportLang()">
         <option value="de">🇩🇪 Deutsch</option>
         <option value="en">🇬🇧 Englisch</option>
       </select>
@@ -2767,7 +2842,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     <div id="cronInfo" style="margin-top:12px;font-size:.78rem;font-family:var(--mono);color:var(--mute)"></div>
 
     <div style="margin-top:16px;padding:14px;background:var(--bg);border:1px solid var(--brd);border-radius:10px;font-size:.73rem;font-family:var(--mono);color:var(--mute);line-height:1.8">
-      <strong style="color:#fff">Cron Format:</strong> MIN STUNDE TAG MONAT WOCHENTAG<br>
+      <strong style="color:var(--ink)">Cron Format:</strong> MIN STUNDE TAG MONAT WOCHENTAG<br>
       <code style="color:var(--acc2)">0 3 * * *</code> = Täglich um 03:00<br>
       <code style="color:var(--acc2)">0 3 * * 0</code> = Jeden Sonntag um 03:00<br>
       <code style="color:var(--acc2)">0 3 1 * *</code> = Jeden 1. des Monats um 03:00<br>
@@ -2984,7 +3059,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     </div>
 
     <!-- Row config panel (always visible) -->
-    <div id="rowConfigPanel" style="display:flex;gap:16px;align-items:center;margin-bottom:12px;padding:8px 12px;background:#1a1a2e;border-radius:6px;flex-wrap:wrap">
+    <div id="rowConfigPanel" style="display:flex;gap:16px;align-items:center;margin-bottom:12px;padding:8px 12px;background:var(--surf2);border-radius:6px;flex-wrap:wrap">
       <label style="font-size:.72rem;font-family:var(--mono);color:var(--mute);display:flex;align-items:center;gap:6px">
         Kopfzeile:
         <input type="number" id="headerRowInput" min="1" max="200" placeholder="auto"
@@ -3002,7 +3077,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     </div>
 
     <!-- Analysis panel -->
-    <div id="analysisPanel" style="display:none;background:#1a2a1a;border:1px solid #2d4a2d;border-radius:8px;padding:14px;margin-bottom:14px">
+    <div id="analysisPanel" style="display:none;background:var(--ok-bg);border:1px solid #2d4a2d;border-radius:8px;padding:14px;margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <span style="font-size:.78rem;font-weight:600;color:var(--acc)">🔍 Analyse-Ergebnis</span>
         <div id="analysisConfidence" style="font-size:.72rem;font-family:var(--mono)"></div>
@@ -3022,7 +3097,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px">
           Template-Vorschau
         </div>
-        <div id="excelGridWrap" style="flex:1;overflow:auto;border:1px solid var(--brd);border-radius:8px;background:#1a1a1a"
+        <div id="excelGridWrap" style="flex:1;overflow:auto;border:1px solid var(--brd);border-radius:8px;background:var(--surf2)"
              onmouseleave="_isDragging=false">
           <table id="excelGrid" style="border-collapse:collapse;font-size:.75rem;font-family:Arial,sans-serif;white-space:nowrap">
             <thead id="excelGridHead"></thead>
@@ -3501,7 +3576,7 @@ function renderGallery(){
       <!-- Info -->
       <div style="padding:10px 12px;flex:1;display:flex;flex-direction:column;gap:4px">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-          <span style="font-size:.8rem;font-weight:600;color:#fff">${escapeHtml(t.name||'')}</span>
+          <span style="font-size:.8rem;font-weight:600;color:var(--ink)">${escapeHtml(t.name||'')}</span>
           ${t.active ? '<span style="font-size:.6rem;background:rgba(0,210,120,.15);color:var(--acc);border:1px solid rgba(0,210,120,.3);border-radius:4px;padding:1px 6px">✓ Aktiv</span>' : ''}
         </div>
         <span style="font-size:.6rem;background:rgba(100,130,255,.12);color:#7eb8f7;border-radius:4px;padding:1px 6px;align-self:flex-start">${escapeHtml(t.category||'')}</span>
@@ -3649,7 +3724,7 @@ function buildExcelGrid(renderData){
   _tplRender = renderData;
   const head = $('excelGridHead');
   const body = $('excelGridBody');
-  const thStyle = 'background:#2a2a2a;color:#888;font-size:.65rem;font-family:var(--mono);padding:3px 6px;border:1px solid #333;position:sticky;top:0;z-index:2;text-align:center;user-select:none';
+  const thStyle = 'background:var(--surf2);color:#888;font-size:.65rem;font-family:var(--mono);padding:3px 6px;border:1px solid #333;position:sticky;top:0;z-index:2;text-align:center;user-select:none';
   head.innerHTML = `<tr>
     <th style="${thStyle};position:sticky;left:0;z-index:3;width:36px">#</th>
     ${renderData.col_letters.map((l,i)=>{
@@ -3695,7 +3770,7 @@ function buildExcelGrid(renderData){
     let badge = String(row.row);
     if(row.row === _selectedHeaderRow){ numColor='#ffd700'; badge=`${row.row}<span style="font-size:.55rem;background:#ffd700;color:#333;border-radius:3px;padding:1px 3px;margin-left:2px">H</span>`; }
     else if(row.row === _selectedStartRow){ numColor='var(--acc)'; badge=`${row.row}<span style="font-size:.55rem;background:var(--acc);color:#041810;border-radius:3px;padding:1px 3px;margin-left:2px">D</span>`; }
-    const numStyle = `background:#222;color:${numColor};font-size:.63rem;font-family:var(--mono);padding:3px 5px;border:1px solid #2d2d2d;text-align:right;position:sticky;left:0;cursor:pointer;user-select:none;white-space:nowrap`;
+    const numStyle = `background:#222;color:${numColor};font-size:.63rem;font-family:var(--mono);padding:3px 5px;border:1px solid var(--brd2);text-align:right;position:sticky;left:0;cursor:pointer;user-select:none;white-space:nowrap`;
     return `<tr data-row="${row.row}">
       <td style="${numStyle}" onclick="onRowNumClick(${row.row})">${badge}</td>${cells}</tr>`;
   }).join('');
@@ -3734,7 +3809,7 @@ function highlightStartRow(){
       } else {
         td.style.background = c.bg || '#1a1a1a';
         td.style.color = c.fg || '#ddd';
-        td.style.border = '1px solid #2d2d2d';
+        td.style.border = '1px solid var(--brd2)';
       }
     });
   });
@@ -3882,7 +3957,7 @@ function refreshColumnMappingList(){
     return `<div style="display:flex;align-items:center;gap:6px;font-size:.7rem;font-family:var(--mono);padding:3px 0">
       <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block"></span>
       <span style="color:var(--mute);min-width:22px">Sp.${escapeHtml(colLetter(ci))}</span>
-      <span style="color:#fff;flex:1">${escapeHtml(label)}</span>
+      <span style="color:var(--ink);flex:1">${escapeHtml(label)}</span>
       <button onclick="clearColumnMapping(${Number(ci)})" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:.75rem;padding:0 4px">✕</button>
     </div>`;
   }).join('');
@@ -3942,7 +4017,7 @@ function refreshCellMappingList(){
     const label = HEADER_FIELD_LABELS[field] || field;
     return `<div style="display:flex;align-items:center;gap:6px;font-size:.7rem;font-family:var(--mono);padding:3px 0">
       <span style="color:var(--mute);min-width:28px">${escapeHtml(addr)}</span>
-      <span style="color:#fff;flex:1">${escapeHtml(label)}</span>
+      <span style="color:var(--ink);flex:1">${escapeHtml(label)}</span>
       <button data-addr="${escapeHtml(addr)}" onclick="removeCellMapping(this.dataset.addr)" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:.75rem;padding:0 4px">✕</button>
     </div>`;
   }).join('');
@@ -4274,7 +4349,7 @@ function updateLivePreview(){
       <span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block"></span>
       <span style="color:var(--mute);min-width:28px;font-size:.7rem">Sp.${letter}</span>
       <span style="color:var(--acc2);min-width:110px;font-size:.7rem">${label}</span>
-      <span style="color:#fff;font-size:.7rem">${val||'—'}</span>
+      <span style="color:var(--ink);font-size:.7rem">${val||'—'}</span>
     </div>`;
   }).join('');
 }
@@ -4805,7 +4880,7 @@ function _candidateKind(c){
   if(_candidateConfirmed(c)){
     return {icon:'🔌', color:'#3ddc97',
       headline:'Ladevorgang per Zähler bestätigt',
-      body:`Zähler/Wallbox bestätigt im Zeitraum <strong style="color:#fff">+${(c.meter_delta_kwh||0).toFixed(1)} kWh</strong>.`};
+      body:`Zähler/Wallbox bestätigt im Zeitraum <strong style="color:var(--ink)">+${(c.meter_delta_kwh||0).toFixed(1)} kWh</strong>.`};
   }
   if(c.candidate_type==='energy_balance'){
     const km = c.driven_km!=null ? Math.round(c.driven_km).toLocaleString('de')+' km' : 'die gefahrene Strecke';
@@ -4871,7 +4946,7 @@ function _renderCandidateCard(c){
         <div style="font-size:.82rem;color:var(--text);margin-bottom:4px">${k.body}</div>
         <div style="font-size:.78rem;color:var(--mute);margin-bottom:6px">
           ${_fmtTs(c.start_ts)} → ${_fmtTs(c.end_ts)} &nbsp;·&nbsp;
-          ca. <strong style="color:#fff">${c.estimated_kwh!=null?c.estimated_kwh.toFixed(1):'?'} kWh</strong>${c.meter_delta_kwh!=null?` &nbsp;·&nbsp; Zähler +${c.meter_delta_kwh.toFixed(1)} kWh`:''}
+          ca. <strong style="color:var(--ink)">${c.estimated_kwh!=null?c.estimated_kwh.toFixed(1):'?'} kWh</strong>${c.meter_delta_kwh!=null?` &nbsp;·&nbsp; Zähler +${c.meter_delta_kwh.toFixed(1)} kWh`:''}
         </div>
         <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px">${_signalBadges(c)}</div>
         <div>
@@ -4922,7 +4997,7 @@ async function loadMissingChargeCandidates(){
         <div style="font-size:.8rem;font-family:var(--mono);color:${k.color};font-weight:600;margin-bottom:6px">${k.icon} ${k.headline}${more}</div>
         <div style="font-size:.82rem;color:var(--text);margin-bottom:6px">${k.body}</div>
         <div style="font-size:.78rem;color:var(--mute);margin-bottom:10px">
-          ${_fmtTs(c.start_ts)} – ${_fmtTs(c.end_ts)} · SOC ${c.soc_start!=null?c.soc_start.toFixed(0):'?'}% → ${c.soc_end!=null?c.soc_end.toFixed(0):'?'}% · ca. <strong style="color:#fff">${c.estimated_kwh!=null?c.estimated_kwh.toFixed(1):'?'} kWh</strong>${c.meter_delta_kwh!=null?` · Zähler +${c.meter_delta_kwh.toFixed(1)} kWh`:''}
+          ${_fmtTs(c.start_ts)} – ${_fmtTs(c.end_ts)} · SOC ${c.soc_start!=null?c.soc_start.toFixed(0):'?'}% → ${c.soc_end!=null?c.soc_end.toFixed(0):'?'}% · ca. <strong style="color:var(--ink)">${c.estimated_kwh!=null?c.estimated_kwh.toFixed(1):'?'} kWh</strong>${c.meter_delta_kwh!=null?` · Zähler +${c.meter_delta_kwh.toFixed(1)} kWh`:''}
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button onclick="openCandidateAcceptDialog(${c.id})"
@@ -5111,7 +5186,7 @@ function _renderUpdateInfo(r) {
     if (reason === 'remote_unreachable') {
       if (badge) badge.innerHTML = '<span style="color:#ef4444">⚠ Remote nicht erreichbar</span>';
     } else if (reason === 'update_check_disabled') {
-      if (badge) badge.innerHTML = '<span style="color:#64748b">— Update-Prüfung deaktiviert</span>';
+      if (badge) badge.innerHTML = '<span style="color:var(--mute)">— Update-Prüfung deaktiviert</span>';
     } else {
       if (badge) badge.textContent = '⚠ Prüfung fehlgeschlagen';
     }
@@ -5122,7 +5197,7 @@ function _renderUpdateInfo(r) {
 
   // ok=true: update_check_disabled (no remote fetch attempted)
   if (r.update_check_disabled) {
-    if (badge) badge.innerHTML = '<span style="color:#64748b">— Update-Prüfung deaktiviert</span>';
+    if (badge) badge.innerHTML = '<span style="color:var(--mute)">— Update-Prüfung deaktiviert</span>';
     if (avail) avail.style.display = 'none';
     if (curr)  curr.style.display  = '';
     const det = document.getElementById('uiCurrentDetail');
@@ -5400,7 +5475,7 @@ async function loadPasskeys(){
       const safeId      = parseInt(c.id, 10) || 0;
       return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(255,255,255,.04);border:1px solid var(--brd);border-radius:8px;margin-bottom:6px">
         <div>
-          <div style="font-size:.78rem;font-family:var(--mono);color:#fff">🔑 ${safeName}</div>
+          <div style="font-size:.78rem;font-family:var(--mono);color:var(--ink)">🔑 ${safeName}</div>
           <div style="font-size:.68rem;font-family:var(--mono);color:var(--mute)">Erstellt: ${safeCreated} ${safeUsed}</div>
         </div>
         <button onclick="deletePasskey(${safeId})" style="background:rgba(255,79,90,.1);border:1px solid rgba(255,79,90,.3);color:var(--danger);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.72rem">✕ Entfernen</button>
@@ -5534,7 +5609,7 @@ async function loadBackups(){
   el.innerHTML=`<table>
     <thead><tr><th>Dateiname</th><th>Größe</th><th>Erstellt</th><th></th></tr></thead>
     <tbody>${data.backups.map(b=>`<tr>
-      <td style="font-family:var(--mono);font-size:.75rem;color:#fff">${escapeHtml(b.name)}</td>
+      <td style="font-family:var(--mono);font-size:.75rem;color:var(--ink)">${escapeHtml(b.name)}</td>
       <td style="font-family:var(--mono);font-size:.75rem">${(b.size/1024).toFixed(1)} KB</td>
       <td style="font-family:var(--mono);font-size:.75rem">${escapeHtml((b.modified||'').replace('T',' '))}</td>
       <td style="display:flex;gap:5px;padding:8px 4px">
@@ -5647,7 +5722,7 @@ async function loadUserList(){
   el.innerHTML = users.map(u=>`
     <div style="display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--brd);border-radius:10px;padding:12px 14px">
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:.85rem;color:#fff">${escapeHtml(u.name||'')} ${roleLabel(u.role)} ${statusBadge(u.status)}</div>
+        <div style="font-weight:700;font-size:.85rem;color:var(--ink)">${escapeHtml(u.name||'')} ${roleLabel(u.role)} ${statusBadge(u.status)}</div>
         <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-top:3px">
           ${escapeHtml(u.email||'')} · 2FA: ${u.totp_enabled?'✅':'❌'}
         </div>
@@ -5657,7 +5732,7 @@ async function loadUserList(){
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
         ${(u.status==='invited'||!u.totp_enabled)?`<button class="btn-s" style="font-size:.72rem;padding:5px 10px" onclick="inviteUser(${u.id})">✉ Einladen</button>`:''}
-        ${hasPermission('users:manage_permissions')?`<button data-uid="${u.id}" data-uname="${escapeHtml(u.name||'')}" onclick="openUserRolesModal(+this.dataset.uid,this.dataset.uname)" style="padding:4px 8px;border-radius:4px;background:#1a3d6e;border:none;color:#64ffda;cursor:pointer;font-size:11px">🔑 Rollen</button>`:''}
+        ${hasPermission('users:manage_permissions')?`<button data-uid="${u.id}" data-uname="${escapeHtml(u.name||'')}" onclick="openUserRolesModal(+this.dataset.uid,this.dataset.uname)" style="padding:4px 8px;border-radius:4px;background:var(--info-bg);border:none;color:#64ffda;cursor:pointer;font-size:11px">🔑 Rollen</button>`:''}
         <button class="btn-s" style="font-size:.72rem;padding:5px 12px" onclick="openEditUserModal(${u.id})">✏ Bearbeiten</button>
       </div>
     </div>
@@ -5737,7 +5812,7 @@ async function loadMyProfile(){
   const r=await apiFetch('/api/users/me').then(r=>r.json()).catch(()=>null);
   if(!r||r.error) return;
   const el=$('profileInfo');
-  if(el) el.innerHTML=`<strong style="color:#fff">${escapeHtml(r.name||'')}</strong> &nbsp;·&nbsp; ${escapeHtml(r.email||'')} &nbsp;·&nbsp; <span style="color:${r.role==='admin'?'var(--warn)':'var(--acc2)'}">${r.role==='admin'?'★ Admin':'Benutzer'}</span>`;
+  if(el) el.innerHTML=`<strong style="color:var(--ink)">${escapeHtml(r.name||'')}</strong> &nbsp;·&nbsp; ${escapeHtml(r.email||'')} &nbsp;·&nbsp; <span style="color:${r.role==='admin'?'var(--warn)':'var(--acc2)'}">${r.role==='admin'?'★ Admin':'Benutzer'}</span>`;
   const totpSt=$('profTotpStatus');
   if(totpSt) totpSt.innerHTML=r.totp_enabled?'<span style="color:var(--acc2)">📱 2FA ist aktiv</span>':'Kein 2FA konfiguriert';
   const disBtn=$('profTotpDisableBtn');
@@ -5759,7 +5834,7 @@ async function generateBackupCodes(){
   if(!r||!r.ok){ toast('Fehler beim Generieren','err'); return; }
   const modal=$('backupCodesModal');
   const list=$('backupCodesList');
-  if(list) list.innerHTML=r.codes.map(c=>`<div style="font-family:var(--mono);font-size:1rem;letter-spacing:.1em;color:#fff;padding:4px 0">${escapeHtml(c||'')}</div>`).join('');
+  if(list) list.innerHTML=r.codes.map(c=>`<div style="font-family:var(--mono);font-size:1rem;letter-spacing:.1em;color:var(--ink);padding:4px 0">${escapeHtml(c||'')}</div>`).join('');
   if(modal) modal.style.display='flex';
   loadBackupCodeCount();
 }
@@ -5899,7 +5974,7 @@ function repMonthsRender(){
   c.innerHTML = _repMonths.map(ym => {
     const [y,m] = ym.split('-');
     const label = `${DE_MONTHS[parseInt(m)-1]} ${y}`;
-    return `<span style="background:#2d3147;border-radius:20px;padding:4px 12px;font-size:.78rem;display:flex;align-items:center;gap:6px">
+    return `<span style="background:var(--chip);border-radius:20px;padding:4px 12px;font-size:.78rem;display:flex;align-items:center;gap:6px">
       ${label}
       <button onclick="repMonthsRemove('${ym}')" style="background:none;border:none;color:#f87171;cursor:pointer;padding:0;font-size:.9rem;line-height:1">✕</button>
     </span>`;
@@ -6170,9 +6245,9 @@ async function loadContracts(){
       return;
     }
     el.innerHTML=rows.map(c=>`
-      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#1e2030;border-radius:8px;border:1px solid ${c.is_default?'#3b82f6':'var(--brd)'}">
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surf2);border-radius:8px;border:1px solid ${c.is_default?'#3b82f6':'var(--brd)'}">
         <div style="flex:1;min-width:0">
-          <div style="font-size:.85rem;font-weight:600">${escapeHtml(c.name)} ${c.is_default?'<span style="font-size:.7rem;background:#1e3a5f;color:#60a5fa;padding:1px 6px;border-radius:4px">Standard</span>':''}</div>
+          <div style="font-size:.85rem;font-weight:600">${escapeHtml(c.name)} ${c.is_default?'<span style="font-size:.7rem;background:var(--info-bg);color:#60a5fa;padding:1px 6px;border-radius:4px">Standard</span>':''}</div>
           <div style="font-size:.73rem;color:var(--mute);margin-top:2px">
             ${c.cpo?'CPO: '+escapeHtml(c.cpo)+' · ':''}
             ${c.price_ac_kwh!=null?'AC '+c.price_ac_kwh.toFixed(3)+' €/kWh · ':''}
@@ -6206,7 +6281,7 @@ async function loadBuiltinContracts(){
       const btn=imported
         ? `<span style="font-size:.72rem;color:var(--acc);font-weight:600">✓ Importiert</span>`
         : `<button class="btn-s" style="font-size:.72rem;padding:3px 8px" onclick="importBuiltinContract(${JSON.stringify(JSON.stringify(c))})" data-requires-permission="public_charging:manage_contracts">📥 Importieren</button>`;
-      return `<div style="padding:10px 12px;background:#1e2030;border-radius:8px;border:1px solid ${imported?'var(--acc)':'var(--brd)'}">
+      return `<div style="padding:10px 12px;background:var(--surf2);border-radius:8px;border:1px solid ${imported?'var(--acc)':'var(--brd)'}">
         <div style="font-size:.82rem;font-weight:600;margin-bottom:2px">${escapeHtml(c.name)}</div>
         <div style="font-size:.72rem;color:var(--mute);margin-bottom:6px">${escapeHtml(c.description||'')}
           ${c.monthly_fee_eur?'<br>'+c.monthly_fee_eur.toFixed(2)+' €/Monat':''}
@@ -6319,7 +6394,7 @@ const _ALL_SCOPES = ['api:read','api:write','vehicles:read','sessions:read','ses
 function renderApiTokenScopeCheckboxes(){
   const c=$('api_token_scopes');
   if(!c) return;
-  c.innerHTML=_ALL_SCOPES.map(s=>`<label style="display:flex;align-items:center;gap:5px;font-size:.78rem;cursor:pointer;background:#1e2030;padding:4px 10px;border-radius:20px">
+  c.innerHTML=_ALL_SCOPES.map(s=>`<label style="display:flex;align-items:center;gap:5px;font-size:.78rem;cursor:pointer;background:var(--surf2);padding:4px 10px;border-radius:20px">
     <input type="checkbox" class="api_scope_cb" value="${s}"> ${s}
   </label>`).join('');
 }
@@ -6938,7 +7013,7 @@ async function loadAuditLog(){
 async function loadMobileVehicleCards() {
   const el = document.getElementById('mobileVehicleCardList');
   if (!el) return;
-  el.innerHTML = '<p style="color:#8892b0;font-size:13px">Lade Fahrzeuge…</p>';
+  el.innerHTML = '<p style="color:var(--mute);font-size:13px">Lade Fahrzeuge…</p>';
   try {
     // Use cached summary vehicles if already loaded by refreshMobileDashboard
     let vehicles = window._allVehicles;
@@ -6952,7 +7027,7 @@ async function loadMobileVehicleCards() {
       }
     }
     if (!vehicles || !vehicles.length) {
-      el.innerHTML = '<p style="color:#8892b0">Keine Fahrzeuge konfiguriert.</p>';
+      el.innerHTML = '<p style="color:var(--mute)">Keine Fahrzeuge konfiguriert.</p>';
       return;
     }
     const _buildVehicleCard = v => {
@@ -6965,22 +7040,22 @@ async function loadMobileVehicleCards() {
       const socBar = soc != null ? `
         <div style="margin-top:8px">
           <div style="display:flex;justify-content:space-between;margin-bottom:3px">
-            <span style="font-size:11px;color:#8892b0">SOC</span>
+            <span style="font-size:11px;color:var(--mute)">SOC</span>
             <span style="font-size:12px;font-weight:700;color:${socColor}">${soc}%</span>
           </div>
-          <div style="height:6px;background:#2d3147;border-radius:3px">
+          <div style="height:6px;background:var(--chip);border-radius:3px">
             <div style="height:100%;width:${soc}%;background:${socColor};border-radius:3px;transition:width .5s"></div>
           </div>
         </div>` : '';
       const badges = [
         isActive && charging ? '<span style="background:#64ffda22;color:#64ffda;border:1px solid #64ffda44;border-radius:4px;padding:2px 6px;font-size:10px">⚡ Lädt</span>' : '',
-        isActive && !charging && locLabel ? `<span style="background:#1e2a3a;color:#8892b0;border-radius:4px;padding:2px 6px;font-size:10px">${locLabel}</span>` : '',
-        !isActive ? '<span style="background:#2d1f1f;color:#ef4444;border-radius:4px;padding:2px 6px;font-size:10px">Inaktiv</span>' : '',
+        isActive && !charging && locLabel ? `<span style="background:var(--surf2);color:var(--mute);border-radius:4px;padding:2px 6px;font-size:10px">${locLabel}</span>` : '',
+        !isActive ? '<span style="background:var(--danger-bg);color:#ef4444;border-radius:4px;padding:2px 6px;font-size:10px">Inaktiv</span>' : '',
       ].filter(Boolean).join(' ');
       const _eh = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'').replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});};
       const safeId = encodeURIComponent(v.id);
       const imgId = `mvcard_img_${safeId}`;
-      return `<div class="mobile-card" data-vid="${_eh(v.id)}" style="cursor:pointer;border:1px solid #2d3147;position:relative">
+      return `<div class="mobile-card" data-vid="${_eh(v.id)}" style="cursor:pointer;border:1px solid var(--brd2);position:relative">
         <div style="display:flex;gap:12px;align-items:flex-start">
           <img id="${imgId}" src="/api/vehicles/${safeId}/image/file"
             onerror="this.src='/static/vehicle_images/placeholder_car.svg'"
@@ -6988,8 +7063,8 @@ async function loadMobileVehicleCards() {
           <div style="flex:1;min-width:0">
             <div style="display:flex;justify-content:space-between;align-items:flex-start">
               <div>
-                <div style="font-size:15px;font-weight:600;color:#e6f1ff">${_eh(v.name || v.id)}</div>
-                <div style="font-size:12px;color:#8892b0;margin-top:2px">${_eh(v.provider || '—')}</div>
+                <div style="font-size:15px;font-weight:600;color:var(--ink)">${_eh(v.name || v.id)}</div>
+                <div style="font-size:12px;color:var(--mute);margin-top:2px">${_eh(v.provider || '—')}</div>
               </div>
               <div style="text-align:right;flex-shrink:0">${badges}</div>
             </div>
@@ -7255,7 +7330,7 @@ async function submitMobileSession(force) {
   if (!isNaN(mNew))     body.meter_new         = mNew;
   if (!isNaN(pwrVal))   body.charger_power_kw  = pwrVal;
 
-  if (res) res.innerHTML='<p style="color:#8892b0">⏳ Speichere…</p>';
+  if (res) res.innerHTML='<p style="color:var(--mute)">⏳ Speichere…</p>';
   const r = await apiFetch('/api/sessions/manual',{
     method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
   }).then(x=>x.json()).catch(e=>({ok:false,error:e.message}));
@@ -7339,7 +7414,7 @@ function openMobileSignatureSheet() {
     <div id="msSigStatus" class="m-info-block">
       <div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value">⏳ Prüfe…</span></div>
     </div>
-    <label style="display:block;width:100%;padding:13px;border-radius:8px;background:#3d5afe;color:#fff;font-size:15px;font-weight:600;cursor:pointer;text-align:center;margin-bottom:8px">
+    <label style="display:block;width:100%;padding:13px;border-radius:8px;background:#3d5afe;color:var(--ink);font-size:15px;font-weight:600;cursor:pointer;text-align:center;margin-bottom:8px">
       📎 Bild hochladen
       <input type="file" accept="image/*" style="display:none" onchange="uploadMobileSignature(this)">
     </label>
@@ -7350,7 +7425,7 @@ function openMobileSignatureSheet() {
     const el=document.getElementById('msSigStatus'); if(!el) return;
     el.innerHTML=info.has_signature
       ?'<div class="m-info-row"><span class="m-info-label">Signatur</span><span class="m-info-value" style="color:#64ffda">✅ Vorhanden</span></div>'
-      :'<div class="m-info-row"><span class="m-info-label">Signatur</span><span class="m-info-value" style="color:#8892b0">— Nicht gesetzt</span></div>';
+      :'<div class="m-info-row"><span class="m-info-label">Signatur</span><span class="m-info-value" style="color:var(--mute)">— Nicht gesetzt</span></div>';
   }).catch(()=>{});
 }
 
@@ -7419,7 +7494,7 @@ function openMobileBackupCreate() {
 async function runMobileBackupCreate(btn) {
   if(btn) btn.disabled=true;
   const el=document.getElementById('msBackupResult');
-  if(el) el.innerHTML='<p style="color:#8892b0;font-size:13px;margin-bottom:8px">⏳ Erstelle Backup…</p>';
+  if(el) el.innerHTML='<p style="color:var(--mute);font-size:13px;margin-bottom:8px">⏳ Erstelle Backup…</p>';
   const r=await apiFetch('/api/backup/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})}).then(x=>x.json()).catch(e=>({ok:false,error:e.message}));
   if(r.ok) {
     if(el) el.innerHTML=`<div class="m-info-block"><div class="m-info-row"><span class="m-info-label">Status</span><span class="m-info-value" style="color:#64ffda">✅ Erstellt</span></div>${r.filename?`<div class="m-info-row"><span class="m-info-label">Datei</span><span class="m-info-value" style="font-size:11px">${escapeHtml(r.filename)}</span></div>`:''}</div>`;
@@ -7446,10 +7521,10 @@ async function openMobileVehicleDetail(vid) {
   const socHtml = soc!=null?`
     <div style="margin:12px 0 16px">
       <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-        <span style="font-size:12px;color:#8892b0">Ladezustand</span>
+        <span style="font-size:12px;color:var(--mute)">Ladezustand</span>
         <span style="font-weight:700;color:${soc>60?'#64ffda':soc>20?'#ffd740':'#ef4444'}">${soc}%</span>
       </div>
-      <div style="height:8px;background:#2d3147;border-radius:4px">
+      <div style="height:8px;background:var(--chip);border-radius:4px">
         <div style="height:100%;width:${soc}%;background:${soc>60?'#64ffda':soc>20?'#ffd740':'#ef4444'};border-radius:4px"></div>
       </div>
     </div>`:'';
@@ -7468,7 +7543,7 @@ async function openMobileVehicleDetail(vid) {
       <button class="m-btn-p" data-vid="${_safeVid}" id="_mvdEditBtn">✏ Bearbeiten</button>
       <button class="m-btn-s" onclick="closeMobileSheet();mobileNavTo('sessions')">📋 Sessions</button>
     </div>
-    <button style="width:100%;margin-top:8px;padding:13px;border:1px solid #2d3147;border-radius:8px;background:transparent;color:#8892b0;cursor:pointer" onclick="closeMobileSheet()">Schließen</button>
+    <button style="width:100%;margin-top:8px;padding:13px;border:1px solid var(--brd2);border-radius:8px;background:transparent;color:var(--mute);cursor:pointer" onclick="closeMobileSheet()">Schließen</button>
   `);
   const editBtn = document.getElementById('_mvdEditBtn');
   if (editBtn) editBtn.addEventListener('click', function() {
@@ -7641,31 +7716,31 @@ function renderRolesList() {
   const el = document.getElementById('rolesList');
   if (!el) return;
   if (_allRoles.length === 0) {
-    el.innerHTML = '<p style="color:#8892b0;font-size:.78rem;font-family:var(--mono)">Keine Rollen vorhanden.</p>';
+    el.innerHTML = '<p style="color:var(--mute);font-size:.78rem;font-family:var(--mono)">Keine Rollen vorhanden.</p>';
     return;
   }
   el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px">
     <thead>
-      <tr style="color:#8892b0;text-align:left">
-        <th style="padding:8px;border-bottom:1px solid #2d3147">Rolle</th>
-        <th style="padding:8px;border-bottom:1px solid #2d3147">Beschreibung</th>
-        <th style="padding:8px;border-bottom:1px solid #2d3147">Rechte</th>
-        <th style="padding:8px;border-bottom:1px solid #2d3147">Benutzer</th>
-        <th style="padding:8px;border-bottom:1px solid #2d3147">Aktionen</th>
+      <tr style="color:var(--mute);text-align:left">
+        <th style="padding:8px;border-bottom:1px solid var(--brd2)">Rolle</th>
+        <th style="padding:8px;border-bottom:1px solid var(--brd2)">Beschreibung</th>
+        <th style="padding:8px;border-bottom:1px solid var(--brd2)">Rechte</th>
+        <th style="padding:8px;border-bottom:1px solid var(--brd2)">Benutzer</th>
+        <th style="padding:8px;border-bottom:1px solid var(--brd2)">Aktionen</th>
       </tr>
     </thead>
     <tbody>
       ${_allRoles.map(role => `
         <tr style="border-bottom:1px solid #1a1d2e">
           <td style="padding:8px">
-            <span style="font-weight:600;color:#e6f1ff">${escRoles(role.name)}</span>
-            ${role.is_system ? '<span style="font-size:10px;background:#2d3147;padding:2px 5px;border-radius:3px;margin-left:6px;color:#8892b0">System</span>' : ''}
+            <span style="font-weight:600;color:var(--ink)">${escRoles(role.name)}</span>
+            ${role.is_system ? '<span style="font-size:10px;background:var(--chip);padding:2px 5px;border-radius:3px;margin-left:6px;color:var(--mute)">System</span>' : ''}
           </td>
-          <td style="padding:8px;color:#8892b0">${escRoles(role.description||'')}</td>
+          <td style="padding:8px;color:var(--mute)">${escRoles(role.description||'')}</td>
           <td style="padding:8px;color:#64ffda">${(role.permissions||[]).length}</td>
-          <td style="padding:8px;color:#8892b0">${role.user_count||0}</td>
+          <td style="padding:8px;color:var(--mute)">${role.user_count||0}</td>
           <td style="padding:8px">
-            <button onclick="openEditRoleModal(${role.id})" style="padding:4px 10px;border-radius:4px;background:#1a3d6e;border:none;color:#64ffda;cursor:pointer;font-size:12px;margin-right:4px">
+            <button onclick="openEditRoleModal(${role.id})" style="padding:4px 10px;border-radius:4px;background:var(--info-bg);border:none;color:#64ffda;cursor:pointer;font-size:12px;margin-right:4px">
               Bearbeiten
             </button>
             ${!role.is_system ? `<button onclick="deleteRole(${role.id},'${escRoles(role.name)}')" style="padding:4px 10px;border-radius:4px;background:#3d1a1a;border:none;color:#ff5252;cursor:pointer;font-size:12px">Löschen</button>` : ''}
@@ -7707,7 +7782,7 @@ function renderPermissionsCheckboxes(checkedPerms) {
   const el = document.getElementById('rolePermissionsGrid');
   if (!el) return;
   if (!_allPermGroups || _allPermGroups.length === 0) {
-    el.innerHTML = '<p style="color:#8892b0">Lade Berechtigungen…</p>';
+    el.innerHTML = '<p style="color:var(--mute)">Lade Berechtigungen…</p>';
     loadAllPermGroups().then(() => renderPermissionsCheckboxes(checkedPerms));
     return;
   }
@@ -7716,16 +7791,16 @@ function renderPermissionsCheckboxes(checkedPerms) {
     <div style="margin-bottom:16px">
       <div style="font-weight:600;color:#64ffda;margin-bottom:8px;font-size:12px;text-transform:uppercase;letter-spacing:0.5px">
         ${escRoles(group.name)}
-        <button data-group="${escRoles(group.name)}" onclick="selectAllGroupPerms(this.dataset.group)" style="margin-left:8px;padding:2px 6px;font-size:10px;background:#1a3d6e;border:none;color:#64ffda;border-radius:3px;cursor:pointer">Alle</button>
-        <button data-group="${escRoles(group.name)}" onclick="deselectAllGroupPerms(this.dataset.group)" style="padding:2px 6px;font-size:10px;background:#2d3147;border:none;color:#8892b0;border-radius:3px;cursor:pointer">Keine</button>
+        <button data-group="${escRoles(group.name)}" onclick="selectAllGroupPerms(this.dataset.group)" style="margin-left:8px;padding:2px 6px;font-size:10px;background:var(--info-bg);border:none;color:#64ffda;border-radius:3px;cursor:pointer">Alle</button>
+        <button data-group="${escRoles(group.name)}" onclick="deselectAllGroupPerms(this.dataset.group)" style="padding:2px 6px;font-size:10px;background:var(--chip);border:none;color:var(--mute);border-radius:3px;cursor:pointer">Keine</button>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
         ${(group.permissions||[]).map(p => `
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px;border-radius:4px;background:#1a1d2e" data-perm-group="${escRoles(group.name)}">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px;border-radius:4px;background:var(--surf)" data-perm-group="${escRoles(group.name)}">
             <input type="checkbox" class="perm-checkbox" value="${escRoles(p.key)}"
               ${checkedSet.has(p.key) ? 'checked' : ''}
               style="width:14px;height:14px;cursor:pointer">
-            <span style="font-size:12px;color:#e6f1ff">${escRoles(p.label)}</span>
+            <span style="font-size:12px;color:var(--ink)">${escRoles(p.label)}</span>
           </label>`).join('')}
       </div>
     </div>`).join('');
@@ -7808,13 +7883,13 @@ async function openUserRolesModal(userId, userName) {
     _userRolesSelected = [...currentRoleIds];
 
     document.getElementById('userRolesList').innerHTML = allRoles.map(role => `
-      <label style="display:flex;align-items:center;gap:8px;padding:10px;border-radius:6px;background:#1a1d2e;margin-bottom:6px;cursor:pointer">
+      <label style="display:flex;align-items:center;gap:8px;padding:10px;border-radius:6px;background:var(--surf);margin-bottom:6px;cursor:pointer">
         <input type="checkbox" class="user-role-checkbox" value="${role.id}"
           ${currentRoleIds.has(role.id) ? 'checked' : ''}
           style="width:16px;height:16px">
         <div>
-          <div style="font-size:13px;font-weight:600;color:#e6f1ff">${escRoles(role.name)}</div>
-          <div style="font-size:11px;color:#8892b0">${escRoles(role.description||'')} · ${(role.permissions||[]).length} Rechte</div>
+          <div style="font-size:13px;font-weight:600;color:var(--ink)">${escRoles(role.name)}</div>
+          <div style="font-size:11px;color:var(--mute)">${escRoles(role.description||'')} · ${(role.permissions||[]).length} Rechte</div>
         </div>
       </label>`).join('');
   } catch(e) {
@@ -8069,12 +8144,12 @@ function testNotifChannel(channel) {
   <div class="mobile-card" id="mobileVehicleCard">
     <h3>🚗 Fahrzeug</h3>
     <div style="display:flex;align-items:center;gap:12px">
-      <div id="mobileVehicleImg" style="width:64px;height:64px;border-radius:8px;background:#2d3147;display:flex;align-items:center;justify-content:center;font-size:28px">🚘</div>
+      <div id="mobileVehicleImg" style="width:64px;height:64px;border-radius:8px;background:var(--chip);display:flex;align-items:center;justify-content:center;font-size:28px">🚘</div>
       <div>
         <div class="value" id="mobileVehicleName" style="font-size:16px">—</div>
         <div class="label" id="mobileVehiclePlate">—</div>
         <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
-          <div style="flex:1;height:8px;background:#2d3147;border-radius:4px;min-width:80px">
+          <div style="flex:1;height:8px;background:var(--chip);border-radius:4px;min-width:80px">
             <div id="mobileSocBar" style="height:100%;width:0%;background:#64ffda;border-radius:4px;transition:width 0.5s"></div>
           </div>
           <span id="mobileSocPct" style="font-size:13px;font-weight:700;color:#64ffda">—</span>
@@ -8113,16 +8188,16 @@ function testNotifChannel(channel) {
   <div class="mobile-card">
     <h3>⚡ Schnellaktionen</h3>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <button onclick="mobileNavTo('export')" style="padding:12px 8px;border-radius:8px;background:#1a3d6e;border:none;color:#64ffda;font-size:13px;cursor:pointer">
+      <button onclick="mobileNavTo('export')" style="padding:12px 8px;border-radius:8px;background:var(--info-bg);border:none;color:#64ffda;font-size:13px;cursor:pointer">
         📥 Export erstellen
       </button>
-      <button onclick="mobileNavTo('sessions');setTimeout(mobileQuickAddSession,150)" style="padding:12px 8px;border-radius:8px;background:#1a3d6e;border:none;color:#64ffda;font-size:13px;cursor:pointer">
+      <button onclick="mobileNavTo('sessions');setTimeout(mobileQuickAddSession,150)" style="padding:12px 8px;border-radius:8px;background:var(--info-bg);border:none;color:#64ffda;font-size:13px;cursor:pointer">
         ➕ Ladevorgang
       </button>
-      <button onclick="openMobileMeterTest()" style="padding:12px 8px;border-radius:8px;background:#1a3d6e;border:none;color:#64ffda;font-size:13px;cursor:pointer">
+      <button onclick="openMobileMeterTest()" style="padding:12px 8px;border-radius:8px;background:var(--info-bg);border:none;color:#64ffda;font-size:13px;cursor:pointer">
         🔌 Zähler testen
       </button>
-      <button onclick="mobileNavTo('vehicles')" style="padding:12px 8px;border-radius:8px;background:#1a3d6e;border:none;color:#64ffda;font-size:13px;cursor:pointer">
+      <button onclick="mobileNavTo('vehicles')" style="padding:12px 8px;border-radius:8px;background:var(--info-bg);border:none;color:#64ffda;font-size:13px;cursor:pointer">
         🚗 Fahrzeug
       </button>
     </div>
@@ -8135,9 +8210,9 @@ function testNotifChannel(channel) {
   <div class="mobile-card">
     <h3>🕐 Letzte Ladevorgänge</h3>
     <div id="mobileRecentSessions">
-      <p style="color:#8892b0;font-size:13px">Lade Daten…</p>
+      <p style="color:var(--mute);font-size:13px">Lade Daten…</p>
     </div>
-    <button onclick="mobileNavTo('sessions')" style="width:100%;margin-top:8px;padding:10px;background:transparent;border:1px solid #2d3147;border-radius:6px;color:#8892b0;font-size:13px;cursor:pointer">
+    <button onclick="mobileNavTo('sessions')" style="width:100%;margin-top:8px;padding:10px;background:transparent;border:1px solid var(--brd2);border-radius:6px;color:var(--mute);font-size:13px;cursor:pointer">
       Alle anzeigen →
     </button>
   </div>
@@ -8147,10 +8222,10 @@ function testNotifChannel(channel) {
 <div id="mobileSessionCards" style="display:none;padding:12px">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
     <h2 style="margin:0;font-size:18px">Ladevorgänge</h2>
-    <button onclick="mobileQuickAddSession()" style="padding:8px 14px;border-radius:6px;background:#3d5afe;border:none;color:#fff;font-size:13px;cursor:pointer">+ Hinzufügen</button>
+    <button onclick="mobileQuickAddSession()" style="padding:8px 14px;border-radius:6px;background:#3d5afe;border:none;color:var(--ink);font-size:13px;cursor:pointer">+ Hinzufügen</button>
   </div>
   <div id="mobileSessionCardList">
-    <p style="color:#8892b0">Lade…</p>
+    <p style="color:var(--mute)">Lade…</p>
   </div>
 </div>
 
@@ -8160,26 +8235,26 @@ function testNotifChannel(channel) {
 
   <div class="mobile-card">
     <h3>Schritt 1: Fahrzeug & Monat</h3>
-    <label style="display:block;font-size:12px;color:#8892b0;margin-bottom:4px;font-weight:600;text-transform:uppercase">Fahrzeug</label>
-    <select id="mobileExportVehicle" style="width:100%;padding:10px;border-radius:6px;background:#2d3147;border:1px solid #3d4166;color:#e6f1ff;font-size:14px;margin-bottom:10px">
+    <label style="display:block;font-size:12px;color:var(--mute);margin-bottom:4px;font-weight:600;text-transform:uppercase">Fahrzeug</label>
+    <select id="mobileExportVehicle" style="width:100%;padding:10px;border-radius:6px;background:var(--chip);border:1px solid var(--brd2);color:var(--ink);font-size:14px;margin-bottom:10px">
       <option value="all">Alle Fahrzeuge</option>
     </select>
-    <label style="display:block;font-size:12px;color:#8892b0;margin-bottom:4px;font-weight:600;text-transform:uppercase">Monat</label>
-    <input type="month" id="mobileExportMonth" style="width:100%;padding:10px;border-radius:6px;background:#2d3147;border:1px solid #3d4166;color:#e6f1ff;font-size:15px">
+    <label style="display:block;font-size:12px;color:var(--mute);margin-bottom:4px;font-weight:600;text-transform:uppercase">Monat</label>
+    <input type="month" id="mobileExportMonth" style="width:100%;padding:10px;border-radius:6px;background:var(--chip);border:1px solid var(--brd2);color:var(--ink);font-size:15px">
   </div>
 
   <div class="mobile-card">
     <h3>Schritt 2: Filter & Format</h3>
-    <label style="display:block;font-size:12px;color:#8892b0;margin-bottom:4px;font-weight:600;text-transform:uppercase">Ladeort</label>
+    <label style="display:block;font-size:12px;color:var(--mute);margin-bottom:4px;font-weight:600;text-transform:uppercase">Ladeort</label>
     <div style="display:flex;gap:6px;margin-bottom:10px">
-      <button id="mfAll" onclick="setMobileExportFilter('all',this)" style="flex:1;padding:8px;border-radius:6px;background:#3d5afe;border:none;color:#fff;font-size:13px;cursor:pointer">Alle</button>
-      <button id="mfHome" onclick="setMobileExportFilter('home',this)" style="flex:1;padding:8px;border-radius:6px;background:#2d3147;border:none;color:#8892b0;font-size:13px;cursor:pointer">🏠 Zuhause</button>
-      <button id="mfExtern" onclick="setMobileExportFilter('extern',this)" style="flex:1;padding:8px;border-radius:6px;background:#2d3147;border:none;color:#8892b0;font-size:13px;cursor:pointer">⚡ Extern</button>
+      <button id="mfAll" onclick="setMobileExportFilter('all',this)" style="flex:1;padding:8px;border-radius:6px;background:#3d5afe;border:none;color:var(--ink);font-size:13px;cursor:pointer">Alle</button>
+      <button id="mfHome" onclick="setMobileExportFilter('home',this)" style="flex:1;padding:8px;border-radius:6px;background:var(--chip);border:none;color:var(--mute);font-size:13px;cursor:pointer">🏠 Zuhause</button>
+      <button id="mfExtern" onclick="setMobileExportFilter('extern',this)" style="flex:1;padding:8px;border-radius:6px;background:var(--chip);border:none;color:var(--mute);font-size:13px;cursor:pointer">⚡ Extern</button>
     </div>
-    <label style="display:block;font-size:12px;color:#8892b0;margin-bottom:4px;font-weight:600;text-transform:uppercase">Sprache</label>
+    <label style="display:block;font-size:12px;color:var(--mute);margin-bottom:4px;font-weight:600;text-transform:uppercase">Sprache</label>
     <div style="display:flex;gap:8px;margin-bottom:10px">
-      <button id="mobileLangDe" onclick="setMobileLang('de')" style="flex:1;padding:10px;border-radius:6px;background:#3d5afe;border:none;color:#fff;font-size:14px;cursor:pointer">🇩🇪 Deutsch</button>
-      <button id="mobileLangEn" onclick="setMobileLang('en')" style="flex:1;padding:10px;border-radius:6px;background:#2d3147;border:none;color:#8892b0;font-size:14px;cursor:pointer">🇬🇧 English</button>
+      <button id="mobileLangDe" onclick="setMobileLang('de')" style="flex:1;padding:10px;border-radius:6px;background:#3d5afe;border:none;color:var(--ink);font-size:14px;cursor:pointer">🇩🇪 Deutsch</button>
+      <button id="mobileLangEn" onclick="setMobileLang('en')" style="flex:1;padding:10px;border-radius:6px;background:var(--chip);border:none;color:var(--mute);font-size:14px;cursor:pointer">🇬🇧 English</button>
     </div>
     <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
       <input type="checkbox" id="mobileIncludeSignature" style="width:20px;height:20px">
@@ -8188,8 +8263,8 @@ function testNotifChannel(channel) {
   </div>
 
   <div style="display:flex;gap:8px">
-    <button onclick="doMobileExportPreview()" style="flex:1;padding:14px;border-radius:8px;background:#1a3d6e;border:none;color:#64ffda;font-size:14px;font-weight:600;cursor:pointer">👁 Vorschau</button>
-    <button onclick="doMobileExport()" style="flex:1;padding:14px;border-radius:8px;background:#3d5afe;border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer">📥 Herunterladen</button>
+    <button onclick="doMobileExportPreview()" style="flex:1;padding:14px;border-radius:8px;background:var(--info-bg);border:none;color:#64ffda;font-size:14px;font-weight:600;cursor:pointer">👁 Vorschau</button>
+    <button onclick="doMobileExport()" style="flex:1;padding:14px;border-radius:8px;background:#3d5afe;border:none;color:var(--ink);font-size:14px;font-weight:600;cursor:pointer">📥 Herunterladen</button>
   </div>
   <div id="mobileExportResult" style="margin-top:12px"></div>
 </div>
@@ -8198,10 +8273,10 @@ function testNotifChannel(channel) {
 <div id="mobileVehicles" style="display:none;padding:12px">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
     <h2 style="margin:0;font-size:18px">🚗 Fahrzeuge</h2>
-    <button onclick="openAddVehicleModal()" style="padding:8px 14px;border-radius:6px;background:#3d5afe;border:none;color:#fff;font-size:13px;cursor:pointer">+ Hinzufügen</button>
+    <button onclick="openAddVehicleModal()" style="padding:8px 14px;border-radius:6px;background:#3d5afe;border:none;color:var(--ink);font-size:13px;cursor:pointer">+ Hinzufügen</button>
   </div>
   <div id="mobileVehicleCardList">
-    <p style="color:#8892b0;font-size:13px">Lade Fahrzeuge…</p>
+    <p style="color:var(--mute);font-size:13px">Lade Fahrzeuge…</p>
   </div>
 </div>
 
@@ -8245,9 +8320,9 @@ function testNotifChannel(channel) {
   </div>
 
   <!-- Links zu den Desktop-Einstellungen -->
-  <div style="margin-top:16px;padding:12px;background:#1e2230;border-radius:8px">
-    <p style="font-size:12px;color:#8892b0;margin:0 0 8px 0">Für erweiterte Einstellungen:</p>
-    <button onclick="switchToDesktopSettings()" style="width:100%;padding:12px;border-radius:6px;background:transparent;border:1px solid #2d3147;color:#8892b0;font-size:13px;cursor:pointer">
+  <div style="margin-top:16px;padding:12px;background:var(--surf2);border-radius:8px">
+    <p style="font-size:12px;color:var(--mute);margin:0 0 8px 0">Für erweiterte Einstellungen:</p>
+    <button onclick="switchToDesktopSettings()" style="width:100%;padding:12px;border-radius:6px;background:transparent;border:1px solid var(--brd2);color:var(--mute);font-size:13px;cursor:pointer">
       🖥️ Vollständige Einstellungen öffnen
     </button>
   </div>

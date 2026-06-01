@@ -50,10 +50,10 @@ async function editLocation(id, current){
     var overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999';
     var box = document.createElement('div');
-    box.style.cssText = 'background:#1a2030;border:1px solid #2d3a4a;border-radius:12px;padding:24px 28px;min-width:280px;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.5)';
-    box.innerHTML = '<div style="font-size:.85rem;color:#94a3b8;margin-bottom:4px">Session #'+id+'</div>'
+    box.style.cssText = 'background:var(--surf2);border:1px solid #2d3a4a;border-radius:12px;padding:24px 28px;min-width:280px;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.5)';
+    box.innerHTML = '<div style="font-size:.85rem;color:var(--mute);margin-bottom:4px">Session #'+id+'</div>'
       +'<div style="font-size:1rem;color:#e2e8f0;margin-bottom:16px;font-weight:600">Standort ändern</div>'
-      +'<div style="font-size:.75rem;color:#64748b;margin-bottom:12px">Aktuell: '+escapeHtml(labels[current]||current||'—')+'</div>';
+      +'<div style="font-size:.75rem;color:var(--mute);margin-bottom:12px">Aktuell: '+escapeHtml(labels[current]||current||'—')+'</div>';
     var btnWrap = document.createElement('div');
     btnWrap.style.cssText = 'display:flex;flex-direction:column;gap:8px';
     opts.forEach(function(opt){
@@ -82,7 +82,7 @@ async function editLocation(id, current){
     });
     var cancelBtn = document.createElement('button');
     cancelBtn.textContent = 'Abbrechen';
-    cancelBtn.style.cssText = 'background:transparent;color:#64748b;border:1px solid #2d3a4a;border-radius:8px;padding:8px 16px;font-size:.82rem;cursor:pointer;font-family:inherit;margin-top:4px';
+    cancelBtn.style.cssText = 'background:transparent;color:var(--mute);border:1px solid #2d3a4a;border-radius:8px;padding:8px 16px;font-size:.82rem;cursor:pointer;font-family:inherit;margin-top:4px';
     cancelBtn.addEventListener('click', function(){document.body.removeChild(overlay);resolve();});
     box.appendChild(btnWrap);
     box.appendChild(document.createElement('div')).style.marginBottom = '4px';

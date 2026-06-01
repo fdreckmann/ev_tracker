@@ -21,7 +21,7 @@ async function loadVehicleList() {
     row.innerHTML =
       '<img src="'+thumbSrc+'" style="width:36px;height:36px;border-radius:50%;object-fit:cover;flex-shrink:0;background:var(--bg2)" onerror="this.style.display=\'none\'">' +
       '<div style="flex:1;min-width:0">' +
-        '<div style="font-weight:700;font-size:.85rem;color:#fff">'+_eh(v.name||'')+'</div>' +
+        '<div style="font-weight:700;font-size:.85rem;color:var(--ink)">'+_eh(v.name||'')+'</div>' +
         '<div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-top:3px">'+_eh(v.provider||'ha')+' · ID: '+_eh(v.id)+(isV0?' · Primär':'')+'</div>' +
       '</div>' +
       '<div style="font-size:.72rem;font-family:var(--mono);color:'+(active?'var(--acc)':'var(--mute)')+'">' +

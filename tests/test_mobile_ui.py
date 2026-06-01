@@ -97,6 +97,57 @@ class TestMissingChargeEvidenceUI:
         assert "Vermutlicher Zwischenladestopp" in _MOBILE_JS
         assert "per zähler bestätigt" in _MOBILE_JS.lower()
 
+
+class TestThemeSystem:
+    """Phase C — system/dark/light theme with full variable palettes."""
+
+    _REQUIRED_VARS = [
+        "--bg", "--bg2", "--surf", "--surf2", "--card", "--brd", "--brd2",
+        "--chip", "--txt", "--ink", "--mute", "--acc", "--acc2",
+        "--warn", "--danger", "--info-bg", "--ok-bg", "--warn-bg", "--danger-bg",
+    ]
+
+    def test_both_palettes_present(self):
+        assert ':root[data-theme="light"]' in _INDEX
+        assert '[data-theme="dark"]' in _INDEX
+
+    def test_required_vars_defined_in_both_palettes(self):
+        # Each var must be defined at least twice (dark + light palette).
+        for v in self._REQUIRED_VARS:
+            assert _INDEX.count(v + ":") >= 2, f"{v} not defined in both palettes"
+
+    def test_no_undefined_vars_used(self):
+        import re
+        defined = set(re.findall(r'(--[a-z0-9-]+)\s*:', _INDEX))
+        used = set(re.findall(r'var\((--[a-z0-9-]+)', _INDEX))
+        missing = sorted(u for u in used if u not in defined)
+        assert not missing, f"variables used but never defined: {missing}"
+
+    def test_theme_persisted_in_localstorage(self):
+        assert "localStorage.setItem('theme'" in _INDEX
+        assert "localStorage.getItem('theme')" in _INDEX
+
+    def test_system_pref_uses_media_query(self):
+        assert "prefers-color-scheme: dark" in _INDEX
+
+    def test_theme_functions_and_toggle_present(self):
+        assert "window.setTheme" in _INDEX
+        assert "window.applyTheme" in _INDEX
+        assert "theme-seg" in _INDEX
+        assert 'data-theme-opt="system"' in _INDEX
+        assert 'data-theme-opt="light"' in _INDEX
+        assert 'data-theme-opt="dark"' in _INDEX
+
+    def test_typography_inter_and_tabular_nums(self):
+        assert "Inter:wght" in _INDEX          # font loaded
+        assert "'Inter'" in _INDEX             # used in --sans
+        assert "tabular-nums" in _INDEX
+
+    def test_no_invisible_white_text_left_in_dynamic(self):
+        # The only literal white text allowed is the white-on-blue mobile button.
+        assert _INDEX.count("color:#fff") == 0           # no-space form fully migrated
+        assert _MOBILE_JS.count("color:#fff") == 0
+
     def test_openDesktopConfigSection_switches_tab(self):
         """openDesktopConfigSection must invoke tab('config', ...) and cfgSection."""
         assert "tab('config'" in _MOBILE_JS
