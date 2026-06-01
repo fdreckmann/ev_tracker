@@ -300,6 +300,23 @@ DEFAULT_CONFIG = {
     "missing_charge_default_consumption_kwh_per_100km": 18.0,
     "missing_charge_show_dashboard_hints":           True,
 
+    # Missing-charge energy-balance detection (implausibly low trip consumption)
+    "missing_charge_energy_balance_enabled":                  True,
+    "missing_charge_expected_consumption_kwh_per_100km":      18.0,   # global fallback
+    "missing_charge_min_distance_km":                         30,
+    "missing_charge_min_missing_kwh":                         4.0,
+    "missing_charge_min_missing_soc_percent":                 5.0,
+    "missing_charge_min_plausible_consumption_kwh_per_100km": 12.0,
+    "missing_charge_max_plausible_consumption_kwh_per_100km": None,   # optional upper clamp
+    "missing_charge_energy_balance_min_deviation_percent":    25.0,
+    # Historical expected-consumption estimation
+    "missing_charge_consumption_history_days":               90,
+    "missing_charge_consumption_min_history_km":             300,
+    "missing_charge_consumption_min_segments":               5,
+    "official_consumption_kwh_per_100km":                    None,
+    "official_range_km":                                     None,
+    "official_consumption_factor":                           1.20,
+
     # Public charging prices
     "public_charging_price_enabled":        True,
     "public_charging_default_contract_id":  None,
@@ -344,6 +361,7 @@ VEHICLE_SPECIFIC_KEYS = {
     "smartcar_access_token","smartcar_vehicle_id",
     # Per-vehicle missing-charge settings
     "usable_battery_kwh","default_consumption_kwh_per_100km",
+    "official_consumption_kwh_per_100km","official_range_km","official_consumption_factor",
 }
 
 _config_cache: dict = {"data": None, "ts": 0.0}

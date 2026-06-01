@@ -9,14 +9,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ .
 COPY version.json .
+COPY build-info.json .
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 # Create non-root user (UID 10001) with a writable home.
-# At runtime the effective user is determined by either:
-#   - user: "PUID:PGID" in docker-compose.yml  (recommended, Mode A)
-#   - PUID/PGID env vars with root start + gosu (Mode B)
+# /data gets sticky world-write (1777) so any PUID can write on first start
+# before gosu chowns it to the configured PUID:PGID.
 RUN useradd -r -u 10001 -g users -d /home/evtracker evtracker \
     && mkdir -p /data /home/evtracker \
+    && chmod 1777 /data \
     && chown -R evtracker:users /app /home/evtracker
 
 VOLUME ["/data"]
