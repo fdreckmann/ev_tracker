@@ -79,7 +79,9 @@ def api_wallbox_assign(wbs_id):
 
     session_id = None
     if ok and data.get("create_session", False):
-        session_id = _create_session_from_wallbox(con, wbs, vehicle_id)
+        from services.reconciliation_service import reconcile_charging_evidence
+        result = reconcile_charging_evidence(con, wbs, vehicle_id)
+        session_id = result.get("session_id")
 
     close_db_if_owned(con)
     _audit("wallbox_assigned",
