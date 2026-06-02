@@ -1,5 +1,49 @@
 # Changelog
 
+## v2.0.51 — 2026-06-02
+
+### Wallbox-/Zähler-Heimladung (PRs 1–8)
+
+Vollständige Umsetzung der automatischen Heimladungs-Erkennung über Wallbox oder Energiezähler, mit sicherer Fahrzeugzuordnung und filtertem Report-Export.
+
+**Datenbasis (PR 1)**
+- Neue Tabelle `wallbox_sessions` — technische Ladevorgänge aus Zähler/Wallbox
+- Neue Tabelle `charge_evidence` — verknüpft Wallbox-, API- und Zähler-Signale
+- `meter_snapshots` um `source_type`, `source_name`, `power_kw`, `energy_total_kwh`, `raw_json` erweitert (additiv, Backfill alter Zeilen)
+- `sessions` um `source_primary`, `evidence_json`, `vehicle_assignment_status`, `excluded_from_reports` erweitert
+
+**Zentraler Report-Filter (PR 2)**
+- `reportable_session_where_clause()` — einheitlicher SQL-Guard mit COALESCE für rückwärtskompatible alte Zeilen
+- Angewendet auf alle 7 Query-Stellen: Sessions-Liste, Monatsstatistiken, Excel-Export, API v1
+- Neue Blueprint-Routen `/api/wallbox/sessions/*`: offene Sessions anzeigen, Fahrzeug zuordnen, Fremdfahrzeug markieren, ignorieren
+
+**Deduplizierung (PR 3)**
+- `reconciliation_service.py`: verhindert Doppel-Sessions wenn Wallbox und Fahrzeug-API denselben Ladevorgang erkennen (±3 kWh Toleranz, Zeitüberschneidung)
+
+**Provider-Datenverfügbarkeit (PR 4)**
+- `VehicleState` um `data_timestamp`, `data_age_seconds`, `data_stale`, `stale_reason` erweitert
+- HA-Provider wertet `last_changed`/`last_updated` aus; `provider_stale_after_minutes` konfigurierbar
+- `/api/status` liefert Staleness-Felder; Dashboard-Status zeigt `data_stale`
+
+**go-e RFID/Ladekarten (PR 5)**
+- `goe_rfid_service.py`: liest `cae`-Array (0,1-Wh-Einheiten), erkennt welche Karte geladen hat
+- `goe_card_vehicle_map` ordnet Karten-Slots Fahrzeug-IDs zu
+- Konflikt (mehrere Karten steigen) → `unassigned`; genau eine → `confirmed`
+
+**Schnelleingabe externe Ladung (PR 6)**
+- `POST /api/sessions/quick-add-external` mit Smart-Defaults (letztes Fahrzeug, letzter Vertrag, geschätztes Ende)
+- `import_service.py`: `make_dedup_key()` + `BaseImportProfile` ABC für künftige Ladekarten-Importe
+
+**Wallbox-/Zähler-Config-UI (PR 7)**
+- Konfigurations-Abschnitt „Automatische Heimladung" in Konfiguration → Zähler & Wallbox
+- Dashboard-Kachel „Offene Heimladungen" mit Zuordnen/Fremdfahrzeug/Ignorieren-Buttons
+
+**Detection im Poll-Loop verdrahtet (PR 8)**
+- `MeterResult.power_kw` (optional) — go-e und evcc liefern jetzt Momentanleistung
+- `process_power_snapshot` / `process_energy_snapshot` werden in jedem Poll-Durchlauf aufgerufen (eigenständiger try/except, bricht Loop nie ab)
+- go-e RFID in `_resolve_vehicle` integriert: Karten-Snapshots bei Session-Start/-Ende; `confirmed` wenn genau eine gemappte Karte steigt
+- `allow_probable`-Bug behoben: `default_vehicle_always` + `allow_probable=False` → `unassigned` (vorher fälschlicherweise `probable`)
+
 ## v2.0.43 — 2026-05-25
 
 ### Update-Check, Notification-UI, Permissions, Session-Validierung

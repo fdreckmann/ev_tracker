@@ -1583,6 +1583,31 @@ def tracker_loop(vehicle_id: str = "v0"):
             except Exception as _mse:
                 log.debug("Meter snapshot error [%s]: %s", vehicle_id, _mse)
 
+            # ── Wallbox/Zähler Home-Charging-Erkennung (additiv, darf nie den Loop brechen) ──
+            try:
+                if vcfg.get("home_charge_detection_enabled", True):
+                    from services.wallbox_session_service import (
+                        process_power_snapshot, process_energy_snapshot,
+                    )
+                    _src_name = vcfg.get("meter_source", "meter") or "meter"
+                    _src_type = vcfg.get("meter_type", "meter") or "meter"
+                    _ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
+                    _meter_power = st.get("meter_snap_last_power")
+                    _meter_energy = st.get("meter_snap_last_val")
+                    if _meter_power is not None:
+                        process_power_snapshot(
+                            vehicle_id=None, source_type=_src_type, source_name=_src_name,
+                            power_kw=_meter_power, energy_total_kwh=_meter_energy,
+                            ts=_ts, cfg=vcfg, st=st, con=con,
+                        )
+                    elif _meter_energy is not None:
+                        process_energy_snapshot(
+                            vehicle_id=None, source_type=_src_type, source_name=_src_name,
+                            energy_total_kwh=_meter_energy, ts=_ts, cfg=vcfg, st=st, con=con,
+                        )
+            except Exception as _wbe:
+                log.debug("Wallbox detection error [%s]: %s", vehicle_id, _wbe)
+
             # ── Snapshot + Missing-Charge Detection ───────────────────────────
             try:
                 from services.missing_charge_service import save_snapshot, check_for_missing_charge

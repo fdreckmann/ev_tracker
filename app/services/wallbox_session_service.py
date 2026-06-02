@@ -159,6 +159,14 @@ def process_power_snapshot(
                     st.pop(f"wbs_{source_name}_above_since", None)
                     st.pop(f"wbs_{source_name}_peak_kw", None)
                     st.pop(f"wbs_{source_name}_start_energy", None)
+                    # go-e RFID: capture card snapshot at session start
+                    if cfg.get("goe_rfid_enabled", False):
+                        try:
+                            from services.goe_rfid_service import read_card_energy_snapshot
+                            st["goe_card_snapshot_start"] = read_card_energy_snapshot(cfg)
+                            st.pop("goe_card_snapshot_end", None)
+                        except Exception:
+                            pass
                     log.info("wallbox_session %d opened (source=%s, start=%s)", wbs_id, source_name, start_ts)
         else:
             # Not above threshold — clear debounce state
@@ -199,8 +207,16 @@ def process_power_snapshot(
             set_active_wallbox_session(source_name, st, None)
             return None
 
+        # go-e RFID: capture card snapshot at session end (before resolve)
+        if cfg.get("goe_rfid_enabled", False):
+            try:
+                from services.goe_rfid_service import read_card_energy_snapshot
+                st["goe_card_snapshot_end"] = read_card_energy_snapshot(cfg)
+            except Exception:
+                pass
+
         # Determine vehicle assignment
-        assigned_vid, assign_status = _resolve_vehicle(vehicle_id, cfg)
+        assigned_vid, assign_status = _resolve_vehicle(vehicle_id, cfg, st=st, con=con)
 
         _close_session(
             con, wbs_id,
@@ -220,18 +236,39 @@ def process_power_snapshot(
     return None
 
 
-def _resolve_vehicle(vehicle_id: Optional[str], cfg: dict) -> tuple[Optional[str], str]:
+def _resolve_vehicle(
+    vehicle_id: Optional[str],
+    cfg: dict,
+    st: Optional[dict] = None,
+    con=None,
+) -> tuple[Optional[str], str]:
     """Determine which vehicle to assign and at what confidence.
 
     Returns (vehicle_id_or_None, assignment_status).
     """
+    # 1. go-e RFID/Card: stärkstes Signal — geht vor allen anderen Regeln
+    if cfg.get("goe_rfid_enabled", False) and st is not None:
+        snap_before = st.get("goe_card_snapshot_start")
+        snap_after  = st.get("goe_card_snapshot_end")
+        if snap_before and snap_after:
+            try:
+                from services.goe_rfid_service import resolve_vehicle_from_cards
+                vid, status, _card = resolve_vehicle_from_cards(cfg, snap_before, snap_after)
+                if status == "confirmed" and vid:
+                    return vid, "confirmed"
+                # conflict / unassigned → fällt durch, kein Default-Fallback
+                return None, "unassigned"
+            except Exception:
+                pass
+
     mode = cfg.get("home_charge_vehicle_assignment_mode", "always_ask_if_unclear")
     allow_probable = bool(cfg.get("home_charge_allow_probable_assignment", False))
     default_vid = cfg.get("home_charge_default_vehicle_id") or None
 
     if mode == "default_vehicle_always" and default_vid:
-        status = "probable" if not allow_probable else "probable"
-        return default_vid, status
+        if allow_probable:
+            return default_vid, "probable"
+        return None, "unassigned"
 
     if mode == "require_rfid_or_api":
         return None, "unassigned"
@@ -305,7 +342,7 @@ def process_energy_snapshot(
                         wbs_id = row[0]
                         energy_kwh = round(energy_total_kwh - (row[1] or 0.0), 3)
                         if energy_kwh >= min_energy_kwh:
-                            assigned_vid, assign_status = _resolve_vehicle(vehicle_id, cfg)
+                            assigned_vid, assign_status = _resolve_vehicle(vehicle_id, cfg, st=st, con=con)
                             _close_session(
                                 con, wbs_id,
                                 end_ts=ts,

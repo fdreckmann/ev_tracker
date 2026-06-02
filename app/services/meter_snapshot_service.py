@@ -116,6 +116,7 @@ def maybe_record_poll_snapshot(vehicle_id: str, cfg: dict, st: dict, con) -> int
                                        res.unit, True, None, con, ts=ts)
             st["meter_snap_last_dt"] = now
             st["meter_snap_last_val"] = res.value
+            st["meter_snap_last_power"] = res.power_kw  # None when provider doesn't expose it
             st["meter_snap_last_ok"] = True
             return rid
 

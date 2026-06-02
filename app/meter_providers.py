@@ -43,6 +43,7 @@ class MeterResult:
     debug: list = field(default_factory=list)
     suggestions: list = field(default_factory=list)
     error: Optional[str] = None
+    power_kw: Optional[float] = None  # instantaneous power if provider exposes it
 
 def build_base_url(cfg: dict, default_scheme: str = "http") -> str:
     ip = cfg.get("meter_device_ip", "").strip()
@@ -175,7 +176,8 @@ class BaseMeterProvider:
         raise NotImplementedError
 
     def _result(self, value=None, debug=None, error=None, endpoint=None,
-                raw_value=None, unit=None, normalized_from=None, suggestions=None):
+                raw_value=None, unit=None, normalized_from=None, suggestions=None,
+                power_kw=None):
         return MeterResult(
             value=value,
             ok=value is not None,
@@ -187,6 +189,7 @@ class BaseMeterProvider:
             debug=debug or [],
             suggestions=suggestions or [],
             error=error,
+            power_kw=power_kw,
         )
 
 
@@ -631,10 +634,18 @@ class GoEMeterProvider(BaseMeterProvider):
             if data is None:
                 continue
             if "eto" in data:
-                # v2: eto in 0.1 Wh
+                # v2: eto in 0.1 Wh; nrg[11] = charging power in W
                 val = round(data["eto"] / 10000, 3)
                 debug.append(f"  → eto={data['eto']} → {val} kWh")
-                return self._result(value=val, debug=debug)
+                power_kw = None
+                nrg = data.get("nrg")
+                if isinstance(nrg, list) and len(nrg) > 11:
+                    try:
+                        power_kw = round(float(nrg[11]) / 1000, 3)
+                        debug.append(f"  → nrg[11]={nrg[11]} W → {power_kw} kW")
+                    except (TypeError, ValueError):
+                        pass
+                return self._result(value=val, power_kw=power_kw, debug=debug)
             if "wh" in data:
                 # v1 alternative
                 val = round(float(data["wh"]) / 1000, 3)
@@ -714,7 +725,15 @@ class EvccMeterProvider(BaseMeterProvider):
         v = lp.get("chargeTotalImport") or (lp.get("chargedEnergy", 0) / 1000)
         val = round(float(v), 3)
         debug.append(f"  → LP{lp_idx} chargeTotalImport={val} kWh")
-        return self._result(value=val, debug=debug)
+        power_kw = None
+        try:
+            pw = lp.get("chargePower")
+            if pw is not None:
+                power_kw = round(float(pw) / 1000, 3)
+                debug.append(f"  → LP{lp_idx} chargePower={pw} W → {power_kw} kW")
+        except (TypeError, ValueError):
+            pass
+        return self._result(value=val, power_kw=power_kw, debug=debug)
 
 
 class WebastoMeterProvider(BaseMeterProvider):

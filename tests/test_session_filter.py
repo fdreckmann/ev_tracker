@@ -114,8 +114,8 @@ class TestRequireRfidOrApi:
 # ---------------------------------------------------------------------------
 
 class TestDefaultVehicleAlwaysProbable:
-    def test_18_default_vehicle_always_probable(self, app):
-        """default_vehicle_always mode gives probable assignment, never confirmed."""
+    def test_18_default_vehicle_always_requires_allow_probable(self, app):
+        """default_vehicle_always + allow_probable=False → unassigned (no auto-assignment)."""
         from services.wallbox_session_service import _resolve_vehicle
         cfg = {
             "home_charge_vehicle_assignment_mode": "default_vehicle_always",
@@ -123,8 +123,21 @@ class TestDefaultVehicleAlwaysProbable:
             "home_charge_allow_probable_assignment": False,
         }
         vid, status = _resolve_vehicle("v0", cfg)
+        assert vid is None
+        assert status == "unassigned"
+
+    def test_18b_default_vehicle_always_probable_when_enabled(self, app):
+        """default_vehicle_always + allow_probable=True → probable (never confirmed)."""
+        from services.wallbox_session_service import _resolve_vehicle
+        cfg = {
+            "home_charge_vehicle_assignment_mode": "default_vehicle_always",
+            "home_charge_default_vehicle_id": "v0",
+            "home_charge_allow_probable_assignment": True,
+        }
+        vid, status = _resolve_vehicle("v0", cfg)
         assert vid == "v0"
         assert status == "probable"
+        assert status != "confirmed"
 
 
 # ---------------------------------------------------------------------------
