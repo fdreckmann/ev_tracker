@@ -130,6 +130,8 @@ def _compute_tracker_status(st: dict, cfg: dict | None = None) -> str:
         return "no_data"
     if st.get("charging"):
         return "charging"
+    if st.get("provider_data_stale"):
+        return "data_stale"
     # Detect sleeping vehicle: SOC not null, no activity for >60s
     last_poll = st.get("last_poll")
     if last_poll and not st.get("provider_connected"):
@@ -187,9 +189,13 @@ def api_status():
         result["provider"]         = provider_id
         result["provider_id"]      = provider_id
         result["provider_name"]    = provider_name
-        result["provider_connected"]   = st.get("provider_connected")
-        result["provider_last_error"]  = st.get("last_error")
-        result["provider_last_success"]= st.get("last_successful_poll")
+        result["provider_connected"]        = st.get("provider_connected")
+        result["provider_last_error"]       = st.get("last_error")
+        result["provider_last_success"]     = st.get("last_successful_poll")
+        result["provider_data_stale"]       = st.get("provider_data_stale")
+        result["provider_data_timestamp"]   = st.get("provider_data_timestamp")
+        result["provider_data_age_seconds"] = st.get("provider_data_age_seconds")
+        result["provider_stale_reason"]     = st.get("provider_stale_reason")
     except Exception:
         pass
     return jsonify(result)

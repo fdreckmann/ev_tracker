@@ -170,6 +170,9 @@ DEFAULT_CONFIG = {
     "meter_snapshot_heartbeat_minutes":  10,     # ...otherwise keep a heartbeat row every N minutes
     "meter_snapshot_max_error_rows":     500,    # cap stored error rows per vehicle
 
+    # Provider data-freshness threshold
+    "provider_stale_after_minutes": 60,
+
     # Wallbox / meter-based home-charge detection
     "home_charge_detection_enabled":              True,
     "home_charge_power_start_threshold_kw":       1.0,

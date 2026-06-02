@@ -1043,6 +1043,10 @@ def _make_state(vehicle_id="v0", provider_id="ha"):
         "failed_poll_count": 0,
         "provider_debug": {},
         "provider_connected": False,
+        "provider_data_stale": None,
+        "provider_data_timestamp": None,
+        "provider_data_age_seconds": None,
+        "provider_stale_reason": None,
         "soc_current": None,
         "odo_current": None, "charging": False, "location": "unknown",
         "charger_type": "unknown", "power_kw": None, "entsoe_spot": None,
@@ -1140,6 +1144,11 @@ def tracker_loop(vehicle_id: str = "v0"):
                 poll_count=st.get("poll_count", 0) + 1,
                 successful_poll_count=st.get("successful_poll_count", 0) + 1,
                 name=vcfg.get("car_name", vehicle_id),
+                # Data-freshness fields from provider (may be None for providers that don't support it)
+                provider_data_stale=getattr(state, "data_stale", None),
+                provider_data_timestamp=getattr(state, "data_timestamp", None),
+                provider_data_age_seconds=getattr(state, "data_age_seconds", None),
+                provider_stale_reason=getattr(state, "stale_reason", None),
             )
 
             # Auto-cache provider-supplied vehicle image (daemon thread — non-blocking)
