@@ -640,6 +640,114 @@ def init_db():
     )""")
     con.execute("""CREATE INDEX IF NOT EXISTS idx_msnap_vehicle_ts
                    ON meter_snapshots(vehicle_id, ts)""")
+    # meter_snapshots additive migration (new columns for wallbox/power tracking)
+    for _col in [
+        "source_type TEXT",
+        "source_name TEXT",
+        "power_kw REAL",
+        "energy_total_kwh REAL",
+        "raw_json TEXT",
+    ]:
+        try:
+            con.execute(f"ALTER TABLE meter_snapshots ADD COLUMN {_col}")
+        except Exception:
+            pass
+    # Backfill: align new columns from legacy data
+    con.execute(
+        "UPDATE meter_snapshots SET energy_total_kwh = value_kwh"
+        " WHERE energy_total_kwh IS NULL AND value_kwh IS NOT NULL"
+    )
+    con.execute(
+        "UPDATE meter_snapshots SET source_name = source"
+        " WHERE source_name IS NULL AND source IS NOT NULL"
+    )
+    con.execute(
+        "UPDATE meter_snapshots SET source_type = 'meter'"
+        " WHERE source_type IS NULL"
+    )
+
+    # wallbox_sessions — technical wallbox/meter charge events; not auto-promoted to sessions
+    con.execute("""CREATE TABLE IF NOT EXISTS wallbox_sessions (
+        id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+        vehicle_id                TEXT NULL,
+        source_type               TEXT,
+        source_name               TEXT,
+        connector_id              TEXT NULL,
+        rfid_tag                  TEXT NULL,
+        card_name                 TEXT NULL,
+        start_ts                  TEXT NOT NULL,
+        end_ts                    TEXT NULL,
+        meter_start_kwh           REAL NULL,
+        meter_end_kwh             REAL NULL,
+        energy_kwh                REAL NULL,
+        peak_power_kw             REAL NULL,
+        status                    TEXT NOT NULL DEFAULT 'active',
+        vehicle_assignment_status TEXT NOT NULL DEFAULT 'unassigned',
+        confidence                REAL DEFAULT 0.0,
+        excluded_from_reports     INTEGER DEFAULT 1,
+        raw_json                  TEXT NULL,
+        created_at                TEXT NOT NULL,
+        updated_at                TEXT NOT NULL
+    )""")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_wallbox_sessions_status
+                   ON wallbox_sessions(status)""")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_wallbox_sessions_vehicle
+                   ON wallbox_sessions(vehicle_id)""")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_wallbox_sessions_start_end
+                   ON wallbox_sessions(start_ts, end_ts)""")
+
+    # charge_evidence — unified evidence records linking wallbox/API/meter signals
+    con.execute("""CREATE TABLE IF NOT EXISTS charge_evidence (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        vehicle_id          TEXT NULL,
+        session_id          INTEGER NULL,
+        wallbox_session_id  INTEGER NULL,
+        candidate_id        INTEGER NULL,
+        source_type         TEXT,
+        source_name         TEXT,
+        start_ts            TEXT NULL,
+        end_ts              TEXT NULL,
+        energy_kwh          REAL NULL,
+        meter_start_kwh     REAL NULL,
+        meter_end_kwh       REAL NULL,
+        soc_start           REAL NULL,
+        soc_end             REAL NULL,
+        odo_start           REAL NULL,
+        odo_end             REAL NULL,
+        power_peak_kw       REAL NULL,
+        location_hint       TEXT NULL,
+        rfid_tag            TEXT NULL,
+        card_name           TEXT NULL,
+        connector_id        TEXT NULL,
+        confidence          REAL DEFAULT 0.0,
+        raw_json            TEXT NULL,
+        created_at          TEXT NOT NULL
+    )""")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_charge_evidence_vehicle
+                   ON charge_evidence(vehicle_id)""")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_charge_evidence_session
+                   ON charge_evidence(session_id)""")
+
+    # sessions additive extension for wallbox assignment tracking
+    for _col in [
+        "source_primary TEXT NULL",
+        "evidence_json TEXT NULL",
+        "vehicle_assignment_status TEXT DEFAULT 'confirmed'",
+        "excluded_from_reports INTEGER DEFAULT 0",
+    ]:
+        try:
+            con.execute(f"ALTER TABLE sessions ADD COLUMN {_col}")
+        except Exception:
+            pass
+    # Backfill: existing sessions are confirmed and reportable
+    con.execute(
+        "UPDATE sessions SET excluded_from_reports = 0"
+        " WHERE excluded_from_reports IS NULL"
+    )
+    con.execute(
+        "UPDATE sessions SET vehicle_assignment_status = 'confirmed'"
+        " WHERE vehicle_assignment_status IS NULL"
+    )
 
     con.execute("""CREATE TABLE IF NOT EXISTS missing_charge_candidates (
         id                          INTEGER PRIMARY KEY AUTOINCREMENT,
