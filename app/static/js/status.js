@@ -235,6 +235,7 @@ async function refreshStatus() {
     }
 
     fitAllStats();
+    if (typeof loadOpenWallboxSessions === 'function') loadOpenWallboxSessions();
   } catch (e) {
     $('sDot').className = 'dot err'; $('sTxt').textContent = 'Fehler';
   } finally {

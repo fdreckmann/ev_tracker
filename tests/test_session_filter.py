@@ -10,6 +10,8 @@ Test numbers align with spec section 19:
   20  user marks foreign vehicle → excluded_from_reports=1
   21  user ignores → excluded_from_reports=1
   29  unassigned/foreign/ignored sessions not exported (session_filter)
+  30  assigned wallbox_session appears in export
+  31  dashboard counts only confirmed sessions
   32  historical session without new flags stays reportable
 """
 import json
@@ -274,6 +276,67 @@ class TestSessionFilterExcludes:
 
         assert sid_ok in ids
         assert sid_bad not in ids
+
+
+# ---------------------------------------------------------------------------
+# Test 30 — assigned wallbox_session appears in export
+# ---------------------------------------------------------------------------
+
+class TestAssignedWallboxInExport:
+    def test_30_assigned_session_in_export(self, app, authed_client):
+        """A confirmed session (excluded_from_reports=0) appears in the session list."""
+        with app.app_context():
+            from core.db import _get_db, close_db_if_owned
+            con = _get_db()
+            sid = _insert_session(con, excluded_from_reports=0,
+                                  vehicle_assignment_status="confirmed")
+            close_db_if_owned(con)
+
+        rv = authed_client.get("/api/sessions?year=2026&month=4")
+        ids = [s["id"] for s in rv.get_json()]
+        assert sid in ids
+
+    def test_30b_assigned_wallbox_in_excel_export(self, app):
+        """fetch_sessions includes session where assignment is confirmed."""
+        with app.app_context():
+            from core.db import _get_db, close_db_if_owned
+            con = _get_db()
+            sid = _insert_session(con, excluded_from_reports=0,
+                                  vehicle_assignment_status="confirmed")
+            close_db_if_owned(con)
+
+        with app.app_context():
+            from export_excel import fetch_sessions
+            rows = fetch_sessions(2026, 4, "home")
+            ids = [r["id"] for r in rows]
+        assert sid in ids
+
+
+# ---------------------------------------------------------------------------
+# Test 31 — dashboard counts only confirmed sessions
+# ---------------------------------------------------------------------------
+
+class TestDashboardCountsConfirmed:
+    def test_31_monthly_stats_exclude_unassigned(self, app, authed_client):
+        """Monthly stats (kwh, cost, count) must not include unassigned sessions."""
+        with app.app_context():
+            from core.db import _get_db, close_db_if_owned
+            con = _get_db()
+            # confirmed → should count
+            _insert_session(con, excluded_from_reports=0,
+                            vehicle_assignment_status="confirmed")
+            # unassigned → must not count
+            _insert_session(con, excluded_from_reports=1,
+                            vehicle_assignment_status="unassigned")
+            close_db_if_owned(con)
+
+        rv = authed_client.get("/api/stats/monthly")
+        assert rv.status_code == 200
+        months = {m["month"]: m for m in rv.get_json()}
+        april = months.get("2026-04", {})
+        # Exactly one session (20 kWh) should be counted, not the unassigned one
+        assert april.get("sessions", 0) == 1
+        assert abs(april.get("total_kwh", 0) - 20.0) < 0.1
 
 
 # ---------------------------------------------------------------------------
