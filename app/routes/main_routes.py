@@ -106,19 +106,29 @@ def api_provider_fields(provider_id):
     return jsonify(get_config_fields(provider_id))
 
 
+def _is_provider_unconfigured(cfg: dict | None) -> bool:
+    """True when no usable provider is set up (brand-new / empty v0)."""
+    if cfg is None:
+        return False
+    provider_id = cfg.get("provider", "ha")
+    if not provider_id or provider_id == "none":
+        return True
+    if provider_id == "ha" and not cfg.get("ha_url") and not cfg.get("ha_token"):
+        return True
+    if provider_id == "manual":
+        return True
+    return False
+
+
 def _compute_tracker_status(st: dict, cfg: dict | None = None) -> str:
     """Return one of: not_configured, stopped, provider_error, no_data, polling, charging, ready."""
+    # An unconfigured provider stays in the calm "not_configured" state even when
+    # the background tracker thread is running — it must never surface as a red error.
+    if _is_provider_unconfigured(cfg):
+        return "not_configured"
     if not (st.get("running") or st.get("tracker_alive")):
         # Distinguish "not configured" (no provider set up) from plain "stopped"
-        if cfg is not None:
-            provider_id = cfg.get("provider", "ha")
-            if not provider_id or provider_id == "none":
-                return "not_configured"
-            if provider_id == "ha" and not cfg.get("ha_url") and not cfg.get("ha_token"):
-                return "not_configured"
-            if provider_id == "manual":
-                return "not_configured"
-        elif not st:
+        if cfg is None and not st:
             # Empty state dict with no config info → brand-new install
             return "not_configured"
         return "stopped"
@@ -130,6 +140,8 @@ def _compute_tracker_status(st: dict, cfg: dict | None = None) -> str:
         return "no_data"
     if st.get("charging"):
         return "charging"
+    if st.get("provider_data_stale"):
+        return "data_stale"
     # Detect sleeping vehicle: SOC not null, no activity for >60s
     last_poll = st.get("last_poll")
     if last_poll and not st.get("provider_connected"):
@@ -187,9 +199,13 @@ def api_status():
         result["provider"]         = provider_id
         result["provider_id"]      = provider_id
         result["provider_name"]    = provider_name
-        result["provider_connected"]   = st.get("provider_connected")
-        result["provider_last_error"]  = st.get("last_error")
-        result["provider_last_success"]= st.get("last_successful_poll")
+        result["provider_connected"]        = st.get("provider_connected")
+        result["provider_last_error"]       = st.get("last_error")
+        result["provider_last_success"]     = st.get("last_successful_poll")
+        result["provider_data_stale"]       = st.get("provider_data_stale")
+        result["provider_data_timestamp"]   = st.get("provider_data_timestamp")
+        result["provider_data_age_seconds"] = st.get("provider_data_age_seconds")
+        result["provider_stale_reason"]     = st.get("provider_stale_reason")
     except Exception:
         pass
     return jsonify(result)
@@ -270,9 +286,10 @@ def api_mobile_summary():
     # Recent sessions (last 10)
     con = _get_db()
     try:
+        from services.session_filter import reportable_session_where_clause as _rsf
         recent_rows = con.execute(
             "SELECT id, start_ts, end_ts, location, charger_type, kwh_charged, cost_eur, soc_start, soc_end, max_power_kw, vehicle_id "
-            "FROM sessions ORDER BY start_ts DESC LIMIT 10"
+            f"FROM sessions WHERE end_ts IS NOT NULL{_rsf()} ORDER BY start_ts DESC LIMIT 10"
         ).fetchall()
         recent_sessions = [dict(r) for r in recent_rows]
 
@@ -282,7 +299,7 @@ def api_mobile_summary():
         month_prefix = today.strftime("%Y-%m")
         stats_row = con.execute(
             "SELECT COUNT(*) as cnt, SUM(kwh_charged) as kwh, SUM(cost_eur) as cost "
-            "FROM sessions WHERE start_ts LIKE ? AND end_ts IS NOT NULL",
+            f"FROM sessions WHERE start_ts LIKE ? AND end_ts IS NOT NULL{_rsf()}",
             (f"{month_prefix}%",)
         ).fetchone()
         monthly = {

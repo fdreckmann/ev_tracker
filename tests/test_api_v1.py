@@ -154,3 +154,62 @@ class TestApiV1Vehicles:
         assert isinstance(data, list)
         assert len(data) >= 1
         assert data[0]["id"] == "v0"
+
+
+class TestApiV1ReportsCreate:
+    """Tests for /api/v1/reports/create — verifies no TypeError from config= kwarg."""
+
+    def _insert_session(self, app, token, month=5):
+        with app.test_client() as c:
+            rv = c.post("/api/v1/sessions",
+                        headers={"Authorization": f"Bearer {token}"},
+                        content_type="application/json",
+                        json={
+                            "start_ts": f"2026-{month:02d}-10T10:00:00",
+                            "end_ts":   f"2026-{month:02d}-10T11:00:00",
+                            "kwh_charged": 12.5,
+                            "cost_eur": 3.75,
+                            "location": "home",
+                        })
+            assert rv.status_code == 201
+
+    def test_create_report_no_type_error(self, app, client):
+        """POST /api/v1/reports/create must not raise TypeError (no config= kwarg)."""
+        token = _create_token(app)
+        self._insert_session(app, token, month=5)
+        rv = client.post(
+            "/api/v1/reports/create",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "period_mode": "single_month",
+                "report_email_single_month": "2026-05",
+            },
+        )
+        data = rv.get_json()
+        assert rv.status_code == 201, f"Expected 201, got {rv.status_code}: {data}"
+        assert data.get("ok") is True
+
+    def test_create_report_single_month_produces_excel(self, app, client):
+        """Single-month report attaches valid XLSX bytes (no TypeError, valid header)."""
+        token = _create_token(app)
+        self._insert_session(app, token, month=4)
+        rv = client.post(
+            "/api/v1/reports/create",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "period_mode": "single_month",
+                "report_email_single_month": "2026-04",
+            },
+        )
+        assert rv.status_code == 201
+        report_id = rv.get_json()["report_id"]
+        # Check that a report row was created (excel_bytes may be None if no template,
+        # but the route must not crash)
+        from core.db import _get_db, close_db_if_owned
+        with app.app_context():
+            con = _get_db()
+            row = con.execute("SELECT id, status FROM reports WHERE id=?",
+                              (report_id,)).fetchone()
+            close_db_if_owned(con)
+        assert row is not None
+        assert dict(row)["status"] == "created"

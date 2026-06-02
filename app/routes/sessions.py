@@ -17,6 +17,7 @@ sessions_bp = Blueprint("sessions", __name__)
 
 
 def _get_sessions(year=None, month=None, location=None, vehicle_id=None, limit=50):
+    from services.session_filter import reportable_session_where_clause
     where = ["end_ts IS NOT NULL"]; params = []
     if year and month:
         where.append("start_ts LIKE ?"); params.append(f"{year:04d}-{month:02d}%")
@@ -24,7 +25,7 @@ def _get_sessions(year=None, month=None, location=None, vehicle_id=None, limit=5
         where.append("location = ?"); params.append(location)
     if vehicle_id and vehicle_id != "all":
         where.append("vehicle_id = ?"); params.append(vehicle_id)
-    sql = f"SELECT * FROM sessions WHERE {' AND '.join(where)} ORDER BY start_ts DESC"
+    sql = f"SELECT * FROM sessions WHERE {' AND '.join(where)}{reportable_session_where_clause()} ORDER BY start_ts DESC"
     if not (year and month): sql += f" LIMIT {limit}"
     con = _get_db()
     rows = con.execute(sql, params).fetchall(); close_db_if_owned(con)
@@ -32,8 +33,9 @@ def _get_sessions(year=None, month=None, location=None, vehicle_id=None, limit=5
 
 
 def _get_monthly_stats():
+    from services.session_filter import reportable_session_where_clause
     con = _get_db()
-    rows = con.execute("""
+    rows = con.execute(f"""
         SELECT strftime('%Y-%m', start_ts) AS month,
                COUNT(*) AS sessions,
                SUM(kwh_charged) AS total_kwh,
@@ -43,7 +45,7 @@ def _get_monthly_stats():
                SUM(CASE WHEN location='extern' THEN cost_eur ELSE 0 END) AS ext_cost,
                SUM(CASE WHEN charger_type='dc' THEN kwh_charged ELSE 0 END) AS dc_kwh,
                SUM(CASE WHEN charger_type='ac' THEN kwh_charged ELSE 0 END) AS ac_kwh
-        FROM sessions WHERE end_ts IS NOT NULL
+        FROM sessions WHERE end_ts IS NOT NULL{reportable_session_where_clause()}
         GROUP BY month ORDER BY month DESC LIMIT 12
     """).fetchall()
     close_db_if_owned(con); return [dict(r) for r in rows]
@@ -348,6 +350,166 @@ def api_manual_session_create():
         "ok": True, "id": sid, "session": session_data,
         "message": "Manueller Ladevorgang wurde gespeichert.",
     }), 201
+
+
+@sessions_bp.route("/api/sessions/quick-add-external", methods=["POST"])
+@require_login
+def api_quick_add_external():
+    """Mobile-optimised external charge quick-entry.
+
+    Accepts a minimal payload and fills in smart defaults:
+    - location defaults to 'extern'
+    - vehicle_id defaults to the last used vehicle (or 'v0')
+    - charging_contract_id/name from last external session if not supplied
+    - cost derived from contract price when cost_eur and price_per_kwh are absent
+    - end_ts estimated as start_ts + kwh/charger_power if missing (best-effort)
+
+    Delegates to the existing manual session creation after enrichment.
+    The created session is always reportable (excluded_from_reports=0,
+    vehicle_assignment_status='confirmed').
+    """
+    user = _current_user()
+    if not has_permission(user, "sessions:manual_add"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: sessions:manual_add"}), 403
+
+    data = dict(request.get_json(force=True) or {})
+
+    # ── Smart defaults ────────────────────────────────────────────────────────
+    data.setdefault("location", "extern")
+
+    con = _get_db()
+    try:
+        # Default vehicle: last used in any session
+        if not data.get("vehicle_id"):
+            row = con.execute(
+                "SELECT vehicle_id FROM sessions ORDER BY start_ts DESC LIMIT 1"
+            ).fetchone()
+            data["vehicle_id"] = (row["vehicle_id"] if row else None) or "v0"
+
+        # Default contract: last used contract on an external session
+        if not data.get("charging_contract_id"):
+            row = con.execute(
+                """SELECT charging_contract_id, charging_contract_name
+                   FROM sessions
+                   WHERE location='extern' AND charging_contract_id IS NOT NULL
+                   ORDER BY start_ts DESC LIMIT 1"""
+            ).fetchone()
+            if row:
+                data.setdefault("charging_contract_id",   row["charging_contract_id"])
+                data.setdefault("charging_contract_name", row["charging_contract_name"])
+    finally:
+        close_db_if_owned(con)
+
+    # ── Estimate end_ts when missing ──────────────────────────────────────────
+    if not data.get("end_ts") and data.get("start_ts") and data.get("kwh_charged"):
+        try:
+            from datetime import timedelta
+            kwh = float(data["kwh_charged"])
+            power_kw = float(data.get("charger_power_kw") or data.get("max_power_kw") or 50.0)
+            hours = kwh / max(power_kw, 0.1)
+            start_dt = datetime.fromisoformat(str(data["start_ts"]))
+            estimated_end = start_dt + timedelta(hours=hours)
+            data["end_ts"] = estimated_end.isoformat(timespec="seconds")
+        except Exception:
+            pass
+
+    # ── Ensure session is always reportable ───────────────────────────────────
+    data["vehicle_assignment_status"] = "confirmed"
+    data["excluded_from_reports"] = 0
+
+    return _quick_add_external_insert(data)
+
+
+def _quick_add_external_insert(data: dict):
+    """Insert an external quick-add session, bypassing the full route handler."""
+    from datetime import timezone
+
+    def _float_or_none_local(v):
+        if v is None or v == "": return None
+        try: return float(v)
+        except (TypeError, ValueError): return None
+
+    start_ts  = (data.get("start_ts") or "").strip()
+    if not start_ts:
+        return jsonify({"ok": False, "error": "start_ts ist erforderlich"}), 400
+    try:
+        start_dt = datetime.fromisoformat(start_ts)
+    except ValueError:
+        return jsonify({"ok": False, "error": "Ungültiges start_ts Format"}), 400
+
+    end_ts = (data.get("end_ts") or "").strip() or None
+    if end_ts:
+        try:
+            end_dt = datetime.fromisoformat(end_ts)
+            if end_dt <= start_dt:
+                end_ts = None
+        except ValueError:
+            end_ts = None
+
+    kwh = _float_or_none_local(data.get("kwh_charged"))
+    if kwh is None or kwh < 0:
+        return jsonify({"ok": False, "error": "kwh_charged ist erforderlich und muss >= 0 sein"}), 400
+
+    vehicle_id   = (data.get("vehicle_id") or "v0").strip()
+    location     = "extern"
+    charger_type = (data.get("charger_type") or "unknown").strip()
+
+    price_kwh  = _float_or_none_local(data.get("price_per_kwh"))
+    cost_eur   = _float_or_none_local(data.get("cost_eur"))
+    cost_manual = 0
+
+    if cost_eur is not None:
+        cost_manual = 1
+    elif price_kwh is not None and price_kwh >= 0:
+        cost_eur  = round(kwh * price_kwh, 2)
+        cost_manual = 1
+    else:
+        # Auto-price from contract or pricing_service
+        try:
+            from services.pricing_service import resolve_session_price, calculate_session_cost
+            from core.config import load_config as _lc
+            _cfg = _lc()
+            con_tmp = _get_db()
+            _pr = resolve_session_price(location, charger_type, _cfg, con_tmp)
+            close_db_if_owned(con_tmp)
+            if _pr.get("price_per_kwh") is not None:
+                price_kwh   = _pr["price_per_kwh"]
+                cost_eur    = calculate_session_cost(kwh, price_kwh)
+                data.setdefault("charging_contract_id",   _pr.get("contract_id"))
+                data.setdefault("charging_contract_name", _pr.get("contract_name"))
+        except Exception:
+            pass
+
+    manual_note = (data.get("manual_note") or data.get("note") or "").strip() or None
+
+    con = _get_db()
+    cur = con.execute(
+        """INSERT INTO sessions
+           (start_ts, end_ts, kwh_charged, cost_eur, cost_manual, price_per_kwh,
+            location, location_source, location_confidence,
+            charger_type, charger_power_kw,
+            vehicle_id, provider, kwh_source, created_mode,
+            manual_note,
+            charging_contract_id, charging_contract_name,
+            vehicle_assignment_status, excluded_from_reports)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (start_ts, end_ts, round(kwh, 3), cost_eur, cost_manual, price_kwh,
+         location, "manual", 100,
+         charger_type, _float_or_none_local(data.get("charger_power_kw")),
+         vehicle_id, "manual", "manual", "manual",
+         manual_note,
+         data.get("charging_contract_id"), data.get("charging_contract_name"),
+         "confirmed", 0),
+    )
+    sid = cur.lastrowid
+    con.commit()
+    session_row = dict(con.execute("SELECT * FROM sessions WHERE id=?", (sid,)).fetchone())
+    close_db_if_owned(con)
+    _audit("session_quick_add_external",
+           f"session_id={sid} vehicle_id={vehicle_id} kwh={kwh:.2f}",
+           ip=request.remote_addr)
+    return jsonify({"ok": True, "id": sid, "session": session_row,
+                    "message": "Externer Ladevorgang gespeichert."}), 201
 
 
 @sessions_bp.route("/api/sessions/<int:sid>/cost", methods=["POST"])

@@ -773,6 +773,22 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 ══════════════════════════════════════════════════════ -->
 <div class="panel active" id="panel-dashboard">
 
+  <!-- Onboarding empty-state (shown only when no vehicle is configured) -->
+  <div id="onboardingBanner" style="display:none;align-items:center;gap:16px;
+       background:rgba(0,180,255,.07);border:1px solid rgba(0,180,255,.25);
+       border-radius:12px;padding:16px 20px;margin-bottom:14px">
+    <div style="font-size:2rem">🚗</div>
+    <div style="flex:1">
+      <div style="font-weight:600;font-size:.95rem;margin-bottom:2px">Noch kein Fahrzeug verbunden</div>
+      <div style="font-size:.78rem;color:var(--mute)">Verbinde dein Fahrzeug, um Ladevorgänge automatisch zu erfassen.</div>
+    </div>
+    <a href="/setup/vehicle" style="background:rgba(0,180,255,.15);color:#7eb8f7;
+       border:1px solid rgba(0,180,255,.35);text-decoration:none;
+       border-radius:8px;padding:9px 16px;font-size:.82rem;font-weight:600;white-space:nowrap">
+      Fahrzeug einrichten
+    </a>
+  </div>
+
   <!-- Vehicle image card -->
   <div id="dashVehicleCard" style="display:flex;align-items:center;gap:16px;background:var(--card);border:1px solid var(--brd);border-radius:12px;padding:14px 18px;margin-bottom:14px">
     <img id="dashVehicleImg" src="/static/vehicle_images/placeholder_car.svg"
@@ -824,6 +840,18 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
   <!-- Missing-charge hint (hidden until candidates exist) -->
   <div id="missingChargeHint" style="display:none;margin-bottom:14px">
+  </div>
+
+  <!-- Open home charges tile -->
+  <div id="openHomeChargesCard" class="card" style="display:none;margin-bottom:14px">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+      <div class="card-title" style="margin-bottom:0">🔌 Offene Heimladungen</div>
+      <button onclick="loadOpenWallboxSessions()"
+        style="background:none;border:1px solid var(--brd);border-radius:6px;padding:3px 9px;font-size:.7rem;color:var(--mute);cursor:pointer">
+        🔄
+      </button>
+    </div>
+    <div id="openHomeChargesList"></div>
   </div>
 
   <!-- Recent sessions -->
@@ -1310,6 +1338,65 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           <span id="meterTestRes" style="font-size:.77rem;font-family:var(--mono)"></span>
           <pre id="meterTestDebug" style="display:none;margin-top:8px;font-size:.68rem;font-family:var(--mono);color:var(--mute);background:rgba(0,0,0,.2);padding:8px;border-radius:6px;white-space:pre-wrap;max-height:200px;overflow-y:auto"></pre>
         </div>
+
+        <!-- ── Automatische Heimladung ──────────────────────────────── -->
+        <div style="margin-top:18px;border-top:1px solid var(--brd);padding-top:14px">
+          <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+            ⚡ Automatische Heimladung über Wallbox/Zähler
+          </div>
+          <p style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-bottom:12px;line-height:1.5;background:rgba(247,179,9,.07);border:1px solid rgba(247,179,9,.2);border-radius:6px;padding:8px 10px">
+            Ein steigender Zähler bedeutet nicht automatisch, dass dein Fahrzeug geladen wurde. Bei unklarer Zuordnung wird eine offene Heimladung erstellt.
+          </p>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:12px">
+            <input type="checkbox" id="c_home_charge_enabled">
+            <span style="font-size:.84rem">Erkennung aktivieren</span>
+          </label>
+          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr">
+            <div><label>Start-Schwelle (kW)</label>
+              <input type="number" id="c_hc_power_start" placeholder="1.0" min="0.1" max="50" step="0.1"></div>
+            <div><label>Stop-Schwelle (kW)</label>
+              <input type="number" id="c_hc_power_stop" placeholder="0.2" min="0" max="50" step="0.1"></div>
+          </div>
+          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr;margin-top:10px">
+            <div><label>Start-Debounce (s)</label>
+              <input type="number" id="c_hc_debounce_start" placeholder="120" min="10" max="600"></div>
+            <div><label>Stop-Debounce (s)</label>
+              <input type="number" id="c_hc_debounce_stop" placeholder="300" min="10" max="600"></div>
+          </div>
+          <div style="margin-top:10px">
+            <label>Mindest-kWh</label>
+            <input type="number" id="c_hc_min_kwh" placeholder="1.0" min="0.1" max="100" step="0.1" style="max-width:160px">
+          </div>
+          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr;margin-top:10px">
+            <div>
+              <label>Zuordnungsmodus</label>
+              <select id="c_hc_assignment_mode">
+                <option value="always_default_vehicle">Immer Standardfahrzeug verwenden</option>
+                <option value="default_if_api_confirms">Standardfahrzeug nur wenn API bestätigt</option>
+                <option value="require_rfid_or_api">RFID/API erforderlich</option>
+                <option value="always_ask_if_unclear">Bei unklarer Zuordnung immer fragen</option>
+              </select>
+            </div>
+            <div>
+              <label>Standardfahrzeug</label>
+              <select id="c_hc_default_vehicle">
+                <option value="">— Hauptfahrzeug (v0) —</option>
+                {% for v in all_vehicles %}
+                <option value="{{ v.id }}">{{ v.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:10px">
+            <input type="checkbox" id="c_hc_allow_probable">
+            <span style="font-size:.84rem">Probable Assignment erlauben</span>
+          </label>
+          <div style="margin-top:12px">
+            <button class="btn-p" onclick="saveHomeChargeConfig()">💾 Heimladung speichern</button>
+            <span id="hcSaveRes" style="font-size:.77rem;font-family:var(--mono);margin-left:10px"></span>
+          </div>
+        </div>
+
       </div>
 
       <!-- BENACHRICHTIGUNGEN -->
@@ -3585,6 +3672,16 @@ async function loadConfig(){
       else { sel.value = 'custom'; const cd = $('wallboxCustomDiv'); if(cd) cd.style.display=''; }
     }
   }
+  // home charge detection settings
+  if($('c_home_charge_enabled'))  $('c_home_charge_enabled').checked  = !!c.home_charge_detection_enabled;
+  if($('c_hc_power_start'))       $('c_hc_power_start').value        = c.home_charge_power_start_threshold_kw ?? 1.0;
+  if($('c_hc_power_stop'))        $('c_hc_power_stop').value         = c.home_charge_power_stop_threshold_kw  ?? 0.2;
+  if($('c_hc_debounce_start'))    $('c_hc_debounce_start').value     = c.home_charge_start_debounce_seconds  ?? 120;
+  if($('c_hc_debounce_stop'))     $('c_hc_debounce_stop').value      = c.home_charge_stop_debounce_seconds   ?? 300;
+  if($('c_hc_min_kwh'))           $('c_hc_min_kwh').value            = c.home_charge_min_energy_kwh          ?? 1.0;
+  if($('c_hc_assignment_mode'))   $('c_hc_assignment_mode').value    = c.home_charge_vehicle_assignment_mode || 'always_ask_if_unclear';
+  if($('c_hc_default_vehicle'))   $('c_hc_default_vehicle').value    = c.home_charge_default_vehicle_id      || '';
+  if($('c_hc_allow_probable'))    $('c_hc_allow_probable').checked   = !!c.home_charge_allow_probable_assignment;
   if($('expLang')) $('expLang').value = c.export_language || 'de';
   // Update dashboard vehicle card
   if($('dashVehicleName') && c.car_name) $('dashVehicleName').textContent = c.car_name;
@@ -5938,12 +6035,119 @@ async function disableMyTotp(){
   toast('2FA deaktiviert','ok'); loadMyProfile();
 }
 
+// ── Heimladung config ──────────────────────────────────────────────────────────
+async function saveHomeChargeConfig() {
+  const g  = id => { const el = $(id); return el ? el.value : ''; };
+  const gb = id => { const el = $(id); return el ? el.checked : false; };
+  const cfg = {
+    home_charge_detection_enabled:          gb('c_home_charge_enabled'),
+    home_charge_power_start_threshold_kw:   parseFloat(g('c_hc_power_start'))   || 1.0,
+    home_charge_power_stop_threshold_kw:    parseFloat(g('c_hc_power_stop'))    || 0.2,
+    home_charge_start_debounce_seconds:     parseInt(g('c_hc_debounce_start'))  || 120,
+    home_charge_stop_debounce_seconds:      parseInt(g('c_hc_debounce_stop'))   || 300,
+    home_charge_min_energy_kwh:             parseFloat(g('c_hc_min_kwh'))       || 1.0,
+    home_charge_vehicle_assignment_mode:    g('c_hc_assignment_mode') || 'always_ask_if_unclear',
+    home_charge_default_vehicle_id:         g('c_hc_default_vehicle'),
+    home_charge_allow_probable_assignment:  gb('c_hc_allow_probable'),
+  };
+  const res = $('hcSaveRes');
+  if (res) { res.textContent = '⏳'; res.style.color = 'var(--mute)'; }
+  const r = await apiFetch('/api/config', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(cfg),
+  });
+  if (r.ok) {
+    toast('Heimladung-Einstellungen gespeichert');
+    if (res) { res.textContent = '✅'; res.style.color = 'var(--acc)'; setTimeout(()=>{res.textContent='';},2500); }
+  } else {
+    if (res) { res.textContent = '❌ Fehler'; res.style.color = 'var(--danger)'; }
+    toast('Fehler beim Speichern', 'err');
+  }
+}
+
+// ── Offene Heimladungen (Dashboard-Kachel) ─────────────────────────────────────
+async function loadOpenWallboxSessions() {
+  const card = $('openHomeChargesCard');
+  const list = $('openHomeChargesList');
+  if (!card || !list) return;
+  try {
+    const rows = await apiFetch('/api/wallbox/sessions/open?limit=10').then(r => r.json());
+    // Also check for an active (in-progress) session
+    const all = await apiFetch('/api/wallbox/sessions?limit=5').then(r => r.json());
+    const active = Array.isArray(all) ? all.filter(s => s.status === 'active') : [];
+    if (!Array.isArray(rows) || (rows.length === 0 && active.length === 0)) {
+      card.style.display = 'none';
+      return;
+    }
+    card.style.display = '';
+    const fmtKwh = v => v != null ? Number(v).toLocaleString('de', {minimumFractionDigits:1, maximumFractionDigits:2}) + ' kWh' : '—';
+    const fmtTs  = ts => ts ? ts.substring(0,16).replace('T',' ') : '—';
+    let html = '';
+    if (active.length > 0) {
+      const s = active[0];
+      html += `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:rgba(61,220,151,.08);border:1px solid rgba(61,220,151,.2);border-radius:8px;margin-bottom:8px;flex-wrap:wrap">
+        <span style="font-size:.8rem">⚡ <strong>Lädt gerade</strong></span>
+        <span style="font-size:.75rem;color:var(--mute);font-family:var(--mono)">seit ${fmtTs(s.start_ts)}</span>
+        <span style="font-size:.75rem;color:var(--mute);font-family:var(--mono)">${fmtKwh(s.energy_kwh)}</span>
+        <span style="font-size:.72rem;background:rgba(61,220,151,.15);color:#3ddc97;border-radius:4px;padding:1px 6px">${escapeHtml(s.source_name||s.source_type||'wallbox')}</span>
+      </div>`;
+    }
+    rows.slice(0, 5).forEach(s => {
+      html += `<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--surf2);border-radius:7px;margin-bottom:6px;flex-wrap:wrap">
+        <span style="font-size:.75rem;font-family:var(--mono)">${fmtTs(s.start_ts)}</span>
+        <span style="font-size:.75rem;font-weight:600">${fmtKwh(s.energy_kwh)}</span>
+        ${s.card_name ? `<span style="font-size:.72rem;color:var(--mute)">${escapeHtml(s.card_name)}</span>` : ''}
+        <span style="flex:1"></span>
+        <button onclick="openWallboxAssignModal(${s.id})"
+          style="background:rgba(99,168,255,.15);color:#7eb8f7;border:1px solid rgba(99,168,255,.3);border-radius:6px;padding:3px 10px;font-size:.72rem;cursor:pointer;white-space:nowrap">
+          Zuordnen
+        </button>
+        <button onclick="wallboxMarkForeign(${s.id})"
+          style="background:none;border:1px solid var(--brd);border-radius:6px;padding:3px 8px;font-size:.7rem;color:var(--mute);cursor:pointer;white-space:nowrap">
+          Fremdfahrzeug
+        </button>
+        <button onclick="wallboxIgnore(${s.id})"
+          style="background:none;border:1px solid var(--brd);border-radius:6px;padding:3px 8px;font-size:.7rem;color:var(--mute);cursor:pointer;white-space:nowrap">
+          Ignorieren
+        </button>
+      </div>`;
+    });
+    if (rows.length === 0 && active.length > 0) {
+      html += `<div style="font-size:.75rem;color:var(--mute);font-family:var(--mono);padding:4px 0">Keine offenen Zuordnungen</div>`;
+    }
+    list.innerHTML = html;
+  } catch(e) {
+    if (card) card.style.display = 'none';
+  }
+}
+
+async function openWallboxAssignModal(wbsId) {
+  const vid = prompt('Fahrzeug-ID (z.B. v0):');
+  if (!vid) return;
+  const r = await apiFetch(`/api/wallbox/sessions/${wbsId}/assign`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({vehicle_id: vid, create_session: true}),
+  });
+  if (r.ok) { toast('Wallbox-Session zugeordnet'); loadOpenWallboxSessions(); }
+  else toast('Fehler beim Zuordnen', 'err');
+}
+
+async function wallboxMarkForeign(wbsId) {
+  const r = await apiFetch(`/api/wallbox/sessions/${wbsId}/mark-foreign`, {method:'POST'});
+  if (r.ok) { loadOpenWallboxSessions(); } else toast('Fehler', 'err');
+}
+
+async function wallboxIgnore(wbsId) {
+  const r = await apiFetch(`/api/wallbox/sessions/${wbsId}/ignore`, {method:'POST'});
+  if (r.ok) { loadOpenWallboxSessions(); } else toast('Fehler', 'err');
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 initCsrf().then(()=>loadConfig());
 initExpSelects();
 refreshStatus();
 loadCharts();
 loadMissingChargeCandidates();
+loadOpenWallboxSessions();
 loadDashboardVehicleImage();
 loadSignatureStatus();
 loadProviderFields('{{ cfg.provider }}').then(()=>{

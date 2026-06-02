@@ -411,6 +411,7 @@ def match_column(txt):
 
 def fetch_sessions(year, month, location="all"):
     if not DB_PATH.exists(): return []
+    from services.session_filter import reportable_session_where_clause
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
     params = [f"{year:04d}-{month:02d}%"]
     where  = ["end_ts IS NOT NULL", "start_ts LIKE ?"]
@@ -418,7 +419,7 @@ def fetch_sessions(year, month, location="all"):
         where.append("location = ?")
         params.append(location)
     rows = con.execute(
-        f"SELECT * FROM sessions WHERE {' AND '.join(where)} ORDER BY start_ts",
+        f"SELECT * FROM sessions WHERE {' AND '.join(where)}{reportable_session_where_clause()} ORDER BY start_ts",
         params
     ).fetchall()
     con.close(); return [dict(r) for r in rows]

@@ -40,17 +40,33 @@ def _now() -> datetime:
 
 
 def store_meter_snapshot(vehicle_id: str, source: str, value_kwh, raw_value,
-                         unit, ok: bool, error, con, ts: str | None = None) -> int:
-    """Insert one meter snapshot row. Returns the new row id."""
+                         unit, ok: bool, error, con, ts: str | None = None,
+                         source_type: str | None = None,
+                         source_name: str | None = None,
+                         power_kw: float | None = None,
+                         energy_total_kwh: float | None = None,
+                         raw_json: str | None = None) -> int:
+    """Insert one meter snapshot row. Returns the new row id.
+
+    The new optional parameters (source_type, source_name, power_kw,
+    energy_total_kwh, raw_json) are ignored gracefully when the DB columns
+    don't exist yet (old migrations), so existing callers stay unchanged.
+    """
     ts = ts or _now().isoformat(timespec="seconds")
     cur = con.cursor()
     cur.execute(
         """INSERT INTO meter_snapshots
-           (vehicle_id, ts, source, value_kwh, raw_value, unit, ok, error, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?)""",
+           (vehicle_id, ts, source, value_kwh, raw_value, unit, ok, error, created_at,
+            source_type, source_name, power_kw, energy_total_kwh, raw_json)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (vehicle_id, ts, source, value_kwh,
          None if raw_value is None else str(raw_value),
-         unit, 1 if ok else 0, error, ts),
+         unit, 1 if ok else 0, error, ts,
+         source_type or "meter",
+         source_name or source,
+         power_kw,
+         energy_total_kwh if energy_total_kwh is not None else value_kwh,
+         raw_json),
     )
     con.commit()
     return cur.lastrowid
@@ -100,6 +116,7 @@ def maybe_record_poll_snapshot(vehicle_id: str, cfg: dict, st: dict, con) -> int
                                        res.unit, True, None, con, ts=ts)
             st["meter_snap_last_dt"] = now
             st["meter_snap_last_val"] = res.value
+            st["meter_snap_last_power"] = res.power_kw  # None when provider doesn't expose it
             st["meter_snap_last_ok"] = True
             return rid
 

@@ -170,6 +170,28 @@ DEFAULT_CONFIG = {
     "meter_snapshot_heartbeat_minutes":  10,     # ...otherwise keep a heartbeat row every N minutes
     "meter_snapshot_max_error_rows":     500,    # cap stored error rows per vehicle
 
+    # go-e Charger RFID/Card mapping
+    "goe_url":                "",
+    "goe_auth":               "",
+    "goe_rfid_enabled":       False,
+    "goe_card_vehicle_map":   {},
+
+    # Provider data-freshness threshold
+    "provider_stale_after_minutes": 60,
+
+    # Wallbox / meter-based home-charge detection
+    "home_charge_detection_enabled":              True,
+    "home_charge_power_start_threshold_kw":       1.0,
+    "home_charge_power_stop_threshold_kw":        0.2,
+    "home_charge_start_debounce_seconds":         120,
+    "home_charge_stop_debounce_seconds":          300,
+    "home_charge_min_energy_kwh":                 1.0,
+    "home_charge_default_vehicle_id":             "",
+    "home_charge_require_vehicle_id":             False,
+    "home_charge_exclude_unassigned_from_reports": True,
+    "home_charge_vehicle_assignment_mode":        "always_ask_if_unclear",
+    "home_charge_allow_probable_assignment":      False,
+
     # Auth — password + TOTP
     "auth_password_hash": "",
     "auth_totp_secret":   "",

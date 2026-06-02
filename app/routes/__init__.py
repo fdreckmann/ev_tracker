@@ -28,6 +28,7 @@ from routes.auth import auth_bp
 from routes.missing_charges import missing_charges_bp
 from routes.update import update_bp
 from routes.charging_contracts import charging_contracts_bp
+from routes.wallbox import wallbox_bp
 
 
 def register_blueprints(app):
@@ -59,3 +60,4 @@ def register_blueprints(app):
     app.register_blueprint(billing_bp)
     app.register_blueprint(charging_contracts_bp)
     app.register_blueprint(api_v1_bp)
+    app.register_blueprint(wallbox_bp)

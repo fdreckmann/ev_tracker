@@ -57,7 +57,9 @@ class HomeAssistantProvider(BaseProvider):
             unavailable = state.lower() in ("unavailable","unknown")
             self._store_entity_debug(entity_id, http_status=200, reachable=True,
                                      state=state, unit=unit,
-                                     error="Sensor unavailable" if unavailable else None)
+                                     error="Sensor unavailable" if unavailable else None,
+                                     last_changed=data.get("last_changed"),
+                                     last_updated=data.get("last_updated"))
             return data
         except requests.exceptions.Timeout:
             self._store_entity_debug(entity_id, reachable=False, error="Timeout")
@@ -71,7 +73,8 @@ class HomeAssistantProvider(BaseProvider):
 
     def _store_entity_debug(self, entity_id: str, *, reachable: bool = True,
                             http_status: int | None = None, state: str | None = None,
-                            unit: str | None = None, error: str | None = None):
+                            unit: str | None = None, error: str | None = None,
+                            last_changed: str | None = None, last_updated: str | None = None):
         if not hasattr(self, "_entity_debug"):
             self._entity_debug = {}
         self._entity_debug[entity_id] = {
@@ -81,7 +84,21 @@ class HomeAssistantProvider(BaseProvider):
             "state": state,
             "unit": unit,
             "error": error,
+            "last_changed": last_changed,
+            "last_updated": last_updated,
         }
+        # Track the newest timestamp across all polled entities
+        for ts_str in (last_changed, last_updated):
+            if not ts_str:
+                continue
+            try:
+                from datetime import datetime, timezone
+                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                prev = getattr(self, "_newest_entity_ts", None)
+                if prev is None or ts > prev:
+                    self._newest_entity_ts = ts
+            except Exception:
+                pass
 
     _UNAVAILABLE_STATES = {"unknown", "unavailable", "none", ""}
 
@@ -245,10 +262,38 @@ class HomeAssistantProvider(BaseProvider):
             debug["token_valid"] = True
             setattr(self, "_last_debug", debug)
 
+            # Compute data freshness from newest entity timestamp
+            data_timestamp = None
+            data_age_seconds = None
+            data_stale = None
+            stale_reason = None
+            newest_ts = getattr(self, "_newest_entity_ts", None)
+            if newest_ts is not None:
+                from datetime import datetime, timezone
+                now_utc = datetime.now(timezone.utc)
+                if newest_ts.tzinfo is None:
+                    newest_ts = newest_ts.replace(tzinfo=timezone.utc)
+                age = (now_utc - newest_ts).total_seconds()
+                data_timestamp   = newest_ts.isoformat()
+                data_age_seconds = round(age, 1)
+                stale_minutes = float(self.config.get("provider_stale_after_minutes", 60))
+                if age > stale_minutes * 60:
+                    data_stale   = True
+                    stale_reason = (
+                        f"Letzte Sensordaten vor {int(age // 60)} Minuten "
+                        f"(Limit: {int(stale_minutes)} min) — Fahrzeug schläft?"
+                    )
+                else:
+                    data_stale = False
+
             return VehicleState(
                 charging=charging, soc=soc, odometer=odo,
                 charge_power=power_kw, location=location, charge_type=chg_type,
                 image_url=image_url, image_source=image_source,
+                data_timestamp=data_timestamp,
+                data_age_seconds=data_age_seconds,
+                data_stale=data_stale,
+                stale_reason=stale_reason,
             )
         except Exception as e:
             setattr(self, "_last_debug", {"ha_reachable": False, "error": str(e)})

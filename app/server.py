@@ -640,6 +640,114 @@ def init_db():
     )""")
     con.execute("""CREATE INDEX IF NOT EXISTS idx_msnap_vehicle_ts
                    ON meter_snapshots(vehicle_id, ts)""")
+    # meter_snapshots additive migration (new columns for wallbox/power tracking)
+    for _col in [
+        "source_type TEXT",
+        "source_name TEXT",
+        "power_kw REAL",
+        "energy_total_kwh REAL",
+        "raw_json TEXT",
+    ]:
+        try:
+            con.execute(f"ALTER TABLE meter_snapshots ADD COLUMN {_col}")
+        except Exception:
+            pass
+    # Backfill: align new columns from legacy data
+    con.execute(
+        "UPDATE meter_snapshots SET energy_total_kwh = value_kwh"
+        " WHERE energy_total_kwh IS NULL AND value_kwh IS NOT NULL"
+    )
+    con.execute(
+        "UPDATE meter_snapshots SET source_name = source"
+        " WHERE source_name IS NULL AND source IS NOT NULL"
+    )
+    con.execute(
+        "UPDATE meter_snapshots SET source_type = 'meter'"
+        " WHERE source_type IS NULL"
+    )
+
+    # wallbox_sessions — technical wallbox/meter charge events; not auto-promoted to sessions
+    con.execute("""CREATE TABLE IF NOT EXISTS wallbox_sessions (
+        id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+        vehicle_id                TEXT NULL,
+        source_type               TEXT,
+        source_name               TEXT,
+        connector_id              TEXT NULL,
+        rfid_tag                  TEXT NULL,
+        card_name                 TEXT NULL,
+        start_ts                  TEXT NOT NULL,
+        end_ts                    TEXT NULL,
+        meter_start_kwh           REAL NULL,
+        meter_end_kwh             REAL NULL,
+        energy_kwh                REAL NULL,
+        peak_power_kw             REAL NULL,
+        status                    TEXT NOT NULL DEFAULT 'active',
+        vehicle_assignment_status TEXT NOT NULL DEFAULT 'unassigned',
+        confidence                REAL DEFAULT 0.0,
+        excluded_from_reports     INTEGER DEFAULT 1,
+        raw_json                  TEXT NULL,
+        created_at                TEXT NOT NULL,
+        updated_at                TEXT NOT NULL
+    )""")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_wallbox_sessions_status
+                   ON wallbox_sessions(status)""")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_wallbox_sessions_vehicle
+                   ON wallbox_sessions(vehicle_id)""")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_wallbox_sessions_start_end
+                   ON wallbox_sessions(start_ts, end_ts)""")
+
+    # charge_evidence — unified evidence records linking wallbox/API/meter signals
+    con.execute("""CREATE TABLE IF NOT EXISTS charge_evidence (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        vehicle_id          TEXT NULL,
+        session_id          INTEGER NULL,
+        wallbox_session_id  INTEGER NULL,
+        candidate_id        INTEGER NULL,
+        source_type         TEXT,
+        source_name         TEXT,
+        start_ts            TEXT NULL,
+        end_ts              TEXT NULL,
+        energy_kwh          REAL NULL,
+        meter_start_kwh     REAL NULL,
+        meter_end_kwh       REAL NULL,
+        soc_start           REAL NULL,
+        soc_end             REAL NULL,
+        odo_start           REAL NULL,
+        odo_end             REAL NULL,
+        power_peak_kw       REAL NULL,
+        location_hint       TEXT NULL,
+        rfid_tag            TEXT NULL,
+        card_name           TEXT NULL,
+        connector_id        TEXT NULL,
+        confidence          REAL DEFAULT 0.0,
+        raw_json            TEXT NULL,
+        created_at          TEXT NOT NULL
+    )""")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_charge_evidence_vehicle
+                   ON charge_evidence(vehicle_id)""")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_charge_evidence_session
+                   ON charge_evidence(session_id)""")
+
+    # sessions additive extension for wallbox assignment tracking
+    for _col in [
+        "source_primary TEXT NULL",
+        "evidence_json TEXT NULL",
+        "vehicle_assignment_status TEXT DEFAULT 'confirmed'",
+        "excluded_from_reports INTEGER DEFAULT 0",
+    ]:
+        try:
+            con.execute(f"ALTER TABLE sessions ADD COLUMN {_col}")
+        except Exception:
+            pass
+    # Backfill: existing sessions are confirmed and reportable
+    con.execute(
+        "UPDATE sessions SET excluded_from_reports = 0"
+        " WHERE excluded_from_reports IS NULL"
+    )
+    con.execute(
+        "UPDATE sessions SET vehicle_assignment_status = 'confirmed'"
+        " WHERE vehicle_assignment_status IS NULL"
+    )
 
     con.execute("""CREATE TABLE IF NOT EXISTS missing_charge_candidates (
         id                          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -818,6 +926,7 @@ def init_db():
     close_db_if_owned(con)
 
 def get_sessions(year=None, month=None, location=None, vehicle_id=None, limit=50):
+    from services.session_filter import reportable_session_where_clause
     where = ["end_ts IS NOT NULL"]; params = []
     if year and month:
         where.append("start_ts LIKE ?"); params.append(f"{year:04d}-{month:02d}%")
@@ -825,15 +934,16 @@ def get_sessions(year=None, month=None, location=None, vehicle_id=None, limit=50
         where.append("location = ?"); params.append(location)
     if vehicle_id and vehicle_id != "all":
         where.append("vehicle_id = ?"); params.append(vehicle_id)
-    sql = f"SELECT * FROM sessions WHERE {' AND '.join(where)} ORDER BY start_ts DESC"
+    sql = f"SELECT * FROM sessions WHERE {' AND '.join(where)}{reportable_session_where_clause()} ORDER BY start_ts DESC"
     if not (year and month): sql += f" LIMIT {limit}"
     con = _get_db()
     rows = con.execute(sql, params).fetchall(); close_db_if_owned(con)
     return [dict(r) for r in rows]
 
 def get_monthly_stats():
+    from services.session_filter import reportable_session_where_clause
     con = _get_db()
-    rows = con.execute("""
+    rows = con.execute(f"""
         SELECT strftime('%Y-%m', start_ts) AS month,
                COUNT(*) AS sessions,
                SUM(kwh_charged) AS total_kwh,
@@ -843,7 +953,7 @@ def get_monthly_stats():
                SUM(CASE WHEN location='extern' THEN cost_eur ELSE 0 END) AS ext_cost,
                SUM(CASE WHEN charger_type='dc' THEN kwh_charged ELSE 0 END) AS dc_kwh,
                SUM(CASE WHEN charger_type='ac' THEN kwh_charged ELSE 0 END) AS ac_kwh
-        FROM sessions WHERE end_ts IS NOT NULL
+        FROM sessions WHERE end_ts IS NOT NULL{reportable_session_where_clause()}
         GROUP BY month ORDER BY month DESC LIMIT 12
     """).fetchall()
     close_db_if_owned(con); return [dict(r) for r in rows]
@@ -933,6 +1043,10 @@ def _make_state(vehicle_id="v0", provider_id="ha"):
         "failed_poll_count": 0,
         "provider_debug": {},
         "provider_connected": False,
+        "provider_data_stale": None,
+        "provider_data_timestamp": None,
+        "provider_data_age_seconds": None,
+        "provider_stale_reason": None,
         "soc_current": None,
         "odo_current": None, "charging": False, "location": "unknown",
         "charger_type": "unknown", "power_kw": None, "entsoe_spot": None,
@@ -1030,6 +1144,11 @@ def tracker_loop(vehicle_id: str = "v0"):
                 poll_count=st.get("poll_count", 0) + 1,
                 successful_poll_count=st.get("successful_poll_count", 0) + 1,
                 name=vcfg.get("car_name", vehicle_id),
+                # Data-freshness fields from provider (may be None for providers that don't support it)
+                provider_data_stale=getattr(state, "data_stale", None),
+                provider_data_timestamp=getattr(state, "data_timestamp", None),
+                provider_data_age_seconds=getattr(state, "data_age_seconds", None),
+                provider_stale_reason=getattr(state, "stale_reason", None),
             )
 
             # Auto-cache provider-supplied vehicle image (daemon thread — non-blocking)
@@ -1463,6 +1582,31 @@ def tracker_loop(vehicle_id: str = "v0"):
                 maybe_record_poll_snapshot(vehicle_id, vcfg, st, con)
             except Exception as _mse:
                 log.debug("Meter snapshot error [%s]: %s", vehicle_id, _mse)
+
+            # ── Wallbox/Zähler Home-Charging-Erkennung (additiv, darf nie den Loop brechen) ──
+            try:
+                if vcfg.get("home_charge_detection_enabled", True):
+                    from services.wallbox_session_service import (
+                        process_power_snapshot, process_energy_snapshot,
+                    )
+                    _src_name = vcfg.get("meter_source", "meter") or "meter"
+                    _src_type = vcfg.get("meter_type", "meter") or "meter"
+                    _ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
+                    _meter_power = st.get("meter_snap_last_power")
+                    _meter_energy = st.get("meter_snap_last_val")
+                    if _meter_power is not None:
+                        process_power_snapshot(
+                            vehicle_id=None, source_type=_src_type, source_name=_src_name,
+                            power_kw=_meter_power, energy_total_kwh=_meter_energy,
+                            ts=_ts, cfg=vcfg, st=st, con=con,
+                        )
+                    elif _meter_energy is not None:
+                        process_energy_snapshot(
+                            vehicle_id=None, source_type=_src_type, source_name=_src_name,
+                            energy_total_kwh=_meter_energy, ts=_ts, cfg=vcfg, st=st, con=con,
+                        )
+            except Exception as _wbe:
+                log.debug("Wallbox detection error [%s]: %s", vehicle_id, _wbe)
 
             # ── Snapshot + Missing-Charge Detection ───────────────────────────
             try:
@@ -2274,6 +2418,7 @@ def calculate_report_periods(schedule_type, period_mode, now, config):
 
 def _get_report_sessions(start_date, end_date, location_filter="all", vehicle_filter="all"):
     from datetime import timedelta, timezone
+    from services.session_filter import reportable_session_where_clause
 
     where  = ["end_ts IS NOT NULL", "start_ts >= ?", "start_ts < ?"]
     params = [start_date.isoformat(), (end_date + timedelta(days=1)).isoformat()]
@@ -2284,7 +2429,7 @@ def _get_report_sessions(start_date, end_date, location_filter="all", vehicle_fi
         where.append("location = 'extern'")
     if vehicle_filter and vehicle_filter != "all":
         where.append("vehicle_id = ?"); params.append(vehicle_filter)
-    sql = f"SELECT * FROM sessions WHERE {' AND '.join(where)} ORDER BY start_ts ASC"
+    sql = f"SELECT * FROM sessions WHERE {' AND '.join(where)}{reportable_session_where_clause()} ORDER BY start_ts ASC"
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
     rows = con.execute(sql, params).fetchall(); close_db_if_owned(con)
     return [dict(r) for r in rows]

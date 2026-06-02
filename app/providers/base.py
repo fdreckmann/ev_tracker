@@ -43,6 +43,11 @@ class VehicleState:
     image_url:        Optional[str]   = None   # Provider-supplied image URL
     image_source:     Optional[str]   = None   # "ha" | provider id
     image_updated_at: Optional[str]   = None   # ISO timestamp of last image update
+    # Data freshness (all optional — None means unknown/not supported by this provider)
+    data_timestamp:   Optional[str]   = None   # ISO ts of newest sensor reading
+    data_age_seconds: Optional[float] = None   # seconds since newest sensor reading
+    data_stale:       Optional[bool]  = None   # True when age > provider_stale_after_minutes
+    stale_reason:     Optional[str]   = None   # human-readable reason
 
 
 class BaseProvider:

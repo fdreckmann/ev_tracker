@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EV Tracker — Fahrzeug verbinden</title>
+<style>
+  :root{--bg:#0b0f14;--card:#111820;--brd:#1e2a35;--accent:#00d278;--acc2:#00b4ff;
+    --mute:#5a7080;--danger:#ff4f5a;--warn:#f59e0b;--mono:'JetBrains Mono','Fira Mono',monospace}
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:#e0eaf2;font-family:system-ui,sans-serif;
+    min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+  .card{background:var(--card);border:1px solid var(--brd);border-radius:16px;
+    padding:40px 44px;width:100%;max-width:460px}
+  .logo{text-align:center;margin-bottom:28px}
+  .logo .icon{font-size:3rem}
+  .logo h1{font-size:1.4rem;font-weight:700;margin-top:10px}
+  .logo p{font-size:.78rem;font-family:var(--mono);color:var(--mute);margin-top:6px}
+  .step{font-size:.65rem;font-family:var(--mono);color:var(--acc2);text-transform:uppercase;
+    letter-spacing:.12em;margin-bottom:20px;text-align:center}
+  .btn{display:block;width:100%;background:var(--accent);color:#041810;font-weight:700;
+    font-size:.88rem;border:none;border-radius:8px;padding:12px;cursor:pointer;
+    transition:opacity .15s;margin-top:4px;text-align:center;text-decoration:none}
+  .btn:hover{opacity:.88}
+  .btn-s{background:rgba(0,210,120,.1);color:var(--accent);border:1px solid rgba(0,210,120,.3)}
+  .btn-skip{background:transparent;color:var(--mute);border:1px solid var(--brd);
+    font-size:.82rem;padding:11px;margin-top:8px}
+  .btn-skip:hover{color:#e0eaf2;border-color:rgba(255,255,255,.2)}
+  label.lbl{display:block;font-size:.72rem;font-family:var(--mono);color:var(--mute);
+    margin:14px 0 5px}
+  .inp,select.inp{width:100%;background:#0d1520;border:1px solid var(--brd);border-radius:8px;
+    color:#e0eaf2;font-size:.88rem;padding:10px 14px;outline:none;transition:border-color .15s}
+  .inp:focus,select.inp:focus{border-color:var(--acc2)}
+  .hint{display:block;font-size:.68rem;font-family:var(--mono);color:var(--mute);margin-top:4px}
+  .info{background:rgba(0,180,255,.08);border:1px solid rgba(0,180,255,.2);border-radius:8px;
+    color:var(--acc2);font-size:.74rem;font-family:var(--mono);padding:12px 14px;
+    margin-bottom:20px;line-height:1.6}
+  #connResult{display:none;font-size:.75rem;font-family:var(--mono);padding:10px 12px;
+    border-radius:8px;margin-top:12px;line-height:1.5}
+  .actions{margin-top:20px}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <div class="icon">🚗</div>
+    <h1>EV Tracker</h1>
+    <p>Ersteinrichtung</p>
+  </div>
+  <div class="step">Schritt 3 von 3 — Fahrzeug verbinden (optional)</div>
+
+  <div class="info">
+    Verbinde dein erstes Fahrzeug, um Ladevorgänge automatisch zu erfassen.<br>
+    Du kannst das jederzeit überspringen und später in<br>
+    <strong>Einstellungen → Fahrzeuge</strong> nachholen.
+  </div>
+
+  <label class="lbl">Datenquelle / Provider</label>
+  <select class="inp" id="sv_provider" onchange="loadFields()"></select>
+
+  <div id="sv_fields"></div>
+
+  <div id="connResult"></div>
+
+  <div class="actions">
+    <button class="btn btn-s" onclick="testConnection()">🔍 Verbindung testen</button>
+    <button class="btn" onclick="saveAndFinish()">💾 Speichern &amp; fertig</button>
+    <a href="/" class="btn btn-skip">Überspringen → Zum Dashboard</a>
+  </div>
+</div>
+
+<script>
+let csrfToken = '';
+(async()=>{try{const r=await fetch('/api/csrf-token').then(r=>r.json());csrfToken=r.token||'';}catch(e){}})();
+
+function $(id){return document.getElementById(id);}
+function _eh(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});}
+
+async function apiFetch(url, opts={}){
+  const h = {'Content-Type':'application/json','X-CSRF-Token':csrfToken,...(opts.headers||{})};
+  return fetch(url,{...opts,headers:h});
+}
+
+async function loadProviders(){
+  const provs = await fetch('/api/providers').then(r=>r.json()).catch(()=>[]);
+  const sel = $('sv_provider');
+  sel.innerHTML = provs.map(p =>
+    `<option value="${_eh(p.provider_id)}"${p.provider_id==='ha'?' selected':''}>${_eh(p.provider_name||p.provider_id)}</option>`
+  ).join('');
+  await loadFields();
+}
+
+async function loadFields(){
+  const provider = $('sv_provider').value;
+  const fields = await fetch('/api/providers/'+encodeURIComponent(provider)+'/fields').then(r=>r.json()).catch(()=>[]);
+  const c = $('sv_fields');
+  c.innerHTML = '';
+  fields.forEach(f => {
+    const wrap = document.createElement('div');
+    if(f.type === 'select'){
+      wrap.innerHTML = '<label class="lbl">'+_eh(f.label)+'</label>' +
+        '<select class="inp" id="svf_'+_eh(f.id)+'">'+(f.options||[]).map(o=>'<option value="'+_eh(o)+'">'+_eh(o)+'</option>').join('')+'</select>' +
+        (f.hint?'<span class="hint">'+_eh(f.hint)+'</span>':'');
+    } else {
+      wrap.innerHTML = '<label class="lbl">'+_eh(f.label)+(f.required?' *':'')+'</label>' +
+        '<input class="inp" type="'+(f.type||'text')+'" id="svf_'+_eh(f.id)+'" placeholder="'+_eh(f.placeholder||'')+'">' +
+        (f.hint?'<span class="hint">'+_eh(f.hint)+'</span>':'');
+    }
+    c.appendChild(wrap);
+  });
+  $('connResult').style.display = 'none';
+}
+
+async function _collectPayload(){
+  const provider = $('sv_provider').value;
+  const fields = await fetch('/api/providers/'+encodeURIComponent(provider)+'/fields').then(r=>r.json()).catch(()=>[]);
+  const payload = { provider: provider };
+  fields.forEach(f => {
+    const el = $('svf_'+f.id);
+    if(!el) return;
+    if(f.type === 'password'){
+      if(!el.value || el.value === '********') return;
+      payload[f.id] = el.value;
+    } else {
+      payload[f.id] = el.value;
+    }
+  });
+  return payload;
+}
+
+async function testConnection(){
+  const box = $('connResult');
+  box.style.display = '';
+  box.style.background = 'var(--card)';
+  box.style.border = '1px solid var(--brd)';
+  box.style.color = 'var(--mute)';
+  box.textContent = '⏳ Teste Verbindung…';
+  const payload = await _collectPayload();
+  payload.vehicle_id = 'v0';
+  let r;
+  try {
+    r = await apiFetch('/api/vehicles/test-connection',{method:'POST',body:JSON.stringify(payload)}).then(x=>x.json());
+  } catch(e){ r = {ok:false, message:'Netzwerkfehler'}; }
+  if(r.ok){
+    const st = r.status || 'ok';
+    const col = st==='partial' ? 'var(--warn)' : 'var(--accent)';
+    box.style.color = col; box.style.border = '1px solid '+col;
+    box.style.background = st==='partial' ? 'rgba(245,158,11,.1)' : 'rgba(0,210,120,.1)';
+    const d = r.data || {};
+    box.innerHTML = '<div style="font-weight:600;margin-bottom:4px">'+(st==='partial'?'⚠️ Verbindung ok, einige Daten fehlen':'✅ Verbindung erfolgreich')+'</div>' +
+      (d.soc!=null ? 'SOC: '+_eh(d.soc)+' %<br>' : '');
+  } else {
+    box.style.color = 'var(--danger)'; box.style.border = '1px solid var(--danger)';
+    box.style.background = 'rgba(255,79,90,.1)';
+    box.innerHTML = '<div style="font-weight:600;margin-bottom:4px">❌ Verbindung fehlgeschlagen</div>'+_eh(r.message||'Unbekannter Fehler');
+  }
+}
+
+async function saveAndFinish(){
+  const payload = await _collectPayload();
+  // v0 stores its provider config as flat config keys (same path as vehicle edit)
+  const resp = await apiFetch('/api/vehicles/v0',{method:'PUT',body:JSON.stringify(payload)});
+  const r = await resp.json().catch(()=>({}));
+  if(resp.ok && r.ok){
+    window.location = '/';
+  } else {
+    const box = $('connResult');
+    box.style.display = '';
+    box.style.color = 'var(--danger)'; box.style.border = '1px solid var(--danger)';
+    box.style.background = 'rgba(255,79,90,.1)';
+    box.innerHTML = '❌ '+_eh(r.error || 'Fehler beim Speichern');
+  }
+}
+
+loadProviders();
+</script>
+</body>
+</html>

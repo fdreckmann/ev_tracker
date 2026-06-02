@@ -87,6 +87,10 @@ async function refreshStatus() {
     const [dotCls, dotTxt] = _tsMap[ts] || ['dot ok', 'Aktiv'];
     dot.className = dotCls; txt.textContent = dotTxt;
 
+    // Onboarding empty-state: invite to connect a vehicle when none is configured.
+    const onboarding = $('onboardingBanner');
+    if (onboarding) onboarding.style.display = (ts === 'not_configured') ? 'flex' : 'none';
+
     $('dSoc').textContent = s.soc_current != null ? fmt(s.soc_current, 0) + '%' : '—';
     $('dOdo').textContent = s.odo_current != null ? Math.round(s.odo_current).toLocaleString('de') : '—';
     $('dPoll').textContent = s.last_poll ? s.last_poll.substring(11, 16) : '—';
@@ -235,6 +239,7 @@ async function refreshStatus() {
     }
 
     fitAllStats();
+    if (typeof loadOpenWallboxSessions === 'function') loadOpenWallboxSessions();
   } catch (e) {
     $('sDot').className = 'dot err'; $('sTxt').textContent = 'Fehler';
   } finally {
