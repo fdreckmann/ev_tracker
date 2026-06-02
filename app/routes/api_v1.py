@@ -362,19 +362,13 @@ def api_v1_reports_create():
 
     excel_bytes = None
     try:
+        from services.report_excel_service import build_report_excel_bytes as _brb, build_multi_month_zip_bytes as _bmz
         if len(periods) > 1:
-            from export_excel import export_multi_month_bytes as _emm
             ps_list = [(p, _get_report_sessions(p["start"], p["end"], loc_filter, veh_filter))
                        for p in periods]
-            excel_bytes, _ = _emm(periods_sessions=ps_list, loc_filter=loc_filter,
-                                   config=cfg, lang=lang)
+            excel_bytes, _, _ = _bmz(ps_list, loc_filter, veh_filter, cfg, lang)
         else:
-            from export_excel import export as _exp
-            from core.location import normalize_location as _nl
-            xl_loc = _nl(loc_filter) if loc_filter not in ("all",) else loc_filter
-            excel_bytes, _ = _exp(year=period_info["start"].year,
-                                   month=period_info["start"].month,
-                                   location=xl_loc, config=cfg, lang=lang, return_warnings=True)
+            excel_bytes, _ = _brb(period_info, loc_filter, veh_filter, cfg, lang)
     except Exception as e:
         import logging
         logging.getLogger(__name__).warning("API v1 report Excel fehlgeschlagen: %s", e)
