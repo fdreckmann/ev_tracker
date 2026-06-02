@@ -106,19 +106,29 @@ def api_provider_fields(provider_id):
     return jsonify(get_config_fields(provider_id))
 
 
+def _is_provider_unconfigured(cfg: dict | None) -> bool:
+    """True when no usable provider is set up (brand-new / empty v0)."""
+    if cfg is None:
+        return False
+    provider_id = cfg.get("provider", "ha")
+    if not provider_id or provider_id == "none":
+        return True
+    if provider_id == "ha" and not cfg.get("ha_url") and not cfg.get("ha_token"):
+        return True
+    if provider_id == "manual":
+        return True
+    return False
+
+
 def _compute_tracker_status(st: dict, cfg: dict | None = None) -> str:
     """Return one of: not_configured, stopped, provider_error, no_data, polling, charging, ready."""
+    # An unconfigured provider stays in the calm "not_configured" state even when
+    # the background tracker thread is running — it must never surface as a red error.
+    if _is_provider_unconfigured(cfg):
+        return "not_configured"
     if not (st.get("running") or st.get("tracker_alive")):
         # Distinguish "not configured" (no provider set up) from plain "stopped"
-        if cfg is not None:
-            provider_id = cfg.get("provider", "ha")
-            if not provider_id or provider_id == "none":
-                return "not_configured"
-            if provider_id == "ha" and not cfg.get("ha_url") and not cfg.get("ha_token"):
-                return "not_configured"
-            if provider_id == "manual":
-                return "not_configured"
-        elif not st:
+        if cfg is None and not st:
             # Empty state dict with no config info → brand-new install
             return "not_configured"
         return "stopped"

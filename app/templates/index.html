@@ -773,6 +773,22 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 ══════════════════════════════════════════════════════ -->
 <div class="panel active" id="panel-dashboard">
 
+  <!-- Onboarding empty-state (shown only when no vehicle is configured) -->
+  <div id="onboardingBanner" style="display:none;align-items:center;gap:16px;
+       background:rgba(0,180,255,.07);border:1px solid rgba(0,180,255,.25);
+       border-radius:12px;padding:16px 20px;margin-bottom:14px">
+    <div style="font-size:2rem">🚗</div>
+    <div style="flex:1">
+      <div style="font-weight:600;font-size:.95rem;margin-bottom:2px">Noch kein Fahrzeug verbunden</div>
+      <div style="font-size:.78rem;color:var(--mute)">Verbinde dein Fahrzeug, um Ladevorgänge automatisch zu erfassen.</div>
+    </div>
+    <a href="/setup/vehicle" style="background:rgba(0,180,255,.15);color:#7eb8f7;
+       border:1px solid rgba(0,180,255,.35);text-decoration:none;
+       border-radius:8px;padding:9px 16px;font-size:.82rem;font-weight:600;white-space:nowrap">
+      Fahrzeug einrichten
+    </a>
+  </div>
+
   <!-- Vehicle image card -->
   <div id="dashVehicleCard" style="display:flex;align-items:center;gap:16px;background:var(--card);border:1px solid var(--brd);border-radius:12px;padding:14px 18px;margin-bottom:14px">
     <img id="dashVehicleImg" src="/static/vehicle_images/placeholder_car.svg"

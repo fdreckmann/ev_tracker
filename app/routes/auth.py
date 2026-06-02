@@ -241,6 +241,13 @@ def setup_security_page():
     return render_template("setup_security.html")
 
 
+@auth_bp.route("/setup/vehicle", methods=["GET"])
+@require_login
+def setup_vehicle_page():
+    """Step 3 of initial setup — connect the primary vehicle (skippable)."""
+    return render_template("setup_vehicle.html")
+
+
 # ── Password Reset ────────────────────────────────────────────────────────────
 
 @auth_bp.route("/forgot-password", methods=["GET", "POST"])
