@@ -170,6 +170,12 @@ DEFAULT_CONFIG = {
     "meter_snapshot_heartbeat_minutes":  10,     # ...otherwise keep a heartbeat row every N minutes
     "meter_snapshot_max_error_rows":     500,    # cap stored error rows per vehicle
 
+    # go-e Charger RFID/Card mapping
+    "goe_url":                "",
+    "goe_auth":               "",
+    "goe_rfid_enabled":       False,
+    "goe_card_vehicle_map":   {},
+
     # Provider data-freshness threshold
     "provider_stale_after_minutes": 60,
 
