@@ -926,6 +926,7 @@ def init_db():
     close_db_if_owned(con)
 
 def get_sessions(year=None, month=None, location=None, vehicle_id=None, limit=50):
+    from services.session_filter import reportable_session_where_clause
     where = ["end_ts IS NOT NULL"]; params = []
     if year and month:
         where.append("start_ts LIKE ?"); params.append(f"{year:04d}-{month:02d}%")
@@ -933,15 +934,16 @@ def get_sessions(year=None, month=None, location=None, vehicle_id=None, limit=50
         where.append("location = ?"); params.append(location)
     if vehicle_id and vehicle_id != "all":
         where.append("vehicle_id = ?"); params.append(vehicle_id)
-    sql = f"SELECT * FROM sessions WHERE {' AND '.join(where)} ORDER BY start_ts DESC"
+    sql = f"SELECT * FROM sessions WHERE {' AND '.join(where)}{reportable_session_where_clause()} ORDER BY start_ts DESC"
     if not (year and month): sql += f" LIMIT {limit}"
     con = _get_db()
     rows = con.execute(sql, params).fetchall(); close_db_if_owned(con)
     return [dict(r) for r in rows]
 
 def get_monthly_stats():
+    from services.session_filter import reportable_session_where_clause
     con = _get_db()
-    rows = con.execute("""
+    rows = con.execute(f"""
         SELECT strftime('%Y-%m', start_ts) AS month,
                COUNT(*) AS sessions,
                SUM(kwh_charged) AS total_kwh,
@@ -951,7 +953,7 @@ def get_monthly_stats():
                SUM(CASE WHEN location='extern' THEN cost_eur ELSE 0 END) AS ext_cost,
                SUM(CASE WHEN charger_type='dc' THEN kwh_charged ELSE 0 END) AS dc_kwh,
                SUM(CASE WHEN charger_type='ac' THEN kwh_charged ELSE 0 END) AS ac_kwh
-        FROM sessions WHERE end_ts IS NOT NULL
+        FROM sessions WHERE end_ts IS NOT NULL{reportable_session_where_clause()}
         GROUP BY month ORDER BY month DESC LIMIT 12
     """).fetchall()
     close_db_if_owned(con); return [dict(r) for r in rows]
@@ -2382,6 +2384,7 @@ def calculate_report_periods(schedule_type, period_mode, now, config):
 
 def _get_report_sessions(start_date, end_date, location_filter="all", vehicle_filter="all"):
     from datetime import timedelta, timezone
+    from services.session_filter import reportable_session_where_clause
 
     where  = ["end_ts IS NOT NULL", "start_ts >= ?", "start_ts < ?"]
     params = [start_date.isoformat(), (end_date + timedelta(days=1)).isoformat()]
@@ -2392,7 +2395,7 @@ def _get_report_sessions(start_date, end_date, location_filter="all", vehicle_fi
         where.append("location = 'extern'")
     if vehicle_filter and vehicle_filter != "all":
         where.append("vehicle_id = ?"); params.append(vehicle_filter)
-    sql = f"SELECT * FROM sessions WHERE {' AND '.join(where)} ORDER BY start_ts ASC"
+    sql = f"SELECT * FROM sessions WHERE {' AND '.join(where)}{reportable_session_where_clause()} ORDER BY start_ts ASC"
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
     rows = con.execute(sql, params).fetchall(); close_db_if_owned(con)
     return [dict(r) for r in rows]

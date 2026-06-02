@@ -687,7 +687,9 @@ class TestFetchSessions:
             price_per_kwh REAL, price_source TEXT, charging_contract_name TEXT,
             charging_contract_id TEXT, charger_power_kw REAL,
             cost_manual INTEGER DEFAULT 0, provider TEXT DEFAULT 'manual',
-            created_mode TEXT
+            created_mode TEXT,
+            excluded_from_reports INTEGER DEFAULT 0,
+            vehicle_assignment_status TEXT DEFAULT 'confirmed'
         )""")
         rows = [
             (1, "2026-05-01T10:00:00", "2026-05-01T11:00:00", 10.0, 3.0, "home", "ac", "v0"),

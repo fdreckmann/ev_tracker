@@ -85,8 +85,9 @@ def api_billing_summary():
     today = date.today()
     first = today.replace(day=1)
     con   = _get_db()
+    from services.session_filter import reportable_session_where_clause as _rsf
     sessions = con.execute(
-        "SELECT * FROM sessions WHERE end_ts IS NOT NULL AND start_ts >= ? ORDER BY start_ts DESC",
+        f"SELECT * FROM sessions WHERE end_ts IS NOT NULL AND start_ts >= ?{_rsf()} ORDER BY start_ts DESC",
         (first.isoformat(),)).fetchall()
     rows = [dict(r) for r in sessions]
     bc_row = con.execute("SELECT * FROM billing_config WHERE enabled=1 LIMIT 1").fetchone()

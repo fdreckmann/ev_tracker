@@ -152,6 +152,7 @@ def _get_report_sessions(start_date, end_date, location_filter="all", vehicle_fi
     from datetime import timedelta, timezone
 
     from core.db import DB_PATH
+    from services.session_filter import reportable_session_where_clause
     where  = ["end_ts IS NOT NULL", "start_ts >= ?", "start_ts < ?"]
     params = [start_date.isoformat(), (end_date + timedelta(days=1)).isoformat()]
     from core.location import normalize_location as _nl
@@ -162,7 +163,7 @@ def _get_report_sessions(start_date, end_date, location_filter="all", vehicle_fi
         where.append("location = 'extern'")
     if vehicle_filter and vehicle_filter != "all":
         where.append("vehicle_id = ?"); params.append(vehicle_filter)
-    sql = f"SELECT * FROM sessions WHERE {' AND '.join(where)} ORDER BY start_ts ASC"
+    sql = f"SELECT * FROM sessions WHERE {' AND '.join(where)}{reportable_session_where_clause()} ORDER BY start_ts ASC"
     con = sqlite3.connect(DB_PATH); con.row_factory = sqlite3.Row
     rows = con.execute(sql, params).fetchall(); close_db_if_owned(con)
     return [dict(r) for r in rows]

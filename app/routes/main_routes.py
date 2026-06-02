@@ -270,9 +270,10 @@ def api_mobile_summary():
     # Recent sessions (last 10)
     con = _get_db()
     try:
+        from services.session_filter import reportable_session_where_clause as _rsf
         recent_rows = con.execute(
             "SELECT id, start_ts, end_ts, location, charger_type, kwh_charged, cost_eur, soc_start, soc_end, max_power_kw, vehicle_id "
-            "FROM sessions ORDER BY start_ts DESC LIMIT 10"
+            f"FROM sessions WHERE end_ts IS NOT NULL{_rsf()} ORDER BY start_ts DESC LIMIT 10"
         ).fetchall()
         recent_sessions = [dict(r) for r in recent_rows]
 
@@ -282,7 +283,7 @@ def api_mobile_summary():
         month_prefix = today.strftime("%Y-%m")
         stats_row = con.execute(
             "SELECT COUNT(*) as cnt, SUM(kwh_charged) as kwh, SUM(cost_eur) as cost "
-            "FROM sessions WHERE start_ts LIKE ? AND end_ts IS NOT NULL",
+            f"FROM sessions WHERE start_ts LIKE ? AND end_ts IS NOT NULL{_rsf()}",
             (f"{month_prefix}%",)
         ).fetchone()
         monthly = {
