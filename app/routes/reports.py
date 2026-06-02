@@ -146,46 +146,18 @@ def api_reports_create():
                                         loc_filter=loc_filter, config=cfg, lang=lang)
                 excel_warnings = _ew or []
             else:
-                from export_excel import export as _export_func
-                from core.location import normalize_location as _nl
-                xl_loc = _nl(loc_filter) if loc_filter not in ("all",) else loc_filter
-                # Load template settings from config (same as export.py)
-                _saved_col = cfg.get("template_column_mapping") or cfg.get("template_mapping") or {}
-                _col_override = {k: v for k, v in _saved_col.items() if v} if isinstance(_saved_col, dict) else None
-                _start_row = cfg.get("template_start_row")
-                _header_row = cfg.get("template_header_row")
-                if _start_row and not _header_row:
-                    try:
-                        _header_row = int(_start_row) - 1
-                    except (ValueError, TypeError):
-                        pass
-                _raw_cm = cfg.get("template_cell_mapping") or {}
-                _cell_mapping = _raw_cm if isinstance(_raw_cm, dict) else {}
-                _sheet = cfg.get("template_sheet") or None
-                _header_info = {
-                    "fahrer":            cfg.get("template_fahrer", ""),
-                    "kennzeichen":       cfg.get("template_kennzeichen", ""),
-                    "abteilung":         cfg.get("template_abteilung", ""),
-                    "kostenstelle":      cfg.get("template_kostenstelle", ""),
-                    "price_per_kwh":     cfg.get("price_per_kwh_home", 0.30),
-                    "meter_start_value": cfg.get("template_meter_start", 0.0),
-                }
-                _sig_mapping = cfg.get("signature_mapping") or {}
-                if _sig_mapping and "cell" in _sig_mapping and "anchor_cell" not in _sig_mapping:
-                    _sig_mapping = dict(_sig_mapping)
-                    _sig_mapping["anchor_cell"] = _sig_mapping["cell"]
-                from core.db import DATA_DIR as _DATA_DIR
-                _sig_path_obj = _DATA_DIR / "signatures" / "default_signature.png"
+                # Single source of truth: shared helper (same XLSX as the auto-report).
+                from services.report_excel_service import (
+                    build_report_excel_bytes, ReportExcelError)
                 _include_sig = bool(data.get("include_signature", cfg.get("export_include_signature", False)))
-                excel_bytes, excel_warnings = _export_func(
-                    year=period_info["start"].year, month=period_info["start"].month,
-                    location=xl_loc,
-                    col_override=_col_override, start_row=_start_row, header_row=_header_row,
-                    header_info=_header_info, cell_mapping=_cell_mapping, sheet=_sheet,
-                    include_signature=_include_sig,
-                    signature_path=str(_sig_path_obj) if _sig_path_obj.exists() and _include_sig else None,
-                    signature_mapping=_sig_mapping,
-                    lang=lang, return_warnings=True)
+                _template_id = data.get("template_id", cfg.get("report_email_template_id"))
+                try:
+                    excel_bytes, excel_warnings = build_report_excel_bytes(
+                        period_info, loc_filter, veh_filter, cfg, lang,
+                        include_signature=_include_sig, template_id=_template_id)
+                except ReportExcelError as ree:
+                    excel_bytes = None
+                    excel_warnings.append(f"Excel-Fehler: {ree}")
         except Exception as e:
             log.warning("reports/create Excel: %s", e)
             excel_warnings.append(f"Excel-Fehler: {e}")

@@ -501,7 +501,9 @@ def init_db():
         triggered_by  TEXT DEFAULT 'auto'
     )""")
     # Migrate: add columns if missing
-    for _col in ["period_label TEXT", "period_mode TEXT"]:
+    for _col in ["period_label TEXT", "period_mode TEXT",
+                 "attachment_excel INTEGER DEFAULT 0", "template_id TEXT",
+                 "template_name TEXT", "template_warnings TEXT", "excel_error TEXT"]:
         try: con.execute(f"ALTER TABLE email_report_history ADD COLUMN {_col}")
         except Exception: pass
 
@@ -622,6 +624,23 @@ def init_db():
     con.execute("""CREATE INDEX IF NOT EXISTS idx_vsnap_vehicle_ts
                    ON vehicle_snapshots(vehicle_id, ts)""")
 
+    # Historical meter (Wallbox/Zähler) readings — used to confirm missing-charge
+    # candidates by checking whether a meter rise happened in the same window.
+    con.execute("""CREATE TABLE IF NOT EXISTS meter_snapshots (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        vehicle_id  TEXT NOT NULL DEFAULT 'v0',
+        ts          TEXT NOT NULL,
+        source      TEXT,
+        value_kwh   REAL,
+        raw_value   TEXT,
+        unit        TEXT,
+        ok          INTEGER DEFAULT 1,
+        error       TEXT,
+        created_at  TEXT NOT NULL
+    )""")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_msnap_vehicle_ts
+                   ON meter_snapshots(vehicle_id, ts)""")
+
     con.execute("""CREATE TABLE IF NOT EXISTS missing_charge_candidates (
         id                          INTEGER PRIMARY KEY AUTOINCREMENT,
         vehicle_id                  TEXT NOT NULL,
@@ -660,6 +679,9 @@ def init_db():
         ("expected_consumption_confidence", "REAL"),
         ("historical_sample_distance_km", "REAL"),
         ("historical_sample_segments", "INTEGER"),
+        ("evidence_json", "TEXT"),
+        ("meter_delta_kwh", "REAL"),
+        ("meter_confirmed", "INTEGER DEFAULT 0"),
     ]:
         try:
             con.execute(f"ALTER TABLE missing_charge_candidates ADD COLUMN {_col} {_typedef}")
@@ -1434,6 +1456,13 @@ def tracker_loop(vehicle_id: str = "v0"):
                     }, load_config(), db_path=DB_PATH)
                 except Exception: pass
                 session_id=None; peak_power=None
+
+            # ── Meter snapshot (historical evidence for missing-charge) ───────
+            try:
+                from services.meter_snapshot_service import maybe_record_poll_snapshot
+                maybe_record_poll_snapshot(vehicle_id, vcfg, st, con)
+            except Exception as _mse:
+                log.debug("Meter snapshot error [%s]: %s", vehicle_id, _mse)
 
             # ── Snapshot + Missing-Charge Detection ───────────────────────────
             try:

@@ -161,6 +161,14 @@ DEFAULT_CONFIG = {
     "meter_home_detection_override_external":   False,
     "meter_home_detection_max_delta_kwh_per_hour": 30.0,
     "home_charger_power_kw":    11.0,
+    # Meter classification (affects how strongly a meter rise confirms a charge):
+    #   ev_wallbox | ev_dedicated_meter = strong, house_total = weak, unknown = medium
+    "meter_type":               "unknown",
+    # Historical meter snapshots (evidence for missing-charge detection)
+    "meter_snapshot_enabled":            True,
+    "meter_snapshot_min_delta_kwh":      0.05,   # store immediately when value changed by >= this
+    "meter_snapshot_heartbeat_minutes":  10,     # ...otherwise keep a heartbeat row every N minutes
+    "meter_snapshot_max_error_rows":     500,    # cap stored error rows per vehicle
 
     # Auth — password + TOTP
     "auth_password_hash": "",
@@ -231,6 +239,7 @@ DEFAULT_CONFIG = {
     "report_email_language":         "auto",
     "report_email_include_signature": False,
     "report_email_template_id":      None,
+    "report_email_multi_month_excel_mode": "standard_multi_sheet",  # standard_multi_sheet | template_per_month_zip
     "report_email_last_sent_key":    "",
     "report_email_single_month":     "",
     "report_email_months":           [],
@@ -316,6 +325,10 @@ DEFAULT_CONFIG = {
     "official_consumption_kwh_per_100km":                    None,
     "official_range_km":                                     None,
     "official_consumption_factor":                           1.20,
+    # Missing-charge meter fusion (confirm candidates via Wallbox/Zähler rise)
+    "missing_charge_meter_fusion_enabled":   True,
+    "missing_charge_meter_min_delta_kwh":    1.0,     # ignore tiny meter deltas
+    "missing_charge_meter_max_delta_kwh":    150.0,   # implausibly large → ignore
 
     # Public charging prices
     "public_charging_price_enabled":        True,

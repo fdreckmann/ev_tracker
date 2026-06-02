@@ -321,17 +321,19 @@ def _send_email_with_attachments(to_addr, subject, body_html, attachments=None):
         return False, str(e)
 
 
-def _log_report_history(period_info, cfg, status, error, triggered_by):
+def _log_report_history(period_info, cfg, status, error, triggered_by, meta=None):
     import logging
     log = logging.getLogger(__name__)
+    meta = meta or {}
     try:
         period_label = period_info.get("label_de", period_info.get("period_key", ""))
         con = _get_db()
         con.execute("""INSERT INTO email_report_history
             (sent_at,schedule_type,period_start,period_end,period_key,
              location_filter,vehicle_filter,recipients,status,error,triggered_by,
-             period_label,period_mode)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             period_label,period_mode,
+             attachment_excel,template_id,template_name,template_warnings,excel_error)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
              cfg.get("report_email_schedule_type", "monthly"),
              period_info["start"].isoformat(), period_info["end"].isoformat(),
@@ -341,7 +343,12 @@ def _log_report_history(period_info, cfg, status, error, triggered_by):
              json.dumps(cfg.get("report_email_recipients", [])),
              status, error, triggered_by,
              period_label,
-             cfg.get("report_email_period_mode", "previous_period")))
+             cfg.get("report_email_period_mode", "previous_period"),
+             1 if meta.get("attachment_excel") else 0,
+             meta.get("template_id"),
+             meta.get("template_name"),
+             json.dumps(meta.get("template_warnings")) if meta.get("template_warnings") else None,
+             meta.get("excel_error")))
         con.commit(); close_db_if_owned(con)
     except Exception as e:
         log.warning("Report-History-Log fehlgeschlagen: %s", e)
@@ -382,9 +389,14 @@ def _send_report_email(cfg=None, triggered_by="auto"):
         return True, None
 
     attachments = []
+    want_excel    = bool(cfg.get("report_email_include_excel"))
+    include_sig   = bool(cfg.get("report_email_include_signature"))
+    template_id   = cfg.get("report_email_template_id")
+    hist_meta     = {"attachment_excel": False, "template_id": template_id,
+                     "template_name": None, "template_warnings": [], "excel_error": None}
 
     if period_mode == "multiple_months" and len(periods) > 1:
-        # Multi-month: per-month sessions + combined HTML + multi-sheet Excel
+        # Multi-month: per-month sessions + combined HTML + Excel (mode-dependent)
         periods_sessions = []
         for p in periods:
             s = _get_report_sessions(p["start"], p["end"], loc_filter, veh_filter)
@@ -400,20 +412,47 @@ def _send_report_email(cfg=None, triggered_by="auto"):
             subject = f"EV Tracker — Bericht {n_months} Monate"
         else:
             subject = f"EV Tracker — Report {n_months} months"
-        if cfg.get("report_email_include_excel") and all_sessions:
-            try:
-                from export_excel import export_multi_month_bytes as _emm
-                sig_path = str(SIGNATURE_PATH) if SIGNATURE_PATH.exists() and cfg.get("report_email_include_signature") else None
-                sig_map  = cfg.get("signature_mapping", {}) if sig_path else {}
-                xl_bytes, _ = _emm(
-                    periods_sessions=periods_sessions,
-                    loc_filter=loc_filter, config=cfg, lang=lang,
-                    include_signature=bool(sig_path),
-                    signature_path=sig_path, signature_mapping=sig_map)
-                attachments.append(("Ladeprotokoll.xlsx", xl_bytes,
-                                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-            except Exception as e:
-                log.warning("Multi-Monats-Excel-Anhang fehlgeschlagen: %s", e)
+        mm_mode = cfg.get("report_email_multi_month_excel_mode", "standard_multi_sheet")
+        if want_excel and all_sessions:
+            if mm_mode == "template_per_month_zip":
+                # One template XLSX per month, zipped. Fatal mapping errors abort.
+                try:
+                    from services.report_excel_service import (
+                        build_multi_month_zip_bytes, ReportExcelError)
+                    zip_bytes, zw, zfname = build_multi_month_zip_bytes(
+                        periods_sessions, loc_filter, veh_filter, cfg, lang,
+                        include_signature=include_sig, template_id=template_id)
+                    attachments.append((zfname, zip_bytes, "application/zip"))
+                    hist_meta["attachment_excel"] = True
+                    hist_meta["template_warnings"] = zw
+                except ReportExcelError as ree:
+                    hist_meta["excel_error"] = str(ree)
+                    log_period = dict(periods[0]); log_period["period_key"] = combined_key
+                    _log_report_history(log_period, cfg, "error",
+                                        f"Excel-Anhang: {ree}", triggered_by, hist_meta)
+                    return False, f"Excel-Anhang: {ree}"
+                except Exception as e:
+                    hist_meta["excel_error"] = str(e)
+                    log.warning("Multi-Monats-Template-ZIP fehlgeschlagen: %s", e)
+            else:
+                # Standard multi-sheet workbook (built-in layout).
+                try:
+                    from export_excel import export_multi_month_bytes as _emm
+                    sig_path = str(SIGNATURE_PATH) if SIGNATURE_PATH.exists() and include_sig else None
+                    sig_map  = cfg.get("signature_mapping", {}) if sig_path else {}
+                    xl_bytes, mmw = _emm(
+                        periods_sessions=periods_sessions,
+                        loc_filter=loc_filter, lang=lang,
+                        include_signature=bool(sig_path),
+                        signature_path=sig_path, signature_mapping=sig_map)
+                    attachments.append(("Ladeprotokoll.xlsx", xl_bytes,
+                                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    hist_meta["attachment_excel"] = True
+                    hist_meta["template_name"] = "Standard-Multi-Sheet"
+                    hist_meta["template_warnings"] = mmw or []
+                except Exception as e:
+                    hist_meta["excel_error"] = str(e)
+                    log.warning("Multi-Monats-Excel-Anhang fehlgeschlagen: %s", e)
         # use first period for history logging
         log_period = periods[0]
         log_period = dict(log_period); log_period["period_key"] = combined_key
@@ -429,21 +468,33 @@ def _send_report_email(cfg=None, triggered_by="auto"):
         subject = (f"EV Tracker — {('Monatsbericht' if is_de else 'Monthly Report')} {plabel}"
                    if period_mode in ("single_month", "previous_period", "current_period") and stype == "monthly"
                    else f"EV Tracker — Report {plabel}")
-        if cfg.get("report_email_include_excel") and sessions:
+        if want_excel and sessions:
+            # Single source of truth: same helper the manual/archive export uses.
+            from services.report_excel_service import (
+                build_report_excel_bytes, validate_report_template, ReportExcelError)
+            ok_v, fatal, vwarn, vmeta = validate_report_template(cfg, template_id, include_sig)
+            hist_meta["template_name"] = vmeta.get("name")
+            hist_meta["template_warnings"] = list(vwarn or [])
+            if not ok_v:
+                # Never send a broken attachment — fail the report loudly.
+                hist_meta["excel_error"] = fatal
+                _log_report_history(period_info, cfg, "error", fatal, triggered_by, hist_meta)
+                return False, fatal
             try:
-                from export_excel import export as _export_func
-                sig_path = str(SIGNATURE_PATH) if SIGNATURE_PATH.exists() and cfg.get("report_email_include_signature") else None
-                sig_map  = cfg.get("signature_mapping", {}) if sig_path else {}
-                from core.location import normalize_location as _nl
-                xl_loc   = _nl(loc_filter) if loc_filter not in ("all",) else loc_filter
-                xl_bytes, _ = _export_func(
-                    year=period_info["start"].year, month=period_info["start"].month,
-                    location=xl_loc, config=cfg, lang=lang,
-                    include_signature=bool(sig_path),
-                    signature_path=sig_path, signature_mapping=sig_map, return_warnings=True)
+                xl_bytes, xw = build_report_excel_bytes(
+                    period_info, loc_filter, veh_filter, cfg, lang,
+                    include_signature=include_sig, template_id=template_id)
                 attachments.append(("Ladeprotokoll.xlsx", xl_bytes,
                                      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                hist_meta["attachment_excel"] = True
+                hist_meta["template_warnings"] = list(vwarn or []) + list(xw or [])
+            except ReportExcelError as ree:
+                hist_meta["excel_error"] = str(ree)
+                _log_report_history(period_info, cfg, "error",
+                                    f"Excel-Anhang: {ree}", triggered_by, hist_meta)
+                return False, f"Excel-Anhang: {ree}"
             except Exception as e:
+                hist_meta["excel_error"] = str(e)
                 log.warning("Report-Excel-Anhang fehlgeschlagen: %s", e)
         log_period = period_info
 
@@ -452,11 +503,11 @@ def _send_report_email(cfg=None, triggered_by="auto"):
         ok, err = _send_email_with_attachments(to, subject, html, attachments)
         if not ok: errors.append(f"{to}: {err}")
     if errors:
-        _log_report_history(log_period, cfg, "error", "; ".join(errors), triggered_by)
+        _log_report_history(log_period, cfg, "error", "; ".join(errors), triggered_by, hist_meta)
         return False, "; ".join(errors)
     cfg["report_email_last_sent_key"] = combined_key
     save_config(cfg)
-    _log_report_history(log_period, cfg, "sent", None, triggered_by)
+    _log_report_history(log_period, cfg, "sent", None, triggered_by, hist_meta)
     log.info("Report gesendet: %s → %s", combined_key, recipients)
     return True, None
 
@@ -585,6 +636,16 @@ def api_report_config_save():
     return jsonify({"ok": True})
 
 
+_SEND_NOW_OVERRIDES = [
+    "report_email_location_filter", "report_email_vehicle_filter",
+    "report_email_period_mode", "report_email_schedule_type",
+    "report_email_recipients", "report_email_language",
+    "report_email_single_month", "report_email_months",
+    "report_email_template_id", "report_email_include_excel",
+    "report_email_include_signature", "report_email_multi_month_excel_mode",
+]
+
+
 @email_reports_bp.route("/api/report/send-now", methods=["POST"])
 @require_login
 def api_report_send_now():
@@ -593,15 +654,99 @@ def api_report_send_now():
     data = request.get_json(force=True) or {}
     cfg  = load_config()
     # Allow overriding config for this send
-    for k in ["report_email_location_filter", "report_email_vehicle_filter",
-              "report_email_period_mode", "report_email_schedule_type",
-              "report_email_recipients", "report_email_language",
-              "report_email_single_month", "report_email_months"]:
+    for k in _SEND_NOW_OVERRIDES:
         if k in data: cfg[k] = data[k]
     cfg["report_email_enabled"] = True
     ok, err = _send_report_email(cfg=cfg, triggered_by="manual")
     _audit("report_send_now", f"ok={ok} err={err}", ip=request.remote_addr)
     return jsonify({"ok": ok, "error": err})
+
+
+@email_reports_bp.route("/api/report/test-mail", methods=["POST"])
+@require_login
+def api_report_test_mail():
+    """Send a real test report to a single address (first recipient or an explicit
+    test address). Uses the *same* attachment logic as the automatic report."""
+    if not has_permission(_current_user(), "reports:send"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    data = request.get_json(force=True) or {}
+    cfg  = load_config()
+    for k in _SEND_NOW_OVERRIDES:
+        if k in data: cfg[k] = data[k]
+    test_to = (data.get("test_email") or "").strip()
+    if test_to:
+        cfg["report_email_recipients"] = [test_to]
+    else:
+        rcpts = cfg.get("report_email_recipients", [])
+        if not rcpts:
+            return jsonify({"ok": False, "error": "Keine Empfänger konfiguriert"})
+        cfg["report_email_recipients"] = [rcpts[0]]
+    cfg["report_email_enabled"]       = True
+    cfg["report_email_last_sent_key"] = ""   # never let dedup skip a test
+    ok, err = _send_report_email(cfg=cfg, triggered_by="test")
+    _audit("report_test_mail", f"ok={ok} to={cfg['report_email_recipients']}", ip=request.remote_addr)
+    return jsonify({"ok": ok, "error": err, "sent_to": cfg["report_email_recipients"]})
+
+
+@email_reports_bp.route("/api/report/template-status", methods=["GET"])
+@require_login
+def api_report_template_status():
+    """Report which template the auto-report will use + mapping validity, for the UI."""
+    if not has_permission(_current_user(), "reports:view"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    cfg = load_config()
+    from services.report_excel_service import validate_report_template
+    template_id = cfg.get("report_email_template_id")
+    include_sig = bool(cfg.get("report_email_include_signature"))
+    ok, fatal, warnings, meta = validate_report_template(cfg, template_id, include_sig)
+    status = "ok" if ok and not warnings else ("warning" if ok else "error")
+    return jsonify({
+        "ok": ok, "status": status, "error": fatal,
+        "warnings": warnings, "template_name": meta.get("name"),
+        "kind": meta.get("kind"), "has_column_mapping": meta.get("has_column_mapping"),
+        "template_id": template_id,
+        "templates": [{"id": t.get("id"), "name": t.get("name")}
+                      for t in cfg.get("export_templates", [])],
+    })
+
+
+@email_reports_bp.route("/api/report/excel-preview", methods=["POST"])
+@require_login
+def api_report_excel_preview():
+    """Generate the exact XLSX the auto-report would attach, for download/inspection."""
+    if not has_permission(_current_user(), "reports:send"):
+        return jsonify({"error": "Keine Berechtigung"}), 403
+    import io
+    from flask import send_file
+    data = request.get_json(force=True) or {}
+    cfg  = load_config()
+    for k in _SEND_NOW_OVERRIDES:
+        if k in data: cfg[k] = data[k]
+    stype       = cfg.get("report_email_schedule_type", "monthly")
+    period_mode = cfg.get("report_email_period_mode", "previous_period")
+    loc_filter  = cfg.get("report_email_location_filter", "all")
+    veh_filter  = cfg.get("report_email_vehicle_filter", "all")
+    lang        = cfg.get("report_email_language", "auto")
+    if lang == "auto": lang = "de"
+    include_sig = bool(cfg.get("report_email_include_signature"))
+    template_id = cfg.get("report_email_template_id")
+    try:
+        from services.report_excel_service import build_report_excel_bytes, ReportExcelError
+        periods = calculate_report_periods(stype, period_mode, datetime.now(), cfg)
+        if not periods:
+            return jsonify({"ok": False, "error": "Kein Zeitraum ermittelbar"}), 400
+        period_info = periods[0]
+        xl_bytes, _w = build_report_excel_bytes(
+            period_info, loc_filter, veh_filter, cfg, lang,
+            include_signature=include_sig, template_id=template_id)
+    except ReportExcelError as ree:
+        return jsonify({"ok": False, "error": str(ree)}), 409
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+    key = period_info.get("period_key", "").replace("monthly:", "") or "report"
+    return send_file(io.BytesIO(xl_bytes), as_attachment=True,
+                     download_name=f"EV_Report_Vorschau_{key}.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @email_reports_bp.route("/api/report/history")

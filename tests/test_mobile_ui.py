@@ -9,6 +9,9 @@ _ROOT = Path(__file__).parent.parent
 _INDEX = (_ROOT / "app" / "templates" / "index.html").read_text()
 _MOBILE_JS = (_ROOT / "app" / "static" / "js" / "mobile.js").read_text()
 _API_JS = (_ROOT / "app" / "static" / "js" / "api.js").read_text()
+_VEHICLES_JS = (_ROOT / "app" / "static" / "js" / "vehicles.js").read_text()
+_CONNECTIONS_PY = (_ROOT / "app" / "routes" / "connections.py").read_text()
+_BASE_PY = (_ROOT / "app" / "providers" / "base.py").read_text()
 
 
 class TestQuickActions:
@@ -53,6 +56,100 @@ class TestMobileMoreMenu:
     def test_initMobileMore_vehicles_uses_mobileNavTo(self):
         """Fahrzeugliste in Mehr-Menü must call mobileNavTo('vehicles')."""
         assert "mobileNavTo('vehicles')" in _MOBILE_JS
+
+
+class TestMissingChargeEvidenceUI:
+    """Phase B — candidate cards explain SOC-jump / energy-balance / meter."""
+
+    def test_kind_helper_present(self):
+        assert "function _candidateKind" in _INDEX
+        assert "function _candidateConfirmed" in _INDEX
+        assert "function _candidateEvidence" in _INDEX
+
+    def test_three_evidence_kinds_explained(self):
+        # A) SOC-jump, B) energy-balance, C) meter-confirmed headlines
+        assert "Möglicher fehlender Ladevorgang" in _INDEX
+        assert "Vermutlicher Zwischenladestopp" in _INDEX
+        assert "Ladevorgang per Zähler bestätigt" in _INDEX
+
+    def test_evidence_rows_cover_required_fields(self):
+        for label in ("Zeitraum", "Strecke", "Erwarteter Verbrauch",
+                      "Beobachteter Verbrauch", "Zähler-Delta",
+                      "Standort-Vorschlag", "Konfidenz"):
+            assert label in _INDEX, label
+
+    def test_four_actions_present(self):
+        assert "✏ Übernehmen" in _INDEX
+        assert "function laterCandidate" in _INDEX
+        assert "function toggleCandidateDetails" in _INDEX
+        # accept / dismiss / ignore routes still wired
+        assert "openCandidateAcceptDialog(" in _INDEX
+        assert "dismissCandidate(" in _INDEX
+        assert "ignoreCandidate(" in _INDEX
+
+    def test_house_meter_weak_hint(self):
+        assert "Haus-Gesamtzähler" in _INDEX
+
+    def test_accept_takes_meter_kwh_and_home(self):
+        # prefill uses estimated_kwh (meter delta when confirmed) + suggested_location
+        assert "$('as_kwh').value" in _INDEX
+        assert "$('as_location').value = c.suggested_location" in _INDEX
+
+    def test_mobile_hint_is_type_aware(self):
+        assert "meter_confirmed" in _MOBILE_JS
+        assert "Vermutlicher Zwischenladestopp" in _MOBILE_JS
+        assert "per zähler bestätigt" in _MOBILE_JS.lower()
+
+
+class TestThemeSystem:
+    """Phase C — system/dark/light theme with full variable palettes."""
+
+    _REQUIRED_VARS = [
+        "--bg", "--bg2", "--surf", "--surf2", "--card", "--brd", "--brd2",
+        "--chip", "--txt", "--ink", "--mute", "--acc", "--acc2",
+        "--warn", "--danger", "--info-bg", "--ok-bg", "--warn-bg", "--danger-bg",
+    ]
+
+    def test_both_palettes_present(self):
+        assert ':root[data-theme="light"]' in _INDEX
+        assert '[data-theme="dark"]' in _INDEX
+
+    def test_required_vars_defined_in_both_palettes(self):
+        # Each var must be defined at least twice (dark + light palette).
+        for v in self._REQUIRED_VARS:
+            assert _INDEX.count(v + ":") >= 2, f"{v} not defined in both palettes"
+
+    def test_no_undefined_vars_used(self):
+        import re
+        defined = set(re.findall(r'(--[a-z0-9-]+)\s*:', _INDEX))
+        used = set(re.findall(r'var\((--[a-z0-9-]+)', _INDEX))
+        missing = sorted(u for u in used if u not in defined)
+        assert not missing, f"variables used but never defined: {missing}"
+
+    def test_theme_persisted_in_localstorage(self):
+        assert "localStorage.setItem('theme'" in _INDEX
+        assert "localStorage.getItem('theme')" in _INDEX
+
+    def test_system_pref_uses_media_query(self):
+        assert "prefers-color-scheme: dark" in _INDEX
+
+    def test_theme_functions_and_toggle_present(self):
+        assert "window.setTheme" in _INDEX
+        assert "window.applyTheme" in _INDEX
+        assert "theme-seg" in _INDEX
+        assert 'data-theme-opt="system"' in _INDEX
+        assert 'data-theme-opt="light"' in _INDEX
+        assert 'data-theme-opt="dark"' in _INDEX
+
+    def test_typography_inter_and_tabular_nums(self):
+        assert "Inter:wght" in _INDEX          # font loaded
+        assert "'Inter'" in _INDEX             # used in --sans
+        assert "tabular-nums" in _INDEX
+
+    def test_no_invisible_white_text_left_in_dynamic(self):
+        # The only literal white text allowed is the white-on-blue mobile button.
+        assert _INDEX.count("color:#fff") == 0           # no-space form fully migrated
+        assert _MOBILE_JS.count("color:#fff") == 0
 
     def test_openDesktopConfigSection_switches_tab(self):
         """openDesktopConfigSection must invoke tab('config', ...) and cfgSection."""
@@ -125,6 +222,72 @@ class TestXSS:
     def test_normalizeLocation_oeffentlich(self):
         """normalizeLocation must map 'öffentlich' to extern."""
         assert "'öffentlich'" in _API_JS
+
+
+class TestProviderVehicleUI:
+    """Phase D — provider matrix, per-vehicle test-connection button, ******** resolution."""
+
+    def test_vehicle_modal_has_test_connection_button(self):
+        """Vehicle modal must contain the test-connection button."""
+        assert "testVehicleConnection()" in _INDEX
+
+    def test_vehicle_modal_has_result_div(self):
+        """Vehicle modal must contain #vm_conn_result for displaying test results."""
+        assert "vm_conn_result" in _INDEX
+
+    def test_vehicles_js_has_test_function(self):
+        """vehicles.js must define testVehicleConnection."""
+        assert "function testVehicleConnection" in _VEHICLES_JS
+
+    def test_vehicles_js_has_reset_function(self):
+        """vehicles.js must define _resetVehicleConnTest."""
+        assert "_resetVehicleConnTest" in _VEHICLES_JS
+
+    def test_vehicles_js_tracks_test_state(self):
+        """vehicles.js must maintain _vehicleConnTested state variable."""
+        assert "_vehicleConnTested" in _VEHICLES_JS
+
+    def test_vehicles_js_save_warning_when_untested(self):
+        """saveVehicleModal must warn when connection is untested."""
+        assert "_vehicleConnTested" in _VEHICLES_JS
+        assert "confirm(" in _VEHICLES_JS
+
+    def test_test_connection_posts_to_correct_route(self):
+        """testVehicleConnection must POST to /api/vehicles/test-connection."""
+        assert "/api/vehicles/test-connection" in _VEHICLES_JS
+
+    def test_connections_py_has_vehicle_test_route(self):
+        """connections.py must define /api/vehicles/test-connection route."""
+        assert "/api/vehicles/test-connection" in _CONNECTIONS_PY
+
+    def test_connections_py_resolves_masked_passwords(self):
+        """Vehicle test route must handle ******** masked passwords."""
+        assert "_MASK" in _CONNECTIONS_PY
+        assert '("", _MASK' in _CONNECTIONS_PY or "in ('', _MASK" in _CONNECTIONS_PY or "_MASK, None" in _CONNECTIONS_PY
+
+    def test_connections_py_returns_status_field(self):
+        """Vehicle test route must return status: ok/partial/error."""
+        assert '"ok"' in _CONNECTIONS_PY or "'ok'" in _CONNECTIONS_PY
+        assert '"partial"' in _CONNECTIONS_PY or "'partial'" in _CONNECTIONS_PY
+        assert '"error"' in _CONNECTIONS_PY or "'error'" in _CONNECTIONS_PY
+
+    def test_base_provider_has_image_capability(self):
+        """ProviderCapabilities must include image field."""
+        assert "image" in _BASE_PY
+        assert "image:          bool = False" in _BASE_PY or "image: bool = False" in _BASE_PY
+
+    def test_capability_summary_includes_image(self):
+        """capability_summary must include image in returned dict."""
+        assert '"image"' in _BASE_PY or "'image'" in _BASE_PY
+
+    def test_integrations_section_in_index(self):
+        """cfgsec-verbindung section must exist in index.html."""
+        assert "cfgsec-verbindung" in _INDEX
+
+    def test_legacy_global_provider_config_still_present(self):
+        """Legacy global provider config fields must still be present (backward compat)."""
+        assert "ha_url" in _INDEX
+        assert "ha_token" in _INDEX
 
 
 class TestMobileNavPanelHiding:

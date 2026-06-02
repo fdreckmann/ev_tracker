@@ -149,7 +149,7 @@ async function loadExportTemplates(){
       : '';
     div.innerHTML=`
       <div style="flex:1">
-        <div style="font-weight:700;font-size:.85rem;color:#fff"></div>
+        <div style="font-weight:700;font-size:.85rem;color:var(--ink)"></div>
         <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);margin-top:2px">
           ${colCount} Spalten · ${cellCount} Einzelzellen ${defBadge}
         </div>

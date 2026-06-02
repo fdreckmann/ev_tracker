@@ -15,7 +15,11 @@ async function loadReportConfig(){
     if (s('rep_include_summary'))   s('rep_include_summary').checked     = r.report_email_include_summary !== false;
     if (s('rep_include_signature')) s('rep_include_signature').checked   = !!r.report_email_include_signature;
     if (s('rep_language'))          s('rep_language').value              = r.report_email_language||'auto';
+    if (s('rep_template_id'))       s('rep_template_id').value           = r.report_email_template_id || 'active';
+    if (s('rep_multi_month_mode'))  s('rep_multi_month_mode').value      = r.report_email_multi_month_excel_mode || 'standard_multi_sheet';
     onRepScheduleTypeChange();
+    onRepExcelToggle();
+    loadReportTemplateStatus();
     // Set dynamic fields after render
     setTimeout(() => {
       if (s('rep_time'))         s('rep_time').value         = r.report_email_time||'08:00';
@@ -68,31 +72,116 @@ async function saveReportConfig(){
     report_email_include_summary:  g('rep_include_summary')?.checked!==false,
     report_email_include_signature: g('rep_include_signature')?.checked||false,
     report_email_language:         g('rep_language')?.value||'auto',
+    report_email_template_id:      g('rep_template_id')?.value || 'active',
+    report_email_multi_month_excel_mode: g('rep_multi_month_mode')?.value || 'standard_multi_sheet',
   };
   const st = $('rep_status');
   if (st) { st.textContent = '⏳ Speichere…'; st.style.color = 'var(--mute)'; }
   try {
     const r = await apiFetch('/api/report/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());
     if (st) { st.textContent = r.ok ? '✅ Gespeichert' : '❌ '+(r.error||'Fehler'); st.style.color = r.ok ? '#6ee7b7' : '#f87171'; }
+    loadReportTemplateStatus();
   } catch(e){ if (st) { st.textContent = '❌ '+e.message; st.style.color='#f87171'; } }
 }
 
-async function sendReportNow(isTest){
+// Show/hide the Excel template block when the Excel-Anhang checkbox toggles.
+function onRepExcelToggle(){
+  const on = $('rep_include_excel')?.checked !== false;
+  const blk = $('rep_excel_block');
+  if (blk) blk.style.display = on ? '' : 'none';
+  // Multi-month mode only matters for the multiple_months period mode.
+  const mm = ($('rep_period_mode')?.value === 'multiple_months');
+  const row = $('rep_multi_month_row');
+  if (row) row.style.display = (on && mm) ? '' : 'none';
+}
+
+// Fetch which template the auto-report will use + mapping validity.
+async function loadReportTemplateStatus(){
+  const sel = $('rep_template_id');
+  const out = $('rep_template_status');
+  if (!sel || !out) return;
+  out.textContent = '⏳ Lade Template-Status…';
+  try {
+    const r = await apiFetch('/api/report/template-status').then(r=>r.json());
+    // Rebuild options: active + builtin + uploaded presets.
+    const want = r.template_id || sel.value || 'active';
+    sel.innerHTML = '<option value="active">Aktives Export-Template verwenden</option>'
+                  + '<option value="builtin:standard">Standard-Report ohne Vorlage</option>'
+                  + (r.templates||[]).map(t =>
+                      `<option value="${escapeHtml(t.id)}">Vorlage: ${escapeHtml(t.name||t.id)}</option>`).join('');
+    sel.value = want;
+    if (sel.value !== want) sel.value = 'active';
+    const COLORS = {ok:'#6ee7b7', warning:'#f59e0b', error:'#f87171'};
+    const ICON   = {ok:'✅', warning:'⚠', error:'❌'};
+    let html = `<span style="color:${COLORS[r.status]||'var(--mute)'}">${ICON[r.status]||''} `
+             + `Aktiv: <b>${escapeHtml(r.template_name||'—')}</b> · Mapping: `
+             + (r.status==='ok' ? 'vollständig' : r.status==='warning' ? 'mit Hinweisen' : 'fehlerhaft')
+             + `</span>`;
+    if (r.error)   html += `<div style="color:#f87171;margin-top:4px">${escapeHtml(r.error)}</div>`;
+    (r.warnings||[]).forEach(w => { html += `<div style="color:#f59e0b;margin-top:2px">⚠ ${escapeHtml(w)}</div>`; });
+    out.innerHTML = html;
+  } catch(e){ out.textContent = '❌ '+e.message; }
+}
+
+// Testmail: same attachment logic as the auto-report, to one address only.
+async function sendReportTestMail(){
   const g = id => $(id);
-  const loc = g('rep_location_filter')?.value||'all';
-  const veh = g('rep_vehicle_filter')?.value||'all';
-  const lang = g('rep_language')?.value||'auto';
   const recipients_raw = (g('rep_recipients')?.value||'').split(/[\n,]+/).map(s=>s.trim()).filter(Boolean);
-  const payload = {
-    report_email_location_filter: loc,
-    report_email_vehicle_filter:  veh,
-    report_email_language:        lang,
-    report_email_recipients:      isTest ? recipients_raw.slice(0,1) : recipients_raw,
+  const test_email = prompt('Testmail an (leer = erster Empfänger):', recipients_raw[0]||'');
+  if (test_email === null) return;
+  const payload = _repSendPayload();
+  if (test_email.trim()) payload.test_email = test_email.trim();
+  const st = $('rep_status');
+  if (st) { st.textContent = '⏳ Sende Testmail…'; st.style.color = 'var(--mute)'; }
+  try {
+    const r = await apiFetch('/api/report/test-mail',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json());
+    if (st) { st.textContent = r.ok ? ('✅ Testmail an '+(r.sent_to||[]).join(', ')) : '❌ '+(r.error||'Fehler'); st.style.color = r.ok ? '#6ee7b7' : '#f87171'; }
+  } catch(e){ if (st) { st.textContent = '❌ '+e.message; st.style.color='#f87171'; } }
+}
+
+// Download the exact XLSX the auto-report would attach for the current settings.
+async function downloadReportExcelPreview(){
+  const payload = _repSendPayload();
+  const st = $('rep_status');
+  if (st) { st.textContent = '⏳ Erzeuge Excel-Vorschau…'; st.style.color = 'var(--mute)'; }
+  try {
+    const resp = await fetch('/api/report/excel-preview',{method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify(payload)});
+    if (!resp.ok) {
+      let msg = resp.statusText; try { msg = (await resp.json()).error || msg; } catch(_){}
+      if (st) { st.textContent = '❌ '+msg; st.style.color='#f87171'; }
+      return;
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'EV_Report_Vorschau.xlsx';
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    if (st) { st.textContent = '✅ Excel-Vorschau heruntergeladen'; st.style.color='#6ee7b7'; }
+  } catch(e){ if (st) { st.textContent = '❌ '+e.message; st.style.color='#f87171'; } }
+}
+
+// Shared payload for send-now / test-mail / excel-preview.
+function _repSendPayload(){
+  const g = id => $(id);
+  return {
+    report_email_location_filter: g('rep_location_filter')?.value||'all',
+    report_email_vehicle_filter:  g('rep_vehicle_filter')?.value||'all',
+    report_email_language:        g('rep_language')?.value||'auto',
+    report_email_recipients:      (g('rep_recipients')?.value||'').split(/[\n,]+/).map(s=>s.trim()).filter(Boolean),
     report_email_schedule_type:   g('rep_schedule_type')?.value||'monthly',
     report_email_period_mode:     g('rep_period_mode')?.value||'previous_period',
     report_email_single_month:    g('rep_single_month')?.value||'',
     report_email_months:          _repMonths.slice(),
+    report_email_template_id:     g('rep_template_id')?.value||'active',
+    report_email_include_excel:   g('rep_include_excel')?.checked!==false,
+    report_email_include_signature: g('rep_include_signature')?.checked||false,
+    report_email_multi_month_excel_mode: g('rep_multi_month_mode')?.value||'standard_multi_sheet',
   };
+}
+
+async function sendReportNow(isTest){
+  const payload = _repSendPayload();
+  if (isTest) payload.report_email_recipients = payload.report_email_recipients.slice(0,1);
   const st = $('rep_status');
   if (st) { st.textContent = '⏳ Sende…'; st.style.color = 'var(--mute)'; }
   try {
@@ -117,18 +206,29 @@ async function loadReportHistory(){
         <th style="padding:6px 10px;text-align:left">Datum</th>
         <th style="padding:6px 10px;text-align:left">Zeitraum / Label</th>
         <th style="padding:6px 10px;text-align:left">Filter</th>
-        <th style="padding:6px 10px;text-align:left">Empfänger</th>
+        <th style="padding:6px 10px;text-align:left">Excel</th>
+        <th style="padding:6px 10px;text-align:left">Template</th>
         <th style="padding:6px 10px;text-align:left">Status</th>
         <th style="padding:6px 10px;text-align:left">Auslöser</th>
       </tr></thead>
       <tbody>${rows.map(r=>{
         const recip = (() => { try { return JSON.parse(r.recipients||'[]').join(', '); } catch { return r.recipients||''; } })();
         const color = STATUS_COLORS[r.status]||'var(--mute)';
+        const excelOn = (r.attachment_excel==1 || r.attachment_excel===true);
+        let warns = []; try { warns = JSON.parse(r.template_warnings||'[]'); } catch { warns = []; }
+        const noteParts = [];
+        if (r.excel_error) noteParts.push('Excel-Fehler: '+r.excel_error);
+        if (warns.length)  noteParts.push(warns.join(' · '));
+        const note = noteParts.join(' | ');
+        const excelCell = r.excel_error
+          ? `<span style="color:#f87171" title="${escapeHtml(r.excel_error)}">⚠ nein</span>`
+          : (excelOn ? '<span style="color:#6ee7b7">✓ ja</span>' : '<span style="color:var(--mute)">– nein</span>');
         return `<tr style="border-bottom:1px solid rgba(255,255,255,.04)">
           <td style="padding:5px 10px">${escapeHtml((r.sent_at||'').replace('T',' ').slice(0,16))}</td>
-          <td style="padding:5px 10px">${escapeHtml(r.period_label || ((r.period_start||'') + ' – ' + (r.period_end||'')))}</td>
+          <td style="padding:5px 10px">${escapeHtml(r.period_label || ((r.period_start||'') + ' – ' + (r.period_end||'')))}<br><span style="color:var(--mute);font-size:.68rem">${escapeHtml(recip)}</span></td>
           <td style="padding:5px 10px">${escapeHtml(LOC_LABELS[r.location_filter||'all']||r.location_filter||'alle')}</td>
-          <td style="padding:5px 10px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(recip)}">${escapeHtml(recip)}</td>
+          <td style="padding:5px 10px">${excelCell}</td>
+          <td style="padding:5px 10px;color:var(--mute)" title="${escapeHtml(note)}">${escapeHtml(r.template_name||'—')}${note?' <span style=\"color:#f59e0b\">ⓘ</span>':''}</td>
           <td style="padding:5px 10px;color:${color};font-weight:600">${escapeHtml(r.status||'')}</td>
           <td style="padding:5px 10px;color:var(--mute)">${escapeHtml(r.triggered_by||'')}</td>
         </tr>`;

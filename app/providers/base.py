@@ -21,6 +21,7 @@ class ProviderCapabilities:
     charge_power:   bool = False   # Optional: Ladeleistung kW
     location:       bool = False   # Optional: Standort home/extern
     charge_type:    bool = False   # Optional: AC/DC direkt
+    image:          bool = False   # Optional: liefert ein Fahrzeugbild
     notes:          list = field(default_factory=list)  # Hinweise zur Einschränkung
     official_api:    bool = False   # Offizielle Hersteller-API
     requires_oauth:  bool = False   # Braucht OAuth2 (kein direktes Passwort-Login)
@@ -88,6 +89,7 @@ class BaseProvider:
             "charge_power":   cap.charge_power,
             "location":       cap.location,
             "charge_type":    cap.charge_type,
+            "image":          cap.image,
             "notes":          cap.notes,
             "official_api":    cap.official_api,
             "requires_oauth":  cap.requires_oauth,
