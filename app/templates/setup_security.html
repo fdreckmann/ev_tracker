@@ -92,7 +92,7 @@
     <div id="passkeyMsg"></div>
   </div>
 
-  <a href="/setup/vehicle" class="btn">Weiter → Fahrzeug verbinden</a>
+  <a href="/setup/vehicle" id="btnWeiter" class="btn" style="display:none">✓ Weiter → Fahrzeug verbinden</a>
   <a href="/setup/vehicle" class="btn btn-skip">Überspringen → Fahrzeug verbinden</a>
 </div>
 
@@ -125,6 +125,7 @@ async function confirmTotp(){
   if(r.ok){
     showMsg('totpMsg','✓ 2FA erfolgreich aktiviert','ok');
     document.getElementById('totpQrWrap').style.display='none';
+    document.getElementById('btnWeiter').style.display='block';
   } else {
     showMsg('totpMsg',r.error||'Falscher Code','err');
   }
@@ -162,6 +163,7 @@ async function addPasskey(){
     const res = await apiFetch('/api/auth/passkey/register/complete',{method:'POST',body:JSON.stringify(body)});
     msg.textContent = res.ok ? '✓ Passkey gespeichert' : (res.error||'Fehler beim Speichern');
     msg.style.display='block';
+    if(res.ok) document.getElementById('btnWeiter').style.display='block';
   } catch(e){
     msg.textContent = e.name==='NotAllowedError' ? 'Abgebrochen.' : (e.message||String(e));
     msg.style.display='block';
