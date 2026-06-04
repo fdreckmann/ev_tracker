@@ -1747,6 +1747,15 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             <input type="number" id="c_hc_min_kwh" placeholder="1.0" min="0.1" max="100" step="0.1" style="max-width:160px">
           </div>
           <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr;margin-top:10px">
+            <div><label>Leitungszähler Start-Schwelle (kW)</label>
+              <input type="number" id="c_hc_line_power_start" placeholder="1.4" min="0.1" max="50" step="0.1"></div>
+            <div><label>Leitungszähler Stop-Schwelle (kW)</label>
+              <input type="number" id="c_hc_line_power_stop" placeholder="0.3" min="0" max="50" step="0.1"></div>
+          </div>
+          <div style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-top:4px;line-height:1.5">
+            Konservativere Schwellen für Leitungszähler (Tasmota/Shelly), die nicht nur die Ladung, sondern die ganze Leitung messen — verhindert, dass Haushaltslasten als Ladung erkannt werden.
+          </div>
+          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr;margin-top:10px">
             <div>
               <label>Zuordnungsmodus</label>
               <select id="c_hc_assignment_mode">
@@ -4058,6 +4067,8 @@ async function loadConfig(){
   if($('c_hc_debounce_start'))    $('c_hc_debounce_start').value     = c.home_charge_start_debounce_seconds  ?? 120;
   if($('c_hc_debounce_stop'))     $('c_hc_debounce_stop').value      = c.home_charge_stop_debounce_seconds   ?? 300;
   if($('c_hc_min_kwh'))           $('c_hc_min_kwh').value            = c.home_charge_min_energy_kwh          ?? 1.0;
+  if($('c_hc_line_power_start'))  $('c_hc_line_power_start').value   = c.home_charge_line_meter_power_start_threshold_kw ?? 1.4;
+  if($('c_hc_line_power_stop'))   $('c_hc_line_power_stop').value    = c.home_charge_line_meter_power_stop_threshold_kw  ?? 0.3;
   if($('c_hc_assignment_mode'))   $('c_hc_assignment_mode').value    = c.home_charge_vehicle_assignment_mode || 'always_ask_if_unclear';
   if($('c_hc_default_vehicle'))   $('c_hc_default_vehicle').value    = c.home_charge_default_vehicle_id      || '';
   if($('c_hc_allow_probable'))    $('c_hc_allow_probable').checked   = !!c.home_charge_allow_probable_assignment;
@@ -6425,6 +6436,8 @@ async function saveHomeChargeConfig() {
     home_charge_start_debounce_seconds:     parseInt(g('c_hc_debounce_start'))  || 120,
     home_charge_stop_debounce_seconds:      parseInt(g('c_hc_debounce_stop'))   || 300,
     home_charge_min_energy_kwh:             parseFloat(g('c_hc_min_kwh'))       || 1.0,
+    home_charge_line_meter_power_start_threshold_kw: parseFloat(g('c_hc_line_power_start')) || 1.4,
+    home_charge_line_meter_power_stop_threshold_kw:  parseFloat(g('c_hc_line_power_stop'))  || 0.3,
     home_charge_vehicle_assignment_mode:    g('c_hc_assignment_mode') || 'always_ask_if_unclear',
     home_charge_default_vehicle_id:         g('c_hc_default_vehicle'),
     home_charge_allow_probable_assignment:  gb('c_hc_allow_probable'),

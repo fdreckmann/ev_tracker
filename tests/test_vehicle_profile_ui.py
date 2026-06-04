@@ -232,3 +232,36 @@ class TestProfilePermissionGate:
             headers={"X-CSRF-Token": "test-csrf-token"},
         )
         assert rv.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# 5 — line_meter threshold keys round-trip via /api/config
+# ---------------------------------------------------------------------------
+
+class TestLineMeterConfigKeys:
+    def test_line_meter_thresholds_saved_and_loaded(self, authed_client, app):
+        """home_charge_line_meter_power_*_threshold_kw round-trip through /api/config."""
+        payload = {
+            "home_charge_line_meter_power_start_threshold_kw": 1.8,
+            "home_charge_line_meter_power_stop_threshold_kw": 0.4,
+        }
+        rv = authed_client.post(
+            "/api/config",
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        assert rv.status_code == 200
+
+        with app.app_context():
+            from core.config import load_config, _config_cache
+            _config_cache["data"] = None
+            cfg = load_config()
+
+        assert cfg["home_charge_line_meter_power_start_threshold_kw"] == 1.8
+        assert cfg["home_charge_line_meter_power_stop_threshold_kw"] == 0.4
+
+    def test_line_meter_defaults_preserved_when_not_sent(self, authed_client, app):
+        """Default 1.4 / 0.3 are in DEFAULT_CONFIG and returned when not overridden."""
+        from core.config import DEFAULT_CONFIG
+        assert DEFAULT_CONFIG["home_charge_line_meter_power_start_threshold_kw"] == 1.4
+        assert DEFAULT_CONFIG["home_charge_line_meter_power_stop_threshold_kw"] == 0.3
