@@ -27,7 +27,13 @@ async function loadVehicleList() {
       '<div style="font-size:.72rem;font-family:var(--mono);color:'+(active?'var(--acc)':'var(--mute)')+'">' +
         (active?'● Aktiv':'○ Inaktiv') +
       '</div>' +
+      '<button class="btn-g" style="font-size:.72rem;padding:5px 12px;margin-right:4px" data-profil-vid="'+_eh(v.id)+'">⚙ Profil</button>'+
       '<button class="btn-s" style="font-size:.72rem;padding:5px 12px" data-vid="'+_eh(v.id)+'">✏ Bearbeiten</button>';
+    var profilBtn = row.querySelector('.btn-g[data-profil-vid]');
+    if (profilBtn) profilBtn.addEventListener('click', function(){
+      if(typeof openVehicleProfile === 'function') openVehicleProfile(this.dataset.profilVid);
+      else cfgSection('fahrzeug-profil', $('navBtnFahrzeugProfil'));
+    });
     var editBtn = row.querySelector('.btn-s[data-vid]');
     if (editBtn) editBtn.addEventListener('click', function(){ openEditVehicleModal(this.dataset.vid); });
     el.appendChild(row);

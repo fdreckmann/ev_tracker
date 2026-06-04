@@ -738,6 +738,19 @@ def init_db():
     con.execute("""CREATE INDEX IF NOT EXISTS idx_charge_evidence_session
                    ON charge_evidence(session_id)""")
 
+    # vehicle_user_assignments — Fuhrpark-Vorkehrung (PR 11, §6): heute leer,
+    # keine Lese-/Schreiblogik. Phase F dockt hier an.
+    con.execute("""CREATE TABLE IF NOT EXISTS vehicle_user_assignments (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        vehicle_id TEXT NOT NULL,
+        user_id    INTEGER NOT NULL,
+        created_at TEXT NOT NULL
+    )""")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_vua_vehicle
+                   ON vehicle_user_assignments(vehicle_id)""")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_vua_user
+                   ON vehicle_user_assignments(user_id)""")
+
     # sessions additive extension for wallbox assignment tracking
     for _col in [
         "source_primary TEXT NULL",

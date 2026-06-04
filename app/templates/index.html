@@ -264,6 +264,19 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   text-transform:uppercase;letter-spacing:.14em;padding:14px 10px 4px;user-select:none}
 .cfg-grp-label:first-child{padding-top:6px}
 .cfg-section{}
+/* PR 11 — Fahrzeug-Profil Tabs */
+.vprofil-tab{background:transparent;border:1px solid var(--brd);color:var(--mute);
+  border-radius:8px;padding:6px 14px;cursor:pointer;font-size:.78rem;transition:all .15s}
+.vprofil-tab:hover{border-color:var(--acc2);color:var(--acc2)}
+.vprofil-tab.active{background:var(--brd2);border-color:var(--acc2);color:var(--acc2)}
+@media(max-width:540px){
+  #vprofil_tabs{display:none}
+  .vprofil-tab-content{display:block!important;margin-bottom:8px}
+  .vprofil-tab-content::before{content:attr(data-label);display:block;
+    font-size:.65rem;font-family:var(--mono);color:var(--mute);
+    text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px;
+    padding-bottom:6px;border-bottom:1px solid var(--brd)}
+}
 .cfg-sec-title{font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;
   letter-spacing:.12em;margin-bottom:18px;display:flex;align-items:center;gap:10px}
 .cfg-sec-title::after{content:'';flex:1;height:1px;background:var(--brd)}
@@ -957,6 +970,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <!-- 3. Fahrzeuge -->
       <div class="cfg-grp-label">Fahrzeuge</div>
       <button class="cfg-nav-btn cfg-nav-sub active" onclick="cfgSection('fahrzeuge',this)">🚗 Fahrzeuge</button>
+      <button id="navBtnFahrzeugProfil" class="cfg-nav-btn cfg-nav-sub" style="display:none" onclick="cfgSection('fahrzeug-profil',this)">← Profil</button>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('verbindung',this)">🔌 Integrationen &amp; API</button>
 
       <!-- 4. Laden & Kosten -->
@@ -1000,6 +1014,89 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         </p>
         <div id="vehicleList" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px"></div>
         <button class="btn-p" style="font-size:.78rem;padding:8px 18px" onclick="openAddVehicleModal()">+ Fahrzeug hinzufügen</button>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════════
+           FAHRZEUG-PROFIL (PR 11) — fahrzeugzentrierte Konfig
+           ══════════════════════════════════════════════════════════ -->
+      <div id="cfgsec-fahrzeug-profil" class="cfg-section" style="display:none">
+        <!-- Kopfzeile mit Fahrzeugname + Zurück-Link -->
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
+          <button class="btn-g" style="padding:6px 12px;font-size:.78rem"
+                  onclick="cfgSection('fahrzeuge',document.querySelector('#cfgNav [onclick*=\'cfgSection(\\\'fahrzeuge\\\'\']'))">
+            ← Alle Fahrzeuge
+          </button>
+          <div style="flex:1">
+            <div id="vprofil_title" style="font-size:1.05rem;font-weight:700"></div>
+            <div id="vprofil_subtitle" style="font-size:.72rem;font-family:var(--mono);color:var(--mute)"></div>
+          </div>
+          <span id="vprofil_badge_ohc" style="display:none;background:rgba(245,158,11,.15);
+                color:#f0b54f;border:1px solid rgba(245,158,11,.35);border-radius:20px;
+                padding:3px 10px;font-size:.72rem;font-family:var(--mono);white-space:nowrap"></span>
+        </div>
+
+        <!-- Tab-Navigation (Desktop) / Accordion-Trigger-Labels (Mobile via CSS) -->
+        <div id="vprofil_tabs" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;border-bottom:1px solid var(--brd);padding-bottom:10px">
+          <button class="vprofil-tab active" data-tab="verbindung"  onclick="vprofilTab('verbindung',this)">🔌 Verbindung</button>
+          <button class="vprofil-tab"        data-tab="zaehler"     onclick="vprofilTab('zaehler',this)">⚡ Wallbox &amp; Zähler</button>
+          <button class="vprofil-tab"        data-tab="heimladung"  onclick="vprofilTab('heimladung',this)">🏠 Heimladung &amp; Tarif</button>
+          <button class="vprofil-tab"        data-tab="verlauf"     onclick="vprofilTab('verlauf',this)">📋 Verlauf</button>
+        </div>
+
+        <!-- Tab-Inhalt: Verbindung / Provider -->
+        <div id="vprofil_tab_verbindung" class="vprofil-tab-content">
+          <div class="form-grid" id="vprofil_providerFields_wrap">
+            <div class="fg full">
+              <label>Datenquelle</label>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px;margin-top:8px"
+                   id="vprofil_providerGrid"></div>
+              <input type="hidden" id="vprofil_provider">
+            </div>
+          </div>
+          <div id="vprofil_providerNotes" style="margin-top:10px"></div>
+          <div class="form-grid" id="vprofil_providerFields" style="margin-top:12px"></div>
+          <div style="margin-top:14px">
+            <button class="btn-g" onclick="vprofilTestConn()">🔗 Verbindung testen</button>
+            <button class="btn-g" onclick="vprofilRestartTracker()">↺ Tracker neu starten</button>
+            <div class="conn-res" id="vprofil_connRes"></div>
+          </div>
+          <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--brd)">
+            <label>Batteriekapazität (kWh)</label>
+            <input type="number" id="vprofil_bat" placeholder="77.0" step="0.1" min="1" style="max-width:160px">
+            <label style="margin-top:10px;display:block">Polling-Intervall (s)</label>
+            <input type="number" id="vprofil_poll" placeholder="60" min="30" max="600" style="max-width:160px">
+          </div>
+          <div class="btn-row" style="margin-top:16px">
+            <button class="btn-p" data-requires-permission="admin:all"
+                    onclick="vprofilSaveVerbindung()">💾 Verbindung speichern</button>
+          </div>
+        </div>
+
+        <!-- Tab-Inhalt: Wallbox & Zähler (wird in Schritt 2 befüllt) -->
+        <div id="vprofil_tab_zaehler" class="vprofil-tab-content" style="display:none">
+          <p style="font-size:.78rem;color:var(--mute);font-family:var(--mono)">
+            Zähler &amp; Wallbox-Konfiguration für dieses Fahrzeug — folgt in Schritt 2.
+          </p>
+        </div>
+
+        <!-- Tab-Inhalt: Heimladung & Tarif (wird in Schritt 2 befüllt) -->
+        <div id="vprofil_tab_heimladung" class="vprofil-tab-content" style="display:none">
+          <p style="font-size:.78rem;color:var(--mute);font-family:var(--mono)">
+            Heimladung &amp; Tarif für dieses Fahrzeug — folgt in Schritt 2.
+          </p>
+        </div>
+
+        <!-- Tab-Inhalt: Verlauf / Beweise -->
+        <div id="vprofil_tab_verlauf" class="vprofil-tab-content" style="display:none">
+          <div id="vprofil_verlauf_list" style="display:flex;flex-direction:column;gap:10px">
+            <p style="font-size:.78rem;color:var(--mute);font-family:var(--mono)">Lade Verlauf…</p>
+          </div>
+          <!-- Offene Heimladungen zur Bestätigung -->
+          <div id="vprofil_ohc_list" style="margin-top:18px;display:none">
+            <div class="cfg-sec-title" style="margin-bottom:10px">Offene Heimladungen — Bestätigung</div>
+            <div id="vprofil_ohc_rows" style="display:flex;flex-direction:column;gap:8px"></div>
+          </div>
+        </div>
       </div>
 
       <!-- VERBINDUNG -->
@@ -7052,6 +7149,10 @@ function cfgSection(id, btn){
   if(id==='notif-rules')   { loadNotifRules(); }
   if(id==='notifications') { loadNotifSettings(); }
   if(id==='kanaele')       { loadKanaeleStatus(); }
+  if(id==='fahrzeug-profil') { _vprofilOnOpen(); }
+  // Show/hide the Profil back-button in the nav
+  const navProfil = $('navBtnFahrzeugProfil');
+  if(navProfil) navProfil.style.display = (id==='fahrzeug-profil') ? '' : 'none';
 }
 
 async function loadKanaeleStatus(){
@@ -8625,6 +8726,211 @@ function testNotifChannel(channel) {
 
 <!-- ========= FLOATING ACTION BUTTON ========= -->
 <div id="fab">
+  <!-- ── PR 11: Fahrzeug-Profil JS ──────────────────────────────────────── -->
+  <script>
+  // Active vehicle in the profile view
+  var _vprofilVid = null;
+
+  function openVehicleProfile(vid) {
+    _vprofilVid = vid;
+    cfgSection('fahrzeug-profil', $('navBtnFahrzeugProfil'));
+  }
+
+  function vprofilTab(name, btn) {
+    document.querySelectorAll('.vprofil-tab-content').forEach(function(el){el.style.display='none';});
+    document.querySelectorAll('.vprofil-tab').forEach(function(b){b.classList.remove('active');});
+    var tab = $('vprofil_tab_'+name);
+    if(tab) tab.style.display='';
+    if(btn) btn.classList.add('active');
+    if(name==='verlauf') _vprofilLoadVerlauf();
+  }
+
+  async function _vprofilOnOpen() {
+    if(!_vprofilVid) return;
+    var vehicles = await fetch('/api/vehicles').then(function(r){return r.json();}).catch(function(){return [];});
+    var v = vehicles.find(function(x){return x.id===_vprofilVid;}) || {};
+    $('vprofil_title').textContent = v.name || _vprofilVid;
+    $('vprofil_subtitle').textContent = 'ID: '+_vprofilVid+' · '+((v.provider)||'kein Provider');
+    // Open home charges badge
+    var ohcBadge = $('vprofil_badge_ohc');
+    if(ohcBadge) {
+      try {
+        var st = await fetch('/api/status?vehicle_id='+encodeURIComponent(_vprofilVid)).then(function(r){return r.json();});
+        var n = st.open_home_charges || 0;
+        if(n > 0){ ohcBadge.textContent = '⚠ '+n+' offen'; ohcBadge.style.display=''; }
+        else ohcBadge.style.display='none';
+      } catch(e){ ohcBadge.style.display='none'; }
+    }
+    // Reset to first tab
+    vprofilTab('verbindung', document.querySelector('.vprofil-tab[data-tab="verbindung"]'));
+    await _vprofilLoadVerbindung(v);
+  }
+
+  async function _vprofilLoadVerbindung(v) {
+    var provs = await fetch('/api/providers').then(function(r){return r.json();}).catch(function(){return [];});
+    var grid = $('vprofil_providerGrid');
+    if(!grid) return;
+    grid.innerHTML = '';
+    var currentProvider = v.provider || 'ha';
+    $('vprofil_provider').value = currentProvider;
+    provs.forEach(function(p){
+      var selected = p.provider_id === currentProvider;
+      var card = document.createElement('div');
+      card.id = 'vpcard_'+p.provider_id;
+      card.onclick = function(){ _vprofilSelectProvider(p.provider_id); };
+      card.style.cssText = 'background:var(--bg);border:2px solid '+(selected?'var(--acc)':'var(--brd)')+
+        ';border-radius:10px;padding:12px 14px;cursor:pointer;transition:all .15s';
+      card.innerHTML = '<div style="font-weight:700;font-size:.8rem;color:'+(selected?'var(--acc)':'#fff')+'">'+
+        _eh(p.provider_name)+'</div>'+
+        '<div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);margin-top:5px;line-height:1.7">'+
+        (p.charging_state?'✅':'❌')+' Laden &nbsp;'+(p.soc?'✅':'❌')+' SOC<br>'+
+        (p.odometer?'✅':'❌')+' KM &nbsp;'+(p.charge_power?'✅':'❌')+' kW &nbsp;'+(p.location?'✅':'❌')+' Standort</div>';
+      grid.appendChild(card);
+    });
+    await _vprofilLoadProviderFields(currentProvider, v);
+    // Tracker settings
+    var batEl = $('vprofil_bat'); var pollEl = $('vprofil_poll');
+    if(batEl) batEl.value = v.battery_capacity_kwh || '77.0';
+    if(pollEl) pollEl.value = v.poll_interval || '60';
+  }
+
+  async function _vprofilSelectProvider(pid) {
+    $('vprofil_provider').value = pid;
+    document.querySelectorAll('[id^="vpcard_"]').forEach(function(c){
+      var sel = c.id === 'vpcard_'+pid;
+      c.style.borderColor = sel ? 'var(--acc)' : 'var(--brd)';
+      c.querySelector('div').style.color = sel ? 'var(--acc)' : '#fff';
+    });
+    await _vprofilLoadProviderFields(pid, null);
+  }
+
+  async function _vprofilLoadProviderFields(pid, existingVehicle) {
+    var fields = await fetch('/api/providers/'+encodeURIComponent(pid)+'/fields')
+                        .then(function(r){return r.json();}).catch(function(){return [];});
+    var container = $('vprofil_providerFields');
+    if(!container) return;
+    container.innerHTML = '';
+    fields.forEach(function(f){
+      var wrap = document.createElement('div'); wrap.className = 'fg full';
+      var val = existingVehicle ? (existingVehicle[f.id]||'') : '';
+      if(f.type==='select'){
+        wrap.innerHTML = '<label>'+_eh(f.label)+'</label>'+
+          '<select id="vpf_'+_eh(f.id)+'">'+(f.options||[]).map(function(o){
+            return '<option value="'+_eh(o)+'"'+(o===val?' selected':'')+'>'+_eh(o)+'</option>';
+          }).join('')+'</select>'+(f.hint?'<span class="hint">'+_eh(f.hint)+'</span>':'');
+      } else {
+        var masked = (f.type==='password' && val) ? '********' : val;
+        wrap.innerHTML = '<label>'+_eh(f.label)+(f.required?' *':'')+'</label>'+
+          '<input id="vpf_'+_eh(f.id)+'" type="'+(f.type||'text')+'" placeholder="'+_eh(f.placeholder||'')+'" value="'+_eh(masked)+'">'+
+          (f.hint?'<span class="hint">'+_eh(f.hint)+'</span>':'');
+      }
+      container.appendChild(wrap);
+    });
+  }
+
+  async function vprofilSaveVerbindung() {
+    if(!_vprofilVid){ toast('Kein Fahrzeug aktiv','err'); return; }
+    var pid = $('vprofil_provider') ? $('vprofil_provider').value : 'ha';
+    var fields = await fetch('/api/providers/'+encodeURIComponent(pid)+'/fields')
+                        .then(function(r){return r.json();}).catch(function(){return [];});
+    var payload = { provider: pid };
+    fields.forEach(function(f){
+      var el = $('vpf_'+f.id); if(!el) return;
+      if(f.type==='password' && (!el.value || el.value==='********')) return;
+      payload[f.id] = el.value;
+    });
+    var batEl = $('vprofil_bat'); var pollEl = $('vprofil_poll');
+    if(batEl && batEl.value) payload.battery_capacity_kwh = parseFloat(batEl.value);
+    if(pollEl && pollEl.value) payload.poll_interval = parseInt(pollEl.value);
+    var resp = await apiFetch('/api/vehicles/'+encodeURIComponent(_vprofilVid), {method:'PUT', body:JSON.stringify(payload)});
+    var r = await resp.json().catch(function(){return {};});
+    if(resp.ok && r.ok){ toast('✓ Verbindung gespeichert'); }
+    else { toast(r.error||'Fehler beim Speichern','err'); }
+  }
+
+  async function vprofilTestConn() {
+    var pid = $('vprofil_provider') ? $('vprofil_provider').value : 'ha';
+    var fields = await fetch('/api/providers/'+encodeURIComponent(pid)+'/fields')
+                        .then(function(r){return r.json();}).catch(function(){return [];});
+    var payload = { provider: pid, vehicle_id: _vprofilVid || 'v0' };
+    fields.forEach(function(f){
+      var el = $('vpf_'+f.id); if(!el) return;
+      if(f.type==='password' && (!el.value || el.value==='********')) return;
+      payload[f.id] = el.value;
+    });
+    var resBox = $('vprofil_connRes'); if(!resBox) return;
+    resBox.textContent = '⏳ Teste…'; resBox.className='conn-res';
+    var r = await apiFetch('/api/vehicles/test-connection', {method:'POST', body:JSON.stringify(payload)})
+                  .then(function(x){return x.json();}).catch(function(){return {ok:false,message:'Netzwerkfehler'};});
+    if(r.ok){ resBox.textContent='✅ Verbindung erfolgreich'; resBox.className='conn-res ok'; }
+    else { resBox.textContent='❌ '+(r.message||'Fehler'); resBox.className='conn-res err'; }
+  }
+
+  async function vprofilRestartTracker() {
+    if(!_vprofilVid) return;
+    await apiFetch('/api/tracker/restart', {method:'POST', body:JSON.stringify({vehicle_id:_vprofilVid})})
+          .catch(function(){});
+    toast('Tracker wird neu gestartet…');
+  }
+
+  async function _vprofilLoadVerlauf() {
+    var list = $('vprofil_verlauf_list'); if(!list||!_vprofilVid) return;
+    list.innerHTML = '<p style="font-size:.78rem;color:var(--mute);font-family:var(--mono)">Lade…</p>';
+    try {
+      var rows = await fetch('/api/wallbox/sessions?limit=30').then(function(r){return r.json();});
+      var relevant = rows.filter(function(r){ return r.vehicle_id===_vprofilVid || r.vehicle_assignment_status==='unassigned'; });
+      if(!relevant.length){ list.innerHTML='<p style="font-size:.78rem;color:var(--mute);font-family:var(--mono)">Keine Einträge.</p>'; return; }
+      list.innerHTML = relevant.map(function(r){
+        var signals = []; try{ signals=JSON.parse(r.signal_sources||'[]'); }catch(e){}
+        var badge = r.vehicle_assignment_status==='confirmed'
+          ? '<span style="color:var(--acc);font-size:.68rem">✓ confirmed</span>'
+          : r.vehicle_assignment_status==='probable'
+          ? '<span style="color:var(--warn);font-size:.68rem">~ probable</span>'
+          : '<span style="color:var(--mute);font-size:.68rem">? unassigned</span>';
+        var sourceStr = signals.length ? signals.join('+') : (r.kwh_source_detail||'—');
+        var kwh = r.energy_kwh!=null ? r.energy_kwh.toFixed(2)+' kWh' : '—';
+        var dt = r.start_ts ? r.start_ts.substring(0,16).replace('T',' ') : '—';
+        return '<div style="display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--brd);'+
+          'border-radius:8px;padding:10px 14px;font-size:.78rem">'+
+          '<div style="flex:1"><span style="font-family:var(--mono);color:var(--mute);font-size:.68rem">'+_eh(dt)+'</span>'+
+          ' <strong>'+_eh(kwh)+'</strong>'+
+          ' <span style="color:var(--mute);font-size:.7rem">· '+_eh(sourceStr)+'</span></div>'+
+          badge+'</div>';
+      }).join('');
+      // Open charges for confirmation
+      var open = relevant.filter(function(r){return r.vehicle_assignment_status==='unassigned'&&(r.status==='completed'||r.status==='unassigned');});
+      var ohcDiv = $('vprofil_ohc_list'); var ohcRows = $('vprofil_ohc_rows');
+      if(ohcDiv && ohcRows){
+        if(open.length){
+          ohcDiv.style.display='';
+          ohcRows.innerHTML = open.map(function(r){
+            var kwh = r.energy_kwh!=null?r.energy_kwh.toFixed(2)+' kWh':'?';
+            var dt = r.start_ts?r.start_ts.substring(0,16).replace('T',' '):'?';
+            return '<div style="display:flex;align-items:center;gap:8px;background:rgba(245,158,11,.06);'+
+              'border:1px solid rgba(245,158,11,.25);border-radius:8px;padding:10px 14px;font-size:.8rem">'+
+              '<div style="flex:1"><span style="color:var(--mute);font-size:.7rem">'+_eh(dt)+'</span>'+
+              ' <strong>'+_eh(kwh)+'</strong></div>'+
+              '<button class="btn-g" style="padding:5px 10px;font-size:.74rem" '+
+              'data-requires-permission="sessions:edit" '+
+              'onclick="wallboxAssignFromProfile('+r.id+',\''+_vprofilVid+'\')">✓ Mir</button>'+
+              '<button class="btn-g" style="padding:5px 10px;font-size:.74rem" '+
+              'onclick="wallboxMarkForeign('+r.id+')">🚗 Fremd</button>'+
+              '<button class="btn-g" style="padding:5px 10px;font-size:.74rem" '+
+              'onclick="wallboxIgnore('+r.id+')">✕</button></div>';
+          }).join('');
+        } else { ohcDiv.style.display='none'; }
+      }
+    } catch(e){ list.innerHTML='<p style="color:var(--danger);font-size:.78rem">Fehler beim Laden.</p>'; }
+  }
+
+  async function wallboxAssignFromProfile(wbsId, vid){
+    var r = await apiFetch('/api/wallbox/sessions/'+wbsId+'/assign',{method:'POST',body:JSON.stringify({vehicle_id:vid})})
+                  .then(function(x){return x.json();}).catch(function(){return {ok:false};});
+    if(r.ok){ toast('Zugewiesen'); _vprofilLoadVerlauf(); }
+    else toast(r.error||'Fehler','err');
+  }
+  </script>
+
   <div class="fab-menu" id="fabMenu">
     <div class="fab-item" onclick="closeFab();mobileNavTo('sessions');mobileQuickAddSession()">➕ Ladevorgang</div>
     <div class="fab-item" onclick="closeFab();mobileNavTo('export');initMobileExport()">📥 Export erstellen</div>
