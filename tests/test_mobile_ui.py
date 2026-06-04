@@ -281,8 +281,8 @@ class TestProviderVehicleUI:
         assert '"image"' in _BASE_PY or "'image'" in _BASE_PY
 
     def test_integrations_section_in_index(self):
-        """cfgsec-verbindung section must exist in index.html."""
-        assert "cfgsec-verbindung" in _INDEX
+        """Global API overview section must exist in index.html."""
+        assert "cfgsec-fahrzeug-status" in _INDEX
 
     def test_legacy_global_provider_config_still_present(self):
         """Legacy global provider config fields must still be present (backward compat)."""

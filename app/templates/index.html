@@ -971,7 +971,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <div class="cfg-grp-label">Fahrzeuge</div>
       <button class="cfg-nav-btn cfg-nav-sub active" onclick="cfgSection('fahrzeuge',this)">🚗 Fahrzeuge</button>
       <button id="navBtnFahrzeugProfil" class="cfg-nav-btn cfg-nav-sub" style="display:none" onclick="cfgSection('fahrzeug-profil',this)">← Profil</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('verbindung',this)">🔌 Integrationen &amp; API</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('fahrzeug-status',this)">📡 API-Übersicht</button>
 
       <!-- 4. Laden & Kosten -->
       <div class="cfg-grp-label">Laden &amp; Kosten</div>
@@ -1362,16 +1362,13 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         </div>
       </div>
 
-      <!-- VERBINDUNG -->
-      <div id="cfgsec-verbindung" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">Integrationen &amp; API-Übersicht</div>
+      <!-- FAHRZEUG-STATUS / API-ÜBERSICHT (global) -->
+      <div id="cfgsec-fahrzeug-status" class="cfg-section" style="display:none">
+        <div class="cfg-sec-title">API-Funktionsübersicht</div>
         <div style="background:var(--info-bg);border:1px solid var(--brd);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:.82rem;line-height:1.6">
           Provider/API werden <strong>pro Fahrzeug</strong> eingerichtet:
           <a href="#" onclick="cfgSection('fahrzeuge',document.querySelector('#cfgNav [onclick*=fahrzeuge]'));return false" style="color:var(--acc2)">Konfiguration → Fahrzeuge</a>.
           Diese Übersicht zeigt nur, welche Datenquelle welche Werte liefert — sie ändert keine Konfiguration.
-          <div style="margin-top:10px">
-            <button class="btn-g" type="button" onclick="openEditVehicleModal('v0')">🚗 Primärfahrzeug bearbeiten</button>
-          </div>
         </div>
 
         <div class="sec-lbl">API-Funktionsübersicht</div>
@@ -1398,70 +1395,6 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             </tbody>
           </table>
         </div>
-
-        <details style="margin-top:8px">
-          <summary style="cursor:pointer;color:var(--mute);font-size:.74rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;padding:8px 0">Erweitert: Primärfahrzeug (v0) global konfigurieren — Kompatibilität</summary>
-          <div style="margin-top:14px">
-        <div class="form-grid">
-          <div class="fg full"><label>Fahrzeugname</label>
-            <input id="c_car" value="{{ cfg.car_name }}"></div>
-          <div class="fg full">
-            <label>Datenquelle</label>
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px;margin-top:8px" id="providerGrid">
-              {% for p in all_providers %}
-              <div onclick="selectProvider('{{ p.provider_id }}')" id="pcard_{{ p.provider_id }}"
-                style="background:var(--bg);border:2px solid {% if cfg.provider==p.provider_id %}var(--acc){% else %}var(--brd){% endif %};
-                border-radius:10px;padding:12px 14px;cursor:pointer;transition:all .15s">
-                <div style="font-weight:700;font-size:.8rem;color:{% if cfg.provider==p.provider_id %}var(--acc){% else %}#fff{% endif %}">
-                  {{ p.provider_name }}</div>
-                <div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);margin-top:5px;line-height:1.7">
-                  {% if p.charging_state %}✅{% else %}❌{% endif %} Laden &nbsp;
-                  {% if p.soc %}✅{% else %}❌{% endif %} SOC<br>
-                  {% if p.odometer %}✅{% else %}❌{% endif %} KM &nbsp;
-                  {% if p.charge_power %}✅{% else %}❌{% endif %} kW &nbsp;
-                  {% if p.location %}✅{% else %}❌{% endif %} Standort
-                </div>
-              </div>
-              {% endfor %}
-            </div>
-            <input type="hidden" id="c_provider" value="{{ cfg.provider }}">
-          </div>
-        </div>
-        {% for p in all_providers %}{% if p.notes %}
-        <div id="notes_{{ p.provider_id }}" style="display:{% if cfg.provider==p.provider_id %}block{% else %}none{% endif %};
-          margin-top:12px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);
-          border-radius:8px;padding:10px 14px;font-size:.72rem;font-family:var(--mono);color:var(--warn);line-height:1.8">
-          {% for note in p.notes %}⚠ {{ note }}<br>{% endfor %}</div>
-        {% endif %}{% endfor %}
-
-        <div style="margin-top:18px">
-          <div class="cfg-sec-title">Provider &amp; API</div>
-          <div class="form-grid" id="providerFields"></div>
-          <div style="margin-top:14px">
-            <button class="btn-g" onclick="testConn()">🔗 Verbindung testen</button>
-            <button class="btn-g" onclick="restartTracker()" id="btnRestartTracker">Tracker neu starten</button>
-            <div class="conn-res" id="connRes"></div>
-          </div>
-        </div>
-
-        <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--brd)">
-          <div class="cfg-sec-title">Tracker-Einstellungen</div>
-          <div class="form-grid">
-            <div class="fg"><label>Batteriekapazität (kWh)</label>
-              <input type="number" id="c_bat" value="{{ cfg.battery_capacity_kwh }}" step="0.1" min="1">
-              <span class="hint">Für Schätzungen bei fehlenden kWh-Werten</span></div>
-            <div class="fg"><label>Polling-Intervall (s)</label>
-              <input type="number" id="c_poll" value="{{ cfg.poll_interval }}" min="30" max="600">
-              <span class="hint">Abfrageintervall des Providers (30–600 s)</span></div>
-          </div>
-        </div>
-
-        <div class="btn-row">
-          <button class="btn-p" onclick="saveConfig()">💾 Speichern</button>
-          <button class="btn-s" onclick="loadConfig()">↺ Zurücksetzen</button>
-        </div>
-          </div>
-        </details>
       </div>
 
       <!-- LADEVORGANG-ERKENNUNG -->
