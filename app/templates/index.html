@@ -975,8 +975,6 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
       <!-- 4. Laden & Kosten -->
       <div class="cfg-grp-label">Laden &amp; Kosten</div>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('zaehler',this)">🔌 Zähler &amp; Wallbox</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('tarif',this)" data-requires-permission="tariffs:view">🏠 Zuhause laden</button>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('ladeabos',this)" data-requires-permission="public_charging:view">🌐 Öffentlich laden</button>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('ladevorgang',this)">🔍 Ladevorgang-Erkennung</button>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('abrechnung',this)" data-requires-permission="billing:view">💼 Abrechnung</button>
@@ -1581,211 +1579,6 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         </div>
       </div>
 
-      <!-- ZÄHLERSTAND -->
-      <div id="cfgsec-zaehler" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">Zähler &amp; Wallbox</div>
-        <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
-          Wird beim Start und Ende jeder Ladesession automatisch abgelesen.
-        </p>
-        <div class="fg full" style="margin-bottom:10px">
-          <label>Quelle</label>
-          <select id="c_meter_source" onchange="updateMeterSourceUI()">
-            <option value="none">— Keine / manuell —</option>
-            <optgroup label="Smarte Steckdosen / Energiemesser">
-              <option value="ha">Home Assistant Sensor</option>
-              <option value="shelly">Shelly EM / 1PM (lokal)</option>
-              <option value="tasmota">Tasmota (lokal)</option>
-            </optgroup>
-            <optgroup label="Wallboxen">
-              <option value="go_e">go-e Charger (v1 + v2)</option>
-              <option value="openwb">openWB (v1 / Series 2)</option>
-              <option value="warp">WARP Charger 1 / 2 / 3</option>
-              <option value="evcc">EVCC · KEBA · ABL · Mennekes u.v.m.</option>
-              <option value="webasto">Webasto Next / Live</option>
-              <option value="alfen">Alfen Eve Single / Double</option>
-              <option value="juice">Juice Charger Me³ / Pro</option>
-            </optgroup>
-            <optgroup label="Generisch">
-              <option value="generic">Generischer HTTP-Endpunkt</option>
-            </optgroup>
-          </select>
-        </div>
-        <div id="meterHaFields" style="display:none">
-          <div class="fg full"><label>HA Entity ID</label>
-            <input type="text" id="c_meter_sensor" placeholder="sensor.stromzaehler_total_kwh"></div>
-        </div>
-        <div id="meterDeviceFields" style="display:none">
-          <div class="fg full"><label>Geräte-IP</label>
-            <input type="text" id="c_meter_device_ip" placeholder="192.168.1.100"></div>
-        </div>
-        <div id="meterEvccFields" style="display:none;display:grid;gap:10px;grid-template-columns:1fr 1fr">
-          <div><label>EVCC Port</label><input type="number" id="c_meter_evcc_port" placeholder="7070"></div>
-          <div><label>Loadpoint (0=erster)</label><input type="number" id="c_meter_evcc_lp" placeholder="0"></div>
-        </div>
-        <div id="meterAlfenFields" style="display:none">
-          <div class="fg full"><label>Alfen Web-Passwort</label>
-            <input type="password" id="c_meter_alfen_pass" placeholder="admin"></div>
-        </div>
-        <div id="meterShellyFields" style="display:none">
-          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr 1fr">
-            <div><label>Kanal</label><input type="number" id="c_meter_channel" placeholder="0" min="0" max="3"></div>
-            <div><label>Phase</label>
-              <select id="c_meter_phase_mode">
-                <option value="total">Gesamt</option>
-                <option value="a">Phase A / L1</option>
-                <option value="b">Phase B / L2</option>
-                <option value="c">Phase C / L3</option>
-              </select>
-            </div>
-            <div><label>Passwort (optional)</label><input type="password" id="c_meter_password_shelly" placeholder=""></div>
-          </div>
-        </div>
-        <div id="meterTasmotaFields" style="display:none">
-          <div class="fg full"><label>JSON-Pfad (optional)</label>
-            <input type="text" id="c_meter_json_path_tasmota" placeholder="StatusSNS.ENERGY.Total">
-            <span class="hint">Leer lassen für automatische Erkennung</span></div>
-        </div>
-        <div id="meterGenericFields" style="display:none">
-          <div class="fg full"><label>URL</label>
-            <input type="text" id="c_meter_generic_url" placeholder="http://192.168.1.100/api/energy"></div>
-          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr 1fr">
-            <div><label>JSON-Pfad</label><input type="text" id="c_meter_json_path_generic" placeholder="data.energy.total"></div>
-            <div><label>Einheit</label>
-              <select id="c_meter_value_unit">
-                <option value="auto">Auto-Erkennung</option>
-                <option value="kwh">kWh</option>
-                <option value="wh">Wh</option>
-                <option value="mwh">MWh</option>
-              </select>
-            </div>
-            <div><label>Faktor</label><input type="number" id="c_meter_value_factor" placeholder="1.0" step="0.001"></div>
-          </div>
-          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr">
-            <div><label>Benutzername (optional)</label><input type="text" id="c_meter_generic_user" placeholder=""></div>
-            <div><label>Passwort (optional)</label><input type="password" id="c_meter_generic_pass" placeholder=""></div>
-          </div>
-        </div>
-        <div id="meterAdvancedFields" style="display:none;margin-top:8px;padding:10px;background:rgba(0,0,0,.15);border-radius:8px">
-          <div style="font-size:.72rem;color:var(--mute);margin-bottom:8px">Erweiterte Optionen</div>
-          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr 1fr">
-            <div><label>Timeout (s)</label><input type="number" id="c_meter_timeout_seconds" placeholder="8" min="1" max="30"></div>
-            <div><label>Schema</label>
-              <select id="c_meter_device_scheme">
-                <option value="http">HTTP</option>
-                <option value="https">HTTPS</option>
-              </select>
-            </div>
-            <div><label>Port (optional)</label><input type="number" id="c_meter_device_port" placeholder=""></div>
-          </div>
-          <div style="margin-top:8px">
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-              <input type="checkbox" id="c_meter_prefer_delta"> Zähler-Delta für kWh verwenden (statt SoC-Schätzung)
-            </label>
-          </div>
-          <div style="margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <label style="font-size:.82rem;color:var(--mute);white-space:nowrap">Zähler gilt für</label>
-            <select id="c_meter_scope" style="min-width:180px">
-              <option value="home_only">Nur Zuhause-Laden</option>
-              <option value="all">Alle Ladevorgänge</option>
-              <option value="disabled">Deaktiviert</option>
-            </select>
-          </div>
-          <div style="margin-top:6px;font-size:.72rem;color:var(--mute);line-height:1.4">
-            Zählerstände werden ohne Nachkommastellen angezeigt. Die Berechnung der geladenen kWh erfolgt intern mit dem exakten Wert.
-          </div>
-        </div>
-        <div style="margin-top:10px;display:grid;gap:10px;grid-template-columns:1fr 1fr">
-          <div>
-            <label>Wallbox-Leistung zuhause</label>
-            <select id="c_home_charger_power_kw_preset" onchange="onWallboxPresetChange()">
-              <option value="11">11 kW</option>
-              <option value="22">22 kW</option>
-              <option value="custom">Benutzerdefiniert</option>
-            </select>
-          </div>
-          <div id="wallboxCustomDiv" style="display:none">
-            <label>Leistung (kW)</label>
-            <input type="number" id="c_home_charger_power_kw" placeholder="11" min="1" max="150" step="0.1">
-          </div>
-        </div>
-        <div style="margin-top:6px">
-          <button class="btn-s" style="font-size:.72rem;padding:4px 10px" onclick="toggleMeterAdvanced()">⚙ Erweitert</button>
-        </div>
-        <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
-          <button class="btn-p" onclick="saveMeterSource()">💾 Speichern</button>
-          <button class="btn-s" onclick="testMeterSource()">🔍 Verbindung testen</button>
-          <span id="meterTestRes" style="font-size:.77rem;font-family:var(--mono)"></span>
-          <pre id="meterTestDebug" style="display:none;margin-top:8px;font-size:.68rem;font-family:var(--mono);color:var(--mute);background:rgba(0,0,0,.2);padding:8px;border-radius:6px;white-space:pre-wrap;max-height:200px;overflow-y:auto"></pre>
-        </div>
-
-        <!-- ── Automatische Heimladung ──────────────────────────────── -->
-        <div style="margin-top:18px;border-top:1px solid var(--brd);padding-top:14px">
-          <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;display:flex;align-items:center;gap:8px">
-            ⚡ Automatische Heimladung über Wallbox/Zähler
-          </div>
-          <p style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-bottom:12px;line-height:1.5;background:rgba(247,179,9,.07);border:1px solid rgba(247,179,9,.2);border-radius:6px;padding:8px 10px">
-            Ein steigender Zähler bedeutet nicht automatisch, dass dein Fahrzeug geladen wurde. Bei unklarer Zuordnung wird eine offene Heimladung erstellt.
-          </p>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:12px">
-            <input type="checkbox" id="c_home_charge_enabled">
-            <span style="font-size:.84rem">Erkennung aktivieren</span>
-          </label>
-          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr">
-            <div><label>Start-Schwelle (kW)</label>
-              <input type="number" id="c_hc_power_start" placeholder="1.0" min="0.1" max="50" step="0.1"></div>
-            <div><label>Stop-Schwelle (kW)</label>
-              <input type="number" id="c_hc_power_stop" placeholder="0.2" min="0" max="50" step="0.1"></div>
-          </div>
-          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr;margin-top:10px">
-            <div><label>Start-Debounce (s)</label>
-              <input type="number" id="c_hc_debounce_start" placeholder="120" min="10" max="600"></div>
-            <div><label>Stop-Debounce (s)</label>
-              <input type="number" id="c_hc_debounce_stop" placeholder="300" min="10" max="600"></div>
-          </div>
-          <div style="margin-top:10px">
-            <label>Mindest-kWh</label>
-            <input type="number" id="c_hc_min_kwh" placeholder="1.0" min="0.1" max="100" step="0.1" style="max-width:160px">
-          </div>
-          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr;margin-top:10px">
-            <div><label>Leitungszähler Start-Schwelle (kW)</label>
-              <input type="number" id="c_hc_line_power_start" placeholder="1.4" min="0.1" max="50" step="0.1"></div>
-            <div><label>Leitungszähler Stop-Schwelle (kW)</label>
-              <input type="number" id="c_hc_line_power_stop" placeholder="0.3" min="0" max="50" step="0.1"></div>
-          </div>
-          <div style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-top:4px;line-height:1.5">
-            Konservativere Schwellen für Leitungszähler (Tasmota/Shelly), die nicht nur die Ladung, sondern die ganze Leitung messen — verhindert, dass Haushaltslasten als Ladung erkannt werden.
-          </div>
-          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr;margin-top:10px">
-            <div>
-              <label>Zuordnungsmodus</label>
-              <select id="c_hc_assignment_mode">
-                <option value="always_default_vehicle">Immer Standardfahrzeug verwenden</option>
-                <option value="default_if_api_confirms">Standardfahrzeug nur wenn API bestätigt</option>
-                <option value="require_rfid_or_api">RFID/API erforderlich</option>
-                <option value="always_ask_if_unclear">Bei unklarer Zuordnung immer fragen</option>
-              </select>
-            </div>
-            <div>
-              <label>Standardfahrzeug</label>
-              <select id="c_hc_default_vehicle">
-                <option value="">— Hauptfahrzeug (v0) —</option>
-                {% for v in all_vehicles %}
-                <option value="{{ v.id }}">{{ v.name }}</option>
-                {% endfor %}
-              </select>
-            </div>
-          </div>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:10px">
-            <input type="checkbox" id="c_hc_allow_probable">
-            <span style="font-size:.84rem">Probable Assignment erlauben</span>
-          </label>
-          <div style="margin-top:12px">
-            <button class="btn-p" onclick="saveHomeChargeConfig()">💾 Heimladung speichern</button>
-            <span id="hcSaveRes" style="font-size:.77rem;font-family:var(--mono);margin-left:10px"></span>
-          </div>
-        </div>
-
-      </div>
 
       <!-- BENACHRICHTIGUNGEN -->
       <div id="cfgsec-reports" class="cfg-section" style="display:none">
@@ -2090,137 +1883,6 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         </div>
       </div>
 
-      <!-- ══════════════════════════════════════════════════════════
-           STROMTARIF
-           ══════════════════════════════════════════════════════════ -->
-      <div id="cfgsec-tarif" class="cfg-section" style="display:none">
-        <div class="card">
-          <div class="card-title">🏠 Zuhause laden &amp; Tarif</div>
-          <div style="display:flex;flex-direction:column;gap:16px">
-            <div>
-              <label class="cfg-lbl">Tarif-Provider</label>
-              <select id="tariff_provider" onchange="onTariffProviderChange()"
-                style="width:100%;max-width:320px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
-                <option value="fixed">Fester Preis</option>
-                <option value="octopus">Octopus Energy</option>
-                <option value="tibber">Tibber</option>
-                <option value="home_assistant">Home Assistant Sensor</option>
-                <option value="evcc">EVCC</option>
-                <option value="generic_http">Generic HTTP</option>
-              </select>
-            </div>
-            <!-- Fixed price panel -->
-            <div id="tariff_panel_fixed">
-              <div><label class="cfg-lbl">Preis Zuhause (€/kWh)</label>
-                <input type="number" id="tariff_price_home" step="0.001" min="0"
-                  style="width:160px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-            </div>
-            <!-- Octopus panel -->
-            <div id="tariff_panel_octopus" style="display:none">
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-                <div><label class="cfg-lbl">API Key</label>
-                  <input type="password" id="tariff_octopus_api_key" placeholder="sk_live_…"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-                <div><label class="cfg-lbl">Account ID</label>
-                  <input type="text" id="tariff_octopus_account_id" placeholder="A-12345678"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-                <div><label class="cfg-lbl">Produkt-Code</label>
-                  <input type="text" id="tariff_octopus_product_code" placeholder="AGILE-24-10-01"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-                <div><label class="cfg-lbl">Tariff-Code</label>
-                  <input type="text" id="tariff_octopus_tariff_code" placeholder="E-1R-AGILE-24-10-01-C"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-                <div><label class="cfg-lbl">GBP→EUR Faktor</label>
-                  <input type="number" id="tariff_octopus_gbp_eur_factor" step="0.01" min="0.5" max="3"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-              </div>
-            </div>
-            <!-- Tibber panel -->
-            <div id="tariff_panel_tibber" style="display:none">
-              <label class="cfg-lbl">Tibber API Token</label>
-              <input type="password" id="tariff_tibber_token" placeholder="51c48a…"
-                style="width:100%;max-width:400px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
-              <div style="color:var(--mute);font-size:.7rem;margin-top:4px">Token aus dem Tibber Developer Portal</div>
-            </div>
-            <!-- Home Assistant panel -->
-            <div id="tariff_panel_home_assistant" style="display:none">
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-                <div style="grid-column:1/-1"><label class="cfg-lbl">Entity ID (Preis-Sensor)</label>
-                  <input type="text" id="tariff_ha_entity" placeholder="sensor.electricity_price_current"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
-                  <div style="font-size:.7rem;color:var(--mute);margin-top:3px">HA-Sensor mit aktuellem Strompreis in EUR/kWh</div></div>
-                <div style="grid-column:1/-1"><label class="cfg-lbl">HA URL <span style="font-weight:400;color:var(--mute)">(leer = aus Verbindungs-Konfig)</span></label>
-                  <input type="text" id="tariff_ha_url" placeholder="http://homeassistant.local:8123"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-                <div style="grid-column:1/-1"><label class="cfg-lbl">Long-Lived Access Token</label>
-                  <input type="password" id="tariff_ha_token" placeholder="eyJ0eXAi…"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-              </div>
-            </div>
-            <!-- EVCC panel -->
-            <div id="tariff_panel_evcc" style="display:none">
-              <label class="cfg-lbl">EVCC URL</label>
-              <input type="text" id="tariff_evcc_url" placeholder="http://evcc.local:7070"
-                style="width:100%;max-width:400px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
-              <div style="font-size:.7rem;color:var(--mute);margin-top:3px">EVCC-Instanz mit tariffGrid oder gridPrice in /api/state</div>
-            </div>
-            <!-- Generic HTTP panel -->
-            <div id="tariff_panel_generic_http" style="display:none">
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-                <div style="grid-column:1/-1"><label class="cfg-lbl">URL</label>
-                  <input type="text" id="tariff_generic_url" placeholder="https://api.example.com/price"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-                <div><label class="cfg-lbl">JSON-Pfad</label>
-                  <input type="text" id="tariff_generic_json_path" placeholder="data.current_price"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-                <div><label class="cfg-lbl">Einheit</label>
-                  <select id="tariff_generic_unit" style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
-                    <option value="EUR/kWh">EUR/kWh</option>
-                    <option value="p/kWh">p/kWh (Pence)</option>
-                    <option value="Wh">Wh (→ EUR/kWh)</option>
-                  </select></div>
-                <div><label class="cfg-lbl">Multiplikator</label>
-                  <input type="number" id="tariff_generic_factor" step="0.001" min="0"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-              </div>
-            </div>
-            <!-- Fallback -->
-            <div>
-              <label class="cfg-lbl">Fallback-Preis (€/kWh) <span style="color:var(--mute);font-size:.7rem">— wird genutzt wenn API nicht erreichbar</span></label>
-              <input type="number" id="tariff_fallback_price" step="0.001" min="0"
-                style="width:160px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
-            </div>
-            <div style="display:flex;gap:10px;flex-wrap:wrap" data-requires-permission="tariffs:configure">
-              <button class="btn-p" onclick="saveTariffConfig()">💾 Speichern</button>
-              <button class="btn-s" onclick="testTariff()" data-requires-permission="tariffs:test">🔌 Verbindung testen</button>
-              <button class="btn-s" onclick="loadTariffPrices()" data-requires-permission="tariffs:view">📈 Preise heute</button>
-              <span id="tariff_status" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);align-self:center"></span>
-            </div>
-            <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--brd)">
-              <div style="font-size:.78rem;font-weight:600;margin-bottom:8px;color:var(--mute)">🔄 Bestehende Sessions neu berechnen</div>
-              <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;max-width:640px">
-                <div><label class="cfg-lbl">Monat (leer = alle)</label>
-                  <input type="month" id="recalc_month"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-                <div><label class="cfg-lbl">Fahrzeug</label>
-                  <select id="recalc_vehicle" style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
-                    <option value="v0">Primärfahrzeug</option>
-                    {% for v in all_vehicles %}<option value="{{ v.id }}">{{ v.name }}</option>{% endfor %}
-                    <option value="all">Alle Fahrzeuge</option>
-                  </select></div>
-                <div><label class="cfg-lbl">Standort</label>
-                  <div style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--mute);font-size:.82rem">🏠 Nur Zuhause</div></div>
-                <button class="btn-s" onclick="recalculateTariff()" style="white-space:nowrap">🔄 Neu berechnen</button>
-              </div>
-              <span id="recalc_status" style="display:block;margin-top:6px;font-size:.73rem;font-family:var(--mono);color:var(--mute)"></span>
-            </div>
-          </div>
-        </div>
-        <div class="card" id="tariff_prices_card" style="display:none">
-          <div class="card-title">📈 Aktuelle Preise</div>
-          <div id="tariff_prices_body" style="font-size:.75rem;font-family:var(--mono)"></div>
-        </div>
-      </div>
 
       <!-- ══════════════════════════════════════════════════════════
            LADEABOS / ÖFFENTLICHES LADEN
@@ -5125,7 +4787,7 @@ async function deleteTpl(){
 
 const METER_IP_SOURCES = ['shelly','tasmota','go_e','openwb','warp','evcc','webasto','alfen','juice','generic'];
 function updateMeterSourceUI(){
-  const s=$('c_meter_source').value;
+  const el=$('c_meter_source'); if(!el) return; const s=el.value;
   $('meterHaFields').style.display    = s==='ha' ? '' : 'none';
   $('meterDeviceFields').style.display = METER_IP_SOURCES.includes(s) ? '' : 'none';
   $('meterEvccFields').style.display  = s==='evcc'  ? 'grid' : 'none';
@@ -7414,11 +7076,9 @@ function cfgSection(id, btn){
   // profil = Konto & Sicherheit: load profile + passkeys + check SMTP for TOTP
   if(id==='profil') { loadMyProfile(); loadPasskeys(); checkSmtpForTotp(); }
   if(id==='roles')    loadRolesSection();
-  if(id==='zaehler')  loadMeterConfig();
   if(id==='reports'){ loadReportConfig(); }
   if(id==='abrechnung')    { loadBillingConfig(); }
   if(id==='report-archive'){ loadReportArchive(); }
-  if(id==='tarif')         { loadTariffConfig(); }
   if(id==='ladeabos')      { loadPcConfig(); loadContracts(); loadBuiltinContracts(); }
   if(id==='ladevorgang')   { loadChargingDetectionConfig(); }
   if(id==='erweitert-preise') { loadAdvancedPricingConfig(); }
