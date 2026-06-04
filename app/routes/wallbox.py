@@ -124,6 +124,57 @@ def api_wallbox_ignore(wbs_id):
     return jsonify({"ok": ok})
 
 
+@wallbox_bp.route("/api/wallbox/confirm", methods=["POST", "GET"])
+def api_wallbox_confirm():
+    """Direct-action confirmation from a notification (ntfy button / link).
+
+    Auth is the signed token itself (binds session_id + vehicle_id, short TTL),
+    not a login session. ``action`` is one of assign / mark-foreign / ignore.
+    """
+    from services.charging_state_machine import verify_confirm_token
+    token  = request.args.get("token", "")
+    action = request.args.get("action", "assign")
+    claim = verify_confirm_token(token)
+    if not claim:
+        return jsonify({"ok": False, "error": "Ungültiger oder abgelaufener Token"}), 403
+
+    wbs_id     = claim["wbs_id"]
+    vehicle_id = claim.get("vehicle_id")
+
+    con = _get_db()
+    if not con.execute("SELECT 1 FROM wallbox_sessions WHERE id=?", (wbs_id,)).fetchone():
+        close_db_if_owned(con)
+        return jsonify({"ok": False, "error": "Wallbox-Session nicht gefunden"}), 404
+
+    # Permission seam (fleet-ready): "darf dieser Nutzer dieses Fahrzeug?" —
+    # heute immer erlaubt, da der Token das Fahrzeug bereits bindet.
+    from services.wallbox_session_service import (
+        assign_wallbox_session, mark_foreign_vehicle, ignore_wallbox_session,
+    )
+    if action in ("assign", "mine"):
+        if not vehicle_id:
+            close_db_if_owned(con)
+            return jsonify({"ok": False, "error": "Kein Fahrzeug im Token"}), 400
+        ok = assign_wallbox_session(con, wbs_id, vehicle_id)
+        audit_detail = f"wbs_id={wbs_id} vehicle_id={vehicle_id}"
+        audit_action = "wallbox_confirm_assigned"
+    elif action in ("mark-foreign", "foreign"):
+        ok = mark_foreign_vehicle(con, wbs_id)
+        audit_detail = f"wbs_id={wbs_id}"
+        audit_action = "wallbox_confirm_foreign"
+    elif action == "ignore":
+        ok = ignore_wallbox_session(con, wbs_id)
+        audit_detail = f"wbs_id={wbs_id}"
+        audit_action = "wallbox_confirm_ignored"
+    else:
+        close_db_if_owned(con)
+        return jsonify({"ok": False, "error": f"Unbekannte Aktion: {action}"}), 400
+
+    close_db_if_owned(con)
+    _audit(audit_action, audit_detail, ip=request.remote_addr)
+    return jsonify({"ok": ok, "action": action})
+
+
 # ---------------------------------------------------------------------------
 # Internal helper: create a normal session from a confirmed wallbox_session
 # ---------------------------------------------------------------------------

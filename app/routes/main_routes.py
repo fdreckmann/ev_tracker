@@ -208,6 +208,19 @@ def api_status():
         result["provider_stale_reason"]     = st.get("provider_stale_reason")
     except Exception:
         pass
+    # Open home charges awaiting confirmation (PR 10)
+    try:
+        from core.db import _get_db, close_db_if_owned
+        con = _get_db()
+        row = con.execute(
+            "SELECT COUNT(*) FROM wallbox_sessions"
+            " WHERE vehicle_assignment_status='unassigned'"
+            "   AND status IN ('active','completed','unassigned')"
+        ).fetchone()
+        result["open_home_charges"] = int(row[0]) if row else 0
+        close_db_if_owned(con)
+    except Exception:
+        result["open_home_charges"] = 0
     return jsonify(result)
 
 

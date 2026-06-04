@@ -789,6 +789,23 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     </a>
   </div>
 
+  <!-- Open home charges awaiting confirmation (PR 10 — functional minimum) -->
+  <div id="openHomeChargesBanner" style="display:none;align-items:center;gap:16px;
+       background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);
+       border-radius:12px;padding:16px 20px;margin-bottom:14px">
+    <div style="font-size:2rem">🏠</div>
+    <div style="flex:1">
+      <div id="openHomeChargesLabel" style="font-weight:600;font-size:.95rem;margin-bottom:2px">Heimladungen warten auf Bestätigung</div>
+      <div style="font-size:.78rem;color:var(--mute)">Ordne erkannte Wallbox-Ladungen einem Fahrzeug zu.</div>
+    </div>
+    <a href="#openHomeChargesCard" onclick="if(typeof loadOpenWallboxSessions==='function')loadOpenWallboxSessions()"
+       style="background:rgba(245,158,11,.15);color:#f0b54f;
+       border:1px solid rgba(245,158,11,.35);text-decoration:none;
+       border-radius:8px;padding:9px 16px;font-size:.82rem;font-weight:600;white-space:nowrap">
+      Zuordnen
+    </a>
+  </div>
+
   <!-- Vehicle image card -->
   <div id="dashVehicleCard" style="display:flex;align-items:center;gap:16px;background:var(--card);border:1px solid var(--brd);border-radius:12px;padding:14px 18px;margin-bottom:14px">
     <img id="dashVehicleImg" src="/static/vehicle_images/placeholder_car.svg"
