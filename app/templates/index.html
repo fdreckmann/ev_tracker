@@ -269,6 +269,11 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   border-radius:8px;padding:6px 14px;cursor:pointer;font-size:.78rem;transition:all .15s}
 .vprofil-tab:hover{border-color:var(--acc2);color:var(--acc2)}
 .vprofil-tab.active{background:var(--brd2);border-color:var(--acc2);color:var(--acc2)}
+/* PR-UI-1 — cfg-area tabs (Benachrichtigungen, Berichte) */
+.cfg-area-tab{background:transparent;border:1px solid var(--brd);color:var(--mute);
+  border-radius:8px;padding:6px 14px;cursor:pointer;font-size:.78rem;transition:all .15s}
+.cfg-area-tab:hover{border-color:var(--acc2);color:var(--acc2)}
+.cfg-area-tab.active{background:var(--brd2);border-color:var(--acc2);color:var(--acc2)}
 @media(max-width:540px){
   #vprofil_tabs{display:none}
   .vprofil-tab-content{display:block!important;margin-bottom:8px}
@@ -982,9 +987,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
       <!-- 5. Benachrichtigungen -->
       <div class="cfg-grp-label" data-requires-permission="notifications:view">Benachrichtigungen</div>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('notifications',this)" data-requires-permission="notifications:view">🔔 Einstellungen</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('kanaele',this)" data-requires-permission="notifications:view">📡 Kanäle</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('notif-rules',this)" data-requires-permission="notifications:view">📋 Ereignisse &amp; Regeln</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('notifications',this)" data-requires-permission="notifications:view">🔔 Benachrichtigungen</button>
 
       <!-- 6. Berichte & Export -->
       <div class="cfg-grp-label">Berichte &amp; Export</div>
@@ -2000,10 +2003,20 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       </div>
 
       <!-- ══════════════════════════════════════════════════════════
-           MQTT
+           BENACHRICHTIGUNGEN (Reiter-Bereich)
            ══════════════════════════════════════════════════════════ -->
-      <div id="cfgsec-mqtt" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">MQTT <a href="#" onclick="cfgSection('kanaele',null);return false" style="font-size:.65rem;font-weight:400;color:var(--acc2);margin-left:12px;text-transform:none;letter-spacing:0">← Kanäle</a></div>
+      <div id="cfgsec-benachrichtigungen" class="cfg-section" style="display:none">
+        <div id="notif_tabs" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px;border-bottom:1px solid var(--brd);padding-bottom:10px">
+          <button class="cfg-area-tab active" onclick="notifTab('einstellungen',this)" data-requires-permission="notifications:view">🔔 Einstellungen</button>
+          <button class="cfg-area-tab" onclick="notifTab('kanaele',this)" data-requires-permission="notifications:view">📡 Kanäle</button>
+          <button class="cfg-area-tab" onclick="notifTab('smtp',this)">📧 E-Mail (SMTP)</button>
+          <button class="cfg-area-tab" onclick="notifTab('mqtt',this)" data-requires-permission="mqtt:view">🔌 MQTT</button>
+          <button class="cfg-area-tab" onclick="notifTab('regeln',this)" data-requires-permission="notifications:view">📋 Ereignisse &amp; Regeln</button>
+        </div>
+
+        <!-- Tab: MQTT -->
+        <div id="notif_tab_mqtt" class="notif-tab-content" style="display:none">
+        <div class="cfg-sec-title">MQTT</div>
         <div class="card">
           <div class="card-title">📡 MQTT-Konfiguration</div>
           <div style="display:flex;flex-direction:column;gap:16px">
@@ -2076,12 +2089,10 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             <span id="notif_channels_status" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-left:12px"></span>
           </div>
         </div>
-      </div>
+        </div><!-- /notif_tab_mqtt -->
 
-      <!-- ══════════════════════════════════════════════════════════
-           BENACHRICHTIGUNGS-REGELN
-           ══════════════════════════════════════════════════════════ -->
-      <div id="cfgsec-notif-rules" class="cfg-section" style="display:none">
+        <!-- Tab: Ereignisse & Regeln -->
+        <div id="notif_tab_regeln" class="notif-tab-content" style="display:none">
         <div class="card">
           <div class="card-title">📋 Ereignisse &amp; Regeln</div>
           <!-- Create rule form -->
@@ -2133,11 +2144,10 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             <span style="color:var(--mute)">Lade Regeln…</span>
           </div>
         </div>
-      </div>
+        </div><!-- /notif_tab_regeln -->
 
-
-      <!-- BENACHRICHTIGUNGEN (zentral) -->
-      <div id="cfgsec-notifications" class="cfg-section" style="display:none">
+        <!-- Tab: Einstellungen (default active) -->
+        <div id="notif_tab_einstellungen" class="notif-tab-content">
         <div class="cfg-sec-title">Benachrichtigungen — Einstellungen</div>
 
         <!-- HA Notify -->
@@ -2308,11 +2318,10 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         </div>
 
         <div id="notifSettingsResult" style="margin-top:8px;font-size:.78rem;font-family:var(--mono);color:var(--mute)"></div>
-      </div>
+        </div><!-- /notif_tab_einstellungen -->
 
-      <!-- SMTP -->
-      <!-- KANÄLE HUB -->
-      <div id="cfgsec-kanaele" class="cfg-section" style="display:none">
+        <!-- Tab: Kanäle -->
+        <div id="notif_tab_kanaele" class="notif-tab-content" style="display:none">
         <div class="cfg-sec-title">Kanäle &amp; Integrationen</div>
         <p style="font-size:.78rem;color:var(--mute);margin:0 0 18px">Übertragungskanäle für Benachrichtigungen konfigurieren — Push-Dienste, E-Mail und Protokolle.</p>
 
@@ -2349,11 +2358,11 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             <button class="btn-s" style="font-size:.78rem" onclick="cfgSection('mqtt',null)" data-requires-permission="mqtt:view">Konfigurieren →</button>
           </div>
         </div>
-      </div>
+        </div><!-- /notif_tab_kanaele -->
 
-      <!-- SMTP -->
-      <div id="cfgsec-smtp" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">E-Mail (SMTP) <a href="#" onclick="cfgSection('kanaele',null);return false" style="font-size:.65rem;font-weight:400;color:var(--acc2);margin-left:12px;text-transform:none;letter-spacing:0">← Kanäle</a></div>
+        <!-- Tab: SMTP -->
+        <div id="notif_tab_smtp" class="notif-tab-content" style="display:none">
+        <div class="cfg-sec-title">E-Mail (SMTP)</div>
         <div id="smtpStatusBadge" style="margin-bottom:14px;padding:8px 14px;border-radius:8px;font-size:.75rem;font-family:var(--mono);background:rgba(74,92,114,.15);border:1px solid var(--brd);color:var(--mute);display:inline-block">
           ⏳ Status unbekannt
         </div>
@@ -2450,7 +2459,9 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             <input type="email" id="smtp_test_to" placeholder="empfaenger@example.com" style="flex:1">
           </div>
         </div>
-      </div>
+        </div><!-- /notif_tab_smtp -->
+
+      </div><!-- /cfgsec-benachrichtigungen -->
 
       <!-- FEHLENDE LADEVORGÄNGE -->
 
@@ -6978,7 +6989,34 @@ async function saveSessionEdit() {
   }
 }
 
+function notifTab(name, btn){
+  document.querySelectorAll('.notif-tab-content').forEach(el=>el.style.display='none');
+  document.querySelectorAll('#notif_tabs .cfg-area-tab').forEach(b=>b.classList.remove('active'));
+  const panel = $('notif_tab_'+name);
+  if(panel) panel.style.display='';
+  if(btn) btn.classList.add('active');
+  else {
+    document.querySelectorAll('#notif_tabs .cfg-area-tab').forEach(b=>{
+      if(b.getAttribute('onclick')&&b.getAttribute('onclick').includes("'"+name+"'"))
+        b.classList.add('active');
+    });
+  }
+  if(name==='smtp')         { loadSmtpConfig(); refreshSmtpOAuthStatus(); }
+  else if(name==='mqtt')    { loadMqttConfig(); loadNotifChannels(); }
+  else if(name==='regeln')  { loadNotifRules(); }
+  else if(name==='einstellungen') { loadNotifSettings(); }
+  else if(name==='kanaele') { loadKanaeleStatus(); }
+}
+
 function cfgSection(id, btn){
+  const _notifMap = {notifications:'einstellungen', kanaele:'kanaele', smtp:'smtp', mqtt:'mqtt', 'notif-rules':'regeln'};
+  if(id in _notifMap){
+    const _nb = btn&&btn.classList.contains('cfg-nav-btn') ? btn
+      : document.querySelector('.cfg-nav-btn[onclick*="\'notifications\'"]');
+    cfgSection('benachrichtigungen', _nb);
+    notifTab(_notifMap[id], null);
+    return;
+  }
   document.querySelectorAll('.cfg-section').forEach(s=>s.style.display='none');
   const sec = $('cfgsec-'+id);
   if(sec) sec.style.display='';
