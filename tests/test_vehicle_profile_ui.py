@@ -425,3 +425,200 @@ class TestGlobalStatusSection:
         assert "<th>Provider</th>" in html
         assert "<th>Ladestatus</th>" in html
 
+
+# ---------------------------------------------------------------------------
+# 9 — PR-UI-2: all fields from the old Bearbeiten-Modal are reachable via the
+#     profile path (PUT /api/vehicles/<vid>).  No field loss.
+# ---------------------------------------------------------------------------
+
+class TestPrUi2ProfileFieldRoundtrip:
+    """Round-trip: every field the old modal saved is now saved/loaded via the
+    profile path (vprofilSaveVerbindung + vprofilSaveHeimladung =
+    PUT /api/vehicles/<vid>)."""
+
+    def _seed(self, app, vid="test_rt"):
+        with app.app_context():
+            from core.config import load_config, save_config, _config_cache
+            cfg = load_config()
+            cfg["extra_vehicles"] = [
+                {"id": vid, "name": "Round-trip Car", "provider": "manual",
+                 "active": True, "archived": False},
+            ]
+            save_config(cfg)
+            _config_cache["data"] = None
+
+    def _load(self, app, vid="test_rt"):
+        with app.app_context():
+            from core.config import load_config, _config_cache
+            _config_cache["data"] = None
+            cfg = load_config()
+            for v in cfg.get("extra_vehicles", []):
+                if v["id"] == vid:
+                    return v
+        return {}
+
+    def test_name_battery_poll_roundtrip(self, authed_client, app):
+        """name, battery_capacity_kwh, poll_interval survive PUT round-trip."""
+        self._seed(app)
+        rv = authed_client.put(
+            "/api/vehicles/test_rt",
+            data=json.dumps({
+                "name": "My EV",
+                "battery_capacity_kwh": 82.0,
+                "poll_interval": 45,
+            }),
+            content_type="application/json",
+        )
+        assert rv.status_code == 200
+        assert rv.get_json().get("ok") is True
+
+        v = self._load(app)
+        assert v["name"] == "My EV"
+        assert v["battery_capacity_kwh"] == 82.0
+        assert v["poll_interval"] == 45
+
+    def test_home_coords_roundtrip(self, authed_client, app):
+        """home_lat and home_lon survive PUT round-trip."""
+        self._seed(app)
+        rv = authed_client.put(
+            "/api/vehicles/test_rt",
+            data=json.dumps({"home_lat": "51.5074", "home_lon": "7.4653"}),
+            content_type="application/json",
+        )
+        assert rv.status_code == 200
+        v = self._load(app)
+        assert v["home_lat"] == "51.5074"
+        assert v["home_lon"] == "7.4653"
+
+    def test_location_fields_roundtrip(self, authed_client, app):
+        """All location_* fields survive a PUT round-trip."""
+        self._seed(app)
+        payload = {
+            "location_enabled": True,
+            "location_mode": "exact",
+            "location_source": "provider",
+            "home_detection_mode": "all",
+            "home_radius_m": 250,
+            "location_ha_entities": ["device_tracker.car_a", "device_tracker.car_b"],
+            "location_history_enabled": True,
+        }
+        rv = authed_client.put(
+            "/api/vehicles/test_rt",
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        assert rv.status_code == 200
+        assert rv.get_json().get("ok") is True
+
+        v = self._load(app)
+        assert v["location_enabled"] is True
+        assert v["location_mode"] == "exact"
+        assert v["location_source"] == "provider"
+        assert v["home_detection_mode"] == "all"
+        assert v["home_radius_m"] == 250
+        assert v["location_ha_entities"] == ["device_tracker.car_a", "device_tracker.car_b"]
+        assert v["location_history_enabled"] is True
+
+    def test_two_vehicle_isolation_with_new_fields(self, authed_client, app):
+        """Saving home/location fields for Car B must not touch Car A."""
+        with app.app_context():
+            from core.config import load_config, save_config, _config_cache
+            cfg = load_config()
+            cfg["extra_vehicles"] = [
+                {"id": "iso_a", "name": "Car A", "provider": "manual",
+                 "home_lat": "48.1351", "home_lon": "11.5820",
+                 "location_enabled": False, "location_mode": "home_external",
+                 "home_radius_m": 100,
+                 "active": True, "archived": False},
+                {"id": "iso_b", "name": "Car B", "provider": "manual",
+                 "active": True, "archived": False},
+            ]
+            save_config(cfg)
+            _config_cache["data"] = None
+
+        rv = authed_client.put(
+            "/api/vehicles/iso_b",
+            data=json.dumps({
+                "home_lat": "52.5200", "home_lon": "13.4050",
+                "location_enabled": True, "home_radius_m": 300,
+            }),
+            content_type="application/json",
+        )
+        assert rv.status_code == 200
+
+        with app.app_context():
+            from core.config import load_config, _config_cache
+            _config_cache["data"] = None
+            vehicles = {v["id"]: v for v in load_config().get("extra_vehicles", [])}
+
+        a = vehicles["iso_a"]
+        assert a["home_lat"] == "48.1351"
+        assert a["home_lon"] == "11.5820"
+        assert a["location_enabled"] is False
+        assert a["home_radius_m"] == 100
+
+        b = vehicles["iso_b"]
+        assert b["home_lat"] == "52.5200"
+        assert b["location_enabled"] is True
+        assert b["home_radius_m"] == 300
+
+    def test_create_vehicle_and_load_in_profile(self, authed_client, app):
+        """POST /api/vehicles with name+provider creates a vehicle; it is
+        then retrievable via GET /api/vehicles."""
+        rv = authed_client.post(
+            "/api/vehicles",
+            data=json.dumps({"name": "New Car", "provider": "ha"}),
+            content_type="application/json",
+        )
+        assert rv.status_code in (200, 201)
+        data = rv.get_json()
+        assert data.get("ok") is True
+        new_id = data.get("id") or data.get("vehicle_id")
+        assert new_id is not None
+
+        rv2 = authed_client.get("/api/vehicles")
+        vehicles = rv2.get_json()
+        ids = [v["id"] for v in vehicles]
+        assert new_id in ids
+
+    def test_image_routes_reachable(self, authed_client, app):
+        """Image upload and delete endpoints return non-404 (smoke test)."""
+        with app.app_context():
+            from core.config import load_config, save_config, _config_cache
+            cfg = load_config()
+            cfg["extra_vehicles"] = [
+                {"id": "img_car", "name": "Image Car", "provider": "manual",
+                 "active": True, "archived": False},
+            ]
+            save_config(cfg)
+            _config_cache["data"] = None
+
+        # DELETE should return ok or a meaningful error, never 404 for the route
+        rv = authed_client.delete("/api/vehicles/img_car/image")
+        assert rv.status_code != 404
+
+    def test_old_modal_location_ids_absent_from_page(self, authed_client):
+        """vm_home_lat, vm_home_lon, vm_loc_* must not exist as element IDs
+        in the rendered page (they were removed from the modal in PR-UI-2)."""
+        rv = authed_client.get("/")
+        assert rv.status_code == 200
+        html = rv.get_data(as_text=True)
+        import re
+        ids = set(re.findall(r'id="([^"${}\'+`]+)"', html))
+        assert "vm_home_lat" not in ids, "vm_home_lat still in page"
+        assert "vm_home_lon" not in ids, "vm_home_lon still in page"
+        assert not any(i.startswith("vm_loc_") for i in ids), \
+            f"vm_loc_* IDs still in page: {[i for i in ids if i.startswith('vm_loc_')]}"
+
+    def test_profile_fields_present_in_page(self, authed_client):
+        """New profile-tab IDs for name, image, location must exist in the rendered page."""
+        rv = authed_client.get("/")
+        html = rv.get_data(as_text=True)
+        assert 'id="vprofil_name"' in html
+        assert 'id="vmImageSection"' in html
+        assert 'id="vp_h_home_lat"' in html
+        assert 'id="vp_h_home_lon"' in html
+        assert 'id="vp_h_loc_enabled"' in html
+        assert 'id="vp_h_loc_mode"' in html
+        assert 'id="vp_h_loc_ha_entities"' in html
+        assert 'id="vp_h_loc_history_enabled"' in html
