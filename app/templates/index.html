@@ -975,7 +975,6 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <!-- 3. Fahrzeuge -->
       <div class="cfg-grp-label">Fahrzeuge</div>
       <button class="cfg-nav-btn cfg-nav-sub active" onclick="cfgSection('fahrzeuge',this)">🚗 Fahrzeuge</button>
-      <button id="navBtnFahrzeugProfil" class="cfg-nav-btn cfg-nav-sub" style="display:none" onclick="cfgSection('fahrzeug-profil',this)">← Profil</button>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('fahrzeug-status',this)">📡 API-Übersicht</button>
 
       <!-- 4. Laden & Kosten -->
@@ -3153,26 +3152,13 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <div id="vm_conn_result" style="display:none;margin-top:10px;font-size:.8rem;border-radius:8px;padding:10px 13px"></div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
-      <div>
-        <label class="lbl">Akkugröße (kWh)</label>
-        <input class="inp" type="number" step="0.1" id="vm_battery" placeholder="77.0">
-      </div>
-      <div>
-        <label class="lbl">Poll-Intervall (Sek.)</label>
-        <input class="inp" type="number" id="vm_poll" placeholder="60">
-      </div>
-    </div>
-
     <p style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin:0 0 14px">
-      Bild, Standort &amp; Heimat-Koordinaten werden nach dem Anlegen im Fahrzeug-Profil gesetzt.
+      Akkugröße, Bild, Standort &amp; Heimat-Koordinaten werden im Fahrzeug-Profil gesetzt.
     </p>
 
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:1rem">
-      <button class="btn-p" onclick="saveVehicleModal()">💾 Speichern</button>
+      <button class="btn-p" onclick="saveVehicleModal()">💾 Anlegen &amp; Profil öffnen</button>
       <button class="btn-s" onclick="closeVehicleModal()">Abbrechen</button>
-      <button class="btn-d" id="vm_archive_btn" style="display:none;margin-left:auto" onclick="archiveVehicleModal()">📦 Archivieren</button>
-      <button class="btn-d" id="vm_hard_delete_btn" style="display:none;margin-left:4px;opacity:.7;font-size:.78rem" onclick="hardDeleteVehicleModal()" title="Nur möglich wenn keine Ladevorgänge existieren">🗑 Endgültig löschen</button>
       <span id="vm_info" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-left:8px"></span>
     </div>
   </div>
@@ -7096,9 +7082,6 @@ function cfgSection(id, btn){
   if(id==='notifications') { loadNotifSettings(); }
   if(id==='kanaele')       { loadKanaeleStatus(); }
   if(id==='fahrzeug-profil') { _vprofilOnOpen(); }
-  // Show/hide the Profil back-button in the nav
-  const navProfil = $('navBtnFahrzeugProfil');
-  if(navProfil) navProfil.style.display = (id==='fahrzeug-profil') ? '' : 'none';
 }
 
 async function loadKanaeleStatus(){
@@ -7882,7 +7865,7 @@ async function openMobileVehicleDetail(vid) {
   const editBtn = document.getElementById('_mvdEditBtn');
   if (editBtn) editBtn.addEventListener('click', function() {
     closeMobileSheet();
-    if (typeof openEditVehicleModal === 'function') openEditVehicleModal(this.dataset.vid);
+    openVehicleProfile(this.dataset.vid);
   });
 }
 
@@ -8679,7 +8662,8 @@ function testNotifChannel(channel) {
 
   function openVehicleProfile(vid) {
     _vprofilVid = vid;
-    cfgSection('fahrzeug-profil', $('navBtnFahrzeugProfil'));
+    var anchor = document.querySelector('.cfg-nav-btn[onclick*="\'fahrzeuge\'"]');
+    cfgSection('fahrzeug-profil', anchor);
   }
 
   function vprofilTab(name, btn) {
