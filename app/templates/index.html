@@ -1044,6 +1044,12 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
         <!-- Tab-Inhalt: Verbindung / Provider -->
         <div id="vprofil_tab_verbindung" class="vprofil-tab-content">
+          <div class="form-grid" style="margin-bottom:12px">
+            <div class="fg full">
+              <label>Fahrzeugname</label>
+              <input type="text" id="vprofil_name" placeholder="z.B. VW ID.4 Weiß">
+            </div>
+          </div>
           <div class="form-grid" id="vprofil_providerFields_wrap">
             <div class="fg full">
               <label>Datenquelle</label>
@@ -1068,6 +1074,38 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           <div class="btn-row" style="margin-top:16px">
             <button class="btn-p" data-requires-permission="admin:all"
                     onclick="vprofilSaveVerbindung()">💾 Verbindung speichern</button>
+          </div>
+
+          <!-- Fahrzeugbild (verschoben aus Bearbeiten-Modal) -->
+          <div id="vmImageSection" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--brd)">
+            <div class="fg full"><label>Fahrzeugbild</label>
+              <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+                <img id="vmImagePreview" src="/static/vehicle_images/placeholder_car.svg" alt="Fahrzeugbild"
+                     style="width:140px;height:80px;object-fit:contain;border-radius:8px;border:1px solid var(--brd);background:var(--bg2)"
+                     onerror="this.src='/static/vehicle_images/placeholder_car.svg'">
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  <button class="btn-s" style="font-size:.75rem" onclick="suggestVehicleImage()">✨ Auto-Vorschlag</button>
+                  <button class="btn-s" style="font-size:.75rem" onclick="openSilhouettePicker()">🚗 Silhouette wählen</button>
+                  <label class="btn-s" style="cursor:pointer;font-size:.75rem">
+                    📷 Foto hochladen
+                    <input type="file" id="vmImageFile" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="uploadVehicleImage()">
+                  </label>
+                  <button class="btn-s" style="font-size:.75rem;color:var(--danger)" onclick="deleteVehicleImage()">🗑 Entfernen</button>
+                  <span style="font-size:.65rem;color:var(--mute)">Max. 3 MB · PNG/JPG/WebP · <span id="vmImageSourceLabel"></span></span>
+                </div>
+              </div>
+              <!-- Silhouette picker (inline) -->
+              <div id="vmSilhouettePicker" style="display:none;margin-top:10px">
+                <div style="font-size:.78rem;color:var(--mute);margin-bottom:6px">Karosserieform wählen:</div>
+                <div id="vmSilhouetteGrid" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Archivieren (verschoben aus Bearbeiten-Modal) -->
+          <div id="vprofil_archive_row" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--brd);display:none">
+            <button class="btn-d" onclick="vprofilArchiveVehicle()">📦 Fahrzeug archivieren</button>
+            <span style="font-size:.7rem;color:var(--mute);margin-left:10px">Ladevorgänge bleiben erhalten; das Fahrzeug wird nicht mehr aktiv gepollt.</span>
           </div>
         </div>
 
@@ -1233,6 +1271,55 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             <div style="margin-top:10px">
               <label>Mindest-kWh</label>
               <input type="number" id="vp_h_hc_min_kwh" placeholder="1.0" min="0.1" max="100" step="0.1" style="max-width:160px">
+            </div>
+          </div>
+          <!-- Heimat-Koordinaten + Standort (verschoben aus Bearbeiten-Modal) -->
+          <div style="margin-bottom:18px;padding:12px 14px;background:rgba(0,0,0,.12);border-radius:8px;border:1px solid var(--brd)">
+            <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">
+              📍 Standort &amp; Heimat
+            </div>
+            <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr">
+              <div><label>Heimat Breitengrad</label>
+                <input type="text" id="vp_h_home_lat" placeholder="51.5074"></div>
+              <div><label>Heimat Längengrad</label>
+                <input type="text" id="vp_h_home_lon" placeholder="7.4653"></div>
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:12px">
+              <input type="checkbox" id="vp_h_loc_enabled"> <span style="font-size:.84rem">Standortanzeige aktivieren</span>
+            </label>
+            <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr;margin-top:10px">
+              <div><label>Modus</label>
+                <select id="vp_h_loc_mode">
+                  <option value="home_external">Nur Zuhause/Extern</option>
+                  <option value="exact">Genaue Position</option>
+                  <option value="disabled">Deaktiviert</option>
+                </select></div>
+              <div><label>Erkennungsquelle</label>
+                <select id="vp_h_loc_source">
+                  <option value="combined">Kombiniert (Provider + HA)</option>
+                  <option value="provider">Nur Provider</option>
+                  <option value="ha">Nur Home Assistant</option>
+                  <option value="manual">Manuell</option>
+                </select></div>
+              <div><label>Kombinationsmodus</label>
+                <select id="vp_h_loc_detect_mode">
+                  <option value="any">any — Zuhause wenn eine Quelle home meldet</option>
+                  <option value="all">all — Zuhause nur wenn alle Quellen home melden</option>
+                  <option value="provider_only">Nur Provider-Position</option>
+                  <option value="ha_only">Nur HA-Entities</option>
+                  <option value="manual">Manuell</option>
+                </select></div>
+              <div><label>Home-Radius (Meter)</label>
+                <input type="number" id="vp_h_loc_radius" value="150" min="50" max="5000"></div>
+            </div>
+            <div style="margin-top:10px"><label>HA/UniFi Device-Tracker Entities (eine pro Zeile)</label>
+              <textarea id="vp_h_loc_ha_entities" rows="3" placeholder="device_tracker.mein_auto&#10;device_tracker.unifi_..."></textarea></div>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:10px">
+              <input type="checkbox" id="vp_h_loc_history_enabled"> <span style="font-size:.84rem">Standort-Historie speichern</span>
+            </label>
+            <div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <button class="btn-s" onclick="vprofilTestLocation()">🧪 Standort testen</button>
+              <span id="vp_h_loc_test_result" style="font-size:.82rem;color:var(--mute)"></span>
             </div>
           </div>
           <!-- Zuordnungs-Modus -->
@@ -3075,79 +3162,11 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <label class="lbl">Poll-Intervall (Sek.)</label>
         <input class="inp" type="number" id="vm_poll" placeholder="60">
       </div>
-      <div>
-        <label class="lbl">Heimat Breitengrad</label>
-        <input class="inp" type="text" id="vm_home_lat" placeholder="51.5074">
-      </div>
-      <div>
-        <label class="lbl">Heimat Längengrad</label>
-        <input class="inp" type="text" id="vm_home_lon" placeholder="7.4653">
-      </div>
     </div>
 
-    <div id="vmImageSection" style="margin-top:14px;display:none">
-      <div class="fg full"><label>Fahrzeugbild</label>
-        <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
-          <img id="vmImagePreview" src="/static/vehicle_images/placeholder_car.svg" alt="Fahrzeugbild"
-               style="width:140px;height:80px;object-fit:contain;border-radius:8px;border:1px solid var(--brd);background:var(--bg2)"
-               onerror="this.src='/static/vehicle_images/placeholder_car.svg'">
-          <div style="display:flex;flex-direction:column;gap:6px">
-            <button class="btn-s" style="font-size:.75rem" onclick="suggestVehicleImage()">✨ Auto-Vorschlag</button>
-            <button class="btn-s" style="font-size:.75rem" onclick="openSilhouettePicker()">🚗 Silhouette wählen</button>
-            <label class="btn-s" style="cursor:pointer;font-size:.75rem">
-              📷 Foto hochladen
-              <input type="file" id="vmImageFile" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="uploadVehicleImage()">
-            </label>
-            <button class="btn-s" style="font-size:.75rem;color:var(--danger)" onclick="deleteVehicleImage()">🗑 Entfernen</button>
-            <span style="font-size:.65rem;color:var(--mute)">Max. 3 MB · PNG/JPG/WebP</span>
-          </div>
-        </div>
-        <!-- Silhouette picker (inline) -->
-        <div id="vmSilhouettePicker" style="display:none;margin-top:10px">
-          <div style="font-size:.78rem;color:var(--mute);margin-bottom:6px">Karosserieform wählen:</div>
-          <div id="vmSilhouetteGrid" style="display:flex;flex-wrap:wrap;gap:8px"></div>
-        </div>
-      </div>
-    </div>
-
-    <details id="vm_location_section" style="margin-top:1rem">
-      <summary style="cursor:pointer;font-weight:600;font-size:.9rem">📍 Standort-Konfiguration</summary>
-      <div style="margin-top:.75rem;display:flex;flex-direction:column;gap:.5rem">
-        <label class="lbl">
-          <input type="checkbox" id="vm_loc_enabled"> Standortanzeige aktivieren
-        </label>
-        <label class="lbl">Modus</label>
-        <select class="inp" id="vm_loc_mode">
-          <option value="home_external">Nur Zuhause/Extern</option>
-          <option value="exact">Genaue Position</option>
-          <option value="disabled">Deaktiviert</option>
-        </select>
-        <label class="lbl">Erkennungsquelle</label>
-        <select class="inp" id="vm_loc_source">
-          <option value="combined">Kombiniert (Provider + HA)</option>
-          <option value="provider">Nur Provider</option>
-          <option value="ha">Nur Home Assistant</option>
-          <option value="manual">Manuell</option>
-        </select>
-        <label class="lbl">Kombinationsmodus</label>
-        <select class="inp" id="vm_loc_detect_mode">
-          <option value="any">any — Zuhause wenn eine Quelle home meldet</option>
-          <option value="all">all — Zuhause nur wenn alle Quellen home melden</option>
-          <option value="provider_only">Nur Provider-Position</option>
-          <option value="ha_only">Nur HA-Entities</option>
-          <option value="manual">Manuell</option>
-        </select>
-        <label class="lbl">Home-Radius (Meter)</label>
-        <input class="inp" type="number" id="vm_loc_radius" value="150" min="50" max="5000">
-        <label class="lbl">HA/UniFi Device-Tracker Entities (eine pro Zeile)</label>
-        <textarea class="inp" id="vm_loc_ha_entities" rows="3" placeholder="device_tracker.mein_auto&#10;device_tracker.unifi_..."></textarea>
-        <label class="lbl">
-          <input type="checkbox" id="vm_loc_history_enabled"> Standort-Historie speichern
-        </label>
-        <div id="vm_loc_test_result" style="font-size:.82rem;color:var(--mute)"></div>
-        <button class="btn-s" style="align-self:flex-start" onclick="testVehicleLocation()">🧪 Standort testen</button>
-      </div>
-    </details>
+    <p style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin:0 0 14px">
+      Bild, Standort &amp; Heimat-Koordinaten werden nach dem Anlegen im Fahrzeug-Profil gesetzt.
+    </p>
 
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:1rem">
       <button class="btn-p" onclick="saveVehicleModal()">💾 Speichern</button>
@@ -5511,20 +5530,6 @@ async function hardDeleteVehicleModal() {
   } else {
     $('vm_info').innerHTML = `<span style="color:var(--danger)">❌ ${escapeHtml(r.error||'Fehler beim Löschen')}</span>`;
   }
-}
-
-async function testVehicleLocation() {
-  if(!_editingVehicleId) return;
-  $('vm_loc_test_result').textContent = 'Teste...';
-  const r = await apiFetch(`/api/vehicles/${_editingVehicleId}/location/test`, {method:'POST'}).then(x=>x.json()).catch(()=>null);
-  if(!r) { $('vm_loc_test_result').textContent = '❌ Netzwerkfehler'; return; }
-  if(!r.ok) { $('vm_loc_test_result').textContent = `❌ ${r.error}`; return; }
-  const icons = {home:'🏠', extern:'📍', external:'📍', unknown:'❓', disabled:'⛔'};
-  const labels = {home:'Zuhause', extern:'Extern', external:'Extern', unknown:'Unbekannt', disabled:'Deaktiviert'};
-  const norm = normalizeLocation(r.status);
-  $('vm_loc_test_result').textContent = `${icons[norm]||'❓'} ${labels[norm]||r.status} · ${r.source}${r.source_detail ? ' (' + r.source_detail + ')' : ''}`;
-  // Update dashboard immediately (vehicle_states already updated on server side)
-  if(typeof refreshStatus === 'function') setTimeout(refreshStatus, 300);
 }
 
 // ── Auth / Login ─────────────────────────────────────────────────────────────
@@ -8690,10 +8695,18 @@ function testNotifChannel(channel) {
 
   async function _vprofilOnOpen() {
     if(!_vprofilVid) return;
+    // Image functions operate on the active vehicle id.
+    _editingVehicleId = _vprofilVid;
     var vehicles = await fetch('/api/vehicles').then(function(r){return r.json();}).catch(function(){return [];});
     var v = vehicles.find(function(x){return x.id===_vprofilVid;}) || {};
     $('vprofil_title').textContent = v.name || _vprofilVid;
     $('vprofil_subtitle').textContent = 'ID: '+_vprofilVid+' · '+((v.provider)||'kein Provider');
+    if($('vprofil_name')) $('vprofil_name').value = v.name || '';
+    // Vehicle image (uses _editingVehicleId)
+    if(typeof refreshVehicleModalImage === 'function') refreshVehicleModalImage();
+    // Archive action only for non-primary vehicles
+    var archRow = $('vprofil_archive_row');
+    if(archRow) archRow.style.display = (_vprofilVid === 'v0') ? 'none' : '';
     // Open home charges badge
     var ohcBadge = $('vprofil_badge_ohc');
     if(ohcBadge) {
@@ -8777,6 +8790,11 @@ function testNotifChannel(channel) {
     var fields = await fetch('/api/providers/'+encodeURIComponent(pid)+'/fields')
                         .then(function(r){return r.json();}).catch(function(){return [];});
     var payload = { provider: pid };
+    var nameEl = $('vprofil_name');
+    if(nameEl && nameEl.value.trim()){
+      if(_vprofilVid === 'v0') payload.car_name = nameEl.value.trim();
+      else payload.name = nameEl.value.trim();
+    }
     fields.forEach(function(f){
       var el = $('vpf_'+f.id); if(!el) return;
       if(f.type==='password' && (!el.value || el.value==='********')) return;
@@ -8787,7 +8805,11 @@ function testNotifChannel(channel) {
     if(pollEl && pollEl.value) payload.poll_interval = parseInt(pollEl.value);
     var resp = await apiFetch('/api/vehicles/'+encodeURIComponent(_vprofilVid), {method:'PUT', body:JSON.stringify(payload)});
     var r = await resp.json().catch(function(){return {};});
-    if(resp.ok && r.ok){ toast('✓ Verbindung gespeichert'); }
+    if(resp.ok && r.ok){
+      toast('✓ Verbindung gespeichert');
+      if(nameEl && nameEl.value.trim() && $('vprofil_title')) $('vprofil_title').textContent = nameEl.value.trim();
+      if(typeof loadVehicleList === 'function') loadVehicleList();
+    }
     else { toast(r.error||'Fehler beim Speichern','err'); }
   }
 
@@ -8814,6 +8836,36 @@ function testNotifChannel(channel) {
     await apiFetch('/api/tracker/restart', {method:'POST', body:JSON.stringify({vehicle_id:_vprofilVid})})
           .catch(function(){});
     toast('Tracker wird neu gestartet…');
+  }
+
+  async function vprofilArchiveVehicle() {
+    if(!_vprofilVid || _vprofilVid==='v0') return;
+    var vname = ($('vprofil_title')||{}).textContent || _vprofilVid;
+    if(!confirm('Fahrzeug "'+vname+'" archivieren?\nLadevorgänge bleiben erhalten. Das Fahrzeug wird nicht mehr aktiv gepollt.')) return;
+    var r = await apiFetch('/api/vehicles/'+encodeURIComponent(_vprofilVid),{method:'DELETE'})
+                  .then(function(x){return x.json();}).catch(function(){return {ok:false,error:'Netzwerkfehler'};});
+    if(r.ok){
+      toast('Fahrzeug archiviert','ok');
+      if(typeof loadVehicleList === 'function') loadVehicleList();
+      cfgSection('fahrzeuge', document.querySelector('#cfgNav [onclick*="cfgSection(\'fahrzeuge\'"]'));
+    } else {
+      toast(r.error||'Fehler','err');
+    }
+  }
+
+  async function vprofilTestLocation() {
+    if(!_vprofilVid) return;
+    var box = $('vp_h_loc_test_result'); if(box) box.textContent = 'Teste…';
+    var r = await apiFetch('/api/vehicles/'+encodeURIComponent(_vprofilVid)+'/location/test', {method:'POST'})
+                  .then(function(x){return x.json();}).catch(function(){return null;});
+    if(!box) return;
+    if(!r){ box.textContent = '❌ Netzwerkfehler'; return; }
+    if(!r.ok){ box.textContent = '❌ '+(r.error||'Fehler'); return; }
+    var icons = {home:'🏠', extern:'📍', external:'📍', unknown:'❓', disabled:'⛔'};
+    var labels = {home:'Zuhause', extern:'Extern', external:'Extern', unknown:'Unbekannt', disabled:'Deaktiviert'};
+    var norm = (typeof normalizeLocation==='function') ? normalizeLocation(r.status) : r.status;
+    box.textContent = (icons[norm]||'❓')+' '+(labels[norm]||r.status)+' · '+r.source+(r.source_detail?' ('+r.source_detail+')':'');
+    if(typeof refreshStatus === 'function') setTimeout(refreshStatus, 300);
   }
 
   async function _vprofilLoadVerlauf() {
@@ -9020,6 +9072,12 @@ function testNotifChannel(channel) {
 
   async function _vprofilOnHeimladungOpen() {
     var c = await fetch('/api/config').then(function(r){return r.json();}).catch(function(){return {};});
+    // Merge vehicle-level fields (home_lat/lon, location_*) over the global config
+    if(_vprofilVid){
+      var vehicles = await fetch('/api/vehicles').then(function(r){return r.json();}).catch(function(){return [];});
+      var veh = vehicles.find(function(x){return x.id===_vprofilVid;}) || {};
+      Object.keys(veh).forEach(function(k){ if(veh[k]!==undefined&&veh[k]!==null) c[k]=veh[k]; });
+    }
     _vprofilFillHeimladung(c);
   }
 
@@ -9035,6 +9093,16 @@ function testNotifChannel(channel) {
     if(g('allow_probable')) g('allow_probable').checked = allowProb;
     var warn = $('vp_h_auto_warn');
     if(warn) warn.style.display = allowProb ? '' : 'none';
+    // Standort & Heimat (per-vehicle)
+    if(g('home_lat')) g('home_lat').value = c.home_lat||'';
+    if(g('home_lon')) g('home_lon').value = c.home_lon||'';
+    if(g('loc_enabled')) g('loc_enabled').checked = !!c.location_enabled;
+    if(g('loc_mode')) g('loc_mode').value = c.location_mode||'home_external';
+    if(g('loc_source')) g('loc_source').value = c.location_source||'combined';
+    if(g('loc_detect_mode')) g('loc_detect_mode').value = c.home_detection_mode||'any';
+    if(g('loc_radius')) g('loc_radius').value = c.home_radius_m||150;
+    if(g('loc_ha_entities')) g('loc_ha_entities').value = (c.location_ha_entities||[]).join('\n');
+    if(g('loc_history_enabled')) g('loc_history_enabled').checked = !!c.location_history_enabled;
     // Tariff
     if(g('tariff_provider')) g('tariff_provider').value = c.tariff_provider||'fixed';
     if(g('tariff_price_home')) g('tariff_price_home').value = c.price_per_kwh_home||0.30;
@@ -9089,11 +9157,28 @@ function testNotifChannel(channel) {
     if(res){ res.textContent='⏳'; res.style.color='var(--mute)'; }
     var r = await apiFetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)})
                   .then(function(x){return x.json();}).catch(function(){return {ok:false};});
-    if(r.ok||r.saved){
+    // Per-vehicle: home coordinates + location settings (same payload as the old modal)
+    var ok2 = true;
+    var haEntities = g('loc_ha_entities').split('\n').map(function(s){return s.trim();}).filter(Boolean);
+    var vehPayload = {
+      home_lat:            g('home_lat').trim(),
+      home_lon:            g('home_lon').trim(),
+      location_enabled:    gb('loc_enabled'),
+      location_mode:       g('loc_mode')||'home_external',
+      location_source:     g('loc_source')||'combined',
+      home_detection_mode: g('loc_detect_mode')||'any',
+      home_radius_m:       parseFloat(g('loc_radius'))||150,
+      location_ha_entities: haEntities,
+      location_history_enabled: gb('loc_history_enabled'),
+    };
+    var r2 = await apiFetch('/api/vehicles/'+encodeURIComponent(_vprofilVid),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(vehPayload)})
+                  .then(function(x){return x.json();}).catch(function(){return {ok:false};});
+    ok2 = !!r2.ok;
+    if((r.ok||r.saved) && ok2){
       toast('✓ Heimladung gespeichert');
       if(res){ res.textContent='✅'; res.style.color='var(--acc)'; setTimeout(function(){res.textContent='';},2500); }
     } else {
-      toast(r.error||'Fehler','err');
+      toast((r.error||(r2&&r2.error))||'Fehler','err');
       if(res){ res.textContent='❌'; res.style.color='var(--danger)'; }
     }
   }
