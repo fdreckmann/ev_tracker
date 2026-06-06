@@ -991,9 +991,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
       <!-- 6. Berichte & Export -->
       <div class="cfg-grp-label">Berichte &amp; Export</div>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('reports',this)" data-requires-permission="reports:view">📊 Auto-Berichte</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('report-archive',this)" data-requires-permission="reports:archive">📁 Report-Archiv</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('export-tpl',this)">📋 Export-Vorlagen</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('reports',this)" data-requires-permission="reports:view">📊 Berichte</button>
 
       <!-- 7. Backup -->
       <div class="cfg-grp-label" data-requires-permission="backup:view">Backup</div>
@@ -1516,8 +1514,18 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       </div>
 
 
-      <!-- BENACHRICHTIGUNGEN -->
-      <div id="cfgsec-reports" class="cfg-section" style="display:none">
+      <!-- ══════════════════════════════════════════════════════════
+           BERICHTE (Reiter-Bereich)
+           ══════════════════════════════════════════════════════════ -->
+      <div id="cfgsec-berichte" class="cfg-section" style="display:none">
+        <div id="report_tabs" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px;border-bottom:1px solid var(--brd);padding-bottom:10px">
+          <button class="cfg-area-tab active" onclick="reportTab('auto',this)" data-requires-permission="reports:view">📊 Auto-Berichte</button>
+          <button class="cfg-area-tab" onclick="reportTab('archiv',this)" data-requires-permission="reports:archive">📁 Archiv</button>
+          <button class="cfg-area-tab" onclick="reportTab('export',this)">📋 Export-Vorlagen</button>
+        </div>
+
+        <!-- Tab: Auto-Berichte -->
+        <div id="report_tab_auto" class="report-tab-content">
         <div class="card">
           <div class="card-title">📊 Automatische E-Mail-Reports</div>
           <div style="display:flex;flex-direction:column;gap:20px">
@@ -1680,7 +1688,57 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           <div class="card-title">📋 Versandhistorie</div>
           <div id="rep_history_body" style="font-size:.75rem;font-family:var(--mono);overflow-x:auto"></div>
         </div>
-      </div>
+        </div><!-- /report_tab_auto -->
+
+        <!-- Tab: Archiv -->
+        <div id="report_tab_archiv" class="report-tab-content" style="display:none">
+        <div class="card">
+          <div class="card-title">📁 Report-Archiv</div>
+          <!-- Create report strip -->
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:18px;padding:14px;background:var(--surf2);border-radius:8px">
+            <div><label class="cfg-lbl" style="margin-bottom:4px">Zeitraum-Modus</label>
+              <select id="arc_period_mode" onchange="onArcPeriodModeChange()" style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:7px;color:var(--txt);font-size:.82rem">
+                <option value="previous_period">Vorheriger Monat</option>
+                <option value="current_period">Aktueller Monat</option>
+                <option value="single_month">Fester Monat</option>
+              </select></div>
+            <div id="arc_month_wrap" style="display:none"><label class="cfg-lbl" style="margin-bottom:4px">Monat</label>
+              <input type="month" id="arc_single_month" style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:7px;color:var(--txt);font-size:.82rem"
+                value="${new Date().toISOString().slice(0,7)}">
+            </div>
+            <div><label class="cfg-lbl" style="margin-bottom:4px">Ladeort</label>
+              <select id="arc_loc_filter" style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:7px;color:var(--txt);font-size:.82rem">
+                <option value="all">Alle</option><option value="home">Zuhause</option><option value="external">Extern</option>
+              </select></div>
+            <div style="display:flex;gap:8px;align-self:flex-end;padding-bottom:2px">
+              <label style="display:flex;align-items:center;gap:5px;font-size:.78rem"><input type="checkbox" id="arc_inc_excel" checked> Excel</label>
+              <label style="display:flex;align-items:center;gap:5px;font-size:.78rem"><input type="checkbox" id="arc_inc_pdf"> PDF</label>
+            </div>
+            <button class="btn-p" onclick="createReport()" style="align-self:flex-end">📊 Report erstellen</button>
+          </div>
+          <!-- Archive table -->
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <span style="font-size:.85rem;font-weight:600">Archivierte Reports</span>
+            <button class="btn-s" onclick="loadReportArchive()" style="font-size:.75rem">🔄 Aktualisieren</button>
+          </div>
+          <div id="archive_table_body" style="font-size:.75rem;font-family:var(--mono);overflow-x:auto">
+            <span style="color:var(--mute)">Klicke „Aktualisieren" um Reports zu laden.</span>
+          </div>
+        </div>
+        </div><!-- /report_tab_archiv -->
+
+        <!-- Tab: Export-Vorlagen -->
+        <div id="report_tab_export" class="report-tab-content" style="display:none">
+        <div class="cfg-sec-title">Export-Vorlagen</div>
+        <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
+          Speichere mehrere Spalten-Zuordnungen als benannte Vorlagen und wähle beim Export die passende aus.
+        </p>
+        <div id="exportTemplateList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"></div>
+        <button class="btn-p" style="font-size:.78rem;padding:8px 18px" onclick="saveCurrentAsTemplate()" data-requires-permission="export:templates_manage">💾 Aktuelle Zuordnung als Vorlage speichern</button>
+        <span style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-left:10px">Zuerst Template hochladen &amp; Spalten zuweisen im Export-Bereich</span>
+        </div><!-- /report_tab_export -->
+
+      </div><!-- /cfgsec-berichte -->
 
       <!-- ══════════════════════════════════════════════════════════
            ABRECHNUNG / BILLING
@@ -1779,46 +1837,6 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           </div>
         </div>
       </div>
-
-      <!-- ══════════════════════════════════════════════════════════
-           REPORT-ARCHIV
-           ══════════════════════════════════════════════════════════ -->
-      <div id="cfgsec-report-archive" class="cfg-section" style="display:none">
-        <div class="card">
-          <div class="card-title">📁 Report-Archiv</div>
-          <!-- Create report strip -->
-          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:18px;padding:14px;background:var(--surf2);border-radius:8px">
-            <div><label class="cfg-lbl" style="margin-bottom:4px">Zeitraum-Modus</label>
-              <select id="arc_period_mode" onchange="onArcPeriodModeChange()" style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:7px;color:var(--txt);font-size:.82rem">
-                <option value="previous_period">Vorheriger Monat</option>
-                <option value="current_period">Aktueller Monat</option>
-                <option value="single_month">Fester Monat</option>
-              </select></div>
-            <div id="arc_month_wrap" style="display:none"><label class="cfg-lbl" style="margin-bottom:4px">Monat</label>
-              <input type="month" id="arc_single_month" style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:7px;color:var(--txt);font-size:.82rem"
-                value="${new Date().toISOString().slice(0,7)}">
-            </div>
-            <div><label class="cfg-lbl" style="margin-bottom:4px">Ladeort</label>
-              <select id="arc_loc_filter" style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:7px;color:var(--txt);font-size:.82rem">
-                <option value="all">Alle</option><option value="home">Zuhause</option><option value="external">Extern</option>
-              </select></div>
-            <div style="display:flex;gap:8px;align-self:flex-end;padding-bottom:2px">
-              <label style="display:flex;align-items:center;gap:5px;font-size:.78rem"><input type="checkbox" id="arc_inc_excel" checked> Excel</label>
-              <label style="display:flex;align-items:center;gap:5px;font-size:.78rem"><input type="checkbox" id="arc_inc_pdf"> PDF</label>
-            </div>
-            <button class="btn-p" onclick="createReport()" style="align-self:flex-end">📊 Report erstellen</button>
-          </div>
-          <!-- Archive table -->
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-            <span style="font-size:.85rem;font-weight:600">Archivierte Reports</span>
-            <button class="btn-s" onclick="loadReportArchive()" style="font-size:.75rem">🔄 Aktualisieren</button>
-          </div>
-          <div id="archive_table_body" style="font-size:.75rem;font-family:var(--mono);overflow-x:auto">
-            <span style="color:var(--mute)">Klicke „Aktualisieren" um Reports zu laden.</span>
-          </div>
-        </div>
-      </div>
-
 
       <!-- ══════════════════════════════════════════════════════════
            LADEABOS / ÖFFENTLICHES LADEN
@@ -2519,17 +2537,6 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           <span id="oauthSaveInfo" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-left:10px"></span>
         </div>
 
-      </div>
-
-      <!-- EXPORT VORLAGEN -->
-      <div id="cfgsec-export-tpl" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">Export-Vorlagen</div>
-        <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
-          Speichere mehrere Spalten-Zuordnungen als benannte Vorlagen und wähle beim Export die passende aus.
-        </p>
-        <div id="exportTemplateList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"></div>
-        <button class="btn-p" style="font-size:.78rem;padding:8px 18px" onclick="saveCurrentAsTemplate()" data-requires-permission="export:templates_manage">💾 Aktuelle Zuordnung als Vorlage speichern</button>
-        <span style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-left:10px">Zuerst Template hochladen &amp; Spalten zuweisen im Export-Bereich</span>
       </div>
 
       <!-- AUDIT LOG -->
@@ -7008,6 +7015,23 @@ function notifTab(name, btn){
   else if(name==='kanaele') { loadKanaeleStatus(); }
 }
 
+function reportTab(name, btn){
+  document.querySelectorAll('.report-tab-content').forEach(el=>el.style.display='none');
+  document.querySelectorAll('#report_tabs .cfg-area-tab').forEach(b=>b.classList.remove('active'));
+  const panel = $('report_tab_'+name);
+  if(panel) panel.style.display='';
+  if(btn) btn.classList.add('active');
+  else {
+    document.querySelectorAll('#report_tabs .cfg-area-tab').forEach(b=>{
+      if(b.getAttribute('onclick')&&b.getAttribute('onclick').includes("'"+name+"'"))
+        b.classList.add('active');
+    });
+  }
+  if(name==='auto')        { loadReportConfig(); }
+  else if(name==='archiv') { loadReportArchive(); }
+  else if(name==='export') { loadExportTemplates(); }
+}
+
 function cfgSection(id, btn){
   const _notifMap = {notifications:'einstellungen', kanaele:'kanaele', smtp:'smtp', mqtt:'mqtt', 'notif-rules':'regeln'};
   if(id in _notifMap){
@@ -7015,6 +7039,14 @@ function cfgSection(id, btn){
       : document.querySelector('.cfg-nav-btn[onclick*="\'notifications\'"]');
     cfgSection('benachrichtigungen', _nb);
     notifTab(_notifMap[id], null);
+    return;
+  }
+  const _reportMap = {reports:'auto', 'report-archive':'archiv', 'export-tpl':'export'};
+  if(id in _reportMap){
+    const _nb = btn&&btn.classList.contains('cfg-nav-btn') ? btn
+      : document.querySelector('.cfg-nav-btn[onclick*="\'reports\'"]');
+    cfgSection('berichte', _nb);
+    reportTab(_reportMap[id], null);
     return;
   }
   document.querySelectorAll('.cfg-section').forEach(s=>s.style.display='none');
