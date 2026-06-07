@@ -8707,12 +8707,37 @@ function testNotifChannel(channel) {
   }
 
   async function _vprofilLoadVerbindung(v) {
-    var provs = await fetch('/api/providers').then(function(r){return r.json();}).catch(function(){return [];});
+    var _eh = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'').replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});};
     var grid = $('vprofil_providerGrid');
     if(!grid) return;
+    var currentProvider = (v && v.provider) || 'ha';
+    var provInput = $('vprofil_provider');
+    if(provInput) provInput.value = currentProvider;
+
+    grid.innerHTML = '<div style="font-size:.75rem;color:var(--mute);font-family:var(--mono)">⏳ Lade Datenquellen…</div>';
+
+    var resp;
+    try { resp = await apiFetch('/api/providers'); }
+    catch(e) {
+      console.error('[_vprofilLoadVerbindung] Netzwerkfehler /api/providers:', e);
+      grid.innerHTML = '<div style="color:var(--danger);font-size:.78rem">❌ Datenquellen konnten nicht geladen werden.</div>';
+      return;
+    }
+    if(!resp.ok) {
+      console.error('[_vprofilLoadVerbindung] /api/providers HTTP', resp.status);
+      grid.innerHTML = '<div style="color:var(--danger);font-size:.78rem">❌ Datenquellen konnten nicht geladen werden (HTTP '+resp.status+').</div>';
+      return;
+    }
+    var provs = await resp.json().catch(function(e){
+      console.error('[_vprofilLoadVerbindung] /api/providers JSON-Fehler:', e); return null;
+    });
+    if(!Array.isArray(provs)) {
+      console.error('[_vprofilLoadVerbindung] /api/providers: kein Array:', provs);
+      grid.innerHTML = '<div style="color:var(--danger);font-size:.78rem">❌ Datenquellen konnten nicht geladen werden.</div>';
+      return;
+    }
+
     grid.innerHTML = '';
-    var currentProvider = v.provider || 'ha';
-    $('vprofil_provider').value = currentProvider;
     provs.forEach(function(p){
       var selected = p.provider_id === currentProvider;
       var card = document.createElement('div');
@@ -8727,29 +8752,64 @@ function testNotifChannel(channel) {
         (p.odometer?'✅':'❌')+' KM &nbsp;'+(p.charge_power?'✅':'❌')+' kW &nbsp;'+(p.location?'✅':'❌')+' Standort</div>';
       grid.appendChild(card);
     });
+
+    _vproviderFieldsLoaded = false;
     await _vprofilLoadProviderFields(currentProvider, v);
-    // Tracker settings
+
     var batEl = $('vprofil_bat'); var pollEl = $('vprofil_poll');
-    if(batEl) batEl.value = v.battery_capacity_kwh || '77.0';
-    if(pollEl) pollEl.value = v.poll_interval || '60';
+    if(batEl) batEl.value = (v && v.battery_capacity_kwh) || '77.0';
+    if(pollEl) pollEl.value = (v && v.poll_interval) || '60';
   }
 
   async function _vprofilSelectProvider(pid) {
-    $('vprofil_provider').value = pid;
+    var provInput = $('vprofil_provider');
+    if(provInput) provInput.value = pid;
     document.querySelectorAll('[id^="vpcard_"]').forEach(function(c){
       var sel = c.id === 'vpcard_'+pid;
       c.style.borderColor = sel ? 'var(--acc)' : 'var(--brd)';
-      c.querySelector('div').style.color = sel ? 'var(--acc)' : '#fff';
+      var firstDiv = c.querySelector('div');
+      if(firstDiv) firstDiv.style.color = sel ? 'var(--acc)' : '#fff';
     });
+    _vproviderFieldsLoaded = false;
     await _vprofilLoadProviderFields(pid, null);
   }
 
+  var _vproviderFieldsLoaded = false;
+
   async function _vprofilLoadProviderFields(pid, existingVehicle) {
-    var fields = await fetch('/api/providers/'+encodeURIComponent(pid)+'/fields')
-                        .then(function(r){return r.json();}).catch(function(){return [];});
+    var _eh = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'').replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});};
+    _vproviderFieldsLoaded = false;
     var container = $('vprofil_providerFields');
     if(!container) return;
+    container.innerHTML = '<div style="font-size:.75rem;color:var(--mute);font-family:var(--mono)">⏳ Lade Felder…</div>';
+
+    var resp;
+    try { resp = await apiFetch('/api/providers/'+encodeURIComponent(pid)+'/fields'); }
+    catch(e) {
+      console.error('[_vprofilLoadProviderFields] Netzwerkfehler:', e);
+      container.innerHTML = '<div style="color:var(--danger);font-size:.78rem">❌ Provider-Felder konnten nicht geladen werden.</div>';
+      return;
+    }
+    if(!resp.ok) {
+      console.error('[_vprofilLoadProviderFields] HTTP', resp.status);
+      container.innerHTML = '<div style="color:var(--danger);font-size:.78rem">❌ Provider-Felder konnten nicht geladen werden (HTTP '+resp.status+').</div>';
+      return;
+    }
+    var fields = await resp.json().catch(function(e){
+      console.error('[_vprofilLoadProviderFields] JSON-Fehler:', e); return null;
+    });
+    if(!Array.isArray(fields)) {
+      console.error('[_vprofilLoadProviderFields] kein Array:', fields);
+      container.innerHTML = '<div style="color:var(--danger);font-size:.78rem">❌ Provider-Felder konnten nicht geladen werden.</div>';
+      return;
+    }
+
     container.innerHTML = '';
+    if(fields.length === 0) {
+      container.innerHTML = '<div style="font-size:.78rem;color:var(--mute);font-family:var(--mono)">ℹ Diese Datenquelle benötigt keine Zugangsdaten.</div>';
+      _vproviderFieldsLoaded = true;
+      return;
+    }
     fields.forEach(function(f){
       var wrap = document.createElement('div'); wrap.className = 'fg full';
       var val = existingVehicle ? (existingVehicle[f.id]||'') : '';
@@ -8766,13 +8826,19 @@ function testNotifChannel(channel) {
       }
       container.appendChild(wrap);
     });
+    _vproviderFieldsLoaded = true;
   }
 
   async function vprofilSaveVerbindung() {
     if(!_vprofilVid){ toast('Kein Fahrzeug aktiv','err'); return; }
+    if(!_vproviderFieldsLoaded) {
+      toast('Provider-Felder konnten nicht geladen werden. Speichern abgebrochen.', 'err');
+      return;
+    }
     var pid = $('vprofil_provider') ? $('vprofil_provider').value : 'ha';
-    var fields = await fetch('/api/providers/'+encodeURIComponent(pid)+'/fields')
-                        .then(function(r){return r.json();}).catch(function(){return [];});
+    var fieldResp = await apiFetch('/api/providers/'+encodeURIComponent(pid)+'/fields')
+                          .then(function(r){return r.json();}).catch(function(){return [];});
+    var fields = Array.isArray(fieldResp) ? fieldResp : [];
     var payload = { provider: pid };
     var nameEl = $('vprofil_name');
     if(nameEl && nameEl.value.trim()){
@@ -8799,8 +8865,9 @@ function testNotifChannel(channel) {
 
   async function vprofilTestConn() {
     var pid = $('vprofil_provider') ? $('vprofil_provider').value : 'ha';
-    var fields = await fetch('/api/providers/'+encodeURIComponent(pid)+'/fields')
-                        .then(function(r){return r.json();}).catch(function(){return [];});
+    var fieldResp = await apiFetch('/api/providers/'+encodeURIComponent(pid)+'/fields')
+                          .then(function(r){return r.json();}).catch(function(){return [];});
+    var fields = Array.isArray(fieldResp) ? fieldResp : [];
     var payload = { provider: pid, vehicle_id: _vprofilVid || 'v0' };
     fields.forEach(function(f){
       var el = $('vpf_'+f.id); if(!el) return;
@@ -8808,11 +8875,29 @@ function testNotifChannel(channel) {
       payload[f.id] = el.value;
     });
     var resBox = $('vprofil_connRes'); if(!resBox) return;
-    resBox.textContent = '⏳ Teste…'; resBox.className='conn-res';
+    resBox.className = 'conn-res'; resBox.style.display = 'block';
+    resBox.textContent = '⏳ Teste Verbindung…';
     var r = await apiFetch('/api/vehicles/test-connection', {method:'POST', body:JSON.stringify(payload)})
                   .then(function(x){return x.json();}).catch(function(){return {ok:false,message:'Netzwerkfehler'};});
-    if(r.ok){ resBox.textContent='✅ Verbindung erfolgreich'; resBox.className='conn-res ok'; }
-    else { resBox.textContent='❌ '+(r.message||'Fehler'); resBox.className='conn-res err'; }
+    if(r.ok){
+      var d = r.data || {};
+      var _eh2 = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'');};
+      var add = function(lbl,val,u){return (val!=null&&val!==''?'✅ ':'— ')+lbl+': '+(val!=null&&val!==''?_eh2(String(val))+(u||''):'nicht verfügbar');};
+      var rows = [add('SOC',d.soc,' %'), add('Kilometer',d.odometer!=null?Math.round(d.odometer).toLocaleString('de'):null,' km'),
+        (d.charging!=null?'✅':'—')+' Ladestatus: '+(d.charging===true?'lädt':d.charging===false?'lädt nicht':'nicht verfügbar'),
+        add('Ladeleistung',d.charge_power,' kW'), add('Standort',d.location)];
+      var head = r.status==='ok' ? '✅ Verbindung erfolgreich' : '⚠️ Verbindung ok, aber einige Daten fehlen';
+      resBox.className = 'conn-res ok'; resBox.style.display = 'block';
+      resBox.innerHTML = '<div style="font-weight:600;margin-bottom:6px">'+head+'</div>'+
+        (r.message?'<div style="margin-bottom:6px;color:var(--mute)">'+_eh2(r.message)+'</div>':'')+
+        '<div style="display:grid;gap:2px;font-family:var(--mono);font-size:.75rem;color:var(--txt)">'+
+        rows.map(function(x){return '<div>'+x+'</div>';}).join('')+'</div>';
+    } else {
+      resBox.className = 'conn-res err'; resBox.style.display = 'block';
+      var _eh2 = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'');};
+      resBox.innerHTML = '<div style="font-weight:600;margin-bottom:4px">❌ Verbindung fehlgeschlagen</div>'+
+        '<div style="color:var(--txt)">'+_eh2(r.message||'Unbekannter Fehler')+'</div>';
+    }
   }
 
   async function vprofilRestartTracker() {

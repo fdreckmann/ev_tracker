@@ -622,3 +622,101 @@ class TestPrUi2ProfileFieldRoundtrip:
         assert 'id="vp_h_loc_mode"' in html
         assert 'id="vp_h_loc_ha_entities"' in html
         assert 'id="vp_h_loc_history_enabled"' in html
+
+
+# ---------------------------------------------------------------------------
+# 10 — Bugfix PR: Provider-Karten bleiben leer (ReferenceError _eh + silent catch)
+# ---------------------------------------------------------------------------
+
+class TestProviderRenderFix:
+    """Backend routes are functional and the HTML wiring for the provider
+    section is correct (no duplicate IDs, required containers present)."""
+
+    def test_api_providers_returns_array_with_ha(self, authed_client):
+        """/api/providers returns a JSON list that includes provider_id 'ha'."""
+        rv = authed_client.get('/api/providers')
+        assert rv.status_code == 200
+        data = rv.get_json()
+        assert isinstance(data, list), "Expected list from /api/providers"
+        ids = [p.get('provider_id') for p in data]
+        assert 'ha' in ids, f"'ha' missing from providers: {ids[:5]}"
+
+    def test_api_providers_ha_fields_contains_required_fields(self, authed_client):
+        """/api/providers/ha/fields returns ha_url, ha_token, and sensor fields."""
+        rv = authed_client.get('/api/providers/ha/fields')
+        assert rv.status_code == 200
+        fields = rv.get_json()
+        assert isinstance(fields, list)
+        field_ids = [f.get('id') for f in fields]
+        for expected in ('ha_url', 'ha_token', 'charging_sensor', 'soc_sensor', 'odo_sensor'):
+            assert expected in field_ids, f"'{expected}' missing from HA fields: {field_ids}"
+
+    def test_provider_containers_exist_exactly_once(self, authed_client):
+        """vprofil_providerGrid, vprofil_provider, vprofil_providerFields,
+        vprofil_connRes each appear exactly once in the rendered page."""
+        import re
+        rv = authed_client.get('/')
+        assert rv.status_code == 200
+        html = rv.get_data(as_text=True)
+        ids = re.findall(r'id="([^"${}\'`+]+)"', html)
+        from collections import Counter
+        counts = Counter(ids)
+        for required in ('vprofil_providerGrid', 'vprofil_provider',
+                         'vprofil_providerFields', 'vprofil_connRes'):
+            assert counts[required] == 1, \
+                f"'{required}' appears {counts[required]}x (expected exactly 1)"
+
+    def test_no_silent_catch_in_provider_load_functions(self, authed_client):
+        """_vprofilLoadVerbindung and _vprofilLoadProviderFields must not use
+        the silent .catch(()=>[]) / .catch(function(){return [];}) pattern."""
+        rv = authed_client.get('/')
+        html = rv.get_data(as_text=True)
+        # Locate the two functions in the rendered HTML
+        import re
+        # Extract the block between _vprofilLoadVerbindung and vprofilSaveVerbindung
+        block = re.search(
+            r'async function _vprofilLoadVerbindung.*?async function vprofilSaveVerbindung',
+            html, re.DOTALL)
+        assert block, "_vprofilLoadVerbindung not found in rendered HTML"
+        block_text = block.group(0)
+        # The silent catch pattern must not appear in these functions
+        silent = re.search(r'\.catch\(function\(\)\s*\{\s*return \[\]', block_text)
+        assert not silent, "Silent .catch(()=>[]) still present in provider load functions"
+
+    def test_vprofil_fields_use_vpf_prefix_not_vmf(self, authed_client):
+        """Provider fields in the profile must use vpf_ prefix; vmf_ belongs
+        to the add-modal and must NOT appear in _vprofilLoadProviderFields."""
+        rv = authed_client.get('/')
+        html = rv.get_data(as_text=True)
+        import re
+        block = re.search(
+            r'async function _vprofilLoadProviderFields.*?_vproviderFieldsLoaded = true;\s*\}',
+            html, re.DOTALL)
+        assert block, "_vprofilLoadProviderFields not found in rendered HTML"
+        block_text = block.group(0)
+        assert 'vpf_' in block_text, "vpf_ prefix not found in _vprofilLoadProviderFields"
+        assert 'vmf_' not in block_text, \
+            "vmf_ (add-modal prefix) leaked into _vprofilLoadProviderFields"
+
+    def test_vprofil_connres_display_set_on_test(self, authed_client):
+        """vprofilTestConn must set style.display='block' so the result is
+        visible (conn-res CSS class uses display:none by default)."""
+        rv = authed_client.get('/')
+        html = rv.get_data(as_text=True)
+        # Find the function start, then extract ~3000 chars as its body
+        idx = html.find('async function vprofilTestConn()')
+        assert idx >= 0, "vprofilTestConn not found in rendered HTML"
+        body = html[idx:idx+3000]
+        assert "style.display = 'block'" in body, \
+            "vprofilTestConn does not set resBox.style.display='block'"
+
+    def test_vprofilsaveverbindung_guards_on_fields_not_loaded(self, authed_client):
+        """vprofilSaveVerbindung must check _vproviderFieldsLoaded and abort
+        when fields were never successfully loaded."""
+        rv = authed_client.get('/')
+        html = rv.get_data(as_text=True)
+        idx = html.find('async function vprofilSaveVerbindung()')
+        assert idx >= 0, "vprofilSaveVerbindung not found"
+        body = html[idx:idx+2000]
+        assert '_vproviderFieldsLoaded' in body, \
+            "vprofilSaveVerbindung does not check _vproviderFieldsLoaded"
