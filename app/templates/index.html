@@ -8681,8 +8681,16 @@ function testNotifChannel(channel) {
     if(!_vprofilVid) return;
     // Image functions operate on the active vehicle id.
     _editingVehicleId = _vprofilVid;
-    var vehicles = await fetch('/api/vehicles').then(function(r){return r.json();}).catch(function(){return [];});
-    var v = vehicles.find(function(x){return x.id===_vprofilVid;}) || {};
+    var v = {};
+    try {
+      var vresp = await apiFetch('/api/vehicles');
+      if(vresp.ok) {
+        var vehicles = await vresp.json().catch(function(){ return []; });
+        v = vehicles.find(function(x){return x.id===_vprofilVid;}) || {};
+      } else {
+        console.error('[_vprofilOnOpen] /api/vehicles HTTP', vresp.status);
+      }
+    } catch(e) { console.error('[_vprofilOnOpen] Netzwerkfehler /api/vehicles:', e); }
     $('vprofil_title').textContent = v.name || _vprofilVid;
     $('vprofil_subtitle').textContent = 'ID: '+_vprofilVid+' · '+((v.provider)||'kein Provider');
     if($('vprofil_name')) $('vprofil_name').value = v.name || '';
@@ -8775,6 +8783,15 @@ function testNotifChannel(channel) {
   }
 
   var _vproviderFieldsLoaded = false;
+  var _vproviderFieldsEmpty = false;
+
+  async function _vprofilFetchProviderFields(pid) {
+    var resp = await apiFetch('/api/providers/' + encodeURIComponent(pid) + '/fields');
+    var data = await resp.json().catch(function(){ return null; });
+    if (!resp.ok) { throw new Error('HTTP ' + resp.status); }
+    if (!Array.isArray(data)) { throw new Error('Ungültige Provider-Feld-Antwort'); }
+    return data;
+  }
 
   async function _vprofilLoadProviderFields(pid, existingVehicle) {
     var _eh = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'').replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});};
@@ -8783,24 +8800,11 @@ function testNotifChannel(channel) {
     if(!container) return;
     container.innerHTML = '<div style="font-size:.75rem;color:var(--mute);font-family:var(--mono)">⏳ Lade Felder…</div>';
 
-    var resp;
-    try { resp = await apiFetch('/api/providers/'+encodeURIComponent(pid)+'/fields'); }
+    var fields;
+    try { fields = await _vprofilFetchProviderFields(pid); }
     catch(e) {
-      console.error('[_vprofilLoadProviderFields] Netzwerkfehler:', e);
-      container.innerHTML = '<div style="color:var(--danger);font-size:.78rem">❌ Provider-Felder konnten nicht geladen werden.</div>';
-      return;
-    }
-    if(!resp.ok) {
-      console.error('[_vprofilLoadProviderFields] HTTP', resp.status);
-      container.innerHTML = '<div style="color:var(--danger);font-size:.78rem">❌ Provider-Felder konnten nicht geladen werden (HTTP '+resp.status+').</div>';
-      return;
-    }
-    var fields = await resp.json().catch(function(e){
-      console.error('[_vprofilLoadProviderFields] JSON-Fehler:', e); return null;
-    });
-    if(!Array.isArray(fields)) {
-      console.error('[_vprofilLoadProviderFields] kein Array:', fields);
-      container.innerHTML = '<div style="color:var(--danger);font-size:.78rem">❌ Provider-Felder konnten nicht geladen werden.</div>';
+      console.error('[_vprofilLoadProviderFields] Fehler:', e);
+      container.innerHTML = '<div style="color:var(--danger);font-size:.78rem">❌ Provider-Felder konnten nicht geladen werden: '+String(e.message||e)+'</div>';
       return;
     }
 
@@ -8808,8 +8812,10 @@ function testNotifChannel(channel) {
     if(fields.length === 0) {
       container.innerHTML = '<div style="font-size:.78rem;color:var(--mute);font-family:var(--mono)">ℹ Diese Datenquelle benötigt keine Zugangsdaten.</div>';
       _vproviderFieldsLoaded = true;
+      _vproviderFieldsEmpty = true;
       return;
     }
+    _vproviderFieldsEmpty = false;
     fields.forEach(function(f){
       var wrap = document.createElement('div'); wrap.className = 'fg full';
       var val = existingVehicle ? (existingVehicle[f.id]||'') : '';
@@ -8836,9 +8842,12 @@ function testNotifChannel(channel) {
       return;
     }
     var pid = $('vprofil_provider') ? $('vprofil_provider').value : 'ha';
-    var fieldResp = await apiFetch('/api/providers/'+encodeURIComponent(pid)+'/fields')
-                          .then(function(r){return r.json();}).catch(function(){return [];});
-    var fields = Array.isArray(fieldResp) ? fieldResp : [];
+    var fields;
+    try { fields = await _vprofilFetchProviderFields(pid); }
+    catch(e) {
+      toast('Provider-Felder konnten nicht geladen werden: '+String(e.message||e), 'err');
+      return;
+    }
     var payload = { provider: pid };
     var nameEl = $('vprofil_name');
     if(nameEl && nameEl.value.trim()){
@@ -8864,19 +8873,26 @@ function testNotifChannel(channel) {
   }
 
   async function vprofilTestConn() {
+    var resBox = $('vprofil_connRes'); if(!resBox) return;
+    resBox.style.display = 'block';
+    resBox.className = 'conn-res';
+    resBox.textContent = '⏳ Teste Verbindung…';
     var pid = $('vprofil_provider') ? $('vprofil_provider').value : 'ha';
-    var fieldResp = await apiFetch('/api/providers/'+encodeURIComponent(pid)+'/fields')
-                          .then(function(r){return r.json();}).catch(function(){return [];});
-    var fields = Array.isArray(fieldResp) ? fieldResp : [];
+    var fields;
+    try { fields = await _vprofilFetchProviderFields(pid); }
+    catch(e) {
+      var _eh2 = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'');};
+      resBox.className = 'conn-res err'; resBox.style.display = 'block';
+      resBox.innerHTML = '<div style="font-weight:600;margin-bottom:4px">❌ Felder konnten nicht geladen werden</div>'+
+        '<div style="color:var(--txt)">'+_eh2(String(e.message||e))+'</div>';
+      return;
+    }
     var payload = { provider: pid, vehicle_id: _vprofilVid || 'v0' };
     fields.forEach(function(f){
       var el = $('vpf_'+f.id); if(!el) return;
       if(f.type==='password' && (!el.value || el.value==='********')) return;
       payload[f.id] = el.value;
     });
-    var resBox = $('vprofil_connRes'); if(!resBox) return;
-    resBox.className = 'conn-res'; resBox.style.display = 'block';
-    resBox.textContent = '⏳ Teste Verbindung…';
     var r = await apiFetch('/api/vehicles/test-connection', {method:'POST', body:JSON.stringify(payload)})
                   .then(function(x){return x.json();}).catch(function(){return {ok:false,message:'Netzwerkfehler'};});
     if(r.ok){

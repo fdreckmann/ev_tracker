@@ -720,3 +720,277 @@ class TestProviderRenderFix:
         body = html[idx:idx+2000]
         assert '_vproviderFieldsLoaded' in body, \
             "vprofilSaveVerbindung does not check _vproviderFieldsLoaded"
+
+
+# ---------------------------------------------------------------------------
+# 11 — Phase 2 Bugfix: Provider-Felder zuverlässig befüllen
+# ---------------------------------------------------------------------------
+
+class TestPhase2ProviderFieldPopulation:
+    """Phase 2: provider fields are reliably populated with saved config values.
+
+    Tests cover:
+    - vehicle_image_entity added to VEHICLE_SPECIFIC_KEYS (backend round-trip)
+    - _vprofilFetchProviderFields helper defined in rendered HTML
+    - _vproviderFieldsEmpty flag defined in rendered HTML
+    - _vprofilOnOpen uses apiFetch (no bare fetch('/api/vehicles'))
+    - _vprofilLoadProviderFields delegates to helper
+    - vprofilSaveVerbindung uses helper (no silent catch on fields)
+    - vprofilTestConn shows spinner as first action, uses helper
+    - Secret masking: "********" in PUT does not overwrite stored secret
+    - Provider field round-trips for v0 and extra vehicles
+    """
+
+    # --- Backend: VEHICLE_SPECIFIC_KEYS ---
+
+    def test_vehicle_image_entity_in_vehicle_specific_keys(self, app):
+        """vehicle_image_entity must be in VEHICLE_SPECIFIC_KEYS."""
+        with app.app_context():
+            from core.config import VEHICLE_SPECIFIC_KEYS
+            assert "vehicle_image_entity" in VEHICLE_SPECIFIC_KEYS, \
+                "vehicle_image_entity missing from VEHICLE_SPECIFIC_KEYS"
+
+    def test_ha_connected_means_charging_in_vehicle_specific_keys(self, app):
+        """ha_connected_means_charging must be in VEHICLE_SPECIFIC_KEYS."""
+        with app.app_context():
+            from core.config import VEHICLE_SPECIFIC_KEYS
+            assert "ha_connected_means_charging" in VEHICLE_SPECIFIC_KEYS, \
+                "ha_connected_means_charging missing from VEHICLE_SPECIFIC_KEYS"
+
+    def test_vehicle_image_entity_round_trips_for_v0(self, authed_client, app):
+        """PUT /api/vehicles/v0 with vehicle_image_entity; GET /api/vehicles returns it."""
+        with app.app_context():
+            from core.config import _config_cache
+            _config_cache["data"] = None
+
+        rv = authed_client.put(
+            "/api/vehicles/v0",
+            data=json.dumps({"vehicle_image_entity": "image.my_car"}),
+            content_type="application/json",
+        )
+        assert rv.status_code == 200, rv.get_data(as_text=True)
+
+        rv2 = authed_client.get("/api/vehicles")
+        assert rv2.status_code == 200
+        vehicles = rv2.get_json()
+        v0 = next((v for v in vehicles if v["id"] == "v0"), None)
+        assert v0 is not None, "v0 not found in GET /api/vehicles"
+        assert v0.get("vehicle_image_entity") == "image.my_car", \
+            f"vehicle_image_entity not returned for v0: {v0}"
+
+    def test_vehicle_image_entity_round_trips_for_extra_vehicle(self, authed_client, app):
+        """vehicle_image_entity round-trips for an extra vehicle."""
+        with app.app_context():
+            from core.config import load_config, save_config, _config_cache
+            cfg = load_config()
+            cfg["extra_vehicles"] = [
+                {"id": "img_ev_test", "name": "Img EV", "provider": "ha",
+                 "active": True, "archived": False},
+            ]
+            save_config(cfg)
+            _config_cache["data"] = None
+
+        rv = authed_client.put(
+            "/api/vehicles/img_ev_test",
+            data=json.dumps({"vehicle_image_entity": "image.img_ev"}),
+            content_type="application/json",
+        )
+        assert rv.status_code == 200, rv.get_data(as_text=True)
+
+        rv2 = authed_client.get("/api/vehicles")
+        vehicles = rv2.get_json()
+        ev = next((v for v in vehicles if v["id"] == "img_ev_test"), None)
+        assert ev is not None
+        assert ev.get("vehicle_image_entity") == "image.img_ev"
+
+    def test_ha_token_masked_in_get_response(self, authed_client, app):
+        """GET /api/vehicles must return ha_token as '********', never plaintext."""
+        with app.app_context():
+            from core.config import load_config, save_config, _config_cache
+            cfg = load_config()
+            cfg["ha_token"] = "secret_token_12345"
+            save_config(cfg)
+            _config_cache["data"] = None
+
+        rv = authed_client.get("/api/vehicles")
+        assert rv.status_code == 200
+        vehicles = rv.get_json()
+        v0 = next((v for v in vehicles if v["id"] == "v0"), None)
+        assert v0 is not None
+        token_val = v0.get("ha_token", "")
+        assert token_val != "secret_token_12345", "ha_token returned in plaintext"
+        assert token_val == "********", f"ha_token not masked: {token_val!r}"
+
+    def test_masked_ha_token_put_does_not_overwrite(self, authed_client, app):
+        """PUT with ha_token='********' must not overwrite the stored token."""
+        with app.app_context():
+            from core.config import load_config, save_config, _config_cache
+            cfg = load_config()
+            cfg["ha_token"] = "original_token_abc"
+            save_config(cfg)
+            _config_cache["data"] = None
+
+        rv = authed_client.put(
+            "/api/vehicles/v0",
+            data=json.dumps({"ha_token": "********"}),
+            content_type="application/json",
+        )
+        assert rv.status_code == 200
+
+        with app.app_context():
+            from core.config import load_config, _config_cache
+            _config_cache["data"] = None
+            cfg = load_config()
+            assert cfg.get("ha_token") == "original_token_abc", \
+                f"ha_token was overwritten by '********': {cfg.get('ha_token')!r}"
+
+    def test_empty_ha_token_put_does_not_overwrite(self, authed_client, app):
+        """PUT with ha_token='' (empty) must not overwrite the stored token."""
+        with app.app_context():
+            from core.config import load_config, save_config, _config_cache
+            cfg = load_config()
+            cfg["ha_token"] = "real_token_xyz"
+            save_config(cfg)
+            _config_cache["data"] = None
+
+        rv = authed_client.put(
+            "/api/vehicles/v0",
+            data=json.dumps({"ha_token": ""}),
+            content_type="application/json",
+        )
+        assert rv.status_code == 200
+
+        with app.app_context():
+            from core.config import load_config, _config_cache
+            _config_cache["data"] = None
+            cfg = load_config()
+            assert cfg.get("ha_token") == "real_token_xyz", \
+                f"ha_token was overwritten by empty string: {cfg.get('ha_token')!r}"
+
+    # --- HTML/JS structure: helper and flags ---
+
+    def test_vprofilfetchproviderfields_helper_defined(self, authed_client):
+        """_vprofilFetchProviderFields must be defined as an async function in the page."""
+        rv = authed_client.get('/')
+        html = rv.get_data(as_text=True)
+        assert 'async function _vprofilFetchProviderFields(' in html, \
+            "_vprofilFetchProviderFields not defined in rendered HTML"
+
+    def test_vproviderfieldsempty_flag_defined(self, authed_client):
+        """_vproviderFieldsEmpty flag must be declared in the page."""
+        rv = authed_client.get('/')
+        html = rv.get_data(as_text=True)
+        assert '_vproviderFieldsEmpty' in html, \
+            "_vproviderFieldsEmpty flag not found in rendered HTML"
+
+    # --- _vprofilOnOpen: uses apiFetch, not bare fetch ---
+
+    def test_vprofilonopen_does_not_use_bare_fetch_for_vehicles(self, authed_client):
+        """_vprofilOnOpen must NOT contain a bare fetch('/api/vehicles') call."""
+        rv = authed_client.get('/')
+        html = rv.get_data(as_text=True)
+        idx = html.find('async function _vprofilOnOpen()')
+        assert idx >= 0, "_vprofilOnOpen not found in rendered HTML"
+        body = html[idx:idx+1500]
+        import re
+        bare = re.search(r"\bfetch\('/api/vehicles'\)", body)
+        assert not bare, \
+            "_vprofilOnOpen still uses bare fetch('/api/vehicles') — must use apiFetch"
+
+    def test_vprofilonopen_uses_apifetch_for_vehicles(self, authed_client):
+        """_vprofilOnOpen must call apiFetch('/api/vehicles')."""
+        rv = authed_client.get('/')
+        html = rv.get_data(as_text=True)
+        idx = html.find('async function _vprofilOnOpen()')
+        assert idx >= 0, "_vprofilOnOpen not found in rendered HTML"
+        body = html[idx:idx+1500]
+        assert "apiFetch('/api/vehicles')" in body, \
+            "_vprofilOnOpen does not call apiFetch('/api/vehicles')"
+
+    # --- _vprofilLoadProviderFields: delegates to helper ---
+
+    def test_vprofilloadproviderfields_uses_fetchproviderfields(self, authed_client):
+        """_vprofilLoadProviderFields must call _vprofilFetchProviderFields."""
+        rv = authed_client.get('/')
+        html = rv.get_data(as_text=True)
+        idx = html.find('async function _vprofilLoadProviderFields(')
+        assert idx >= 0, "_vprofilLoadProviderFields not found"
+        body = html[idx:idx+1500]
+        assert '_vprofilFetchProviderFields(' in body, \
+            "_vprofilLoadProviderFields does not delegate to _vprofilFetchProviderFields"
+
+    def test_vprofilloadproviderfields_no_inline_silent_catch(self, authed_client):
+        """_vprofilLoadProviderFields must not contain inline silent .catch(()=>[])."""
+        rv = authed_client.get('/')
+        html = rv.get_data(as_text=True)
+        idx = html.find('async function _vprofilLoadProviderFields(')
+        assert idx >= 0
+        body = html[idx:idx+1500]
+        import re
+        silent = re.search(r'\.catch\(function\(\)\s*\{\s*return \[\]', body)
+        assert not silent, \
+            "Silent .catch(()=>[]) still in _vprofilLoadProviderFields"
+
+    # --- vprofilSaveVerbindung: uses helper, no silent catch ---
+
+    def test_vprofilsaveverbindung_uses_fetchproviderfields(self, authed_client):
+        """vprofilSaveVerbindung must call _vprofilFetchProviderFields."""
+        rv = authed_client.get('/')
+        html = rv.get_data(as_text=True)
+        idx = html.find('async function vprofilSaveVerbindung()')
+        assert idx >= 0, "vprofilSaveVerbindung not found"
+        body = html[idx:idx+2000]
+        assert '_vprofilFetchProviderFields(' in body, \
+            "vprofilSaveVerbindung does not use _vprofilFetchProviderFields"
+
+    def test_vprofilsaveverbindung_no_inline_silent_catch_on_fields(self, authed_client):
+        """vprofilSaveVerbindung must not use inline silent .catch(()=>[]) on fields fetch."""
+        rv = authed_client.get('/')
+        html = rv.get_data(as_text=True)
+        idx = html.find('async function vprofilSaveVerbindung()')
+        assert idx >= 0
+        body = html[idx:idx+2000]
+        import re
+        silent = re.search(r'\.catch\(function\(\)\s*\{\s*return \[\]', body)
+        assert not silent, \
+            "Silent .catch(()=>[]) on fields fetch still in vprofilSaveVerbindung"
+
+    # --- vprofilTestConn: spinner first, helper, no silent catch ---
+
+    def test_vprofiletstconn_shows_spinner_before_first_await(self, authed_client):
+        """vprofilTestConn must set resBox.textContent='⏳ Teste Verbindung…' BEFORE
+        any await call (the spinner must appear immediately when the user clicks)."""
+        rv = authed_client.get('/')
+        html = rv.get_data(as_text=True)
+        idx = html.find('async function vprofilTestConn()')
+        assert idx >= 0, "vprofilTestConn not found"
+        body = html[idx:idx+500]
+        spinner_pos = body.find('⏳ Teste Verbindung')
+        await_pos = body.find('await ')
+        assert spinner_pos >= 0, "Spinner text not found in vprofilTestConn"
+        assert await_pos >= 0, "No await in vprofilTestConn"
+        assert spinner_pos < await_pos, \
+            f"Spinner set AFTER first await (spinner@{spinner_pos}, await@{await_pos})"
+
+    def test_vprofiletstconn_uses_fetchproviderfields(self, authed_client):
+        """vprofilTestConn must call _vprofilFetchProviderFields."""
+        rv = authed_client.get('/')
+        html = rv.get_data(as_text=True)
+        idx = html.find('async function vprofilTestConn()')
+        assert idx >= 0
+        body = html[idx:idx+2000]
+        assert '_vprofilFetchProviderFields(' in body, \
+            "vprofilTestConn does not use _vprofilFetchProviderFields"
+
+    def test_vprofiletstconn_no_inline_silent_catch_on_fields(self, authed_client):
+        """vprofilTestConn must not use inline silent .catch(()=>[]) on fields fetch."""
+        rv = authed_client.get('/')
+        html = rv.get_data(as_text=True)
+        idx = html.find('async function vprofilTestConn()')
+        assert idx >= 0
+        # Only check the first part of vprofilTestConn (before the actual test-connection call)
+        body = html[idx:idx+600]
+        import re
+        silent = re.search(r'\.catch\(function\(\)\s*\{\s*return \[\]', body)
+        assert not silent, \
+            "Silent .catch(()=>[]) on fields fetch still in vprofilTestConn"
