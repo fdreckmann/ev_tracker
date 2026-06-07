@@ -91,6 +91,17 @@ async function refreshStatus() {
     const onboarding = $('onboardingBanner');
     if (onboarding) onboarding.style.display = (ts === 'not_configured') ? 'flex' : 'none';
 
+    // Open home charges awaiting confirmation (PR 10 — functional minimum).
+    const ohc = $('openHomeChargesBanner');
+    if (ohc) {
+        const n = s.open_home_charges || 0;
+        ohc.style.display = n > 0 ? 'flex' : 'none';
+        const lbl = $('openHomeChargesLabel');
+        if (lbl) lbl.textContent = n === 1
+            ? '1 Heimladung wartet auf Bestätigung'
+            : n + ' Heimladungen warten auf Bestätigung';
+    }
+
     $('dSoc').textContent = s.soc_current != null ? fmt(s.soc_current, 0) + '%' : '—';
     $('dOdo').textContent = s.odo_current != null ? Math.round(s.odo_current).toLocaleString('de') : '—';
     $('dPoll').textContent = s.last_poll ? s.last_poll.substring(11, 16) : '—';

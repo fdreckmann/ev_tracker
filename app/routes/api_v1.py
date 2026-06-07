@@ -361,6 +361,7 @@ def api_v1_reports_create():
         period_info["end"]        = periods[-1]["end"]
 
     excel_bytes = None
+    excel_error = None
     try:
         from services.report_excel_service import build_report_excel_bytes as _brb, build_multi_month_zip_bytes as _bmz
         if len(periods) > 1:
@@ -372,7 +373,10 @@ def api_v1_reports_create():
     except Exception as e:
         import logging
         logging.getLogger(__name__).warning("API v1 report Excel fehlgeschlagen: %s", e)
+        excel_error = str(e)
 
+    include_excel = data.get("include_excel", True)
+    report_status = "created_no_excel" if (include_excel and excel_bytes is None and excel_error) else "created"
     summary = {
         "sessions": len(all_sessions),
         "total_kwh": round(sum(s.get("kwh_charged") or 0 for s in all_sessions), 3),
@@ -380,7 +384,7 @@ def api_v1_reports_create():
         "period_key": combined_key, "period_label": period_label,
     }
     report_id = _save_report_record(vehicle_id, period_info, loc_filter, veh_filter,
-                                    "created", token_row.get("id"),
+                                    report_status, token_row.get("id"),
                                     excel_bytes=excel_bytes, summary=summary)
     _audit("api_report_created",
            f"token={token_row.get('name')} report={report_id} period={combined_key}",
@@ -390,4 +394,8 @@ def api_v1_reports_create():
         _fe("report_created", {"report_id": report_id, "via": "api_v1",
                                 "period": combined_key}, cfg, db_path=DB_PATH)
     except Exception: pass
-    return jsonify({"ok": True, "report_id": report_id, "summary": summary}), 201
+    resp = {"ok": True, "report_id": report_id, "summary": summary}
+    if excel_error:
+        resp["excel_ok"] = False
+        resp["excel_error"] = excel_error
+    return jsonify(resp), 201

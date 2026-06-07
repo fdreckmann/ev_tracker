@@ -264,6 +264,24 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   text-transform:uppercase;letter-spacing:.14em;padding:14px 10px 4px;user-select:none}
 .cfg-grp-label:first-child{padding-top:6px}
 .cfg-section{}
+/* PR 11 — Fahrzeug-Profil Tabs */
+.vprofil-tab{background:transparent;border:1px solid var(--brd);color:var(--mute);
+  border-radius:8px;padding:6px 14px;cursor:pointer;font-size:.78rem;transition:all .15s}
+.vprofil-tab:hover{border-color:var(--acc2);color:var(--acc2)}
+.vprofil-tab.active{background:var(--brd2);border-color:var(--acc2);color:var(--acc2)}
+/* PR-UI-1 — cfg-area tabs (Benachrichtigungen, Berichte) */
+.cfg-area-tab{background:transparent;border:1px solid var(--brd);color:var(--mute);
+  border-radius:8px;padding:6px 14px;cursor:pointer;font-size:.78rem;transition:all .15s}
+.cfg-area-tab:hover{border-color:var(--acc2);color:var(--acc2)}
+.cfg-area-tab.active{background:var(--brd2);border-color:var(--acc2);color:var(--acc2)}
+@media(max-width:540px){
+  #vprofil_tabs{display:none}
+  .vprofil-tab-content{display:block!important;margin-bottom:8px}
+  .vprofil-tab-content::before{content:attr(data-label);display:block;
+    font-size:.65rem;font-family:var(--mono);color:var(--mute);
+    text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px;
+    padding-bottom:6px;border-bottom:1px solid var(--brd)}
+}
 .cfg-sec-title{font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;
   letter-spacing:.12em;margin-bottom:18px;display:flex;align-items:center;gap:10px}
 .cfg-sec-title::after{content:'';flex:1;height:1px;background:var(--brd)}
@@ -789,6 +807,23 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     </a>
   </div>
 
+  <!-- Open home charges awaiting confirmation (PR 10 — functional minimum) -->
+  <div id="openHomeChargesBanner" style="display:none;align-items:center;gap:16px;
+       background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);
+       border-radius:12px;padding:16px 20px;margin-bottom:14px">
+    <div style="font-size:2rem">🏠</div>
+    <div style="flex:1">
+      <div id="openHomeChargesLabel" style="font-weight:600;font-size:.95rem;margin-bottom:2px">Heimladungen warten auf Bestätigung</div>
+      <div style="font-size:.78rem;color:var(--mute)">Ordne erkannte Wallbox-Ladungen einem Fahrzeug zu.</div>
+    </div>
+    <a href="#openHomeChargesCard" onclick="if(typeof loadOpenWallboxSessions==='function')loadOpenWallboxSessions()"
+       style="background:rgba(245,158,11,.15);color:#f0b54f;
+       border:1px solid rgba(245,158,11,.35);text-decoration:none;
+       border-radius:8px;padding:9px 16px;font-size:.82rem;font-weight:600;white-space:nowrap">
+      Zuordnen
+    </a>
+  </div>
+
   <!-- Vehicle image card -->
   <div id="dashVehicleCard" style="display:flex;align-items:center;gap:16px;background:var(--card);border:1px solid var(--brd);border-radius:12px;padding:14px 18px;margin-bottom:14px">
     <img id="dashVehicleImg" src="/static/vehicle_images/placeholder_car.svg"
@@ -940,12 +975,10 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <!-- 3. Fahrzeuge -->
       <div class="cfg-grp-label">Fahrzeuge</div>
       <button class="cfg-nav-btn cfg-nav-sub active" onclick="cfgSection('fahrzeuge',this)">🚗 Fahrzeuge</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('verbindung',this)">🔌 Integrationen &amp; API</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('fahrzeug-status',this)">📡 API-Übersicht</button>
 
       <!-- 4. Laden & Kosten -->
       <div class="cfg-grp-label">Laden &amp; Kosten</div>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('zaehler',this)">🔌 Zähler &amp; Wallbox</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('tarif',this)" data-requires-permission="tariffs:view">🏠 Zuhause laden</button>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('ladeabos',this)" data-requires-permission="public_charging:view">🌐 Öffentlich laden</button>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('ladevorgang',this)">🔍 Ladevorgang-Erkennung</button>
       <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('abrechnung',this)" data-requires-permission="billing:view">💼 Abrechnung</button>
@@ -953,15 +986,11 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
       <!-- 5. Benachrichtigungen -->
       <div class="cfg-grp-label" data-requires-permission="notifications:view">Benachrichtigungen</div>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('notifications',this)" data-requires-permission="notifications:view">🔔 Einstellungen</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('kanaele',this)" data-requires-permission="notifications:view">📡 Kanäle</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('notif-rules',this)" data-requires-permission="notifications:view">📋 Ereignisse &amp; Regeln</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('notifications',this)" data-requires-permission="notifications:view">🔔 Benachrichtigungen</button>
 
       <!-- 6. Berichte & Export -->
       <div class="cfg-grp-label">Berichte &amp; Export</div>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('reports',this)" data-requires-permission="reports:view">📊 Auto-Berichte</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('report-archive',this)" data-requires-permission="reports:archive">📁 Report-Archiv</button>
-      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('export-tpl',this)">📋 Export-Vorlagen</button>
+      <button class="cfg-nav-btn cfg-nav-sub" onclick="cfgSection('reports',this)" data-requires-permission="reports:view">📊 Berichte</button>
 
       <!-- 7. Backup -->
       <div class="cfg-grp-label" data-requires-permission="backup:view">Backup</div>
@@ -985,16 +1014,448 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         <button class="btn-p" style="font-size:.78rem;padding:8px 18px" onclick="openAddVehicleModal()">+ Fahrzeug hinzufügen</button>
       </div>
 
-      <!-- VERBINDUNG -->
-      <div id="cfgsec-verbindung" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">Integrationen &amp; API-Übersicht</div>
+      <!-- ══════════════════════════════════════════════════════════
+           FAHRZEUG-PROFIL (PR 11) — fahrzeugzentrierte Konfig
+           ══════════════════════════════════════════════════════════ -->
+      <div id="cfgsec-fahrzeug-profil" class="cfg-section" style="display:none">
+        <!-- Kopfzeile mit Fahrzeugname + Zurück-Link -->
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
+          <button class="btn-g" style="padding:6px 12px;font-size:.78rem"
+                  onclick="cfgSection('fahrzeuge',document.querySelector('#cfgNav [onclick*=\'cfgSection(\\\'fahrzeuge\\\'\']'))">
+            ← Alle Fahrzeuge
+          </button>
+          <div style="flex:1">
+            <div id="vprofil_title" style="font-size:1.05rem;font-weight:700"></div>
+            <div id="vprofil_subtitle" style="font-size:.72rem;font-family:var(--mono);color:var(--mute)"></div>
+          </div>
+          <span id="vprofil_badge_ohc" style="display:none;background:rgba(245,158,11,.15);
+                color:#f0b54f;border:1px solid rgba(245,158,11,.35);border-radius:20px;
+                padding:3px 10px;font-size:.72rem;font-family:var(--mono);white-space:nowrap"></span>
+        </div>
+
+        <!-- Tab-Navigation (Desktop) / Accordion-Trigger-Labels (Mobile via CSS) -->
+        <div id="vprofil_tabs" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;border-bottom:1px solid var(--brd);padding-bottom:10px">
+          <button class="vprofil-tab active" data-tab="verbindung"  onclick="vprofilTab('verbindung',this)">🔌 Verbindung</button>
+          <button class="vprofil-tab"        data-tab="zaehler"     onclick="vprofilTab('zaehler',this)">⚡ Wallbox &amp; Zähler</button>
+          <button class="vprofil-tab"        data-tab="heimladung"  onclick="vprofilTab('heimladung',this)">🏠 Heimladung &amp; Tarif</button>
+          <button class="vprofil-tab"        data-tab="verlauf"     onclick="vprofilTab('verlauf',this)">📋 Verlauf</button>
+        </div>
+
+        <!-- Tab-Inhalt: Verbindung / Provider -->
+        <div id="vprofil_tab_verbindung" class="vprofil-tab-content">
+          <div class="form-grid" style="margin-bottom:12px">
+            <div class="fg full">
+              <label>Fahrzeugname</label>
+              <input type="text" id="vprofil_name" placeholder="z.B. VW ID.4 Weiß">
+            </div>
+          </div>
+          <div class="form-grid" id="vprofil_providerFields_wrap">
+            <div class="fg full">
+              <label>Datenquelle</label>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px;margin-top:8px"
+                   id="vprofil_providerGrid"></div>
+              <input type="hidden" id="vprofil_provider">
+            </div>
+          </div>
+          <div id="vprofil_providerNotes" style="margin-top:10px"></div>
+          <div class="form-grid" id="vprofil_providerFields" style="margin-top:12px"></div>
+          <div style="margin-top:14px">
+            <button class="btn-g" onclick="vprofilTestConn()">🔗 Verbindung testen</button>
+            <button class="btn-g" onclick="vprofilRestartTracker()">↺ Tracker neu starten</button>
+            <div class="conn-res" id="vprofil_connRes"></div>
+          </div>
+          <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--brd)">
+            <label>Batteriekapazität (kWh)</label>
+            <input type="number" id="vprofil_bat" placeholder="77.0" step="0.1" min="1" style="max-width:160px">
+            <label style="margin-top:10px;display:block">Polling-Intervall (s)</label>
+            <input type="number" id="vprofil_poll" placeholder="60" min="30" max="600" style="max-width:160px">
+          </div>
+          <div class="btn-row" style="margin-top:16px">
+            <button class="btn-p" data-requires-permission="admin:all"
+                    onclick="vprofilSaveVerbindung()">💾 Verbindung speichern</button>
+          </div>
+
+          <!-- Fahrzeugbild (verschoben aus Bearbeiten-Modal) -->
+          <div id="vmImageSection" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--brd)">
+            <div class="fg full"><label>Fahrzeugbild</label>
+              <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+                <img id="vmImagePreview" src="/static/vehicle_images/placeholder_car.svg" alt="Fahrzeugbild"
+                     style="width:140px;height:80px;object-fit:contain;border-radius:8px;border:1px solid var(--brd);background:var(--bg2)"
+                     onerror="this.src='/static/vehicle_images/placeholder_car.svg'">
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  <button class="btn-s" style="font-size:.75rem" onclick="suggestVehicleImage()">✨ Auto-Vorschlag</button>
+                  <button class="btn-s" style="font-size:.75rem" onclick="openSilhouettePicker()">🚗 Silhouette wählen</button>
+                  <label class="btn-s" style="cursor:pointer;font-size:.75rem">
+                    📷 Foto hochladen
+                    <input type="file" id="vmImageFile" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="uploadVehicleImage()">
+                  </label>
+                  <button class="btn-s" style="font-size:.75rem;color:var(--danger)" onclick="deleteVehicleImage()">🗑 Entfernen</button>
+                  <span style="font-size:.65rem;color:var(--mute)">Max. 3 MB · PNG/JPG/WebP · <span id="vmImageSourceLabel"></span></span>
+                </div>
+              </div>
+              <!-- Silhouette picker (inline) -->
+              <div id="vmSilhouettePicker" style="display:none;margin-top:10px">
+                <div style="font-size:.78rem;color:var(--mute);margin-bottom:6px">Karosserieform wählen:</div>
+                <div id="vmSilhouetteGrid" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Archivieren (verschoben aus Bearbeiten-Modal) -->
+          <div id="vprofil_archive_row" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--brd);display:none">
+            <button class="btn-d" onclick="vprofilArchiveVehicle()">📦 Fahrzeug archivieren</button>
+            <span style="font-size:.7rem;color:var(--mute);margin-left:10px">Ladevorgänge bleiben erhalten; das Fahrzeug wird nicht mehr aktiv gepollt.</span>
+          </div>
+        </div>
+
+        <!-- Tab-Inhalt: Wallbox & Zähler -->
+        <div id="vprofil_tab_zaehler" class="vprofil-tab-content" style="display:none">
+          <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
+            Wird beim Start und Ende jeder Ladesession automatisch abgelesen.
+          </p>
+          <div class="fg full" style="margin-bottom:10px">
+            <label>Quelle</label>
+            <select id="vp_z_meter_source" onchange="vprofilUpdateMeterSourceUI()">
+              <option value="none">— Keine / manuell —</option>
+              <optgroup label="Smarte Steckdosen / Energiemesser">
+                <option value="ha">Home Assistant Sensor</option>
+                <option value="shelly">Shelly EM / 1PM (lokal)</option>
+                <option value="tasmota">Tasmota (lokal)</option>
+              </optgroup>
+              <optgroup label="Wallboxen">
+                <option value="go_e">go-e Charger (v1 + v2)</option>
+                <option value="openwb">openWB (v1 / Series 2)</option>
+                <option value="warp">WARP Charger 1 / 2 / 3</option>
+                <option value="evcc">EVCC · KEBA · ABL · Mennekes u.v.m.</option>
+                <option value="webasto">Webasto Next / Live</option>
+                <option value="alfen">Alfen Eve Single / Double</option>
+                <option value="juice">Juice Charger Me³ / Pro</option>
+              </optgroup>
+              <optgroup label="Generisch">
+                <option value="generic">Generischer HTTP-Endpunkt</option>
+              </optgroup>
+            </select>
+          </div>
+          <div id="vp_z_meter_ha_fields" style="display:none">
+            <div class="fg full"><label>HA Entity ID</label>
+              <input type="text" id="vp_z_meter_sensor" placeholder="sensor.stromzaehler_total_kwh"></div>
+          </div>
+          <div id="vp_z_meter_device_fields" style="display:none">
+            <div class="fg full"><label>Geräte-IP</label>
+              <input type="text" id="vp_z_meter_device_ip" placeholder="192.168.1.100"></div>
+          </div>
+          <div id="vp_z_meter_evcc_fields" style="display:none">
+            <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr">
+              <div><label>EVCC Port</label><input type="number" id="vp_z_meter_evcc_port" placeholder="7070"></div>
+              <div><label>Loadpoint (0=erster)</label><input type="number" id="vp_z_meter_evcc_lp" placeholder="0"></div>
+            </div>
+          </div>
+          <div id="vp_z_meter_alfen_fields" style="display:none">
+            <div class="fg full"><label>Alfen Web-Passwort</label>
+              <input type="password" id="vp_z_meter_alfen_pass" placeholder="admin"></div>
+          </div>
+          <div id="vp_z_meter_shelly_fields" style="display:none">
+            <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr 1fr">
+              <div><label>Kanal</label><input type="number" id="vp_z_meter_channel" placeholder="0" min="0" max="3"></div>
+              <div><label>Phase</label>
+                <select id="vp_z_meter_phase_mode">
+                  <option value="total">Gesamt</option>
+                  <option value="a">Phase A / L1</option>
+                  <option value="b">Phase B / L2</option>
+                  <option value="c">Phase C / L3</option>
+                </select>
+              </div>
+              <div><label>Passwort (optional)</label><input type="password" id="vp_z_meter_password_shelly" placeholder=""></div>
+            </div>
+          </div>
+          <div id="vp_z_meter_tasmota_fields" style="display:none">
+            <div class="fg full"><label>JSON-Pfad (optional)</label>
+              <input type="text" id="vp_z_meter_json_path_tasmota" placeholder="StatusSNS.ENERGY.Total">
+              <span class="hint">Leer lassen für automatische Erkennung</span></div>
+          </div>
+          <div id="vp_z_meter_generic_fields" style="display:none">
+            <div class="fg full"><label>URL</label>
+              <input type="text" id="vp_z_meter_generic_url" placeholder="http://192.168.1.100/api/energy"></div>
+            <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr 1fr">
+              <div><label>JSON-Pfad</label><input type="text" id="vp_z_meter_json_path_generic" placeholder="data.energy.total"></div>
+              <div><label>Einheit</label>
+                <select id="vp_z_meter_value_unit">
+                  <option value="auto">Auto-Erkennung</option>
+                  <option value="kwh">kWh</option>
+                  <option value="wh">Wh</option>
+                  <option value="mwh">MWh</option>
+                </select>
+              </div>
+              <div><label>Faktor</label><input type="number" id="vp_z_meter_value_factor" placeholder="1.0" step="0.001"></div>
+            </div>
+            <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr">
+              <div><label>Benutzername (optional)</label><input type="text" id="vp_z_meter_generic_user" placeholder=""></div>
+              <div><label>Passwort (optional)</label><input type="password" id="vp_z_meter_generic_pass" placeholder=""></div>
+            </div>
+          </div>
+          <div id="vp_z_meter_advanced_fields" style="display:none;margin-top:8px;padding:10px;background:rgba(0,0,0,.15);border-radius:8px">
+            <div style="font-size:.72rem;color:var(--mute);margin-bottom:8px">Erweiterte Optionen</div>
+            <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr 1fr">
+              <div><label>Timeout (s)</label><input type="number" id="vp_z_meter_timeout_seconds" placeholder="8" min="1" max="30"></div>
+              <div><label>Schema</label>
+                <select id="vp_z_meter_device_scheme">
+                  <option value="http">HTTP</option>
+                  <option value="https">HTTPS</option>
+                </select>
+              </div>
+              <div><label>Port (optional)</label><input type="number" id="vp_z_meter_device_port" placeholder=""></div>
+            </div>
+            <div style="margin-top:8px">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                <input type="checkbox" id="vp_z_meter_prefer_delta"> Zähler-Delta für kWh verwenden (statt SoC-Schätzung)
+              </label>
+            </div>
+            <div style="margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <label style="font-size:.82rem;color:var(--mute);white-space:nowrap">Zähler gilt für</label>
+              <select id="vp_z_meter_scope" style="min-width:180px">
+                <option value="home_only">Nur Zuhause-Laden</option>
+                <option value="all">Alle Ladevorgänge</option>
+                <option value="disabled">Deaktiviert</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-top:10px;display:grid;gap:10px;grid-template-columns:1fr 1fr">
+            <div>
+              <label>Wallbox-Leistung zuhause</label>
+              <select id="vp_z_home_charger_power_kw_preset" onchange="vprofilOnWallboxPresetChange()">
+                <option value="11">11 kW</option>
+                <option value="22">22 kW</option>
+                <option value="custom">Benutzerdefiniert</option>
+              </select>
+            </div>
+            <div id="vp_z_wallbox_custom_div" style="display:none">
+              <label>Leistung (kW)</label>
+              <input type="number" id="vp_z_home_charger_power_kw" placeholder="11" min="1" max="150" step="0.1">
+            </div>
+          </div>
+          <div style="margin-top:6px">
+            <button class="btn-s" style="font-size:.72rem;padding:4px 10px" onclick="vprofilToggleMeterAdvanced()">⚙ Erweitert</button>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
+            <button class="btn-p" data-requires-permission="admin:all" onclick="vprofilSaveZaehler()">💾 Speichern</button>
+            <button class="btn-s" onclick="vprofilTestZaehler()">🔍 Verbindung testen</button>
+            <span id="vp_z_test_res" style="font-size:.77rem;font-family:var(--mono)"></span>
+          </div>
+          <span id="vp_z_save_res" style="font-size:.77rem;font-family:var(--mono);margin-left:2px"></span>
+        </div>
+
+        <!-- Tab-Inhalt: Heimladung & Tarif -->
+        <div id="vprofil_tab_heimladung" class="vprofil-tab-content" style="display:none">
+          <!-- Heimladungs-Erkennung -->
+          <div style="margin-bottom:18px">
+            <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">
+              ⚡ Automatische Heimladung
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:12px">
+              <input type="checkbox" id="vp_h_home_charge_enabled">
+              <span style="font-size:.84rem">Erkennung aktivieren</span>
+            </label>
+            <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr">
+              <div><label>Start-Schwelle (kW)</label>
+                <input type="number" id="vp_h_hc_power_start" placeholder="1.0" min="0.1" max="50" step="0.1"></div>
+              <div><label>Stop-Schwelle (kW)</label>
+                <input type="number" id="vp_h_hc_power_stop" placeholder="0.2" min="0" max="50" step="0.1"></div>
+            </div>
+            <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr;margin-top:10px">
+              <div><label>Start-Debounce (s)</label>
+                <input type="number" id="vp_h_hc_debounce_start" placeholder="120" min="10" max="600"></div>
+              <div><label>Stop-Debounce (s)</label>
+                <input type="number" id="vp_h_hc_debounce_stop" placeholder="300" min="10" max="600"></div>
+            </div>
+            <div style="margin-top:10px">
+              <label>Mindest-kWh</label>
+              <input type="number" id="vp_h_hc_min_kwh" placeholder="1.0" min="0.1" max="100" step="0.1" style="max-width:160px">
+            </div>
+          </div>
+          <!-- Heimat-Koordinaten + Standort (verschoben aus Bearbeiten-Modal) -->
+          <div style="margin-bottom:18px;padding:12px 14px;background:rgba(0,0,0,.12);border-radius:8px;border:1px solid var(--brd)">
+            <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">
+              📍 Standort &amp; Heimat
+            </div>
+            <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr">
+              <div><label>Heimat Breitengrad</label>
+                <input type="text" id="vp_h_home_lat" placeholder="51.5074"></div>
+              <div><label>Heimat Längengrad</label>
+                <input type="text" id="vp_h_home_lon" placeholder="7.4653"></div>
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:12px">
+              <input type="checkbox" id="vp_h_loc_enabled"> <span style="font-size:.84rem">Standortanzeige aktivieren</span>
+            </label>
+            <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr;margin-top:10px">
+              <div><label>Modus</label>
+                <select id="vp_h_loc_mode">
+                  <option value="home_external">Nur Zuhause/Extern</option>
+                  <option value="exact">Genaue Position</option>
+                  <option value="disabled">Deaktiviert</option>
+                </select></div>
+              <div><label>Erkennungsquelle</label>
+                <select id="vp_h_loc_source">
+                  <option value="combined">Kombiniert (Provider + HA)</option>
+                  <option value="provider">Nur Provider</option>
+                  <option value="ha">Nur Home Assistant</option>
+                  <option value="manual">Manuell</option>
+                </select></div>
+              <div><label>Kombinationsmodus</label>
+                <select id="vp_h_loc_detect_mode">
+                  <option value="any">any — Zuhause wenn eine Quelle home meldet</option>
+                  <option value="all">all — Zuhause nur wenn alle Quellen home melden</option>
+                  <option value="provider_only">Nur Provider-Position</option>
+                  <option value="ha_only">Nur HA-Entities</option>
+                  <option value="manual">Manuell</option>
+                </select></div>
+              <div><label>Home-Radius (Meter)</label>
+                <input type="number" id="vp_h_loc_radius" value="150" min="50" max="5000"></div>
+            </div>
+            <div style="margin-top:10px"><label>HA/UniFi Device-Tracker Entities (eine pro Zeile)</label>
+              <textarea id="vp_h_loc_ha_entities" rows="3" placeholder="device_tracker.mein_auto&#10;device_tracker.unifi_..."></textarea></div>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:10px">
+              <input type="checkbox" id="vp_h_loc_history_enabled"> <span style="font-size:.84rem">Standort-Historie speichern</span>
+            </label>
+            <div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <button class="btn-s" onclick="vprofilTestLocation()">🧪 Standort testen</button>
+              <span id="vp_h_loc_test_result" style="font-size:.82rem;color:var(--mute)"></span>
+            </div>
+          </div>
+          <!-- Zuordnungs-Modus -->
+          <div style="margin-bottom:18px;padding:12px 14px;background:rgba(0,0,0,.12);border-radius:8px;border:1px solid var(--brd)">
+            <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">
+              🎯 Zuordnungs-Modus
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:10px">
+              <input type="checkbox" id="vp_h_allow_probable" onchange="vprofilToggleAutoModeWarning()">
+              <span style="font-size:.84rem">Auto-Modus — Ladungen ohne Nachweis automatisch zuordnen</span>
+            </label>
+            <div id="vp_h_auto_warn" style="display:none;background:rgba(247,179,9,.12);border:1px solid rgba(247,179,9,.35);border-radius:7px;padding:10px 12px;font-size:.76rem;font-family:var(--mono);color:#f7b309;line-height:1.6">
+              ⚠ Nur aktivieren, wenn an dieser Wallbox ausschließlich dieses Fahrzeug lädt. Ladungen ohne eindeutigen Nachweis (RFID oder Fahrzeug-API) werden sonst diesem Fahrzeug zugerechnet — fremde Ladungen erscheinen dann in Reports und Abrechnung.
+            </div>
+            <p style="font-size:.72rem;color:var(--mute);margin-top:8px;line-height:1.5">
+              Deaktiviert (Standard) = Bestätigungs-Modus: Bei unklarer Zuordnung wird eine Bestätigung per Benachrichtigung angefordert.
+            </p>
+          </div>
+          <div style="margin-bottom:18px">
+            <button class="btn-p" data-requires-permission="admin:all" onclick="vprofilSaveHeimladung()">💾 Heimladung speichern</button>
+            <span id="vp_h_save_res" style="font-size:.77rem;font-family:var(--mono);margin-left:10px"></span>
+          </div>
+          <!-- Tarif -->
+          <div style="border-top:1px solid var(--brd);padding-top:16px">
+            <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">
+              💶 Stromtarif
+            </div>
+            <div style="margin-bottom:12px">
+              <label class="cfg-lbl">Tarif-Provider</label>
+              <select id="vp_h_tariff_provider" onchange="vprofilOnTariffProviderChange()"
+                style="width:100%;max-width:320px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
+                <option value="fixed">Fester Preis</option>
+                <option value="octopus">Octopus Energy</option>
+                <option value="tibber">Tibber</option>
+                <option value="home_assistant">Home Assistant Sensor</option>
+                <option value="evcc">EVCC</option>
+                <option value="generic_http">Generic HTTP</option>
+              </select>
+            </div>
+            <div id="vp_h_tariff_panel_fixed">
+              <div><label class="cfg-lbl">Preis Zuhause (€/kWh)</label>
+                <input type="number" id="vp_h_tariff_price_home" step="0.001" min="0"
+                  style="width:160px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+            </div>
+            <div id="vp_h_tariff_panel_octopus" style="display:none">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+                <div><label class="cfg-lbl">API Key</label>
+                  <input type="password" id="vp_h_tariff_octopus_api_key" placeholder="sk_live_…"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+                <div><label class="cfg-lbl">Account ID</label>
+                  <input type="text" id="vp_h_tariff_octopus_account_id" placeholder="A-12345678"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+                <div><label class="cfg-lbl">Produkt-Code</label>
+                  <input type="text" id="vp_h_tariff_octopus_product_code" placeholder="AGILE-24-10-01"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+                <div><label class="cfg-lbl">Tariff-Code</label>
+                  <input type="text" id="vp_h_tariff_octopus_tariff_code" placeholder="E-1R-AGILE-24-10-01-C"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+                <div><label class="cfg-lbl">GBP→EUR Faktor</label>
+                  <input type="number" id="vp_h_tariff_octopus_gbp_eur_factor" step="0.01" min="0.5" max="3"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+              </div>
+            </div>
+            <div id="vp_h_tariff_panel_tibber" style="display:none">
+              <label class="cfg-lbl">Tibber API Token</label>
+              <input type="password" id="vp_h_tariff_tibber_token" placeholder="51c48a…"
+                style="width:100%;max-width:400px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+            </div>
+            <div id="vp_h_tariff_panel_home_assistant" style="display:none">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+                <div style="grid-column:1/-1"><label class="cfg-lbl">Entity ID (Preis-Sensor)</label>
+                  <input type="text" id="vp_h_tariff_ha_entity" placeholder="sensor.electricity_price_current"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+                <div style="grid-column:1/-1"><label class="cfg-lbl">HA URL <span style="font-weight:400;color:var(--mute)">(leer = aus Verbindungs-Konfig)</span></label>
+                  <input type="text" id="vp_h_tariff_ha_url" placeholder="http://homeassistant.local:8123"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+                <div style="grid-column:1/-1"><label class="cfg-lbl">Long-Lived Access Token</label>
+                  <input type="password" id="vp_h_tariff_ha_token" placeholder="eyJ0eXAi…"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+              </div>
+            </div>
+            <div id="vp_h_tariff_panel_evcc" style="display:none">
+              <label class="cfg-lbl">EVCC URL</label>
+              <input type="text" id="vp_h_tariff_evcc_url" placeholder="http://evcc.local:7070"
+                style="width:100%;max-width:400px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+            </div>
+            <div id="vp_h_tariff_panel_generic_http" style="display:none">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+                <div style="grid-column:1/-1"><label class="cfg-lbl">URL</label>
+                  <input type="text" id="vp_h_tariff_generic_url" placeholder="https://api.example.com/price"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+                <div><label class="cfg-lbl">JSON-Pfad</label>
+                  <input type="text" id="vp_h_tariff_generic_json_path" placeholder="data.current_price"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+                <div><label class="cfg-lbl">Einheit</label>
+                  <select id="vp_h_tariff_generic_unit" style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
+                    <option value="EUR/kWh">EUR/kWh</option>
+                    <option value="p/kWh">p/kWh (Pence)</option>
+                    <option value="Wh">Wh (→ EUR/kWh)</option>
+                  </select></div>
+                <div><label class="cfg-lbl">Multiplikator</label>
+                  <input type="number" id="vp_h_tariff_generic_factor" step="0.001" min="0"
+                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
+              </div>
+            </div>
+            <div style="margin-top:12px">
+              <label class="cfg-lbl">Fallback-Preis (€/kWh) <span style="color:var(--mute);font-size:.7rem">— wird genutzt wenn API nicht erreichbar</span></label>
+              <input type="number" id="vp_h_tariff_fallback_price" step="0.001" min="0"
+                style="width:160px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
+            </div>
+            <div style="margin-top:12px">
+              <button class="btn-p" data-requires-permission="tariffs:configure" onclick="vprofilSaveTariff()">💾 Tarif speichern</button>
+              <span id="vp_h_tariff_save_res" style="font-size:.77rem;font-family:var(--mono);margin-left:10px"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab-Inhalt: Verlauf / Beweise -->
+        <div id="vprofil_tab_verlauf" class="vprofil-tab-content" style="display:none">
+          <div id="vprofil_verlauf_list" style="display:flex;flex-direction:column;gap:10px">
+            <p style="font-size:.78rem;color:var(--mute);font-family:var(--mono)">Lade Verlauf…</p>
+          </div>
+          <!-- Offene Heimladungen zur Bestätigung -->
+          <div id="vprofil_ohc_list" style="margin-top:18px;display:none">
+            <div class="cfg-sec-title" style="margin-bottom:10px">Offene Heimladungen — Bestätigung</div>
+            <div id="vprofil_ohc_rows" style="display:flex;flex-direction:column;gap:8px"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FAHRZEUG-STATUS / API-ÜBERSICHT (global) -->
+      <div id="cfgsec-fahrzeug-status" class="cfg-section" style="display:none">
+        <div class="cfg-sec-title">API-Funktionsübersicht</div>
         <div style="background:var(--info-bg);border:1px solid var(--brd);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:.82rem;line-height:1.6">
           Provider/API werden <strong>pro Fahrzeug</strong> eingerichtet:
           <a href="#" onclick="cfgSection('fahrzeuge',document.querySelector('#cfgNav [onclick*=fahrzeuge]'));return false" style="color:var(--acc2)">Konfiguration → Fahrzeuge</a>.
           Diese Übersicht zeigt nur, welche Datenquelle welche Werte liefert — sie ändert keine Konfiguration.
-          <div style="margin-top:10px">
-            <button class="btn-g" type="button" onclick="openEditVehicleModal('v0')">🚗 Primärfahrzeug bearbeiten</button>
-          </div>
         </div>
 
         <div class="sec-lbl">API-Funktionsübersicht</div>
@@ -1021,70 +1482,6 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             </tbody>
           </table>
         </div>
-
-        <details style="margin-top:8px">
-          <summary style="cursor:pointer;color:var(--mute);font-size:.74rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;padding:8px 0">Erweitert: Primärfahrzeug (v0) global konfigurieren — Kompatibilität</summary>
-          <div style="margin-top:14px">
-        <div class="form-grid">
-          <div class="fg full"><label>Fahrzeugname</label>
-            <input id="c_car" value="{{ cfg.car_name }}"></div>
-          <div class="fg full">
-            <label>Datenquelle</label>
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px;margin-top:8px" id="providerGrid">
-              {% for p in all_providers %}
-              <div onclick="selectProvider('{{ p.provider_id }}')" id="pcard_{{ p.provider_id }}"
-                style="background:var(--bg);border:2px solid {% if cfg.provider==p.provider_id %}var(--acc){% else %}var(--brd){% endif %};
-                border-radius:10px;padding:12px 14px;cursor:pointer;transition:all .15s">
-                <div style="font-weight:700;font-size:.8rem;color:{% if cfg.provider==p.provider_id %}var(--acc){% else %}#fff{% endif %}">
-                  {{ p.provider_name }}</div>
-                <div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);margin-top:5px;line-height:1.7">
-                  {% if p.charging_state %}✅{% else %}❌{% endif %} Laden &nbsp;
-                  {% if p.soc %}✅{% else %}❌{% endif %} SOC<br>
-                  {% if p.odometer %}✅{% else %}❌{% endif %} KM &nbsp;
-                  {% if p.charge_power %}✅{% else %}❌{% endif %} kW &nbsp;
-                  {% if p.location %}✅{% else %}❌{% endif %} Standort
-                </div>
-              </div>
-              {% endfor %}
-            </div>
-            <input type="hidden" id="c_provider" value="{{ cfg.provider }}">
-          </div>
-        </div>
-        {% for p in all_providers %}{% if p.notes %}
-        <div id="notes_{{ p.provider_id }}" style="display:{% if cfg.provider==p.provider_id %}block{% else %}none{% endif %};
-          margin-top:12px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);
-          border-radius:8px;padding:10px 14px;font-size:.72rem;font-family:var(--mono);color:var(--warn);line-height:1.8">
-          {% for note in p.notes %}⚠ {{ note }}<br>{% endfor %}</div>
-        {% endif %}{% endfor %}
-
-        <div style="margin-top:18px">
-          <div class="cfg-sec-title">Provider &amp; API</div>
-          <div class="form-grid" id="providerFields"></div>
-          <div style="margin-top:14px">
-            <button class="btn-g" onclick="testConn()">🔗 Verbindung testen</button>
-            <button class="btn-g" onclick="restartTracker()" id="btnRestartTracker">Tracker neu starten</button>
-            <div class="conn-res" id="connRes"></div>
-          </div>
-        </div>
-
-        <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--brd)">
-          <div class="cfg-sec-title">Tracker-Einstellungen</div>
-          <div class="form-grid">
-            <div class="fg"><label>Batteriekapazität (kWh)</label>
-              <input type="number" id="c_bat" value="{{ cfg.battery_capacity_kwh }}" step="0.1" min="1">
-              <span class="hint">Für Schätzungen bei fehlenden kWh-Werten</span></div>
-            <div class="fg"><label>Polling-Intervall (s)</label>
-              <input type="number" id="c_poll" value="{{ cfg.poll_interval }}" min="30" max="600">
-              <span class="hint">Abfrageintervall des Providers (30–600 s)</span></div>
-          </div>
-        </div>
-
-        <div class="btn-row">
-          <button class="btn-p" onclick="saveConfig()">💾 Speichern</button>
-          <button class="btn-s" onclick="loadConfig()">↺ Zurücksetzen</button>
-        </div>
-          </div>
-        </details>
       </div>
 
       <!-- LADEVORGANG-ERKENNUNG -->
@@ -1202,205 +1599,19 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         </div>
       </div>
 
-      <!-- ZÄHLERSTAND -->
-      <div id="cfgsec-zaehler" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">Zähler &amp; Wallbox</div>
-        <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
-          Wird beim Start und Ende jeder Ladesession automatisch abgelesen.
-        </p>
-        <div class="fg full" style="margin-bottom:10px">
-          <label>Quelle</label>
-          <select id="c_meter_source" onchange="updateMeterSourceUI()">
-            <option value="none">— Keine / manuell —</option>
-            <optgroup label="Smarte Steckdosen / Energiemesser">
-              <option value="ha">Home Assistant Sensor</option>
-              <option value="shelly">Shelly EM / 1PM (lokal)</option>
-              <option value="tasmota">Tasmota (lokal)</option>
-            </optgroup>
-            <optgroup label="Wallboxen">
-              <option value="go_e">go-e Charger (v1 + v2)</option>
-              <option value="openwb">openWB (v1 / Series 2)</option>
-              <option value="warp">WARP Charger 1 / 2 / 3</option>
-              <option value="evcc">EVCC · KEBA · ABL · Mennekes u.v.m.</option>
-              <option value="webasto">Webasto Next / Live</option>
-              <option value="alfen">Alfen Eve Single / Double</option>
-              <option value="juice">Juice Charger Me³ / Pro</option>
-            </optgroup>
-            <optgroup label="Generisch">
-              <option value="generic">Generischer HTTP-Endpunkt</option>
-            </optgroup>
-          </select>
-        </div>
-        <div id="meterHaFields" style="display:none">
-          <div class="fg full"><label>HA Entity ID</label>
-            <input type="text" id="c_meter_sensor" placeholder="sensor.stromzaehler_total_kwh"></div>
-        </div>
-        <div id="meterDeviceFields" style="display:none">
-          <div class="fg full"><label>Geräte-IP</label>
-            <input type="text" id="c_meter_device_ip" placeholder="192.168.1.100"></div>
-        </div>
-        <div id="meterEvccFields" style="display:none;display:grid;gap:10px;grid-template-columns:1fr 1fr">
-          <div><label>EVCC Port</label><input type="number" id="c_meter_evcc_port" placeholder="7070"></div>
-          <div><label>Loadpoint (0=erster)</label><input type="number" id="c_meter_evcc_lp" placeholder="0"></div>
-        </div>
-        <div id="meterAlfenFields" style="display:none">
-          <div class="fg full"><label>Alfen Web-Passwort</label>
-            <input type="password" id="c_meter_alfen_pass" placeholder="admin"></div>
-        </div>
-        <div id="meterShellyFields" style="display:none">
-          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr 1fr">
-            <div><label>Kanal</label><input type="number" id="c_meter_channel" placeholder="0" min="0" max="3"></div>
-            <div><label>Phase</label>
-              <select id="c_meter_phase_mode">
-                <option value="total">Gesamt</option>
-                <option value="a">Phase A / L1</option>
-                <option value="b">Phase B / L2</option>
-                <option value="c">Phase C / L3</option>
-              </select>
-            </div>
-            <div><label>Passwort (optional)</label><input type="password" id="c_meter_password_shelly" placeholder=""></div>
-          </div>
-        </div>
-        <div id="meterTasmotaFields" style="display:none">
-          <div class="fg full"><label>JSON-Pfad (optional)</label>
-            <input type="text" id="c_meter_json_path_tasmota" placeholder="StatusSNS.ENERGY.Total">
-            <span class="hint">Leer lassen für automatische Erkennung</span></div>
-        </div>
-        <div id="meterGenericFields" style="display:none">
-          <div class="fg full"><label>URL</label>
-            <input type="text" id="c_meter_generic_url" placeholder="http://192.168.1.100/api/energy"></div>
-          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr 1fr">
-            <div><label>JSON-Pfad</label><input type="text" id="c_meter_json_path_generic" placeholder="data.energy.total"></div>
-            <div><label>Einheit</label>
-              <select id="c_meter_value_unit">
-                <option value="auto">Auto-Erkennung</option>
-                <option value="kwh">kWh</option>
-                <option value="wh">Wh</option>
-                <option value="mwh">MWh</option>
-              </select>
-            </div>
-            <div><label>Faktor</label><input type="number" id="c_meter_value_factor" placeholder="1.0" step="0.001"></div>
-          </div>
-          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr">
-            <div><label>Benutzername (optional)</label><input type="text" id="c_meter_generic_user" placeholder=""></div>
-            <div><label>Passwort (optional)</label><input type="password" id="c_meter_generic_pass" placeholder=""></div>
-          </div>
-        </div>
-        <div id="meterAdvancedFields" style="display:none;margin-top:8px;padding:10px;background:rgba(0,0,0,.15);border-radius:8px">
-          <div style="font-size:.72rem;color:var(--mute);margin-bottom:8px">Erweiterte Optionen</div>
-          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr 1fr">
-            <div><label>Timeout (s)</label><input type="number" id="c_meter_timeout_seconds" placeholder="8" min="1" max="30"></div>
-            <div><label>Schema</label>
-              <select id="c_meter_device_scheme">
-                <option value="http">HTTP</option>
-                <option value="https">HTTPS</option>
-              </select>
-            </div>
-            <div><label>Port (optional)</label><input type="number" id="c_meter_device_port" placeholder=""></div>
-          </div>
-          <div style="margin-top:8px">
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-              <input type="checkbox" id="c_meter_prefer_delta"> Zähler-Delta für kWh verwenden (statt SoC-Schätzung)
-            </label>
-          </div>
-          <div style="margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <label style="font-size:.82rem;color:var(--mute);white-space:nowrap">Zähler gilt für</label>
-            <select id="c_meter_scope" style="min-width:180px">
-              <option value="home_only">Nur Zuhause-Laden</option>
-              <option value="all">Alle Ladevorgänge</option>
-              <option value="disabled">Deaktiviert</option>
-            </select>
-          </div>
-          <div style="margin-top:6px;font-size:.72rem;color:var(--mute);line-height:1.4">
-            Zählerstände werden ohne Nachkommastellen angezeigt. Die Berechnung der geladenen kWh erfolgt intern mit dem exakten Wert.
-          </div>
-        </div>
-        <div style="margin-top:10px;display:grid;gap:10px;grid-template-columns:1fr 1fr">
-          <div>
-            <label>Wallbox-Leistung zuhause</label>
-            <select id="c_home_charger_power_kw_preset" onchange="onWallboxPresetChange()">
-              <option value="11">11 kW</option>
-              <option value="22">22 kW</option>
-              <option value="custom">Benutzerdefiniert</option>
-            </select>
-          </div>
-          <div id="wallboxCustomDiv" style="display:none">
-            <label>Leistung (kW)</label>
-            <input type="number" id="c_home_charger_power_kw" placeholder="11" min="1" max="150" step="0.1">
-          </div>
-        </div>
-        <div style="margin-top:6px">
-          <button class="btn-s" style="font-size:.72rem;padding:4px 10px" onclick="toggleMeterAdvanced()">⚙ Erweitert</button>
-        </div>
-        <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
-          <button class="btn-p" onclick="saveMeterSource()">💾 Speichern</button>
-          <button class="btn-s" onclick="testMeterSource()">🔍 Verbindung testen</button>
-          <span id="meterTestRes" style="font-size:.77rem;font-family:var(--mono)"></span>
-          <pre id="meterTestDebug" style="display:none;margin-top:8px;font-size:.68rem;font-family:var(--mono);color:var(--mute);background:rgba(0,0,0,.2);padding:8px;border-radius:6px;white-space:pre-wrap;max-height:200px;overflow-y:auto"></pre>
+
+      <!-- ══════════════════════════════════════════════════════════
+           BERICHTE (Reiter-Bereich)
+           ══════════════════════════════════════════════════════════ -->
+      <div id="cfgsec-berichte" class="cfg-section" style="display:none">
+        <div id="report_tabs" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px;border-bottom:1px solid var(--brd);padding-bottom:10px">
+          <button class="cfg-area-tab active" onclick="reportTab('auto',this)" data-requires-permission="reports:view">📊 Auto-Berichte</button>
+          <button class="cfg-area-tab" onclick="reportTab('archiv',this)" data-requires-permission="reports:archive">📁 Archiv</button>
+          <button class="cfg-area-tab" onclick="reportTab('export',this)">📋 Export-Vorlagen</button>
         </div>
 
-        <!-- ── Automatische Heimladung ──────────────────────────────── -->
-        <div style="margin-top:18px;border-top:1px solid var(--brd);padding-top:14px">
-          <div style="font-size:.75rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;display:flex;align-items:center;gap:8px">
-            ⚡ Automatische Heimladung über Wallbox/Zähler
-          </div>
-          <p style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-bottom:12px;line-height:1.5;background:rgba(247,179,9,.07);border:1px solid rgba(247,179,9,.2);border-radius:6px;padding:8px 10px">
-            Ein steigender Zähler bedeutet nicht automatisch, dass dein Fahrzeug geladen wurde. Bei unklarer Zuordnung wird eine offene Heimladung erstellt.
-          </p>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:12px">
-            <input type="checkbox" id="c_home_charge_enabled">
-            <span style="font-size:.84rem">Erkennung aktivieren</span>
-          </label>
-          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr">
-            <div><label>Start-Schwelle (kW)</label>
-              <input type="number" id="c_hc_power_start" placeholder="1.0" min="0.1" max="50" step="0.1"></div>
-            <div><label>Stop-Schwelle (kW)</label>
-              <input type="number" id="c_hc_power_stop" placeholder="0.2" min="0" max="50" step="0.1"></div>
-          </div>
-          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr;margin-top:10px">
-            <div><label>Start-Debounce (s)</label>
-              <input type="number" id="c_hc_debounce_start" placeholder="120" min="10" max="600"></div>
-            <div><label>Stop-Debounce (s)</label>
-              <input type="number" id="c_hc_debounce_stop" placeholder="300" min="10" max="600"></div>
-          </div>
-          <div style="margin-top:10px">
-            <label>Mindest-kWh</label>
-            <input type="number" id="c_hc_min_kwh" placeholder="1.0" min="0.1" max="100" step="0.1" style="max-width:160px">
-          </div>
-          <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr;margin-top:10px">
-            <div>
-              <label>Zuordnungsmodus</label>
-              <select id="c_hc_assignment_mode">
-                <option value="always_default_vehicle">Immer Standardfahrzeug verwenden</option>
-                <option value="default_if_api_confirms">Standardfahrzeug nur wenn API bestätigt</option>
-                <option value="require_rfid_or_api">RFID/API erforderlich</option>
-                <option value="always_ask_if_unclear">Bei unklarer Zuordnung immer fragen</option>
-              </select>
-            </div>
-            <div>
-              <label>Standardfahrzeug</label>
-              <select id="c_hc_default_vehicle">
-                <option value="">— Hauptfahrzeug (v0) —</option>
-                {% for v in all_vehicles %}
-                <option value="{{ v.id }}">{{ v.name }}</option>
-                {% endfor %}
-              </select>
-            </div>
-          </div>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:10px">
-            <input type="checkbox" id="c_hc_allow_probable">
-            <span style="font-size:.84rem">Probable Assignment erlauben</span>
-          </label>
-          <div style="margin-top:12px">
-            <button class="btn-p" onclick="saveHomeChargeConfig()">💾 Heimladung speichern</button>
-            <span id="hcSaveRes" style="font-size:.77rem;font-family:var(--mono);margin-left:10px"></span>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- BENACHRICHTIGUNGEN -->
-      <div id="cfgsec-reports" class="cfg-section" style="display:none">
+        <!-- Tab: Auto-Berichte -->
+        <div id="report_tab_auto" class="report-tab-content">
         <div class="card">
           <div class="card-title">📊 Automatische E-Mail-Reports</div>
           <div style="display:flex;flex-direction:column;gap:20px">
@@ -1563,7 +1774,57 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           <div class="card-title">📋 Versandhistorie</div>
           <div id="rep_history_body" style="font-size:.75rem;font-family:var(--mono);overflow-x:auto"></div>
         </div>
-      </div>
+        </div><!-- /report_tab_auto -->
+
+        <!-- Tab: Archiv -->
+        <div id="report_tab_archiv" class="report-tab-content" style="display:none">
+        <div class="card">
+          <div class="card-title">📁 Report-Archiv</div>
+          <!-- Create report strip -->
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:18px;padding:14px;background:var(--surf2);border-radius:8px">
+            <div><label class="cfg-lbl" style="margin-bottom:4px">Zeitraum-Modus</label>
+              <select id="arc_period_mode" onchange="onArcPeriodModeChange()" style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:7px;color:var(--txt);font-size:.82rem">
+                <option value="previous_period">Vorheriger Monat</option>
+                <option value="current_period">Aktueller Monat</option>
+                <option value="single_month">Fester Monat</option>
+              </select></div>
+            <div id="arc_month_wrap" style="display:none"><label class="cfg-lbl" style="margin-bottom:4px">Monat</label>
+              <input type="month" id="arc_single_month" style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:7px;color:var(--txt);font-size:.82rem"
+                value="${new Date().toISOString().slice(0,7)}">
+            </div>
+            <div><label class="cfg-lbl" style="margin-bottom:4px">Ladeort</label>
+              <select id="arc_loc_filter" style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:7px;color:var(--txt);font-size:.82rem">
+                <option value="all">Alle</option><option value="home">Zuhause</option><option value="external">Extern</option>
+              </select></div>
+            <div style="display:flex;gap:8px;align-self:flex-end;padding-bottom:2px">
+              <label style="display:flex;align-items:center;gap:5px;font-size:.78rem"><input type="checkbox" id="arc_inc_excel" checked> Excel</label>
+              <label style="display:flex;align-items:center;gap:5px;font-size:.78rem"><input type="checkbox" id="arc_inc_pdf"> PDF</label>
+            </div>
+            <button class="btn-p" onclick="createReport()" style="align-self:flex-end">📊 Report erstellen</button>
+          </div>
+          <!-- Archive table -->
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <span style="font-size:.85rem;font-weight:600">Archivierte Reports</span>
+            <button class="btn-s" onclick="loadReportArchive()" style="font-size:.75rem">🔄 Aktualisieren</button>
+          </div>
+          <div id="archive_table_body" style="font-size:.75rem;font-family:var(--mono);overflow-x:auto">
+            <span style="color:var(--mute)">Klicke „Aktualisieren" um Reports zu laden.</span>
+          </div>
+        </div>
+        </div><!-- /report_tab_archiv -->
+
+        <!-- Tab: Export-Vorlagen -->
+        <div id="report_tab_export" class="report-tab-content" style="display:none">
+        <div class="cfg-sec-title">Export-Vorlagen</div>
+        <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
+          Speichere mehrere Spalten-Zuordnungen als benannte Vorlagen und wähle beim Export die passende aus.
+        </p>
+        <div id="exportTemplateList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"></div>
+        <button class="btn-p" style="font-size:.78rem;padding:8px 18px" onclick="saveCurrentAsTemplate()" data-requires-permission="export:templates_manage">💾 Aktuelle Zuordnung als Vorlage speichern</button>
+        <span style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-left:10px">Zuerst Template hochladen &amp; Spalten zuweisen im Export-Bereich</span>
+        </div><!-- /report_tab_export -->
+
+      </div><!-- /cfgsec-berichte -->
 
       <!-- ══════════════════════════════════════════════════════════
            ABRECHNUNG / BILLING
@@ -1660,177 +1921,6 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             <button class="btn-p" onclick="saveBillingConfig()">💾 Speichern</button>
             <span id="billing_status" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);align-self:center"></span>
           </div>
-        </div>
-      </div>
-
-      <!-- ══════════════════════════════════════════════════════════
-           REPORT-ARCHIV
-           ══════════════════════════════════════════════════════════ -->
-      <div id="cfgsec-report-archive" class="cfg-section" style="display:none">
-        <div class="card">
-          <div class="card-title">📁 Report-Archiv</div>
-          <!-- Create report strip -->
-          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:18px;padding:14px;background:var(--surf2);border-radius:8px">
-            <div><label class="cfg-lbl" style="margin-bottom:4px">Zeitraum-Modus</label>
-              <select id="arc_period_mode" onchange="onArcPeriodModeChange()" style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:7px;color:var(--txt);font-size:.82rem">
-                <option value="previous_period">Vorheriger Monat</option>
-                <option value="current_period">Aktueller Monat</option>
-                <option value="single_month">Fester Monat</option>
-              </select></div>
-            <div id="arc_month_wrap" style="display:none"><label class="cfg-lbl" style="margin-bottom:4px">Monat</label>
-              <input type="month" id="arc_single_month" style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:7px;color:var(--txt);font-size:.82rem"
-                value="${new Date().toISOString().slice(0,7)}">
-            </div>
-            <div><label class="cfg-lbl" style="margin-bottom:4px">Ladeort</label>
-              <select id="arc_loc_filter" style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:7px;color:var(--txt);font-size:.82rem">
-                <option value="all">Alle</option><option value="home">Zuhause</option><option value="external">Extern</option>
-              </select></div>
-            <div style="display:flex;gap:8px;align-self:flex-end;padding-bottom:2px">
-              <label style="display:flex;align-items:center;gap:5px;font-size:.78rem"><input type="checkbox" id="arc_inc_excel" checked> Excel</label>
-              <label style="display:flex;align-items:center;gap:5px;font-size:.78rem"><input type="checkbox" id="arc_inc_pdf"> PDF</label>
-            </div>
-            <button class="btn-p" onclick="createReport()" style="align-self:flex-end">📊 Report erstellen</button>
-          </div>
-          <!-- Archive table -->
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-            <span style="font-size:.85rem;font-weight:600">Archivierte Reports</span>
-            <button class="btn-s" onclick="loadReportArchive()" style="font-size:.75rem">🔄 Aktualisieren</button>
-          </div>
-          <div id="archive_table_body" style="font-size:.75rem;font-family:var(--mono);overflow-x:auto">
-            <span style="color:var(--mute)">Klicke „Aktualisieren" um Reports zu laden.</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- ══════════════════════════════════════════════════════════
-           STROMTARIF
-           ══════════════════════════════════════════════════════════ -->
-      <div id="cfgsec-tarif" class="cfg-section" style="display:none">
-        <div class="card">
-          <div class="card-title">🏠 Zuhause laden &amp; Tarif</div>
-          <div style="display:flex;flex-direction:column;gap:16px">
-            <div>
-              <label class="cfg-lbl">Tarif-Provider</label>
-              <select id="tariff_provider" onchange="onTariffProviderChange()"
-                style="width:100%;max-width:320px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
-                <option value="fixed">Fester Preis</option>
-                <option value="octopus">Octopus Energy</option>
-                <option value="tibber">Tibber</option>
-                <option value="home_assistant">Home Assistant Sensor</option>
-                <option value="evcc">EVCC</option>
-                <option value="generic_http">Generic HTTP</option>
-              </select>
-            </div>
-            <!-- Fixed price panel -->
-            <div id="tariff_panel_fixed">
-              <div><label class="cfg-lbl">Preis Zuhause (€/kWh)</label>
-                <input type="number" id="tariff_price_home" step="0.001" min="0"
-                  style="width:160px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-            </div>
-            <!-- Octopus panel -->
-            <div id="tariff_panel_octopus" style="display:none">
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-                <div><label class="cfg-lbl">API Key</label>
-                  <input type="password" id="tariff_octopus_api_key" placeholder="sk_live_…"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-                <div><label class="cfg-lbl">Account ID</label>
-                  <input type="text" id="tariff_octopus_account_id" placeholder="A-12345678"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-                <div><label class="cfg-lbl">Produkt-Code</label>
-                  <input type="text" id="tariff_octopus_product_code" placeholder="AGILE-24-10-01"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-                <div><label class="cfg-lbl">Tariff-Code</label>
-                  <input type="text" id="tariff_octopus_tariff_code" placeholder="E-1R-AGILE-24-10-01-C"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-                <div><label class="cfg-lbl">GBP→EUR Faktor</label>
-                  <input type="number" id="tariff_octopus_gbp_eur_factor" step="0.01" min="0.5" max="3"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-              </div>
-            </div>
-            <!-- Tibber panel -->
-            <div id="tariff_panel_tibber" style="display:none">
-              <label class="cfg-lbl">Tibber API Token</label>
-              <input type="password" id="tariff_tibber_token" placeholder="51c48a…"
-                style="width:100%;max-width:400px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
-              <div style="color:var(--mute);font-size:.7rem;margin-top:4px">Token aus dem Tibber Developer Portal</div>
-            </div>
-            <!-- Home Assistant panel -->
-            <div id="tariff_panel_home_assistant" style="display:none">
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-                <div style="grid-column:1/-1"><label class="cfg-lbl">Entity ID (Preis-Sensor)</label>
-                  <input type="text" id="tariff_ha_entity" placeholder="sensor.electricity_price_current"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
-                  <div style="font-size:.7rem;color:var(--mute);margin-top:3px">HA-Sensor mit aktuellem Strompreis in EUR/kWh</div></div>
-                <div style="grid-column:1/-1"><label class="cfg-lbl">HA URL <span style="font-weight:400;color:var(--mute)">(leer = aus Verbindungs-Konfig)</span></label>
-                  <input type="text" id="tariff_ha_url" placeholder="http://homeassistant.local:8123"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-                <div style="grid-column:1/-1"><label class="cfg-lbl">Long-Lived Access Token</label>
-                  <input type="password" id="tariff_ha_token" placeholder="eyJ0eXAi…"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-              </div>
-            </div>
-            <!-- EVCC panel -->
-            <div id="tariff_panel_evcc" style="display:none">
-              <label class="cfg-lbl">EVCC URL</label>
-              <input type="text" id="tariff_evcc_url" placeholder="http://evcc.local:7070"
-                style="width:100%;max-width:400px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
-              <div style="font-size:.7rem;color:var(--mute);margin-top:3px">EVCC-Instanz mit tariffGrid oder gridPrice in /api/state</div>
-            </div>
-            <!-- Generic HTTP panel -->
-            <div id="tariff_panel_generic_http" style="display:none">
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-                <div style="grid-column:1/-1"><label class="cfg-lbl">URL</label>
-                  <input type="text" id="tariff_generic_url" placeholder="https://api.example.com/price"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-                <div><label class="cfg-lbl">JSON-Pfad</label>
-                  <input type="text" id="tariff_generic_json_path" placeholder="data.current_price"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-                <div><label class="cfg-lbl">Einheit</label>
-                  <select id="tariff_generic_unit" style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
-                    <option value="EUR/kWh">EUR/kWh</option>
-                    <option value="p/kWh">p/kWh (Pence)</option>
-                    <option value="Wh">Wh (→ EUR/kWh)</option>
-                  </select></div>
-                <div><label class="cfg-lbl">Multiplikator</label>
-                  <input type="number" id="tariff_generic_factor" step="0.001" min="0"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-              </div>
-            </div>
-            <!-- Fallback -->
-            <div>
-              <label class="cfg-lbl">Fallback-Preis (€/kWh) <span style="color:var(--mute);font-size:.7rem">— wird genutzt wenn API nicht erreichbar</span></label>
-              <input type="number" id="tariff_fallback_price" step="0.001" min="0"
-                style="width:160px;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)">
-            </div>
-            <div style="display:flex;gap:10px;flex-wrap:wrap" data-requires-permission="tariffs:configure">
-              <button class="btn-p" onclick="saveTariffConfig()">💾 Speichern</button>
-              <button class="btn-s" onclick="testTariff()" data-requires-permission="tariffs:test">🔌 Verbindung testen</button>
-              <button class="btn-s" onclick="loadTariffPrices()" data-requires-permission="tariffs:view">📈 Preise heute</button>
-              <span id="tariff_status" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);align-self:center"></span>
-            </div>
-            <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--brd)">
-              <div style="font-size:.78rem;font-weight:600;margin-bottom:8px;color:var(--mute)">🔄 Bestehende Sessions neu berechnen</div>
-              <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;max-width:640px">
-                <div><label class="cfg-lbl">Monat (leer = alle)</label>
-                  <input type="month" id="recalc_month"
-                    style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt)"></div>
-                <div><label class="cfg-lbl">Fahrzeug</label>
-                  <select id="recalc_vehicle" style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--txt);font-size:.82rem">
-                    <option value="v0">Primärfahrzeug</option>
-                    {% for v in all_vehicles %}<option value="{{ v.id }}">{{ v.name }}</option>{% endfor %}
-                    <option value="all">Alle Fahrzeuge</option>
-                  </select></div>
-                <div><label class="cfg-lbl">Standort</label>
-                  <div style="width:100%;background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;color:var(--mute);font-size:.82rem">🏠 Nur Zuhause</div></div>
-                <button class="btn-s" onclick="recalculateTariff()" style="white-space:nowrap">🔄 Neu berechnen</button>
-              </div>
-              <span id="recalc_status" style="display:block;margin-top:6px;font-size:.73rem;font-family:var(--mono);color:var(--mute)"></span>
-            </div>
-          </div>
-        </div>
-        <div class="card" id="tariff_prices_card" style="display:none">
-          <div class="card-title">📈 Aktuelle Preise</div>
-          <div id="tariff_prices_body" style="font-size:.75rem;font-family:var(--mono)"></div>
         </div>
       </div>
 
@@ -2017,10 +2107,20 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       </div>
 
       <!-- ══════════════════════════════════════════════════════════
-           MQTT
+           BENACHRICHTIGUNGEN (Reiter-Bereich)
            ══════════════════════════════════════════════════════════ -->
-      <div id="cfgsec-mqtt" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">MQTT <a href="#" onclick="cfgSection('kanaele',null);return false" style="font-size:.65rem;font-weight:400;color:var(--acc2);margin-left:12px;text-transform:none;letter-spacing:0">← Kanäle</a></div>
+      <div id="cfgsec-benachrichtigungen" class="cfg-section" style="display:none">
+        <div id="notif_tabs" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px;border-bottom:1px solid var(--brd);padding-bottom:10px">
+          <button class="cfg-area-tab active" onclick="notifTab('einstellungen',this)" data-requires-permission="notifications:view">🔔 Einstellungen</button>
+          <button class="cfg-area-tab" onclick="notifTab('kanaele',this)" data-requires-permission="notifications:view">📡 Kanäle</button>
+          <button class="cfg-area-tab" onclick="notifTab('smtp',this)">📧 E-Mail (SMTP)</button>
+          <button class="cfg-area-tab" onclick="notifTab('mqtt',this)" data-requires-permission="mqtt:view">🔌 MQTT</button>
+          <button class="cfg-area-tab" onclick="notifTab('regeln',this)" data-requires-permission="notifications:view">📋 Ereignisse &amp; Regeln</button>
+        </div>
+
+        <!-- Tab: MQTT -->
+        <div id="notif_tab_mqtt" class="notif-tab-content" style="display:none">
+        <div class="cfg-sec-title">MQTT</div>
         <div class="card">
           <div class="card-title">📡 MQTT-Konfiguration</div>
           <div style="display:flex;flex-direction:column;gap:16px">
@@ -2093,12 +2193,10 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             <span id="notif_channels_status" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-left:12px"></span>
           </div>
         </div>
-      </div>
+        </div><!-- /notif_tab_mqtt -->
 
-      <!-- ══════════════════════════════════════════════════════════
-           BENACHRICHTIGUNGS-REGELN
-           ══════════════════════════════════════════════════════════ -->
-      <div id="cfgsec-notif-rules" class="cfg-section" style="display:none">
+        <!-- Tab: Ereignisse & Regeln -->
+        <div id="notif_tab_regeln" class="notif-tab-content" style="display:none">
         <div class="card">
           <div class="card-title">📋 Ereignisse &amp; Regeln</div>
           <!-- Create rule form -->
@@ -2150,11 +2248,10 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             <span style="color:var(--mute)">Lade Regeln…</span>
           </div>
         </div>
-      </div>
+        </div><!-- /notif_tab_regeln -->
 
-
-      <!-- BENACHRICHTIGUNGEN (zentral) -->
-      <div id="cfgsec-notifications" class="cfg-section" style="display:none">
+        <!-- Tab: Einstellungen (default active) -->
+        <div id="notif_tab_einstellungen" class="notif-tab-content">
         <div class="cfg-sec-title">Benachrichtigungen — Einstellungen</div>
 
         <!-- HA Notify -->
@@ -2325,11 +2422,10 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         </div>
 
         <div id="notifSettingsResult" style="margin-top:8px;font-size:.78rem;font-family:var(--mono);color:var(--mute)"></div>
-      </div>
+        </div><!-- /notif_tab_einstellungen -->
 
-      <!-- SMTP -->
-      <!-- KANÄLE HUB -->
-      <div id="cfgsec-kanaele" class="cfg-section" style="display:none">
+        <!-- Tab: Kanäle -->
+        <div id="notif_tab_kanaele" class="notif-tab-content" style="display:none">
         <div class="cfg-sec-title">Kanäle &amp; Integrationen</div>
         <p style="font-size:.78rem;color:var(--mute);margin:0 0 18px">Übertragungskanäle für Benachrichtigungen konfigurieren — Push-Dienste, E-Mail und Protokolle.</p>
 
@@ -2366,11 +2462,11 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             <button class="btn-s" style="font-size:.78rem" onclick="cfgSection('mqtt',null)" data-requires-permission="mqtt:view">Konfigurieren →</button>
           </div>
         </div>
-      </div>
+        </div><!-- /notif_tab_kanaele -->
 
-      <!-- SMTP -->
-      <div id="cfgsec-smtp" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">E-Mail (SMTP) <a href="#" onclick="cfgSection('kanaele',null);return false" style="font-size:.65rem;font-weight:400;color:var(--acc2);margin-left:12px;text-transform:none;letter-spacing:0">← Kanäle</a></div>
+        <!-- Tab: SMTP -->
+        <div id="notif_tab_smtp" class="notif-tab-content" style="display:none">
+        <div class="cfg-sec-title">E-Mail (SMTP)</div>
         <div id="smtpStatusBadge" style="margin-bottom:14px;padding:8px 14px;border-radius:8px;font-size:.75rem;font-family:var(--mono);background:rgba(74,92,114,.15);border:1px solid var(--brd);color:var(--mute);display:inline-block">
           ⏳ Status unbekannt
         </div>
@@ -2467,7 +2563,9 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
             <input type="email" id="smtp_test_to" placeholder="empfaenger@example.com" style="flex:1">
           </div>
         </div>
-      </div>
+        </div><!-- /notif_tab_smtp -->
+
+      </div><!-- /cfgsec-benachrichtigungen -->
 
       <!-- FEHLENDE LADEVORGÄNGE -->
 
@@ -2525,17 +2623,6 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
           <span id="oauthSaveInfo" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-left:10px"></span>
         </div>
 
-      </div>
-
-      <!-- EXPORT VORLAGEN -->
-      <div id="cfgsec-export-tpl" class="cfg-section" style="display:none">
-        <div class="cfg-sec-title">Export-Vorlagen</div>
-        <p style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-bottom:14px">
-          Speichere mehrere Spalten-Zuordnungen als benannte Vorlagen und wähle beim Export die passende aus.
-        </p>
-        <div id="exportTemplateList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"></div>
-        <button class="btn-p" style="font-size:.78rem;padding:8px 18px" onclick="saveCurrentAsTemplate()" data-requires-permission="export:templates_manage">💾 Aktuelle Zuordnung als Vorlage speichern</button>
-        <span style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin-left:10px">Zuerst Template hochladen &amp; Spalten zuweisen im Export-Bereich</span>
       </div>
 
       <!-- AUDIT LOG -->
@@ -3065,94 +3152,13 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <div id="vm_conn_result" style="display:none;margin-top:10px;font-size:.8rem;border-radius:8px;padding:10px 13px"></div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
-      <div>
-        <label class="lbl">Akkugröße (kWh)</label>
-        <input class="inp" type="number" step="0.1" id="vm_battery" placeholder="77.0">
-      </div>
-      <div>
-        <label class="lbl">Poll-Intervall (Sek.)</label>
-        <input class="inp" type="number" id="vm_poll" placeholder="60">
-      </div>
-      <div>
-        <label class="lbl">Heimat Breitengrad</label>
-        <input class="inp" type="text" id="vm_home_lat" placeholder="51.5074">
-      </div>
-      <div>
-        <label class="lbl">Heimat Längengrad</label>
-        <input class="inp" type="text" id="vm_home_lon" placeholder="7.4653">
-      </div>
-    </div>
-
-    <div id="vmImageSection" style="margin-top:14px;display:none">
-      <div class="fg full"><label>Fahrzeugbild</label>
-        <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
-          <img id="vmImagePreview" src="/static/vehicle_images/placeholder_car.svg" alt="Fahrzeugbild"
-               style="width:140px;height:80px;object-fit:contain;border-radius:8px;border:1px solid var(--brd);background:var(--bg2)"
-               onerror="this.src='/static/vehicle_images/placeholder_car.svg'">
-          <div style="display:flex;flex-direction:column;gap:6px">
-            <button class="btn-s" style="font-size:.75rem" onclick="suggestVehicleImage()">✨ Auto-Vorschlag</button>
-            <button class="btn-s" style="font-size:.75rem" onclick="openSilhouettePicker()">🚗 Silhouette wählen</button>
-            <label class="btn-s" style="cursor:pointer;font-size:.75rem">
-              📷 Foto hochladen
-              <input type="file" id="vmImageFile" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="uploadVehicleImage()">
-            </label>
-            <button class="btn-s" style="font-size:.75rem;color:var(--danger)" onclick="deleteVehicleImage()">🗑 Entfernen</button>
-            <span style="font-size:.65rem;color:var(--mute)">Max. 3 MB · PNG/JPG/WebP</span>
-          </div>
-        </div>
-        <!-- Silhouette picker (inline) -->
-        <div id="vmSilhouettePicker" style="display:none;margin-top:10px">
-          <div style="font-size:.78rem;color:var(--mute);margin-bottom:6px">Karosserieform wählen:</div>
-          <div id="vmSilhouetteGrid" style="display:flex;flex-wrap:wrap;gap:8px"></div>
-        </div>
-      </div>
-    </div>
-
-    <details id="vm_location_section" style="margin-top:1rem">
-      <summary style="cursor:pointer;font-weight:600;font-size:.9rem">📍 Standort-Konfiguration</summary>
-      <div style="margin-top:.75rem;display:flex;flex-direction:column;gap:.5rem">
-        <label class="lbl">
-          <input type="checkbox" id="vm_loc_enabled"> Standortanzeige aktivieren
-        </label>
-        <label class="lbl">Modus</label>
-        <select class="inp" id="vm_loc_mode">
-          <option value="home_external">Nur Zuhause/Extern</option>
-          <option value="exact">Genaue Position</option>
-          <option value="disabled">Deaktiviert</option>
-        </select>
-        <label class="lbl">Erkennungsquelle</label>
-        <select class="inp" id="vm_loc_source">
-          <option value="combined">Kombiniert (Provider + HA)</option>
-          <option value="provider">Nur Provider</option>
-          <option value="ha">Nur Home Assistant</option>
-          <option value="manual">Manuell</option>
-        </select>
-        <label class="lbl">Kombinationsmodus</label>
-        <select class="inp" id="vm_loc_detect_mode">
-          <option value="any">any — Zuhause wenn eine Quelle home meldet</option>
-          <option value="all">all — Zuhause nur wenn alle Quellen home melden</option>
-          <option value="provider_only">Nur Provider-Position</option>
-          <option value="ha_only">Nur HA-Entities</option>
-          <option value="manual">Manuell</option>
-        </select>
-        <label class="lbl">Home-Radius (Meter)</label>
-        <input class="inp" type="number" id="vm_loc_radius" value="150" min="50" max="5000">
-        <label class="lbl">HA/UniFi Device-Tracker Entities (eine pro Zeile)</label>
-        <textarea class="inp" id="vm_loc_ha_entities" rows="3" placeholder="device_tracker.mein_auto&#10;device_tracker.unifi_..."></textarea>
-        <label class="lbl">
-          <input type="checkbox" id="vm_loc_history_enabled"> Standort-Historie speichern
-        </label>
-        <div id="vm_loc_test_result" style="font-size:.82rem;color:var(--mute)"></div>
-        <button class="btn-s" style="align-self:flex-start" onclick="testVehicleLocation()">🧪 Standort testen</button>
-      </div>
-    </details>
+    <p style="font-size:.72rem;font-family:var(--mono);color:var(--mute);margin:0 0 14px">
+      Akkugröße, Bild, Standort &amp; Heimat-Koordinaten werden im Fahrzeug-Profil gesetzt.
+    </p>
 
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:1rem">
-      <button class="btn-p" onclick="saveVehicleModal()">💾 Speichern</button>
+      <button class="btn-p" onclick="saveVehicleModal()">💾 Anlegen &amp; Profil öffnen</button>
       <button class="btn-s" onclick="closeVehicleModal()">Abbrechen</button>
-      <button class="btn-d" id="vm_archive_btn" style="display:none;margin-left:auto" onclick="archiveVehicleModal()">📦 Archivieren</button>
-      <button class="btn-d" id="vm_hard_delete_btn" style="display:none;margin-left:4px;opacity:.7;font-size:.78rem" onclick="hardDeleteVehicleModal()" title="Nur möglich wenn keine Ladevorgänge existieren">🗑 Endgültig löschen</button>
       <span id="vm_info" style="font-size:.75rem;font-family:var(--mono);color:var(--mute);margin-left:8px"></span>
     </div>
   </div>
@@ -3679,6 +3685,8 @@ async function loadConfig(){
   if($('c_hc_debounce_start'))    $('c_hc_debounce_start').value     = c.home_charge_start_debounce_seconds  ?? 120;
   if($('c_hc_debounce_stop'))     $('c_hc_debounce_stop').value      = c.home_charge_stop_debounce_seconds   ?? 300;
   if($('c_hc_min_kwh'))           $('c_hc_min_kwh').value            = c.home_charge_min_energy_kwh          ?? 1.0;
+  if($('c_hc_line_power_start'))  $('c_hc_line_power_start').value   = c.home_charge_line_meter_power_start_threshold_kw ?? 1.4;
+  if($('c_hc_line_power_stop'))   $('c_hc_line_power_stop').value    = c.home_charge_line_meter_power_stop_threshold_kw  ?? 0.3;
   if($('c_hc_assignment_mode'))   $('c_hc_assignment_mode').value    = c.home_charge_vehicle_assignment_mode || 'always_ask_if_unclear';
   if($('c_hc_default_vehicle'))   $('c_hc_default_vehicle').value    = c.home_charge_default_vehicle_id      || '';
   if($('c_hc_allow_probable'))    $('c_hc_allow_probable').checked   = !!c.home_charge_allow_probable_assignment;
@@ -4735,7 +4743,7 @@ async function deleteTpl(){
 
 const METER_IP_SOURCES = ['shelly','tasmota','go_e','openwb','warp','evcc','webasto','alfen','juice','generic'];
 function updateMeterSourceUI(){
-  const s=$('c_meter_source').value;
+  const el=$('c_meter_source'); if(!el) return; const s=el.value;
   $('meterHaFields').style.display    = s==='ha' ? '' : 'none';
   $('meterDeviceFields').style.display = METER_IP_SOURCES.includes(s) ? '' : 'none';
   $('meterEvccFields').style.display  = s==='evcc'  ? 'grid' : 'none';
@@ -5510,20 +5518,6 @@ async function hardDeleteVehicleModal() {
   }
 }
 
-async function testVehicleLocation() {
-  if(!_editingVehicleId) return;
-  $('vm_loc_test_result').textContent = 'Teste...';
-  const r = await apiFetch(`/api/vehicles/${_editingVehicleId}/location/test`, {method:'POST'}).then(x=>x.json()).catch(()=>null);
-  if(!r) { $('vm_loc_test_result').textContent = '❌ Netzwerkfehler'; return; }
-  if(!r.ok) { $('vm_loc_test_result').textContent = `❌ ${r.error}`; return; }
-  const icons = {home:'🏠', extern:'📍', external:'📍', unknown:'❓', disabled:'⛔'};
-  const labels = {home:'Zuhause', extern:'Extern', external:'Extern', unknown:'Unbekannt', disabled:'Deaktiviert'};
-  const norm = normalizeLocation(r.status);
-  $('vm_loc_test_result').textContent = `${icons[norm]||'❓'} ${labels[norm]||r.status} · ${r.source}${r.source_detail ? ' (' + r.source_detail + ')' : ''}`;
-  // Update dashboard immediately (vehicle_states already updated on server side)
-  if(typeof refreshStatus === 'function') setTimeout(refreshStatus, 300);
-}
-
 // ── Auth / Login ─────────────────────────────────────────────────────────────
 async function loadAuthStatus(){
   const r = await fetch('/api/auth/status').then(r=>r.json()).catch(()=>null);
@@ -6046,6 +6040,8 @@ async function saveHomeChargeConfig() {
     home_charge_start_debounce_seconds:     parseInt(g('c_hc_debounce_start'))  || 120,
     home_charge_stop_debounce_seconds:      parseInt(g('c_hc_debounce_stop'))   || 300,
     home_charge_min_energy_kwh:             parseFloat(g('c_hc_min_kwh'))       || 1.0,
+    home_charge_line_meter_power_start_threshold_kw: parseFloat(g('c_hc_line_power_start')) || 1.4,
+    home_charge_line_meter_power_stop_threshold_kw:  parseFloat(g('c_hc_line_power_stop'))  || 0.3,
     home_charge_vehicle_assignment_mode:    g('c_hc_assignment_mode') || 'always_ask_if_unclear',
     home_charge_default_vehicle_id:         g('c_hc_default_vehicle'),
     home_charge_allow_probable_assignment:  gb('c_hc_allow_probable'),
@@ -6991,7 +6987,59 @@ async function saveSessionEdit() {
   }
 }
 
+function notifTab(name, btn){
+  document.querySelectorAll('.notif-tab-content').forEach(el=>el.style.display='none');
+  document.querySelectorAll('#notif_tabs .cfg-area-tab').forEach(b=>b.classList.remove('active'));
+  const panel = $('notif_tab_'+name);
+  if(panel) panel.style.display='';
+  if(btn) btn.classList.add('active');
+  else {
+    document.querySelectorAll('#notif_tabs .cfg-area-tab').forEach(b=>{
+      if(b.getAttribute('onclick')&&b.getAttribute('onclick').includes("'"+name+"'"))
+        b.classList.add('active');
+    });
+  }
+  if(name==='smtp')         { loadSmtpConfig(); refreshSmtpOAuthStatus(); }
+  else if(name==='mqtt')    { loadMqttConfig(); loadNotifChannels(); }
+  else if(name==='regeln')  { loadNotifRules(); }
+  else if(name==='einstellungen') { loadNotifSettings(); }
+  else if(name==='kanaele') { loadKanaeleStatus(); }
+}
+
+function reportTab(name, btn){
+  document.querySelectorAll('.report-tab-content').forEach(el=>el.style.display='none');
+  document.querySelectorAll('#report_tabs .cfg-area-tab').forEach(b=>b.classList.remove('active'));
+  const panel = $('report_tab_'+name);
+  if(panel) panel.style.display='';
+  if(btn) btn.classList.add('active');
+  else {
+    document.querySelectorAll('#report_tabs .cfg-area-tab').forEach(b=>{
+      if(b.getAttribute('onclick')&&b.getAttribute('onclick').includes("'"+name+"'"))
+        b.classList.add('active');
+    });
+  }
+  if(name==='auto')        { loadReportConfig(); }
+  else if(name==='archiv') { loadReportArchive(); }
+  else if(name==='export') { loadExportTemplates(); }
+}
+
 function cfgSection(id, btn){
+  const _notifMap = {notifications:'einstellungen', kanaele:'kanaele', smtp:'smtp', mqtt:'mqtt', 'notif-rules':'regeln'};
+  if(id in _notifMap){
+    const _nb = btn&&btn.classList.contains('cfg-nav-btn') ? btn
+      : document.querySelector('.cfg-nav-btn[onclick*="\'notifications\'"]');
+    cfgSection('benachrichtigungen', _nb);
+    notifTab(_notifMap[id], null);
+    return;
+  }
+  const _reportMap = {reports:'auto', 'report-archive':'archiv', 'export-tpl':'export'};
+  if(id in _reportMap){
+    const _nb = btn&&btn.classList.contains('cfg-nav-btn') ? btn
+      : document.querySelector('.cfg-nav-btn[onclick*="\'reports\'"]');
+    cfgSection('berichte', _nb);
+    reportTab(_reportMap[id], null);
+    return;
+  }
   document.querySelectorAll('.cfg-section').forEach(s=>s.style.display='none');
   const sec = $('cfgsec-'+id);
   if(sec) sec.style.display='';
@@ -7022,11 +7070,9 @@ function cfgSection(id, btn){
   // profil = Konto & Sicherheit: load profile + passkeys + check SMTP for TOTP
   if(id==='profil') { loadMyProfile(); loadPasskeys(); checkSmtpForTotp(); }
   if(id==='roles')    loadRolesSection();
-  if(id==='zaehler')  loadMeterConfig();
   if(id==='reports'){ loadReportConfig(); }
   if(id==='abrechnung')    { loadBillingConfig(); }
   if(id==='report-archive'){ loadReportArchive(); }
-  if(id==='tarif')         { loadTariffConfig(); }
   if(id==='ladeabos')      { loadPcConfig(); loadContracts(); loadBuiltinContracts(); }
   if(id==='ladevorgang')   { loadChargingDetectionConfig(); }
   if(id==='erweitert-preise') { loadAdvancedPricingConfig(); }
@@ -7035,6 +7081,7 @@ function cfgSection(id, btn){
   if(id==='notif-rules')   { loadNotifRules(); }
   if(id==='notifications') { loadNotifSettings(); }
   if(id==='kanaele')       { loadKanaeleStatus(); }
+  if(id==='fahrzeug-profil') { _vprofilOnOpen(); }
 }
 
 async function loadKanaeleStatus(){
@@ -7818,7 +7865,7 @@ async function openMobileVehicleDetail(vid) {
   const editBtn = document.getElementById('_mvdEditBtn');
   if (editBtn) editBtn.addEventListener('click', function() {
     closeMobileSheet();
-    if (typeof openEditVehicleModal === 'function') openEditVehicleModal(this.dataset.vid);
+    openVehicleProfile(this.dataset.vid);
   });
 }
 
@@ -8608,6 +8655,657 @@ function testNotifChannel(channel) {
 
 <!-- ========= FLOATING ACTION BUTTON ========= -->
 <div id="fab">
+  <!-- ── PR 11: Fahrzeug-Profil JS ──────────────────────────────────────── -->
+  <script>
+  // Active vehicle in the profile view
+  var _vprofilVid = null;
+
+  function openVehicleProfile(vid) {
+    _vprofilVid = vid;
+    var anchor = document.querySelector('.cfg-nav-btn[onclick*="\'fahrzeuge\'"]');
+    cfgSection('fahrzeug-profil', anchor);
+  }
+
+  function vprofilTab(name, btn) {
+    document.querySelectorAll('.vprofil-tab-content').forEach(function(el){el.style.display='none';});
+    document.querySelectorAll('.vprofil-tab').forEach(function(b){b.classList.remove('active');});
+    var tab = $('vprofil_tab_'+name);
+    if(tab) tab.style.display='';
+    if(btn) btn.classList.add('active');
+    if(name==='verlauf') _vprofilLoadVerlauf();
+    if(name==='zaehler') _vprofilOnZaehlerOpen();
+    if(name==='heimladung') _vprofilOnHeimladungOpen();
+  }
+
+  async function _vprofilOnOpen() {
+    if(!_vprofilVid) return;
+    // Image functions operate on the active vehicle id.
+    _editingVehicleId = _vprofilVid;
+    var v = {};
+    try {
+      var vresp = await apiFetch('/api/vehicles');
+      if(vresp.ok) {
+        var vehicles = await vresp.json().catch(function(){ return []; });
+        v = vehicles.find(function(x){return x.id===_vprofilVid;}) || {};
+      } else {
+        console.error('[_vprofilOnOpen] /api/vehicles HTTP', vresp.status);
+      }
+    } catch(e) { console.error('[_vprofilOnOpen] Netzwerkfehler /api/vehicles:', e); }
+    $('vprofil_title').textContent = v.name || _vprofilVid;
+    $('vprofil_subtitle').textContent = 'ID: '+_vprofilVid+' · '+((v.provider)||'kein Provider');
+    if($('vprofil_name')) $('vprofil_name').value = v.name || '';
+    // Vehicle image (uses _editingVehicleId)
+    if(typeof refreshVehicleModalImage === 'function') refreshVehicleModalImage();
+    // Archive action only for non-primary vehicles
+    var archRow = $('vprofil_archive_row');
+    if(archRow) archRow.style.display = (_vprofilVid === 'v0') ? 'none' : '';
+    // Open home charges badge
+    var ohcBadge = $('vprofil_badge_ohc');
+    if(ohcBadge) {
+      try {
+        var st = await fetch('/api/status?vehicle_id='+encodeURIComponent(_vprofilVid)).then(function(r){return r.json();});
+        var n = st.open_home_charges || 0;
+        if(n > 0){ ohcBadge.textContent = '⚠ '+n+' offen'; ohcBadge.style.display=''; }
+        else ohcBadge.style.display='none';
+      } catch(e){ ohcBadge.style.display='none'; }
+    }
+    // Reset to first tab
+    vprofilTab('verbindung', document.querySelector('.vprofil-tab[data-tab="verbindung"]'));
+    await _vprofilLoadVerbindung(v);
+  }
+
+  async function _vprofilLoadVerbindung(v) {
+    var _eh = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'').replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});};
+    var grid = $('vprofil_providerGrid');
+    if(!grid) return;
+    var currentProvider = (v && v.provider) || 'ha';
+    var provInput = $('vprofil_provider');
+    if(provInput) provInput.value = currentProvider;
+
+    grid.innerHTML = '<div style="font-size:.75rem;color:var(--mute);font-family:var(--mono)">⏳ Lade Datenquellen…</div>';
+
+    var resp;
+    try { resp = await apiFetch('/api/providers'); }
+    catch(e) {
+      console.error('[_vprofilLoadVerbindung] Netzwerkfehler /api/providers:', e);
+      grid.innerHTML = '<div style="color:var(--danger);font-size:.78rem">❌ Datenquellen konnten nicht geladen werden.</div>';
+      return;
+    }
+    if(!resp.ok) {
+      console.error('[_vprofilLoadVerbindung] /api/providers HTTP', resp.status);
+      grid.innerHTML = '<div style="color:var(--danger);font-size:.78rem">❌ Datenquellen konnten nicht geladen werden (HTTP '+resp.status+').</div>';
+      return;
+    }
+    var provs = await resp.json().catch(function(e){
+      console.error('[_vprofilLoadVerbindung] /api/providers JSON-Fehler:', e); return null;
+    });
+    if(!Array.isArray(provs)) {
+      console.error('[_vprofilLoadVerbindung] /api/providers: kein Array:', provs);
+      grid.innerHTML = '<div style="color:var(--danger);font-size:.78rem">❌ Datenquellen konnten nicht geladen werden.</div>';
+      return;
+    }
+
+    grid.innerHTML = '';
+    provs.forEach(function(p){
+      var selected = p.provider_id === currentProvider;
+      var card = document.createElement('div');
+      card.id = 'vpcard_'+p.provider_id;
+      card.onclick = function(){ _vprofilSelectProvider(p.provider_id); };
+      card.style.cssText = 'background:var(--bg);border:2px solid '+(selected?'var(--acc)':'var(--brd)')+
+        ';border-radius:10px;padding:12px 14px;cursor:pointer;transition:all .15s';
+      card.innerHTML = '<div style="font-weight:700;font-size:.8rem;color:'+(selected?'var(--acc)':'#fff')+'">'+
+        _eh(p.provider_name)+'</div>'+
+        '<div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);margin-top:5px;line-height:1.7">'+
+        (p.charging_state?'✅':'❌')+' Laden &nbsp;'+(p.soc?'✅':'❌')+' SOC<br>'+
+        (p.odometer?'✅':'❌')+' KM &nbsp;'+(p.charge_power?'✅':'❌')+' kW &nbsp;'+(p.location?'✅':'❌')+' Standort</div>';
+      grid.appendChild(card);
+    });
+
+    _vproviderFieldsLoaded = false;
+    await _vprofilLoadProviderFields(currentProvider, v);
+
+    var batEl = $('vprofil_bat'); var pollEl = $('vprofil_poll');
+    if(batEl) batEl.value = (v && v.battery_capacity_kwh) || '77.0';
+    if(pollEl) pollEl.value = (v && v.poll_interval) || '60';
+  }
+
+  async function _vprofilSelectProvider(pid) {
+    var provInput = $('vprofil_provider');
+    if(provInput) provInput.value = pid;
+    document.querySelectorAll('[id^="vpcard_"]').forEach(function(c){
+      var sel = c.id === 'vpcard_'+pid;
+      c.style.borderColor = sel ? 'var(--acc)' : 'var(--brd)';
+      var firstDiv = c.querySelector('div');
+      if(firstDiv) firstDiv.style.color = sel ? 'var(--acc)' : '#fff';
+    });
+    _vproviderFieldsLoaded = false;
+    await _vprofilLoadProviderFields(pid, null);
+  }
+
+  var _vproviderFieldsLoaded = false;
+  var _vproviderFieldsEmpty = false;
+
+  async function _vprofilFetchProviderFields(pid) {
+    var resp = await apiFetch('/api/providers/' + encodeURIComponent(pid) + '/fields');
+    var data = await resp.json().catch(function(){ return null; });
+    if (!resp.ok) { throw new Error('HTTP ' + resp.status); }
+    if (!Array.isArray(data)) { throw new Error('Ungültige Provider-Feld-Antwort'); }
+    return data;
+  }
+
+  async function _vprofilLoadProviderFields(pid, existingVehicle) {
+    var _eh = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'').replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});};
+    _vproviderFieldsLoaded = false;
+    var container = $('vprofil_providerFields');
+    if(!container) return;
+    container.innerHTML = '<div style="font-size:.75rem;color:var(--mute);font-family:var(--mono)">⏳ Lade Felder…</div>';
+
+    var fields;
+    try { fields = await _vprofilFetchProviderFields(pid); }
+    catch(e) {
+      console.error('[_vprofilLoadProviderFields] Fehler:', e);
+      container.innerHTML = '<div style="color:var(--danger);font-size:.78rem">❌ Provider-Felder konnten nicht geladen werden: '+String(e.message||e)+'</div>';
+      return;
+    }
+
+    container.innerHTML = '';
+    if(fields.length === 0) {
+      container.innerHTML = '<div style="font-size:.78rem;color:var(--mute);font-family:var(--mono)">ℹ Diese Datenquelle benötigt keine Zugangsdaten.</div>';
+      _vproviderFieldsLoaded = true;
+      _vproviderFieldsEmpty = true;
+      return;
+    }
+    _vproviderFieldsEmpty = false;
+    fields.forEach(function(f){
+      var wrap = document.createElement('div'); wrap.className = 'fg full';
+      var val = existingVehicle ? (existingVehicle[f.id]||'') : '';
+      if(f.type==='select'){
+        wrap.innerHTML = '<label>'+_eh(f.label)+'</label>'+
+          '<select id="vpf_'+_eh(f.id)+'">'+(f.options||[]).map(function(o){
+            return '<option value="'+_eh(o)+'"'+(o===val?' selected':'')+'>'+_eh(o)+'</option>';
+          }).join('')+'</select>'+(f.hint?'<span class="hint">'+_eh(f.hint)+'</span>':'');
+      } else {
+        var masked = (f.type==='password' && val) ? '********' : val;
+        wrap.innerHTML = '<label>'+_eh(f.label)+(f.required?' *':'')+'</label>'+
+          '<input id="vpf_'+_eh(f.id)+'" type="'+(f.type||'text')+'" placeholder="'+_eh(f.placeholder||'')+'" value="'+_eh(masked)+'">'+
+          (f.hint?'<span class="hint">'+_eh(f.hint)+'</span>':'');
+      }
+      container.appendChild(wrap);
+    });
+    _vproviderFieldsLoaded = true;
+  }
+
+  async function vprofilSaveVerbindung() {
+    if(!_vprofilVid){ toast('Kein Fahrzeug aktiv','err'); return; }
+    if(!_vproviderFieldsLoaded) {
+      toast('Provider-Felder konnten nicht geladen werden. Speichern abgebrochen.', 'err');
+      return;
+    }
+    var pid = $('vprofil_provider') ? $('vprofil_provider').value : 'ha';
+    var fields;
+    try { fields = await _vprofilFetchProviderFields(pid); }
+    catch(e) {
+      toast('Provider-Felder konnten nicht geladen werden: '+String(e.message||e), 'err');
+      return;
+    }
+    var payload = { provider: pid };
+    var nameEl = $('vprofil_name');
+    if(nameEl && nameEl.value.trim()){
+      if(_vprofilVid === 'v0') payload.car_name = nameEl.value.trim();
+      else payload.name = nameEl.value.trim();
+    }
+    fields.forEach(function(f){
+      var el = $('vpf_'+f.id); if(!el) return;
+      if(f.type==='password' && (!el.value || el.value==='********')) return;
+      payload[f.id] = el.value;
+    });
+    var batEl = $('vprofil_bat'); var pollEl = $('vprofil_poll');
+    if(batEl && batEl.value) payload.battery_capacity_kwh = parseFloat(batEl.value);
+    if(pollEl && pollEl.value) payload.poll_interval = parseInt(pollEl.value);
+    var resp = await apiFetch('/api/vehicles/'+encodeURIComponent(_vprofilVid), {method:'PUT', body:JSON.stringify(payload)});
+    var r = await resp.json().catch(function(){return {};});
+    if(resp.ok && r.ok){
+      toast('✓ Verbindung gespeichert');
+      if(nameEl && nameEl.value.trim() && $('vprofil_title')) $('vprofil_title').textContent = nameEl.value.trim();
+      if(typeof loadVehicleList === 'function') loadVehicleList();
+    }
+    else { toast(r.error||'Fehler beim Speichern','err'); }
+  }
+
+  async function vprofilTestConn() {
+    var resBox = $('vprofil_connRes'); if(!resBox) return;
+    resBox.style.display = 'block';
+    resBox.className = 'conn-res';
+    resBox.textContent = '⏳ Teste Verbindung…';
+    var pid = $('vprofil_provider') ? $('vprofil_provider').value : 'ha';
+    var fields;
+    try { fields = await _vprofilFetchProviderFields(pid); }
+    catch(e) {
+      var _eh2 = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'');};
+      resBox.className = 'conn-res err'; resBox.style.display = 'block';
+      resBox.innerHTML = '<div style="font-weight:600;margin-bottom:4px">❌ Felder konnten nicht geladen werden</div>'+
+        '<div style="color:var(--txt)">'+_eh2(String(e.message||e))+'</div>';
+      return;
+    }
+    var payload = { provider: pid, vehicle_id: _vprofilVid || 'v0' };
+    fields.forEach(function(f){
+      var el = $('vpf_'+f.id); if(!el) return;
+      if(f.type==='password' && (!el.value || el.value==='********')) return;
+      payload[f.id] = el.value;
+    });
+    var r = await apiFetch('/api/vehicles/test-connection', {method:'POST', body:JSON.stringify(payload)})
+                  .then(function(x){return x.json();}).catch(function(){return {ok:false,message:'Netzwerkfehler'};});
+    if(r.ok){
+      var d = r.data || {};
+      var _eh2 = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'');};
+      var add = function(lbl,val,u){return (val!=null&&val!==''?'✅ ':'— ')+lbl+': '+(val!=null&&val!==''?_eh2(String(val))+(u||''):'nicht verfügbar');};
+      var rows = [add('SOC',d.soc,' %'), add('Kilometer',d.odometer!=null?Math.round(d.odometer).toLocaleString('de'):null,' km'),
+        (d.charging!=null?'✅':'—')+' Ladestatus: '+(d.charging===true?'lädt':d.charging===false?'lädt nicht':'nicht verfügbar'),
+        add('Ladeleistung',d.charge_power,' kW'), add('Standort',d.location)];
+      var head = r.status==='ok' ? '✅ Verbindung erfolgreich' : '⚠️ Verbindung ok, aber einige Daten fehlen';
+      resBox.className = 'conn-res ok'; resBox.style.display = 'block';
+      resBox.innerHTML = '<div style="font-weight:600;margin-bottom:6px">'+head+'</div>'+
+        (r.message?'<div style="margin-bottom:6px;color:var(--mute)">'+_eh2(r.message)+'</div>':'')+
+        '<div style="display:grid;gap:2px;font-family:var(--mono);font-size:.75rem;color:var(--txt)">'+
+        rows.map(function(x){return '<div>'+x+'</div>';}).join('')+'</div>';
+    } else {
+      resBox.className = 'conn-res err'; resBox.style.display = 'block';
+      var _eh2 = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'');};
+      resBox.innerHTML = '<div style="font-weight:600;margin-bottom:4px">❌ Verbindung fehlgeschlagen</div>'+
+        '<div style="color:var(--txt)">'+_eh2(r.message||'Unbekannter Fehler')+'</div>';
+    }
+  }
+
+  async function vprofilRestartTracker() {
+    if(!_vprofilVid) return;
+    await apiFetch('/api/tracker/restart', {method:'POST', body:JSON.stringify({vehicle_id:_vprofilVid})})
+          .catch(function(){});
+    toast('Tracker wird neu gestartet…');
+  }
+
+  async function vprofilArchiveVehicle() {
+    if(!_vprofilVid || _vprofilVid==='v0') return;
+    var vname = ($('vprofil_title')||{}).textContent || _vprofilVid;
+    if(!confirm('Fahrzeug "'+vname+'" archivieren?\nLadevorgänge bleiben erhalten. Das Fahrzeug wird nicht mehr aktiv gepollt.')) return;
+    var r = await apiFetch('/api/vehicles/'+encodeURIComponent(_vprofilVid),{method:'DELETE'})
+                  .then(function(x){return x.json();}).catch(function(){return {ok:false,error:'Netzwerkfehler'};});
+    if(r.ok){
+      toast('Fahrzeug archiviert','ok');
+      if(typeof loadVehicleList === 'function') loadVehicleList();
+      cfgSection('fahrzeuge', document.querySelector('#cfgNav [onclick*="cfgSection(\'fahrzeuge\'"]'));
+    } else {
+      toast(r.error||'Fehler','err');
+    }
+  }
+
+  async function vprofilTestLocation() {
+    if(!_vprofilVid) return;
+    var box = $('vp_h_loc_test_result'); if(box) box.textContent = 'Teste…';
+    var r = await apiFetch('/api/vehicles/'+encodeURIComponent(_vprofilVid)+'/location/test', {method:'POST'})
+                  .then(function(x){return x.json();}).catch(function(){return null;});
+    if(!box) return;
+    if(!r){ box.textContent = '❌ Netzwerkfehler'; return; }
+    if(!r.ok){ box.textContent = '❌ '+(r.error||'Fehler'); return; }
+    var icons = {home:'🏠', extern:'📍', external:'📍', unknown:'❓', disabled:'⛔'};
+    var labels = {home:'Zuhause', extern:'Extern', external:'Extern', unknown:'Unbekannt', disabled:'Deaktiviert'};
+    var norm = (typeof normalizeLocation==='function') ? normalizeLocation(r.status) : r.status;
+    box.textContent = (icons[norm]||'❓')+' '+(labels[norm]||r.status)+' · '+r.source+(r.source_detail?' ('+r.source_detail+')':'');
+    if(typeof refreshStatus === 'function') setTimeout(refreshStatus, 300);
+  }
+
+  async function _vprofilLoadVerlauf() {
+    var list = $('vprofil_verlauf_list'); if(!list||!_vprofilVid) return;
+    list.innerHTML = '<p style="font-size:.78rem;color:var(--mute);font-family:var(--mono)">Lade…</p>';
+    try {
+      var rows = await fetch('/api/wallbox/sessions?limit=30').then(function(r){return r.json();});
+      var relevant = rows.filter(function(r){ return r.vehicle_id===_vprofilVid || r.vehicle_assignment_status==='unassigned'; });
+      if(!relevant.length){ list.innerHTML='<p style="font-size:.78rem;color:var(--mute);font-family:var(--mono)">Keine Einträge.</p>'; return; }
+      list.innerHTML = relevant.map(function(r){
+        var signals = []; try{ signals=JSON.parse(r.signal_sources||'[]'); }catch(e){}
+        var badge = r.vehicle_assignment_status==='confirmed'
+          ? '<span style="color:var(--acc);font-size:.68rem">✓ confirmed</span>'
+          : r.vehicle_assignment_status==='probable'
+          ? '<span style="color:var(--warn);font-size:.68rem">~ probable</span>'
+          : '<span style="color:var(--mute);font-size:.68rem">? unassigned</span>';
+        var sourceStr = signals.length ? signals.join('+') : (r.kwh_source_detail||'—');
+        var kwh = r.energy_kwh!=null ? r.energy_kwh.toFixed(2)+' kWh' : '—';
+        var dt = r.start_ts ? r.start_ts.substring(0,16).replace('T',' ') : '—';
+        return '<div style="display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--brd);'+
+          'border-radius:8px;padding:10px 14px;font-size:.78rem">'+
+          '<div style="flex:1"><span style="font-family:var(--mono);color:var(--mute);font-size:.68rem">'+_eh(dt)+'</span>'+
+          ' <strong>'+_eh(kwh)+'</strong>'+
+          ' <span style="color:var(--mute);font-size:.7rem">· '+_eh(sourceStr)+'</span></div>'+
+          badge+'</div>';
+      }).join('');
+      // Open charges for confirmation
+      var open = relevant.filter(function(r){return r.vehicle_assignment_status==='unassigned'&&(r.status==='completed'||r.status==='unassigned');});
+      var ohcDiv = $('vprofil_ohc_list'); var ohcRows = $('vprofil_ohc_rows');
+      if(ohcDiv && ohcRows){
+        if(open.length){
+          ohcDiv.style.display='';
+          ohcRows.innerHTML = open.map(function(r){
+            var kwh = r.energy_kwh!=null?r.energy_kwh.toFixed(2)+' kWh':'?';
+            var dt = r.start_ts?r.start_ts.substring(0,16).replace('T',' '):'?';
+            return '<div style="display:flex;align-items:center;gap:8px;background:rgba(245,158,11,.06);'+
+              'border:1px solid rgba(245,158,11,.25);border-radius:8px;padding:10px 14px;font-size:.8rem">'+
+              '<div style="flex:1"><span style="color:var(--mute);font-size:.7rem">'+_eh(dt)+'</span>'+
+              ' <strong>'+_eh(kwh)+'</strong></div>'+
+              '<button class="btn-g" style="padding:5px 10px;font-size:.74rem" '+
+              'data-requires-permission="sessions:edit" '+
+              'onclick="wallboxAssignFromProfile('+r.id+',\''+_vprofilVid+'\')">✓ Mir</button>'+
+              '<button class="btn-g" style="padding:5px 10px;font-size:.74rem" '+
+              'onclick="wallboxMarkForeign('+r.id+')">🚗 Fremd</button>'+
+              '<button class="btn-g" style="padding:5px 10px;font-size:.74rem" '+
+              'onclick="wallboxIgnore('+r.id+')">✕</button></div>';
+          }).join('');
+        } else { ohcDiv.style.display='none'; }
+      }
+    } catch(e){ list.innerHTML='<p style="color:var(--danger);font-size:.78rem">Fehler beim Laden.</p>'; }
+  }
+
+  async function wallboxAssignFromProfile(wbsId, vid){
+    var r = await apiFetch('/api/wallbox/sessions/'+wbsId+'/assign',{method:'POST',body:JSON.stringify({vehicle_id:vid})})
+                  .then(function(x){return x.json();}).catch(function(){return {ok:false};});
+    if(r.ok){ toast('Zugewiesen'); _vprofilLoadVerlauf(); }
+    else toast(r.error||'Fehler','err');
+  }
+
+  // ── Profile: Zähler tab ──────────────────────────────────────────────────────
+
+  async function _vprofilOnZaehlerOpen() {
+    var c = await fetch('/api/config').then(function(r){return r.json();}).catch(function(){return {};});
+    if (_vprofilVid && _vprofilVid !== 'v0') {
+      var vehicles = await fetch('/api/vehicles').then(function(r){return r.json();}).catch(function(){return [];});
+      var veh = vehicles.find(function(x){return x.id===_vprofilVid;}) || {};
+      Object.keys(veh).forEach(function(k){ if(veh[k]!==undefined&&veh[k]!==null) c[k]=veh[k]; });
+    }
+    _vprofilFillZaehler(c);
+  }
+
+  function _vprofilFillZaehler(c) {
+    var g = function(id){ var el=$('vp_z_'+id); return el?el:null; };
+    if(g('meter_source')) g('meter_source').value = c.meter_source||'none';
+    if(g('meter_sensor')) g('meter_sensor').value = c.meter_sensor||'';
+    if(g('meter_device_ip')) g('meter_device_ip').value = c.meter_device_ip||'';
+    if(g('meter_evcc_port')) g('meter_evcc_port').value = c.meter_evcc_port||7070;
+    if(g('meter_evcc_lp')) g('meter_evcc_lp').value = c.meter_evcc_lp||0;
+    if(g('meter_alfen_pass')) g('meter_alfen_pass').value = c.meter_alfen_pass ? '********' : '';
+    if(g('meter_channel')) g('meter_channel').value = c.meter_channel||0;
+    if(g('meter_phase_mode')) g('meter_phase_mode').value = c.meter_phase_mode||'total';
+    if(g('meter_json_path_tasmota')) g('meter_json_path_tasmota').value = c.meter_json_path||'';
+    if(g('meter_json_path_generic')) g('meter_json_path_generic').value = c.meter_json_path||'';
+    if(g('meter_generic_url')) g('meter_generic_url').value = c.meter_generic_url||'';
+    if(g('meter_value_unit')) g('meter_value_unit').value = c.meter_value_unit||'auto';
+    if(g('meter_value_factor')) g('meter_value_factor').value = c.meter_value_factor!=null?c.meter_value_factor:'';
+    if(g('meter_generic_user')) g('meter_generic_user').value = c.meter_username||'';
+    if(g('meter_timeout_seconds')) g('meter_timeout_seconds').value = c.meter_timeout_seconds||8;
+    if(g('meter_device_scheme')) g('meter_device_scheme').value = c.meter_device_scheme||'http';
+    if(g('meter_device_port')) g('meter_device_port').value = c.meter_device_port||'';
+    if(g('meter_prefer_delta')) g('meter_prefer_delta').checked = !!c.meter_prefer_meter_delta;
+    if(g('meter_scope')) g('meter_scope').value = c.meter_scope||'home_only';
+    var hp = c.home_charger_power_kw||11;
+    var sel = $('vp_z_home_charger_power_kw_preset');
+    var inp = $('vp_z_home_charger_power_kw');
+    if(inp) inp.value = hp;
+    if(sel) {
+      if(hp==11) sel.value='11';
+      else if(hp==22) sel.value='22';
+      else { sel.value='custom'; var cd=$('vp_z_wallbox_custom_div'); if(cd) cd.style.display=''; }
+    }
+    vprofilUpdateMeterSourceUI();
+  }
+
+  function vprofilUpdateMeterSourceUI() {
+    var s = ($('vp_z_meter_source')||{value:'none'}).value;
+    var show = function(id, cond) { var el=$('vp_z_'+id); if(el) el.style.display=cond?'':' none'; };
+    $('vp_z_meter_ha_fields') && ($('vp_z_meter_ha_fields').style.display = s==='ha' ? '' : 'none');
+    $('vp_z_meter_device_fields') && ($('vp_z_meter_device_fields').style.display = (s==='shelly'||s==='tasmota'||s==='go_e'||s==='openwb'||s==='warp'||s==='webasto'||s==='juice') ? '' : 'none');
+    $('vp_z_meter_evcc_fields') && ($('vp_z_meter_evcc_fields').style.display = s==='evcc'?'':'none');
+    $('vp_z_meter_alfen_fields') && ($('vp_z_meter_alfen_fields').style.display = s==='alfen'?'':'none');
+    $('vp_z_meter_shelly_fields') && ($('vp_z_meter_shelly_fields').style.display = s==='shelly'?'':'none');
+    $('vp_z_meter_tasmota_fields') && ($('vp_z_meter_tasmota_fields').style.display = s==='tasmota'?'':'none');
+    $('vp_z_meter_generic_fields') && ($('vp_z_meter_generic_fields').style.display = s==='generic'?'':'none');
+  }
+
+  function vprofilToggleMeterAdvanced() {
+    var el=$('vp_z_meter_advanced_fields');
+    if(el) el.style.display = el.style.display==='none'?'':'none';
+  }
+
+  function vprofilOnWallboxPresetChange() {
+    var sel=$('vp_z_home_charger_power_kw_preset');
+    var cd=$('vp_z_wallbox_custom_div');
+    if(cd) cd.style.display = (sel&&sel.value==='custom')?'':'none';
+  }
+
+  async function vprofilSaveZaehler() {
+    if(!_vprofilVid){ toast('Kein Fahrzeug aktiv','err'); return; }
+    var g = function(id){ var el=$('vp_z_'+id); return el?el.value:''; };
+    var gb = function(id){ var el=$('vp_z_'+id); return el?el.checked:false; };
+    var s = g('meter_source');
+    var password = s==='shelly' ? g('meter_password_shelly') : s==='generic' ? g('meter_generic_pass') : '';
+    var jsonPath = s==='tasmota' ? g('meter_json_path_tasmota') : s==='generic' ? g('meter_json_path_generic') : '';
+    var payload = {
+      meter_source:           s,
+      meter_sensor:           g('meter_sensor'),
+      meter_device_ip:        g('meter_device_ip'),
+      meter_device_scheme:    g('meter_device_scheme')||'http',
+      meter_device_port:      g('meter_device_port')||'',
+      meter_username:         s==='generic'?g('meter_generic_user'):'',
+      meter_evcc_port:        parseInt(g('meter_evcc_port'))||7070,
+      meter_evcc_lp:          parseInt(g('meter_evcc_lp'))||0,
+      meter_channel:          parseInt(g('meter_channel'))||0,
+      meter_phase_mode:       g('meter_phase_mode')||'total',
+      meter_json_path:        jsonPath,
+      meter_generic_url:      g('meter_generic_url')||'',
+      meter_value_unit:       g('meter_value_unit')||'auto',
+      meter_value_factor:     parseFloat(g('meter_value_factor'))||1.0,
+      meter_timeout_seconds:  parseInt(g('meter_timeout_seconds'))||8,
+      meter_prefer_meter_delta: gb('meter_prefer_delta'),
+      meter_scope:            g('meter_scope')||'home_only',
+      home_charger_power_kw:  parseFloat($('vp_z_home_charger_power_kw')&&$('vp_z_home_charger_power_kw').value||'11')||11,
+    };
+    if(password && password!=='********') payload.meter_password = password;
+    var alfenPass = g('meter_alfen_pass');
+    if(alfenPass && alfenPass!=='********') payload.meter_alfen_pass = alfenPass;
+    var res = $('vp_z_save_res');
+    if(res){ res.textContent='⏳'; res.style.color='var(--mute)'; }
+    var ok; var endpoint; var method;
+    if(_vprofilVid==='v0'){
+      endpoint='/api/config'; method='POST';
+    } else {
+      endpoint='/api/vehicles/'+encodeURIComponent(_vprofilVid); method='PUT';
+    }
+    var resp = await apiFetch(endpoint,{method:method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    var r = await resp.json().catch(function(){return {};});
+    if(resp.ok&&(r.ok||r.saved)){
+      toast('✓ Zähler gespeichert');
+      if(res){ res.textContent='✅'; res.style.color='var(--acc)'; setTimeout(function(){res.textContent='';},2500); }
+    } else {
+      toast(r.error||'Fehler beim Speichern','err');
+      if(res){ res.textContent='❌ '+(r.error||'Fehler'); res.style.color='var(--danger)'; }
+    }
+  }
+
+  async function vprofilTestZaehler() {
+    var g = function(id){ var el=$('vp_z_'+id); return el?el.value:''; };
+    var gb = function(id){ var el=$('vp_z_'+id); return el?el.checked:false; };
+    var s = g('meter_source');
+    var password = s==='shelly'?g('meter_password_shelly'):s==='generic'?g('meter_generic_pass'):'';
+    var jsonPath = s==='tasmota'?g('meter_json_path_tasmota'):s==='generic'?g('meter_json_path_generic'):'';
+    var cfg = {
+      meter_source: s, meter_sensor: g('meter_sensor'), meter_device_ip: g('meter_device_ip'),
+      meter_device_scheme: g('meter_device_scheme')||'http', meter_device_port: g('meter_device_port')||'',
+      meter_evcc_port: parseInt(g('meter_evcc_port'))||7070, meter_evcc_lp: parseInt(g('meter_evcc_lp'))||0,
+      meter_channel: parseInt(g('meter_channel'))||0, meter_phase_mode: g('meter_phase_mode')||'total',
+      meter_json_path: jsonPath, meter_generic_url: g('meter_generic_url')||'',
+      meter_value_unit: g('meter_value_unit')||'auto', meter_value_factor: parseFloat(g('meter_value_factor'))||1.0,
+      meter_prefer_meter_delta: gb('meter_prefer_delta'), meter_scope: g('meter_scope')||'home_only',
+    };
+    if(password && password!=='********') cfg.meter_password = password;
+    var res = $('vp_z_test_res');
+    if(res){ res.textContent='⏳ Teste…'; res.style.color='var(--mute)'; }
+    var r = await apiFetch('/api/meter/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)})
+                  .then(function(x){return x.json();}).catch(function(){return {ok:false,message:'Netzwerkfehler'};});
+    if(res){
+      if(r.ok){ res.textContent='✅ '+(r.message||('Zählerstand: '+r.value_kwh+' kWh')); res.style.color='var(--acc)'; }
+      else { res.textContent='❌ '+(r.message||r.error||'Fehler'); res.style.color='var(--danger)'; }
+    }
+  }
+
+  // ── Profile: Heimladung & Tarif tab ──────────────────────────────────────────
+
+  async function _vprofilOnHeimladungOpen() {
+    var c = await fetch('/api/config').then(function(r){return r.json();}).catch(function(){return {};});
+    // Merge vehicle-level fields (home_lat/lon, location_*) over the global config
+    if(_vprofilVid){
+      var vehicles = await fetch('/api/vehicles').then(function(r){return r.json();}).catch(function(){return [];});
+      var veh = vehicles.find(function(x){return x.id===_vprofilVid;}) || {};
+      Object.keys(veh).forEach(function(k){ if(veh[k]!==undefined&&veh[k]!==null) c[k]=veh[k]; });
+    }
+    _vprofilFillHeimladung(c);
+  }
+
+  function _vprofilFillHeimladung(c) {
+    var g = function(id){ return $('vp_h_'+id); };
+    if(g('home_charge_enabled')) g('home_charge_enabled').checked = !!c.home_charge_detection_enabled;
+    if(g('hc_power_start')) g('hc_power_start').value = c.home_charge_power_start_threshold_kw??1.0;
+    if(g('hc_power_stop'))  g('hc_power_stop').value  = c.home_charge_power_stop_threshold_kw??0.2;
+    if(g('hc_debounce_start')) g('hc_debounce_start').value = c.home_charge_start_debounce_seconds??120;
+    if(g('hc_debounce_stop'))  g('hc_debounce_stop').value  = c.home_charge_stop_debounce_seconds??300;
+    if(g('hc_min_kwh')) g('hc_min_kwh').value = c.home_charge_min_energy_kwh??1.0;
+    var allowProb = !!c.home_charge_allow_probable_assignment;
+    if(g('allow_probable')) g('allow_probable').checked = allowProb;
+    var warn = $('vp_h_auto_warn');
+    if(warn) warn.style.display = allowProb ? '' : 'none';
+    // Standort & Heimat (per-vehicle)
+    if(g('home_lat')) g('home_lat').value = c.home_lat||'';
+    if(g('home_lon')) g('home_lon').value = c.home_lon||'';
+    if(g('loc_enabled')) g('loc_enabled').checked = !!c.location_enabled;
+    if(g('loc_mode')) g('loc_mode').value = c.location_mode||'home_external';
+    if(g('loc_source')) g('loc_source').value = c.location_source||'combined';
+    if(g('loc_detect_mode')) g('loc_detect_mode').value = c.home_detection_mode||'any';
+    if(g('loc_radius')) g('loc_radius').value = c.home_radius_m||150;
+    if(g('loc_ha_entities')) g('loc_ha_entities').value = (c.location_ha_entities||[]).join('\n');
+    if(g('loc_history_enabled')) g('loc_history_enabled').checked = !!c.location_history_enabled;
+    // Tariff
+    if(g('tariff_provider')) g('tariff_provider').value = c.tariff_provider||'fixed';
+    if(g('tariff_price_home')) g('tariff_price_home').value = c.price_per_kwh_home||0.30;
+    if(g('tariff_fallback_price')) g('tariff_fallback_price').value = c.tariff_fallback_price||0.30;
+    if(g('tariff_octopus_api_key')) g('tariff_octopus_api_key').value = c.octopus_api_key?'********':'';
+    if(g('tariff_octopus_account_id')) g('tariff_octopus_account_id').value = c.octopus_account_id||'';
+    if(g('tariff_octopus_product_code')) g('tariff_octopus_product_code').value = c.octopus_product_code||'';
+    if(g('tariff_octopus_tariff_code')) g('tariff_octopus_tariff_code').value = c.octopus_tariff_code||'';
+    if(g('tariff_octopus_gbp_eur_factor')) g('tariff_octopus_gbp_eur_factor').value = c.octopus_gbp_eur_factor||1.15;
+    if(g('tariff_tibber_token')) g('tariff_tibber_token').value = c.tibber_token?'********':'';
+    if(g('tariff_ha_entity')) g('tariff_ha_entity').value = c.tariff_ha_entity||'';
+    if(g('tariff_ha_url')) g('tariff_ha_url').value = c.tariff_ha_url||'';
+    if(g('tariff_ha_token')) g('tariff_ha_token').value = c.tariff_ha_token?'********':'';
+    if(g('tariff_evcc_url')) g('tariff_evcc_url').value = c.tariff_evcc_url||'';
+    if(g('tariff_generic_url')) g('tariff_generic_url').value = c.generic_tariff_url||'';
+    if(g('tariff_generic_json_path')) g('tariff_generic_json_path').value = c.generic_tariff_json_path||'';
+    if(g('tariff_generic_unit')) g('tariff_generic_unit').value = c.generic_tariff_unit||'EUR/kWh';
+    if(g('tariff_generic_factor')) g('tariff_generic_factor').value = c.generic_tariff_factor||1.0;
+    vprofilOnTariffProviderChange();
+  }
+
+  function vprofilToggleAutoModeWarning() {
+    var cb = $('vp_h_allow_probable');
+    var warn = $('vp_h_auto_warn');
+    if(warn) warn.style.display = (cb&&cb.checked) ? '' : 'none';
+  }
+
+  function vprofilOnTariffProviderChange() {
+    var sel = $('vp_h_tariff_provider');
+    var p = sel ? sel.value : 'fixed';
+    var panels = ['fixed','octopus','tibber','home_assistant','evcc','generic_http'];
+    panels.forEach(function(id){
+      var el=$('vp_h_tariff_panel_'+id);
+      if(el) el.style.display = (id===p)?'':'none';
+    });
+  }
+
+  async function vprofilSaveHeimladung() {
+    if(!_vprofilVid){ toast('Kein Fahrzeug aktiv','err'); return; }
+    var g = function(id){ var el=$('vp_h_'+id); return el?el.value:''; };
+    var gb = function(id){ var el=$('vp_h_'+id); return el?el.checked:false; };
+    var cfg = {
+      home_charge_detection_enabled:         gb('home_charge_enabled'),
+      home_charge_power_start_threshold_kw:  parseFloat(g('hc_power_start'))||1.0,
+      home_charge_power_stop_threshold_kw:   parseFloat(g('hc_power_stop'))||0.2,
+      home_charge_start_debounce_seconds:    parseInt(g('hc_debounce_start'))||120,
+      home_charge_stop_debounce_seconds:     parseInt(g('hc_debounce_stop'))||300,
+      home_charge_min_energy_kwh:            parseFloat(g('hc_min_kwh'))||1.0,
+      home_charge_allow_probable_assignment: gb('allow_probable'),
+    };
+    var res = $('vp_h_save_res');
+    if(res){ res.textContent='⏳'; res.style.color='var(--mute)'; }
+    var r = await apiFetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)})
+                  .then(function(x){return x.json();}).catch(function(){return {ok:false};});
+    // Per-vehicle: home coordinates + location settings (same payload as the old modal)
+    var ok2 = true;
+    var haEntities = g('loc_ha_entities').split('\n').map(function(s){return s.trim();}).filter(Boolean);
+    var vehPayload = {
+      home_lat:            g('home_lat').trim(),
+      home_lon:            g('home_lon').trim(),
+      location_enabled:    gb('loc_enabled'),
+      location_mode:       g('loc_mode')||'home_external',
+      location_source:     g('loc_source')||'combined',
+      home_detection_mode: g('loc_detect_mode')||'any',
+      home_radius_m:       parseFloat(g('loc_radius'))||150,
+      location_ha_entities: haEntities,
+      location_history_enabled: gb('loc_history_enabled'),
+    };
+    var r2 = await apiFetch('/api/vehicles/'+encodeURIComponent(_vprofilVid),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(vehPayload)})
+                  .then(function(x){return x.json();}).catch(function(){return {ok:false};});
+    ok2 = !!r2.ok;
+    if((r.ok||r.saved) && ok2){
+      toast('✓ Heimladung gespeichert');
+      if(res){ res.textContent='✅'; res.style.color='var(--acc)'; setTimeout(function(){res.textContent='';},2500); }
+    } else {
+      toast((r.error||(r2&&r2.error))||'Fehler','err');
+      if(res){ res.textContent='❌'; res.style.color='var(--danger)'; }
+    }
+  }
+
+  async function vprofilSaveTariff() {
+    var g = function(id){ return $('vp_h_'+id); };
+    var payload = {
+      tariff_provider:           g('tariff_provider')?g('tariff_provider').value:'fixed',
+      price_per_kwh_home:        parseFloat(g('tariff_price_home')?g('tariff_price_home').value:0.30),
+      tariff_fallback_price:     parseFloat(g('tariff_fallback_price')?g('tariff_fallback_price').value:0.30),
+      octopus_account_id:        g('tariff_octopus_account_id')?g('tariff_octopus_account_id').value:'',
+      octopus_product_code:      g('tariff_octopus_product_code')?g('tariff_octopus_product_code').value:'',
+      octopus_tariff_code:       g('tariff_octopus_tariff_code')?g('tariff_octopus_tariff_code').value:'',
+      octopus_gbp_eur_factor:    parseFloat(g('tariff_octopus_gbp_eur_factor')?g('tariff_octopus_gbp_eur_factor').value:1.15),
+      tariff_ha_entity:          g('tariff_ha_entity')?g('tariff_ha_entity').value:'',
+      tariff_ha_url:             g('tariff_ha_url')?g('tariff_ha_url').value:'',
+      tariff_evcc_url:           g('tariff_evcc_url')?g('tariff_evcc_url').value:'',
+      generic_tariff_url:        g('tariff_generic_url')?g('tariff_generic_url').value:'',
+      generic_tariff_json_path:  g('tariff_generic_json_path')?g('tariff_generic_json_path').value:'',
+      generic_tariff_unit:       g('tariff_generic_unit')?g('tariff_generic_unit').value:'EUR/kWh',
+      generic_tariff_factor:     parseFloat(g('tariff_generic_factor')?g('tariff_generic_factor').value:1.0),
+    };
+    var apiKey = g('tariff_octopus_api_key')?g('tariff_octopus_api_key').value:'';
+    if(apiKey && apiKey!=='********') payload.octopus_api_key = apiKey;
+    var tibberToken = g('tariff_tibber_token')?g('tariff_tibber_token').value:'';
+    if(tibberToken && tibberToken!=='********') payload.tibber_token = tibberToken;
+    var haToken = g('tariff_ha_token')?g('tariff_ha_token').value:'';
+    if(haToken && haToken!=='********') payload.tariff_ha_token = haToken;
+    var res = $('vp_h_tariff_save_res');
+    if(res){ res.textContent='⏳'; res.style.color='var(--mute)'; }
+    var r = await apiFetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+                  .then(function(x){return x.json();}).catch(function(){return {ok:false};});
+    if(r.ok||r.saved){
+      toast('✓ Tarif gespeichert');
+      if(res){ res.textContent='✅'; res.style.color='var(--acc)'; setTimeout(function(){res.textContent='';},2500); }
+    } else {
+      toast(r.error||'Fehler','err');
+      if(res){ res.textContent='❌'; res.style.color='var(--danger)'; }
+    }
+  }
+  </script>
+
   <div class="fab-menu" id="fabMenu">
     <div class="fab-item" onclick="closeFab();mobileNavTo('sessions');mobileQuickAddSession()">➕ Ladevorgang</div>
     <div class="fab-item" onclick="closeFab();mobileNavTo('export');initMobileExport()">📥 Export erstellen</div>

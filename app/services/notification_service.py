@@ -180,7 +180,8 @@ def _notify_sync(
         channel_results = {}
         if not quiet:
             channel_results = _dispatch_channels(cfg, type, severity, title, message,
-                                                  vehicle_id, data or {}, action_url)
+                                                  vehicle_id, data or {}, action_url,
+                                                  action_payload)
 
         sent_any = any(v for v in channel_results.values())
         now_sent = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
@@ -208,6 +209,7 @@ def _dispatch_channels(
     vehicle_id: str | None,
     data: dict,
     action_url: str | None,
+    action_payload: dict | None = None,
 ) -> dict[str, bool]:
     """Send to all enabled channels. Returns {channel: success}."""
     results: dict[str, bool] = {}
@@ -218,7 +220,7 @@ def _dispatch_channels(
 
     # ── ntfy ──────────────────────────────────────────────────────────────
     if cfg.get("notification_ntfy_enabled", False):
-        results["ntfy"] = _send_ntfy(cfg, title, message, severity, action_url)
+        results["ntfy"] = _send_ntfy(cfg, title, message, severity, action_url, action_payload)
 
     # ── Gotify ────────────────────────────────────────────────────────────
     if cfg.get("notification_gotify_enabled", False):
@@ -276,7 +278,35 @@ def _send_ha(cfg: dict, title: str, message: str, data: dict, action_url: str | 
 
 _NTFY_PRIORITY = {"info": "default", "warning": "high", "critical": "urgent"}
 
-def _send_ntfy(cfg: dict, title: str, message: str, severity: str, action_url: str | None) -> bool:
+def _build_ntfy_actions(cfg: dict, action_payload: dict | None) -> str | None:
+    """Build the ntfy ``Actions`` header from an action_payload.
+
+    Buttons need an absolute URL the phone can reach, so they are only emitted
+    when a public base URL is configured. The signed token in each URL carries
+    the authorization; no session cookie is required.
+    """
+    if not action_payload:
+        return None
+    actions = action_payload.get("actions") or []
+    if not actions:
+        return None
+    base = (cfg.get("public_base_url") or "").rstrip("/")
+    if not base:
+        return None
+    parts = []
+    for a in actions[:3]:  # ntfy caps at 3 actions
+        label = str(a.get("label", "")).replace(",", " ")
+        endpoint = a.get("action", "")
+        token = a.get("token", "")
+        if not endpoint or not token:
+            continue
+        url = f"{base}/api/wallbox/confirm?token={token}&action={endpoint}"
+        parts.append(f"action=http, {label}, {url}, method=POST, clear=true")
+    return "; ".join(parts) if parts else None
+
+
+def _send_ntfy(cfg: dict, title: str, message: str, severity: str,
+               action_url: str | None, action_payload: dict | None = None) -> bool:
     import requests
     ntfy_url = cfg.get("notification_ntfy_url", "https://ntfy.sh").rstrip("/")
     topic    = cfg.get("notification_ntfy_topic", "").strip()
@@ -293,6 +323,9 @@ def _send_ntfy(cfg: dict, title: str, message: str, severity: str, action_url: s
         headers["Authorization"] = f"Bearer {token}"
     if action_url:
         headers["Click"] = action_url
+    actions_header = _build_ntfy_actions(cfg, action_payload)
+    if actions_header:
+        headers["Actions"] = actions_header
     try:
         r = requests.post(url, data=message.encode("utf-8"), headers=headers, timeout=10)
         return r.ok

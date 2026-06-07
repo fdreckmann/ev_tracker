@@ -1,7 +1,7 @@
 // vehicles.js — provides:
-//   loadVehicleList, openAddVehicleModal, openEditVehicleModal,
+//   loadVehicleList, openAddVehicleModal,
 //   loadVehicleModalFields, closeVehicleModal, saveVehicleModal,
-//   archiveVehicleModal, suggestVehicleImage, openSilhouettePicker,
+//   suggestVehicleImage, openSilhouettePicker,
 //   uploadVehicleImage, deleteVehicleImage, refreshVehicleModalImage
 
 var _editingVehicleId = null;
@@ -29,98 +29,21 @@ async function loadVehicleList() {
       '</div>' +
       '<button class="btn-s" style="font-size:.72rem;padding:5px 12px" data-vid="'+_eh(v.id)+'">✏ Bearbeiten</button>';
     var editBtn = row.querySelector('.btn-s[data-vid]');
-    if (editBtn) editBtn.addEventListener('click', function(){ openEditVehicleModal(this.dataset.vid); });
+    if (editBtn) editBtn.addEventListener('click', function(){ openVehicleProfile(this.dataset.vid); });
     el.appendChild(row);
   });
 }
 
-function _setVehicleModalButtons(isEdit, isV0) {
-  var archiveBtn    = $('vm_archive_btn');
-  var hardDeleteBtn = $('vm_hard_delete_btn');
-  var showDelete = isEdit && !isV0;
-  if (archiveBtn)    archiveBtn.style.display    = showDelete ? '' : 'none';
-  if (hardDeleteBtn) hardDeleteBtn.style.display  = showDelete ? '' : 'none';
-}
-
 async function openAddVehicleModal() {
   try {
-    _editingVehicleId = null;
     $('vehicleModalTitle').textContent = 'Fahrzeug hinzufügen';
     $('vm_name').value = '';
-    $('vm_battery').value = '77.0';
-    $('vm_poll').value = '60';
-    $('vm_home_lat').value = '';
-    $('vm_home_lon').value = '';
     $('vm_provider').selectedIndex = 0;
     $('vm_info').textContent = '';
-    _setVehicleModalButtons(false);
-    // Reset location fields
-    var locEnabled = $('vm_loc_enabled');
-    if (locEnabled) locEnabled.checked = false;
-    var locMode = $('vm_loc_mode');
-    if (locMode) locMode.value = 'home_external';
-    var locSource = $('vm_loc_source');
-    if (locSource) locSource.value = 'combined';
-    var locDetect = $('vm_loc_detect_mode');
-    if (locDetect) locDetect.value = 'any';
-    var locRadius = $('vm_loc_radius');
-    if (locRadius) locRadius.value = '150';
-    var locEntities = $('vm_loc_ha_entities');
-    if (locEntities) locEntities.value = '';
-    var locHistory = $('vm_loc_history_enabled');
-    if (locHistory) locHistory.checked = false;
-    // Hide image section for new vehicles (no vehicle_id yet)
-    var imgSection = $('vmImageSection');
-    if (imgSection) imgSection.style.display = 'none';
     await loadVehicleModalFields();
     $('vehicleModal').style.display = 'flex';
   } catch(e) {
     console.error('openAddVehicleModal failed', e);
-    toast('Fahrzeugdialog konnte nicht geöffnet werden: ' + e.message, 'err');
-  }
-}
-
-async function openEditVehicleModal(vid) {
-  try {
-    _editingVehicleId = vid;
-    var vehicles = await fetch('/api/vehicles').then(function(r){return r.json();});
-    var v = vehicles.find(function(x){return x.id===vid;});
-    if(!v) { toast('Fahrzeug nicht gefunden','err'); return; }
-    $('vehicleModalTitle').textContent = 'Fahrzeug bearbeiten';
-    $('vm_name').value = v.name||'';
-    $('vm_battery').value = v.battery_capacity_kwh||'77.0';
-    $('vm_poll').value = v.poll_interval||'60';
-    $('vm_home_lat').value = v.home_lat||'';
-    $('vm_home_lon').value = v.home_lon||'';
-    var sel = $('vm_provider');
-    for(var i=0;i<sel.options.length;i++){
-      if(sel.options[i].value===v.provider){ sel.selectedIndex=i; break; }
-    }
-    $('vm_info').textContent = '';
-    _setVehicleModalButtons(true, vid === 'v0');
-    // Location fields
-    var locEnabled = $('vm_loc_enabled');
-    if (locEnabled) locEnabled.checked = !!v.location_enabled;
-    var locMode = $('vm_loc_mode');
-    if (locMode) locMode.value = v.location_mode || 'home_external';
-    var locSource = $('vm_loc_source');
-    if (locSource) locSource.value = v.location_source || 'combined';
-    var locDetect = $('vm_loc_detect_mode');
-    if (locDetect) locDetect.value = v.home_detection_mode || 'any';
-    var locRadius = $('vm_loc_radius');
-    if (locRadius) locRadius.value = v.home_radius_m || '150';
-    var locEntities = $('vm_loc_ha_entities');
-    if (locEntities) locEntities.value = (v.location_ha_entities||[]).join('\n');
-    var locHistory = $('vm_loc_history_enabled');
-    if (locHistory) locHistory.checked = !!v.location_history_enabled;
-    // Show image section for existing vehicles
-    var imgSection = $('vmImageSection');
-    if (imgSection) imgSection.style.display = '';
-    await loadVehicleModalFields(v);
-    await refreshVehicleModalImage();
-    $('vehicleModal').style.display = 'flex';
-  } catch(e) {
-    console.error('openEditVehicleModal failed', e);
     toast('Fahrzeugdialog konnte nicht geöffnet werden: ' + e.message, 'err');
   }
 }
@@ -168,10 +91,7 @@ async function testVehicleConnection() {
   var provider = $('vm_provider').value;
   var fields = await fetch('/api/providers/' + provider + '/fields').then(function(r){return r.json();}).catch(function(){return [];});
   var payload = { provider: provider };
-  if (_editingVehicleId) payload.vehicle_id = _editingVehicleId;
   fields.forEach(function(f){ var el = $('vmf_' + f.id); if (el) payload[f.id] = el.value; });
-  if (($('vm_home_lat')||{}).value) payload.home_lat = $('vm_home_lat').value.trim();
-  if (($('vm_home_lon')||{}).value) payload.home_lon = $('vm_home_lon').value.trim();
   if (box) {
     box.style.display = ''; box.style.background = 'var(--surf2)';
     box.style.border = '1px solid var(--brd)'; box.style.color = 'var(--mute)';
@@ -211,28 +131,16 @@ async function testVehicleConnection() {
 async function saveVehicleModal() {
   var provider = $('vm_provider').value;
   var fields = await fetch('/api/providers/'+provider+'/fields').then(function(r){return r.json();}).catch(function(){return [];});
-  var haEntities = ($('vm_loc_ha_entities')||{value:''}).value.split('\n').map(function(s){return s.trim();}).filter(Boolean);
   var data = {
-    name:                $('vm_name').value.trim() || 'Neues Fahrzeug',
-    provider:            provider,
-    active:              true,
-    battery_capacity_kwh: parseFloat($('vm_battery').value)||77,
-    poll_interval:       parseInt($('vm_poll').value)||60,
-    home_lat:            $('vm_home_lat').value.trim(),
-    home_lon:            $('vm_home_lon').value.trim(),
-    location_enabled:    !!($('vm_loc_enabled')||{}).checked,
-    location_mode:       ($('vm_loc_mode')||{value:'home_external'}).value,
-    location_source:     ($('vm_loc_source')||{value:'combined'}).value,
-    home_detection_mode: ($('vm_loc_detect_mode')||{value:'any'}).value,
-    home_radius_m:       parseFloat(($('vm_loc_radius')||{value:'150'}).value)||150,
-    location_ha_entities: haEntities,
-    location_history_enabled: !!($('vm_loc_history_enabled')||{}).checked,
+    name:     $('vm_name').value.trim() || 'Neues Fahrzeug',
+    provider: provider,
+    active:   true,
   };
   fields.forEach(function(f) {
     var el = $('vmf_'+f.id);
     if(!el) return;
     if(f.type === 'password') {
-      if(!el.value || el.value === '********') return; // keep stored secret
+      if(!el.value || el.value === '********') return;
       data[f.id] = el.value;
     } else if(f.type === 'checkbox') {
       data[f.id] = !!el.checked;
@@ -243,33 +151,24 @@ async function saveVehicleModal() {
     }
   });
 
-  // Warn (but allow) when the connection was never successfully tested.
   if (_vehicleConnTested !== 'ok' && _vehicleConnTested !== 'partial') {
     if (!confirm('Verbindung wurde nicht erfolgreich getestet. Trotzdem speichern?')) return;
   }
 
-  // v0 uses car_name instead of name in backend config
-  if (_editingVehicleId === 'v0') {
-    data.car_name = data.name;
-    delete data.name;
-  }
-
-  var url  = _editingVehicleId ? '/api/vehicles/'+_editingVehicleId : '/api/vehicles';
-  var meth = _editingVehicleId ? 'PUT' : 'POST';
-  var resp = await apiFetch(url,{method:meth,headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  var resp = await apiFetch('/api/vehicles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   var r = await resp.json().catch(function(){return {};});
   if(resp.ok && r.ok){
     closeVehicleModal();
-    toast(_editingVehicleId ? 'Fahrzeug aktualisiert' : 'Fahrzeug hinzugefügt', 'ok');
+    toast('Fahrzeug hinzugefügt', 'ok');
     loadVehicleList();
     if (typeof refreshStatus === 'function') setTimeout(refreshStatus, 500);
     if (typeof loadMobileVehicleCards === 'function') loadMobileVehicleCards();
     if (typeof refreshMobileDashboard === 'function') refreshMobileDashboard();
+    var newId = r.id || r.vehicle_id;
+    if (newId && typeof openVehicleProfile === 'function') openVehicleProfile(newId);
   } else {
     var errMsg = r.error || 'Fehler';
-    if (resp.status === 403) {
-      errMsg = 'Keine Berechtigung: Fahrzeuge erstellen/bearbeiten';
-    }
+    if (resp.status === 403) errMsg = 'Keine Berechtigung: Fahrzeuge erstellen';
     $('vm_info').innerHTML = '<span style="color:var(--danger)">❌ '+escapeHtml(errMsg)+'</span>';
   }
 }

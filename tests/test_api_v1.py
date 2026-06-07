@@ -213,3 +213,47 @@ class TestApiV1ReportsCreate:
             close_db_if_owned(con)
         assert row is not None
         assert dict(row)["status"] == "created"
+
+    def test_excel_success_no_excel_error_field(self, app, client):
+        """Successful Excel build must not add excel_ok/excel_error to response."""
+        token = _create_token(app)
+        self._insert_session(app, token, month=3)
+        rv = client.post(
+            "/api/v1/reports/create",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"period_mode": "single_month", "report_email_single_month": "2026-03"},
+        )
+        assert rv.status_code == 201
+        data = rv.get_json()
+        assert data.get("ok") is True
+        assert "excel_error" not in data
+        assert data.get("excel_ok") is not False
+
+    def test_excel_failure_surface_in_response(self, app, client, monkeypatch):
+        """If Excel generation raises, response has excel_ok=False + excel_error,
+        report is still created (HTTP 201), and ok remains True."""
+        import services.report_excel_service as _xls
+        monkeypatch.setattr(_xls, "build_report_excel_bytes",
+                            lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("test-excel-fail")))
+
+        token = _create_token(app)
+        self._insert_session(app, token, month=2)
+        rv = client.post(
+            "/api/v1/reports/create",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"period_mode": "single_month", "report_email_single_month": "2026-02",
+                  "include_excel": True},
+        )
+        assert rv.status_code == 201
+        data = rv.get_json()
+        assert data.get("ok") is True
+        assert data.get("excel_ok") is False
+        assert "test-excel-fail" in data.get("excel_error", "")
+
+        report_id = data["report_id"]
+        with app.app_context():
+            from core.db import _get_db, close_db_if_owned
+            con = _get_db()
+            row = con.execute("SELECT status FROM reports WHERE id=?", (report_id,)).fetchone()
+            close_db_if_owned(con)
+        assert dict(row)["status"] == "created_no_excel"

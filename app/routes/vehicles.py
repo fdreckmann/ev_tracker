@@ -156,18 +156,11 @@ def api_update_vehicle(vid):
             if data["provider"] not in _PROVIDERS:
                 return jsonify({"ok": False, "error": f"Unbekannter Provider: {data['provider']}"}), 400
         cfg  = load_config()
-        # Determine password fields for v0's provider
-        try:
-            _v0_provider = data.get("provider") or cfg.get("provider", "ha")
-            from providers import get_config_fields as _gcf
-            _v0_pw_keys = {f["id"] for f in _gcf(_v0_provider) if f.get("type") == "password"}
-        except Exception:
-            _v0_pw_keys = {"ha_token", "vw_password", "smartcar_client_secret",
-                           "tesla_refresh_token", "enbw_api_subscription_key"}
+        from core.secrets import _is_secret_key as _isk
         for k, val in data.items():
             if k in VEHICLE_SPECIFIC_KEYS or k == "car_name":
-                if k in _v0_pw_keys:
-                    # Password fields: skip if masked or empty (preserve stored secret)
+                if _isk(k):
+                    # Secret fields: skip if masked or empty (preserve stored secret)
                     if val in ("", _MASK):
                         continue
                 elif k not in _LOCATION_KEYS:
@@ -183,15 +176,10 @@ def api_update_vehicle(vid):
         from providers import PROVIDERS as _PROVIDERS
         if data["provider"] not in _PROVIDERS:
             return jsonify({"ok": False, "error": f"Unbekannter Provider: {data['provider']}"}), 400
-    # Strip empty/masked password fields so stored secrets survive
-    from providers import get_config_fields
-    try:
-        provider_id = data.get("provider") or "ha"
-        pw_keys = {f["id"] for f in get_config_fields(provider_id) if f.get("type") == "password"}
-    except Exception:
-        pw_keys = set()
+    # Strip empty/masked secret fields so stored credentials survive
+    from core.secrets import _is_secret_key as _isk
     data = {k: v for k, v in data.items()
-            if not (k in pw_keys and v in ("", _MASK))}
+            if not (_isk(k) and v in ("", _MASK))}
     cfg    = load_config()
     extras = list(cfg.get("extra_vehicles", []))
     for i, v in enumerate(extras):

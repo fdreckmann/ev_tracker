@@ -689,6 +689,16 @@ def init_db():
         created_at                TEXT NOT NULL,
         updated_at                TEXT NOT NULL
     )""")
+    # wallbox_sessions additive migration (PR 10 — Unified Charging Intelligence)
+    for _col in [
+        "signal_sources TEXT",      # JSON, z.B. ["meter","identity","api"]
+        "kwh_source_detail TEXT",   # meter_delta_wallbox / meter_delta_line / api / estimated
+        "assignment_signals TEXT",  # JSON: Signale/Hochstufung, die zur Zuweisung führten
+    ]:
+        try:
+            con.execute(f"ALTER TABLE wallbox_sessions ADD COLUMN {_col}")
+        except Exception:
+            pass
     con.execute("""CREATE INDEX IF NOT EXISTS idx_wallbox_sessions_status
                    ON wallbox_sessions(status)""")
     con.execute("""CREATE INDEX IF NOT EXISTS idx_wallbox_sessions_vehicle
@@ -727,6 +737,19 @@ def init_db():
                    ON charge_evidence(vehicle_id)""")
     con.execute("""CREATE INDEX IF NOT EXISTS idx_charge_evidence_session
                    ON charge_evidence(session_id)""")
+
+    # vehicle_user_assignments — Fuhrpark-Vorkehrung (PR 11, §6): heute leer,
+    # keine Lese-/Schreiblogik. Phase F dockt hier an.
+    con.execute("""CREATE TABLE IF NOT EXISTS vehicle_user_assignments (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        vehicle_id TEXT NOT NULL,
+        user_id    INTEGER NOT NULL,
+        created_at TEXT NOT NULL
+    )""")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_vua_vehicle
+                   ON vehicle_user_assignments(vehicle_id)""")
+    con.execute("""CREATE INDEX IF NOT EXISTS idx_vua_user
+                   ON vehicle_user_assignments(user_id)""")
 
     # sessions additive extension for wallbox assignment tracking
     for _col in [
@@ -1116,6 +1139,43 @@ def tracker_loop(vehicle_id: str = "v0"):
             state    = provider.get_state()
             debug = provider.get_debug() if hasattr(provider, 'get_debug') else {}
             st["provider_debug"] = debug
+
+            # ── Home-Charging-Erkennung (PR 10) ───────────────────────────────
+            # Läuft VOR dem state.error-continue, damit Meter/Wallbox/RFID auch
+            # bei toter Fahrzeug-API erkannt werden. Darf den Loop nie brechen.
+            try:
+                from services.meter_snapshot_service import maybe_record_poll_snapshot
+                maybe_record_poll_snapshot(vehicle_id, vcfg, st, con)
+            except Exception as _mse:
+                log.debug("Meter snapshot error [%s]: %s", vehicle_id, _mse)
+            try:
+                from services.charging_state_machine import (
+                    ChargingStateMachine, SignalBundle, classify_meter_kind,
+                )
+                _api_ok = not bool(state.error)
+                _soc = getattr(state, "soc", None)
+                _prev_soc = st.get("sm_prev_soc")
+                _soc_rising = (_soc is not None and _prev_soc is not None and _soc > _prev_soc)
+                if _soc is not None:
+                    st["sm_prev_soc"] = _soc
+                _ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
+                _src = vcfg.get("meter_source", "none") or "none"
+                _bundle = SignalBundle(
+                    ts=_ts, vehicle_id=vehicle_id,
+                    api_available=_api_ok,
+                    api_charging=(getattr(state, "charging", None) if _api_ok else None),
+                    api_soc=(_soc if _api_ok else None),
+                    api_soc_rising=(_soc_rising if _api_ok else None),
+                    api_location=(getattr(state, "location", None) if _api_ok else None),
+                    api_power_kw=(getattr(state, "charge_power", None) if _api_ok else None),
+                    meter_power_kw=st.get("meter_snap_last_power"),
+                    meter_energy_total_kwh=st.get("meter_snap_last_val"),
+                    meter_source=(None if _src == "none" else _src),
+                    meter_kind=classify_meter_kind(_src, vcfg.get("meter_type")),
+                )
+                ChargingStateMachine(vcfg, st, con).ingest(_bundle)
+            except Exception as _wbe:
+                log.debug("Charging intelligence error [%s]: %s", vehicle_id, _wbe)
 
             if state.error:
                 st["last_poll"] = datetime.now().isoformat(timespec="seconds")
@@ -1576,38 +1636,6 @@ def tracker_loop(vehicle_id: str = "v0"):
                 except Exception: pass
                 session_id=None; peak_power=None
 
-            # ── Meter snapshot (historical evidence for missing-charge) ───────
-            try:
-                from services.meter_snapshot_service import maybe_record_poll_snapshot
-                maybe_record_poll_snapshot(vehicle_id, vcfg, st, con)
-            except Exception as _mse:
-                log.debug("Meter snapshot error [%s]: %s", vehicle_id, _mse)
-
-            # ── Wallbox/Zähler Home-Charging-Erkennung (additiv, darf nie den Loop brechen) ──
-            try:
-                if vcfg.get("home_charge_detection_enabled", True):
-                    from services.wallbox_session_service import (
-                        process_power_snapshot, process_energy_snapshot,
-                    )
-                    _src_name = vcfg.get("meter_source", "meter") or "meter"
-                    _src_type = vcfg.get("meter_type", "meter") or "meter"
-                    _ts = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
-                    _meter_power = st.get("meter_snap_last_power")
-                    _meter_energy = st.get("meter_snap_last_val")
-                    if _meter_power is not None:
-                        process_power_snapshot(
-                            vehicle_id=None, source_type=_src_type, source_name=_src_name,
-                            power_kw=_meter_power, energy_total_kwh=_meter_energy,
-                            ts=_ts, cfg=vcfg, st=st, con=con,
-                        )
-                    elif _meter_energy is not None:
-                        process_energy_snapshot(
-                            vehicle_id=None, source_type=_src_type, source_name=_src_name,
-                            energy_total_kwh=_meter_energy, ts=_ts, cfg=vcfg, st=st, con=con,
-                        )
-            except Exception as _wbe:
-                log.debug("Wallbox detection error [%s]: %s", vehicle_id, _wbe)
-
             # ── Snapshot + Missing-Charge Detection ───────────────────────────
             try:
                 from services.missing_charge_service import save_snapshot, check_for_missing_charge
@@ -1722,7 +1750,7 @@ _AUTH_EXEMPT = {"/login", "/logout", "/setup",
                 "/api/auth/passkey/login/begin",
                 "/api/auth/passkey/login/complete"}
 
-_AUTH_EXEMPT_PREFIXES = ("/reset-password", "/invite")
+_AUTH_EXEMPT_PREFIXES = ("/reset-password", "/invite", "/api/wallbox/confirm")
 _API_V1_PREFIX = "/api/v1/"
 
 

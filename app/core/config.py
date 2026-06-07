@@ -191,6 +191,9 @@ DEFAULT_CONFIG = {
     "home_charge_exclude_unassigned_from_reports": True,
     "home_charge_vehicle_assignment_mode":        "always_ask_if_unclear",
     "home_charge_allow_probable_assignment":      False,
+    # Line-meter (misst eine Leitung, kann Fremdlast enthalten) — konservativere Schwellen
+    "home_charge_line_meter_power_start_threshold_kw": 1.4,
+    "home_charge_line_meter_power_stop_threshold_kw":  0.3,
 
     # Auth — password + TOTP
     "auth_password_hash": "",
@@ -370,6 +373,7 @@ VEHICLE_SPECIFIC_KEYS = {
     "home_lat","home_lon","home_radius_m","dc_threshold_kw",
     "ha_url","ha_token","charging_sensor","soc_sensor","odo_sensor",
     "power_sensor","charge_speed_sensor","charge_type_sensor","location_sensor","home_states",
+    "ha_connected_means_charging","vehicle_image_entity",
     # Location detection
     "location_enabled","location_mode","location_source","home_detection_mode",
     "location_ha_entities","location_history_enabled","location_history_precision",
