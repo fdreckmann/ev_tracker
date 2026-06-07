@@ -1,5 +1,67 @@
 # Changelog
 
+## v2.1.0 — 2026-06-07
+
+### Erster Stable-Release: Heimladung, Fahrzeugprofil & Docker-Hardening
+
+Fasst alle Entwicklungen seit v2.0.35 zusammen und markiert den ersten stabilen Hauptrelease.
+DB-Migrationen laufen automatisch beim Container-Start; kein manueller Eingriff nötig.
+
+**Automatische Heimladungs-Erkennung**
+- Neue Tabellen `wallbox_sessions` und `charge_evidence` — Zähler-/Wallbox-Ladevorgänge werden separat erfasst und mit Fahrzeug-API-Sessions abgeglichen
+- `reportable_session_where_clause()` — einheitlicher Report-Filter auf alle Query-Stellen angewendet (Sessions-Liste, Monatsstatistiken, Excel-Export, API v1)
+- `reconciliation_service.py` verhindert Doppel-Sessions, wenn Wallbox und Fahrzeug-API denselben Ladevorgang melden (±3 kWh Toleranz, Zeitüberschneidung)
+- Dashboard-Kachel „Offene Heimladungen" mit Zuordnen/Fremdfahrzeug/Ignorieren-Aktionen
+- API-Routen `/api/wallbox/sessions/*`: offene Sessions anzeigen, Fahrzeug zuordnen, Fremdfahrzeug markieren, ignorieren
+
+**go-e RFID/Ladekarten-Zuordnung**
+- `goe_rfid_service.py` liest `cae`-Array (0,1-Wh-Einheiten) und erkennt, welche Karte geladen hat
+- `goe_card_vehicle_map` ordnet Karten-Slots Fahrzeug-IDs zu
+- Genau eine gemappte Karte → `confirmed`; Konflikt (mehrere Karten) → `unassigned`
+- RFID-Snapshots in `_resolve_vehicle` integriert (Session-Start/-Ende)
+
+**Schnelleingabe externe Ladung**
+- `POST /api/sessions/quick-add-external` mit Smart-Defaults (letztes Fahrzeug, letzter Vertrag, geschätztes Ende)
+- `import_service.py`: `make_dedup_key()` und `BaseImportProfile` ABC als Basis für künftige Ladekarten-Importe
+
+**Fehlende Ladevorgänge erkennen**
+- Snapshot-Vergleich nach Provider-Poll erkennt SOC-Anstiege während Offline-Phasen
+- Kandidaten mit Konfidenz-Score (50–95 %) und Vorausfüll-Daten; akzeptieren, ablehnen oder dauerhaft ignorieren
+- Neue Tabellen `vehicle_snapshots` und `missing_charge_candidates`
+
+**Fahrzeugprofil-UI**
+- Fahrzeugkonfiguration in dediziertem Profil mit Tabs (Verbindung, Heimladung, Verlauf, Zähler)
+- `_vprofilFetchProviderFields`-Helper: Provider-Felder werden zuverlässig mit gespeicherten Werten befüllt; sichtbare Fehlermeldung statt stiller Fehler
+- Secret-Felder (Token, Passwort) werden maskiert angezeigt; leere oder maskierte Werte (`********`) überschreiben gespeicherte Secrets nicht
+- `vehicle_image_entity` und `ha_connected_means_charging` zu `VEHICLE_SPECIFIC_KEYS` hinzugefügt
+
+**Provider-Datenverfügbarkeit**
+- `VehicleState` um `data_timestamp`, `data_age_seconds`, `data_stale`, `stale_reason` erweitert
+- HA-Provider wertet `last_changed`/`last_updated` aus; `provider_stale_after_minutes` konfigurierbar
+
+**Update-Check**
+- `GET /api/update-info` liefert Remote-Versionsabgleich (6 h Cache), Grund-Code und Release-Notizen — kein In-App-Update, kein Docker-Socket-Mount
+
+**Docker & Deployment**
+- PUID/PGID-User-Mapping: Container läuft als konfigurierbarer User (Unraid: `PUID=99 PGID=100`)
+- `/api/health` mit `db_writable`, `startup_error`, `data_ok` — vollständige Diagnose ohne Login
+- Cache-Busting für JS/CSS über `ASSET_VERSION`-Suffix
+- Mobile-UI: alle Buttons und Schnellaktionen vollständig funktionstüchtig
+- GitHub Actions: `VERSION` aus Git-Tag bei Prod-Releases (`v*`-Tag → `latest`/`stable`/`vX.Y.Z`)
+
+**Security**
+- PBKDF2:SHA-256 Passwort-Hashing; Legacy-SHA-256-Hashes werden beim Login transparent upgradet
+- Fahrzeug-Credentials (Tokens, Passwörter) in API-Antworten maskiert (`********`)
+- `EV_TRACKER_EXPOSURE=external`: ProxyFix, Secure-Cookies, HSTS, `X-Frame-Options: DENY`
+- XSS-Fixes im Audit-Log, Session-Modal, Fahrzeug-Detail und Ladeabo-Liste
+
+**Fixes**
+- `allow_probable`-Bug: `default_vehicle_always` + `allow_probable=False` → `unassigned` (vorher fälschlicherweise `probable`)
+- Status-Polling mit In-Flight-Guard und AbortController-Timeout (15 s)
+- `normalizeLocation()` erkennt `intern`/`internal`/`zuhause_laden`/`öffentlich` korrekt
+
+---
+
 ## v2.0.51 — 2026-06-02
 
 ### Wallbox-/Zähler-Heimladung (PRs 1–8)

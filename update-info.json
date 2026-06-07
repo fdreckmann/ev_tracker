@@ -1,36 +1,31 @@
 {
-  "latest_version": "2.0.55",
-  "release_date": "2026-05-28",
+  "latest_version": "2.1.0",
+  "release_date": "2026-06-07",
   "channel": "stable",
-  "title": "Stable Release 2.0.55 — Mobile-UI, Cache-Busting, XSS-Fixes",
+  "title": "Stable Release 2.1.0 — Heimladung, Fahrzeugprofil & Docker-Hardening",
   "summary": [
-    "Mobile-Menü vollständig repariert: alle Buttons und Schnellaktionen funktionieren",
-    "Cache-Busting für alle JS/CSS-Dateien (ASSET_VERSION-Suffix)",
-    "Status-Polling mit In-Flight-Guard und AbortController-Timeout (15s)",
-    "normalizeLocation() erkennt intern/internal/zuhause_laden/öffentlich",
-    "XSS-Fixes in Audit-Log, Ladeabo-Liste, Fahrzeug-Detail und Session-Formular",
-    "Mobile Schnellaktion Ladevorgang navigiert direkt zum Sessions-Tab",
-    "GitHub Actions: VERSION aus Git-Tag bei Prod-Releases",
-    "Menü-Reihenfolge: Dashboard | Konfiguration | Ladevorgänge | Export | Backup"
+    "Automatische Heimladungs-Erkennung über Wallbox/Energiezähler mit Fahrzeugzuordnung",
+    "go-e RFID/Ladekarten-Zuordnung: welche Karte hat geladen (confirmed/unassigned)",
+    "Schnelleingabe externe Ladung mit Smart-Defaults (letztes Fahrzeug, letzter Vertrag)",
+    "Fehlende Ladevorgänge erkennen: SOC-Vergleich nach Offline-Phasen mit Konfidenz-Score",
+    "Fahrzeugprofil-UI: dedizierte Profilseite mit Tabs, Provider-Felder zuverlässig befüllt",
+    "Update-Check read-only: kein In-App-Update, kein Docker-Socket-Mount",
+    "PUID/PGID-User-Mapping für Unraid/NAS-Betrieb",
+    "Security: PBKDF2-Passwort-Hashing, Credentials in API-Antworten maskiert, XSS-Fixes"
   ],
   "fixes": [
-    "version.py: ASSET_VERSION = APP_VERSION + commit/build/local Suffix",
-    "docker-build.yml: VERSION aus GITHUB_REF_NAME#v bei Tag-Builds",
-    "mobile.js: mobileNavTo('vehicles'), openDesktopConfigSection(), loadMobileSessions()",
-    "mobile.js: switchToDesktopSettings() blendet jetzt auch mobileVehicles aus",
-    "mobile.js: mobileMissingChargeAccept nutzt korrekte Form-IDs (msStart, msKwh, …)",
-    "mobile.js: mobileMissingChargeDismiss ruft loadMobileSessions() + refreshMobileDashboard()",
-    "index.html: openMobileSessionCreate escapeHtml fuer Fahrzeug-Options (v.id, v.name)",
-    "index.html: openMobileVehicleDetail escapeHtml fuer v.name, v.provider, v.id",
-    "index.html: Audit-Log escapeHtml fuer user_name, action, ip",
-    "index.html: deleteContract-Button nutzt data-id/data-name statt onclick-String",
-    "api.js: apiFetch mit AbortController-Timeout (15s default)",
-    "api.js: normalizeLocation erkennt intern/internal/zuhause_laden als home, oeffentlich als extern",
-    "status.js: In-Flight-Guard, Location-Throttling auf 60s, Sessions mit limit=5"
+    "_resolve_vehicle: allow_probable-Bug behoben (default_vehicle_always + allow_probable=False → unassigned)",
+    "Fahrzeugprofil: Provider-Felder werden mit gespeicherten Werten befüllt (_vprofilFetchProviderFields)",
+    "PUT /api/vehicles: leere oder maskierte Passwortfelder überschreiben gespeicherte Secrets nicht",
+    "Mobile-UI: alle Buttons und Schnellaktionen vollständig funktionstüchtig",
+    "Status-Polling mit In-Flight-Guard und AbortController-Timeout (15 s)",
+    "Cache-Busting für JS/CSS via ASSET_VERSION-Suffix",
+    "/api/health: db_writable, startup_error, data_ok ohne Login abrufbar"
   ],
   "breaking_changes": [],
   "migration_notes": [
-    "Keine DB-Migration noetig",
+    "DB-Migrationen laufen automatisch beim Container-Start — kein manueller Eingriff nötig",
+    "Empfehlung: /data-Verzeichnis vor dem Update sichern",
     "Unraid CA-Template: https://github.com/fdreckmann/ev-tracker-unraid-app"
   ],
   "update_instructions": [
