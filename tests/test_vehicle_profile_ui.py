@@ -994,3 +994,253 @@ class TestPhase2ProviderFieldPopulation:
         silent = re.search(r'\.catch\(function\(\)\s*\{\s*return \[\]', body)
         assert not silent, \
             "Silent .catch(()=>[]) on fields fetch still in vprofilTestConn"
+
+
+# ---------------------------------------------------------------------------
+# 12 — Bugfix: HA-Sensoren werden nicht gespeichert (Content-Type + Checkbox)
+# ---------------------------------------------------------------------------
+
+class TestHaSensorSaveBugfix:
+    """Content-Type header, checkbox rendering and number coercion fixes."""
+
+    # --- apiFetch: Content-Type header (reads api.js directly) ---
+
+    @staticmethod
+    def _read_api_js():
+        import os
+        here = os.path.dirname(__file__)
+        path = os.path.join(here, '..', 'app', 'static', 'js', 'api.js')
+        with open(os.path.normpath(path)) as fh:
+            return fh.read()
+
+    def test_apifetch_sets_content_type_for_string_body(self):
+        """apiFetch must add Content-Type: application/json when body is a string."""
+        src = self._read_api_js()
+        idx = src.find('function apiFetch(')
+        assert idx >= 0, "apiFetch not found in api.js"
+        body = src[idx:idx+800]
+        assert "Content-Type" in body, \
+            "apiFetch does not set Content-Type header for JSON bodies"
+        assert "'application/json'" in body or '"application/json"' in body, \
+            "apiFetch does not set Content-Type to application/json"
+
+    def test_apifetch_content_type_only_for_string_body(self):
+        """apiFetch must guard: only set Content-Type when body is a string."""
+        src = self._read_api_js()
+        idx = src.find('function apiFetch(')
+        assert idx >= 0
+        body = src[idx:idx+800]
+        assert "typeof opts.body === 'string'" in body or \
+               'typeof opts.body === "string"' in body, \
+            "apiFetch does not guard Content-Type on typeof string check"
+
+    def test_apifetch_does_not_override_existing_content_type(self):
+        """apiFetch must not override an already-set Content-Type header."""
+        src = self._read_api_js()
+        idx = src.find('function apiFetch(')
+        assert idx >= 0
+        body = src[idx:idx+800]
+        assert "!opts.headers['Content-Type']" in body or \
+               '!opts.headers["Content-Type"]' in body, \
+            "apiFetch does not guard against overriding existing Content-Type"
+
+    # --- Backend: force=True defense-in-depth ---
+
+    def test_put_vehicles_v0_accepts_json_without_content_type_header(self, authed_client, app):
+        """PUT /api/vehicles/v0 must parse JSON body even without Content-Type header
+        (force=True in get_json)."""
+        import json as _json
+        with app.app_context():
+            from core.config import _config_cache
+            _config_cache["data"] = None
+
+        # Send raw JSON without explicit content_type= kwarg
+        rv = authed_client.put(
+            "/api/vehicles/v0",
+            data=_json.dumps({"soc_sensor": "sensor.test_soc_no_ct"}),
+            # deliberately omit content_type="application/json"
+        )
+        assert rv.status_code == 200, rv.get_data(as_text=True)
+        data = rv.get_json()
+        assert data.get("ok") is True
+
+        with app.app_context():
+            from core.config import load_config, _config_cache
+            _config_cache["data"] = None
+            cfg = load_config()
+            assert cfg.get("soc_sensor") == "sensor.test_soc_no_ct", \
+                f"soc_sensor not saved when Content-Type header was missing: {cfg.get('soc_sensor')!r}"
+
+    # --- Checkbox rendering ---
+
+    def test_checkbox_field_rendered_with_checkbox_type(self, authed_client):
+        """_vprofilLoadProviderFields must render checkbox fields as
+        <input type='checkbox'>, not as a plain text input."""
+        rv = authed_client.get('/')
+        html = rv.get_data(as_text=True)
+        idx = html.find('async function _vprofilLoadProviderFields(')
+        assert idx >= 0, "_vprofilLoadProviderFields not found"
+        body = html[idx:idx+3000]
+        assert "f.type==='checkbox'" in body or "f.type===\"checkbox\"" in body, \
+            "_vprofilLoadProviderFields has no checkbox branch"
+        assert 'type="checkbox"' in body or "type='checkbox'" in body or \
+               'type=\\"checkbox\\"' in body or "checkbox" in body, \
+            "_vprofilLoadProviderFields does not render checkbox input"
+
+    def test_checkbox_field_uses_checked_attribute(self, authed_client):
+        """Checkbox rendering must use 'checked' attribute (not just value=)."""
+        rv = authed_client.get('/')
+        html = rv.get_data(as_text=True)
+        idx = html.find('async function _vprofilLoadProviderFields(')
+        assert idx >= 0
+        body = html[idx:idx+3000]
+        assert "checked" in body, \
+            "Checkbox rendering does not use 'checked' attribute"
+
+    # --- Checkbox/Number save collection ---
+
+    def test_save_uses_el_checked_for_checkboxes(self, authed_client):
+        """vprofilSaveVerbindung must use el.checked (not el.value) for checkbox fields."""
+        rv = authed_client.get('/')
+        html = rv.get_data(as_text=True)
+        idx = html.find('async function vprofilSaveVerbindung()')
+        assert idx >= 0
+        body = html[idx:idx+2500]
+        assert "el.checked" in body, \
+            "vprofilSaveVerbindung does not use el.checked for checkbox fields"
+        assert "f.type==='checkbox'" in body or 'f.type==="checkbox"' in body, \
+            "vprofilSaveVerbindung has no checkbox branch"
+
+    def test_save_parses_number_fields_as_float(self, authed_client):
+        """vprofilSaveVerbindung must send number fields as numbers (parseFloat),
+        not as strings."""
+        rv = authed_client.get('/')
+        html = rv.get_data(as_text=True)
+        idx = html.find('async function vprofilSaveVerbindung()')
+        assert idx >= 0
+        body = html[idx:idx+2500]
+        assert "f.type==='number'" in body or 'f.type==="number"' in body, \
+            "vprofilSaveVerbindung has no number type branch"
+        assert "parseFloat" in body, \
+            "vprofilSaveVerbindung does not use parseFloat for number fields"
+
+    def test_testconn_uses_el_checked_for_checkboxes(self, authed_client):
+        """vprofilTestConn must also use el.checked (not el.value) for checkbox fields."""
+        rv = authed_client.get('/')
+        html = rv.get_data(as_text=True)
+        idx = html.find('async function vprofilTestConn()')
+        assert idx >= 0
+        body = html[idx:idx+2500]
+        assert "el.checked" in body, \
+            "vprofilTestConn does not use el.checked for checkbox fields"
+
+    # --- Backend: HA sensor round-trip ---
+
+    def test_ha_sensors_round_trip_for_v0(self, authed_client, app):
+        """PUT /api/vehicles/v0 with HA sensor fields → GET /api/vehicles returns them."""
+        import json as _json
+        with app.app_context():
+            from core.config import _config_cache
+            _config_cache["data"] = None
+
+        payload = {
+            "provider": "ha",
+            "soc_sensor": "sensor.my_car_soc",
+            "charging_sensor": "sensor.my_car_charging",
+            "odo_sensor": "sensor.my_car_odometer",
+            "power_sensor": "sensor.my_car_power",
+            "location_sensor": "device_tracker.my_car",
+            "ha_connected_means_charging": True,
+            "dc_threshold_kw": 22.0,
+        }
+        rv = authed_client.put(
+            "/api/vehicles/v0",
+            data=_json.dumps(payload),
+            content_type="application/json",
+        )
+        assert rv.status_code == 200, rv.get_data(as_text=True)
+
+        rv2 = authed_client.get("/api/vehicles")
+        vehicles = rv2.get_json()
+        v0 = next((v for v in vehicles if v["id"] == "v0"), None)
+        assert v0 is not None
+        assert v0.get("soc_sensor") == "sensor.my_car_soc"
+        assert v0.get("charging_sensor") == "sensor.my_car_charging"
+        assert v0.get("odo_sensor") == "sensor.my_car_odometer"
+        assert v0.get("power_sensor") == "sensor.my_car_power"
+        assert v0.get("location_sensor") == "device_tracker.my_car"
+
+    def test_ha_sensors_round_trip_for_extra_vehicle(self, authed_client, app):
+        """PUT /api/vehicles/<id> with HA sensor fields → GET /api/vehicles returns them."""
+        import json as _json
+        with app.app_context():
+            from core.config import load_config, save_config, _config_cache
+            cfg = load_config()
+            cfg["extra_vehicles"] = [
+                {"id": "ha_extra_test", "name": "HA Extra", "provider": "ha",
+                 "active": True, "archived": False},
+            ]
+            save_config(cfg)
+            _config_cache["data"] = None
+
+        payload = {
+            "soc_sensor": "sensor.extra_soc",
+            "charging_sensor": "sensor.extra_charging",
+        }
+        rv = authed_client.put(
+            "/api/vehicles/ha_extra_test",
+            data=_json.dumps(payload),
+            content_type="application/json",
+        )
+        assert rv.status_code == 200, rv.get_data(as_text=True)
+
+        rv2 = authed_client.get("/api/vehicles")
+        vehicles = rv2.get_json()
+        ev = next((v for v in vehicles if v["id"] == "ha_extra_test"), None)
+        assert ev is not None
+        assert ev.get("soc_sensor") == "sensor.extra_soc"
+        assert ev.get("charging_sensor") == "sensor.extra_charging"
+
+    def test_ha_connected_means_charging_stored_as_bool(self, authed_client, app):
+        """ha_connected_means_charging sent as True must be stored as boolean True."""
+        import json as _json
+        with app.app_context():
+            from core.config import _config_cache
+            _config_cache["data"] = None
+
+        rv = authed_client.put(
+            "/api/vehicles/v0",
+            data=_json.dumps({"ha_connected_means_charging": True}),
+            content_type="application/json",
+        )
+        assert rv.status_code == 200
+
+        with app.app_context():
+            from core.config import load_config, _config_cache
+            _config_cache["data"] = None
+            cfg = load_config()
+            val = cfg.get("ha_connected_means_charging")
+            assert val is True, f"ha_connected_means_charging not stored as True: {val!r}"
+
+    def test_dc_threshold_stored_as_number(self, authed_client, app):
+        """dc_threshold_kw sent as float must be stored as number."""
+        import json as _json
+        with app.app_context():
+            from core.config import _config_cache
+            _config_cache["data"] = None
+
+        rv = authed_client.put(
+            "/api/vehicles/v0",
+            data=_json.dumps({"dc_threshold_kw": 50.0}),
+            content_type="application/json",
+        )
+        assert rv.status_code == 200
+
+        with app.app_context():
+            from core.config import load_config, _config_cache
+            _config_cache["data"] = None
+            cfg = load_config()
+            val = cfg.get("dc_threshold_kw")
+            assert isinstance(val, (int, float)), \
+                f"dc_threshold_kw not stored as number: {val!r} ({type(val).__name__})"
+            assert float(val) == 50.0

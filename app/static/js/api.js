@@ -57,6 +57,10 @@ function apiFetch(url, opts) {
   delete opts.timeoutMs;
   opts.headers = opts.headers || {};
   if (csrfToken) opts.headers['X-CSRF-Token'] = csrfToken;
+  // Auto-set Content-Type for JSON string bodies; never override FormData or existing header
+  if (opts.body && typeof opts.body === 'string' && !opts.headers['Content-Type']) {
+    opts.headers['Content-Type'] = 'application/json';
+  }
   if (timeoutMs && typeof AbortController !== 'undefined') {
     var ctrl = new AbortController();
     opts.signal = opts.signal || ctrl.signal;

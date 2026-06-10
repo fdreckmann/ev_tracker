@@ -149,7 +149,7 @@ def api_update_vehicle(vid):
         "location_history_retention_days","location_status_manual",
     }
     if vid == "v0":
-        data = request.get_json(silent=True) or {}
+        data = request.get_json(force=True, silent=True) or {}
         # Validate provider before saving
         if "provider" in data:
             from providers import PROVIDERS as _PROVIDERS
@@ -170,7 +170,7 @@ def api_update_vehicle(vid):
                 cfg[k] = val
         save_config(cfg)
         return jsonify({"ok": True})
-    data   = request.get_json(silent=True) or {}
+    data   = request.get_json(force=True, silent=True) or {}
     # Validate provider if being changed
     if "provider" in data:
         from providers import PROVIDERS as _PROVIDERS
