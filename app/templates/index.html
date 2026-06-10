@@ -8824,6 +8824,12 @@ function testNotifChannel(channel) {
           '<select id="vpf_'+_eh(f.id)+'">'+(f.options||[]).map(function(o){
             return '<option value="'+_eh(o)+'"'+(o===val?' selected':'')+'>'+_eh(o)+'</option>';
           }).join('')+'</select>'+(f.hint?'<span class="hint">'+_eh(f.hint)+'</span>':'');
+      } else if(f.type==='checkbox'){
+        var checked = val === true || val === 'true' || val === 'on' || val === 1 || val === '1';
+        wrap.innerHTML = '<label style="display:flex;align-items:center;gap:8px;cursor:pointer">'+
+          '<input id="vpf_'+_eh(f.id)+'" type="checkbox"'+(checked?' checked':'')+'>'+
+          _eh(f.label)+'</label>'+
+          (f.hint?'<span class="hint">'+_eh(f.hint)+'</span>':'');
       } else {
         var masked = (f.type==='password' && val) ? '********' : val;
         wrap.innerHTML = '<label>'+_eh(f.label)+(f.required?' *':'')+'</label>'+
@@ -8857,6 +8863,8 @@ function testNotifChannel(channel) {
     fields.forEach(function(f){
       var el = $('vpf_'+f.id); if(!el) return;
       if(f.type==='password' && (!el.value || el.value==='********')) return;
+      if(f.type==='checkbox'){ payload[f.id] = el.checked; return; }
+      if(f.type==='number'){ var n = parseFloat(el.value); payload[f.id] = isNaN(n) ? el.value : n; return; }
       payload[f.id] = el.value;
     });
     var batEl = $('vprofil_bat'); var pollEl = $('vprofil_poll');
@@ -8891,6 +8899,8 @@ function testNotifChannel(channel) {
     fields.forEach(function(f){
       var el = $('vpf_'+f.id); if(!el) return;
       if(f.type==='password' && (!el.value || el.value==='********')) return;
+      if(f.type==='checkbox'){ payload[f.id] = el.checked; return; }
+      if(f.type==='number'){ var n = parseFloat(el.value); payload[f.id] = isNaN(n) ? el.value : n; return; }
       payload[f.id] = el.value;
     });
     var r = await apiFetch('/api/vehicles/test-connection', {method:'POST', body:JSON.stringify(payload)})

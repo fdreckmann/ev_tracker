@@ -176,6 +176,16 @@ class HomeAssistantProvider(BaseProvider):
 
     def get_state(self) -> VehicleState:
         debug = {}
+        vid = self.config.get("id", self.config.get("car_name", "v0"))
+        log.debug(
+            "[HA] get_state vehicle=%s charging=%s soc=%s odo=%s power=%s location=%s",
+            vid,
+            self.config.get("charging_sensor") or "(nicht konfiguriert)",
+            self.config.get("soc_sensor")      or "(nicht konfiguriert)",
+            self.config.get("odo_sensor")      or "(nicht konfiguriert)",
+            self.config.get("charge_speed_sensor") or self.config.get("power_sensor") or "(nicht konfiguriert)",
+            self.config.get("location_sensor") or "(nicht konfiguriert)",
+        )
         try:
             url   = self.config.get("ha_url","").rstrip("/")
             token = self.config.get("ha_token","")
