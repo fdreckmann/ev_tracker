@@ -26,7 +26,7 @@ def _sanitize_url(url):
 def api_test():
     if not has_permission(_current_user(), "providers:test"):
         return jsonify({"ok": False, "message": "Keine Berechtigung: providers:test"}), 403
-    data = request.json or {}
+    data = request.get_json(force=True, silent=True) or {}
     cfg  = load_config()
     test_cfg = {**cfg, **data}
     _MASK = "********"
@@ -233,7 +233,7 @@ def api_meter_status():
 def api_entsoe_test():
     if not has_permission(_current_user(), "tariffs:test"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: tariffs:test"}), 403
-    key=(request.json or {}).get("entsoe_api_key","").strip()
+    key=(request.get_json(force=True, silent=True) or {}).get("entsoe_api_key","").strip()
     if not key: return jsonify({"ok":False,"error":"Kein API Key"})
     import core.state as _cs
     _cs.entsoe_cache["price"] = None

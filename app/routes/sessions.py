@@ -99,7 +99,7 @@ def api_update_location(sid):
     if not has_permission(_current_user(), "sessions:edit"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: sessions:edit"}), 403
     from core.location import normalize_location
-    loc = normalize_location((request.json or {}).get("location","unknown"))
+    loc = normalize_location((request.get_json(force=True, silent=True) or {}).get("location","unknown"))
     if loc not in ("home","extern","unknown"):
         return jsonify({"ok":False,"error":"Ungültiger Standort"}), 400
     con = _get_db()

@@ -57,7 +57,7 @@ def api_get_config():
 def api_save_config():
     if not has_permission(_current_user(), "settings:edit"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: settings:edit"}), 403
-    data = request.json or {}
+    data = request.get_json(force=True, silent=True) or {}
     try:
         from core.config_validator import validate_config_patch
         data = validate_config_patch(data)
@@ -156,7 +156,9 @@ def api_status():
     from services.location_service import refresh_vehicle_location_state
     from services.vehicle_service import get_all_vehicles
     vid = request.args.get("vehicle_id", "v0")
-    st  = _state.vehicle_states.get(vid, _state.vehicle_states.get("v0", {}))
+    # Kein stiller v0-Fallback: für eine explizit angefragte, unbekannte
+    # vehicle_id darf nicht der Status des Primärfahrzeugs zurückkommen.
+    st  = _state.vehicle_states.get(vid, {})
     result = dict(st)
     _cfg_for_status = load_config()
     result["tracker_status"] = _compute_tracker_status(st, _cfg_for_status)
@@ -372,7 +374,7 @@ def api_mobile_summary():
 def api_tracker_restart():
     if not has_permission(_current_user(), "settings:edit") and not has_permission(_current_user(), "providers:test"):
         return jsonify({"ok": False, "error": "Keine Berechtigung"}), 403
-    vid = request.json.get("vehicle_id", "v0") if request.json else "v0"
+    vid = (request.get_json(force=True, silent=True) or {}).get("vehicle_id", "v0")
     try:
         from services.vehicle_service import get_vehicle_tracker_funcs, start_tracker
         _start_vehicle_tracker, _stop_vehicle_tracker = get_vehicle_tracker_funcs()

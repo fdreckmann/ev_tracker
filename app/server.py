@@ -1134,11 +1134,16 @@ def tracker_loop(vehicle_id: str = "v0"):
             vcfg = build_vehicle_config(vehicle, cfg)
         provider_id = vcfg.get("provider", "ha")
 
+        con = None
         try:
             provider = get_provider(provider_id, vcfg)
             state    = provider.get_state()
             debug = provider.get_debug() if hasattr(provider, 'get_debug') else {}
             st["provider_debug"] = debug
+
+            # DB-Connection VOR der Home-Charging-Erkennung erzeugen — sie wird
+            # von maybe_record_poll_snapshot und ChargingStateMachine benötigt.
+            con = sqlite3.connect(DB_PATH); cur = con.cursor()
 
             # ── Home-Charging-Erkennung (PR 10) ───────────────────────────────
             # Läuft VOR dem state.error-continue, damit Meter/Wallbox/RFID auch
@@ -1147,7 +1152,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                 from services.meter_snapshot_service import maybe_record_poll_snapshot
                 maybe_record_poll_snapshot(vehicle_id, vcfg, st, con)
             except Exception as _mse:
-                log.debug("Meter snapshot error [%s]: %s", vehicle_id, _mse)
+                log.warning("Meter snapshot error [%s]: %s", vehicle_id, _mse)
             try:
                 from services.charging_state_machine import (
                     ChargingStateMachine, SignalBundle, classify_meter_kind,
@@ -1175,7 +1180,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                 )
                 ChargingStateMachine(vcfg, st, con).ingest(_bundle)
             except Exception as _wbe:
-                log.debug("Charging intelligence error [%s]: %s", vehicle_id, _wbe)
+                log.warning("Charging intelligence error [%s]: %s", vehicle_id, _wbe)
 
             if state.error:
                 st["last_poll"] = datetime.now().isoformat(timespec="seconds")
@@ -1183,6 +1188,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                 st["provider_connected"] = False
                 st["failed_poll_count"] = st.get("failed_poll_count", 0) + 1
                 st["poll_count"] = st.get("poll_count", 0) + 1
+                close_db_if_owned(con)
                 stop.wait(vcfg.get("poll_interval", 60)); continue
 
             charging     = state.charging or False
@@ -1236,8 +1242,6 @@ def tracker_loop(vehicle_id: str = "v0"):
                 st["location_source"] = loc_result["source"]
             except Exception as _le:
                 log.debug("Location detection error: %s", _le)
-
-            con = sqlite3.connect(DB_PATH); cur = con.cursor()
 
             # Standort-Historie befüllen wenn aktiviert
             if vcfg.get("location_history_enabled") and st.get("location_status"):
@@ -1311,17 +1315,17 @@ def tracker_loop(vehicle_id: str = "v0"):
                 _price_source = "config"; _price_conf = 0; _price_contract_id = None; _price_contract_name = None
                 try:
                     from services.pricing_service import resolve_session_price
-                    _pr = resolve_session_price(_effective_location, charger_type, cfg, con)
-                    price_kwh = _pr["price_per_kwh"] if _pr["price_per_kwh"] is not None else cfg.get("price_per_kwh_home", 0.30)
+                    _pr = resolve_session_price(_effective_location, charger_type, vcfg, con)
+                    price_kwh = _pr["price_per_kwh"] if _pr["price_per_kwh"] is not None else vcfg.get("price_per_kwh_home", 0.30)
                     _price_source = _pr.get("price_source", "config")
                     _price_conf = _pr.get("price_confidence", 0)
                     _price_contract_id = _pr.get("contract_id")
                     _price_contract_name = _pr.get("contract_name")
                 except Exception:
-                    price_kwh = (cfg["price_per_kwh_home"] if _effective_location == "home"
-                                 else calc_extern_price(cfg, charger_type, spot))
+                    price_kwh = (vcfg.get("price_per_kwh_home", 0.30) if _effective_location == "home"
+                                 else calc_extern_price(vcfg, charger_type, spot))
                 # Set wallbox power for home sessions
-                sess_charger_kw = (cfg.get("home_charger_power_kw") or None) if _effective_location == "home" else None
+                sess_charger_kw = (vcfg.get("home_charger_power_kw") or None) if _effective_location == "home" else None
                 _loc_src = st.get("location_source", "unknown") if _effective_location != "unknown" else "unknown"
                 _meter_src_start = vcfg.get("meter_source", "none") or "none"
                 cur.execute("""INSERT INTO sessions
@@ -1460,7 +1464,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                 if soc is not None and soc_start is not None:
                     kwh  = round(max(0.0,soc-soc_start)/100.0*vcfg["battery_capacity_kwh"],2)
                     if not cost_manual:
-                        cost = round(kwh*(db_price or cfg["price_per_kwh_home"]),2)
+                        cost = round(kwh*(db_price or vcfg.get("price_per_kwh_home", 0.30)),2)
                 _meter_scope = vcfg.get("meter_scope", "home_only")
                 _effective_location = effective_session_location(location, st.get("location_status"))
 
@@ -1498,7 +1502,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                                     ("home", _mhd_start, _mhd_start_ts, round(_mhd_delta_end, 3),
                                      "meter_delta", 70, session_id))
                                 con.commit()
-                                db_price = cfg.get("price_per_kwh_home", 0.30)
+                                db_price = vcfg.get("price_per_kwh_home", 0.30)
                     except Exception as _mhd_end_err:
                         log.debug("[%s] Meter-Home-Detection (Session-Ende) Fehler: %s", vehicle_id, _mhd_end_err)
                 st["meter_home_det_start_val"] = None
@@ -1554,7 +1558,10 @@ def tracker_loop(vehicle_id: str = "v0"):
                         _sess_start = cur.execute(
                             "SELECT start_ts FROM sessions WHERE id=?", (session_id,)).fetchone()
                         if _sess_start and _sess_start[0]:
-                            from datetime import datetime as _dt, timezone
+                            # KEIN lokaler timezone-Import: er würde den
+                            # Modul-Import für die GESAMTE Funktion schattieren
+                            # (UnboundLocalError im Charging-Intelligence-Block).
+                            from datetime import datetime as _dt
 
                             _s = _dt.fromisoformat(_sess_start[0])
                             _e = datetime.now()
@@ -1572,7 +1579,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                             from notification_manager import fire_event as _fe
                             _fe("provider_error", {"vehicle_id": vehicle_id,
                                 "provider": tariff_prov_name, "error": str(_tp_err)},
-                                cfg, db_path=DB_PATH)
+                                vcfg, db_path=DB_PATH)
                         except Exception: pass
                 # Public charging price for extern sessions
                 _pc_contract_id = None
@@ -1582,7 +1589,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                 if not cost_manual and _effective_location == "extern":
                     try:
                         from services.public_charging_price_service import resolve_public_charging_price
-                        _pc = resolve_public_charging_price(session_id, charger_type, cfg, con)
+                        _pc = resolve_public_charging_price(session_id, charger_type, vcfg, con)
                         if _pc and _pc.get("price_per_kwh") is not None:
                             effective_price = _pc["price_per_kwh"]
                             _pc_contract_id   = _pc.get("contract_id")
@@ -1648,7 +1655,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                 if _snap_id:
                     check_for_missing_charge(vehicle_id, _snap_id, vcfg, con)
             except Exception as _mce:
-                log.debug("Missing-charge snapshot error [%s]: %s", vehicle_id, _mce)
+                log.warning("Missing-charge snapshot error [%s]: %s", vehicle_id, _mce)
 
             close_db_if_owned(con)
 
@@ -1661,6 +1668,9 @@ def tracker_loop(vehicle_id: str = "v0"):
             st["provider_connected"] = False
             st["failed_poll_count"] = st.get("failed_poll_count", 0) + 1
             st["poll_count"] = st.get("poll_count", 0) + 1
+            if con is not None:
+                try: close_db_if_owned(con)
+                except Exception: pass
         stop.wait(vcfg.get("poll_interval",60))
     st["running"] = False
     st["tracker_alive"] = False

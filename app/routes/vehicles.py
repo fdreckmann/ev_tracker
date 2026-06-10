@@ -117,7 +117,7 @@ def api_add_vehicle():
     from services.vehicle_service import get_vehicle_tracker_funcs
     from providers import PROVIDERS
     _start_vehicle_tracker, _stop_vehicle_tracker = get_vehicle_tracker_funcs()
-    data = request.json or {}
+    data = request.get_json(force=True, silent=True) or {}
     provider = data.get("provider", "ha")
     if provider not in PROVIDERS:
         return jsonify({"ok": False, "error": f"Unbekannter Provider: {provider}"}), 400
@@ -715,7 +715,7 @@ def api_vehicle_image_set_default_key(vid):
         return jsonify({"error": "Keine Berechtigung: vehicles:image_manage"}), 403
     if not _vehicle_exists(vid):
         return jsonify({"error": "Fahrzeug nicht gefunden"}), 404
-    key = (request.json or {}).get("key", "")
+    key = (request.get_json(force=True, silent=True) or {}).get("key", "")
     # Validate key is in manifest (or empty to clear)
     if key:
         from services.vehicle_image_service import get_manifest

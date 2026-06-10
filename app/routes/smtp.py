@@ -174,7 +174,7 @@ def smtp_test():
     from core.security import SECRET_MASK as _SECRET_MASK
     if not has_permission(_current_user(), "settings:edit"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: settings:edit"}), 403
-    data = request.json or {}
+    data = request.get_json(force=True, silent=True) or {}
     cfg  = load_config()
     method = data.get("smtp_auth_method") or cfg.get("smtp_auth_method", "basic")
     # For a live test, merge any provided non-secret overrides
@@ -203,7 +203,7 @@ def smtp_send_test():
     from server import _send_email, _email_html
     if not has_permission(_current_user(), "settings:edit"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: settings:edit"}), 403
-    data = request.json or {}
+    data = request.get_json(force=True, silent=True) or {}
     cfg = load_config()
     to  = data.get("to") or cfg.get("smtp_from_email","")
     method = cfg.get("smtp_auth_method", "basic")
