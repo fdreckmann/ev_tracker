@@ -5076,6 +5076,10 @@ function _evidenceRows(c){
   row('Zeitraum', `${_fmtTs(c.start_ts)} → ${_fmtTs(c.end_ts)}`);
   row('SOC', `${c.soc_start!=null?c.soc_start.toFixed(0):'?'} % → ${c.soc_end!=null?c.soc_end.toFixed(0):'?'} %`);
   if(c.odo_start!=null&&c.odo_end!=null) row('Kilometerstand', `${Math.round(c.odo_start).toLocaleString('de')} → ${Math.round(c.odo_end).toLocaleString('de')} km`);
+  if(c.suggested_odometer_km!=null && c.suggested_odometer_confidence && c.suggested_odometer_confidence!=='none'){
+    const _ocMap={exact:'exakt',high:'hoch',medium:'mittel',low:'niedrig'};
+    row('KM bei Ladung (Vorschlag)', `${Math.round(c.suggested_odometer_km).toLocaleString('de')} km <span style="color:var(--mute)">(${_ocMap[c.suggested_odometer_confidence]||c.suggested_odometer_confidence}${c.suggested_odometer_source?` · ${escapeHtml(c.suggested_odometer_source)}`:''})</span>`);
+  }
   if(c.driven_km!=null) row('Strecke', `${Math.round(c.driven_km).toLocaleString('de')} km`);
   if(c.expected_consumption_kwh_per_100km!=null){
     const src=_consSrcText(c.expected_consumption_source);
@@ -5231,15 +5235,19 @@ async function openCandidateAcceptDialog(id){
     if($('as_kwh'))      $('as_kwh').value      = c.estimated_kwh!=null ? c.estimated_kwh.toFixed(2) : '';
     if($('as_soc_start'))$('as_soc_start').value= c.soc_start!=null ? c.soc_start.toFixed(0) : '';
     if($('as_soc_end'))  $('as_soc_end').value  = c.soc_end!=null   ? c.soc_end.toFixed(0)   : '';
-    if($('as_odo_start'))$('as_odo_start').value= c.odo_start!=null ? Math.round(c.odo_start) : '';
-    if($('as_odo_end'))  $('as_odo_end').value  = c.odo_end!=null   ? Math.round(c.odo_end)   : '';
+    // Einzelner plausibler KM-Stand zum Ladezeitpunkt (Auto steht beim Laden) —
+    // nie die rohe Snapshot-Spanne übernehmen. Unsicher/none → Felder leer.
+    var _odoSug = (typeof _candidateOdoSuggestion==='function') ? _candidateOdoSuggestion(c) : null;
+    if($('as_odo_start'))$('as_odo_start').value= _odoSug!=null ? Math.round(_odoSug) : '';
+    if($('as_odo_end'))  $('as_odo_end').value  = _odoSug!=null ? Math.round(_odoSug) : '';
     if($('as_location')&&c.suggested_location) $('as_location').value = c.suggested_location;
     if($('as_charger_type')&&c.suggested_charger_type) $('as_charger_type').value = c.suggested_charger_type;
     if($('as_max_power')&&c.estimated_avg_power_kw) $('as_max_power').value = c.estimated_avg_power_kw.toFixed(1);
     if($('as_reason'))   $('as_reason').value   = _candidateConfirmed(c) ? 'Per Zähler bestätigter Ladevorgang'
                                                   : (c.candidate_type==='energy_balance' ? 'Vermuteter Zwischenladestopp'
                                                   : 'Offline-Ladevorgang erkannt');
-    if($('as_note'))     $('as_note').value      = 'Kandidat #'+id+': '+escapeHtml(c.reason||'');
+    if($('as_note'))     $('as_note').value      = 'Kandidat #'+id+': '+escapeHtml(c.reason||'')
+                                                  + (_odoSug!=null && c.suggested_odometer_source ? ' · KM: '+escapeHtml(c.suggested_odometer_source) : '');
     if(typeof _asRecalc === 'function') _asRecalc();
   }, 150);
   loadMissingChargeCandidates();

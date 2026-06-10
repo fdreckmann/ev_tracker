@@ -813,6 +813,9 @@ def init_db():
         ("evidence_json", "TEXT"),
         ("meter_delta_kwh", "REAL"),
         ("meter_confirmed", "INTEGER DEFAULT 0"),
+        ("suggested_odometer_km", "REAL"),
+        ("suggested_odometer_confidence", "TEXT"),
+        ("suggested_odometer_source", "TEXT"),
     ]:
         try:
             con.execute(f"ALTER TABLE missing_charge_candidates ADD COLUMN {_col} {_typedef}")
