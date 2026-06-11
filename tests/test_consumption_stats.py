@@ -297,10 +297,11 @@ def test_response_contains_all_documented_fields(authed_client):
         assert key in d, f"Feld '{key}' fehlt in /api/stats/consumption"
 
 
-def test_dashboard_card_present_in_page(authed_client):
+def test_dashboard_consumption_modal_present_in_page(authed_client):
     rv = authed_client.get("/")
     html = rv.get_data(as_text=True)
-    assert 'id="consumptionCard"' in html
+    assert 'id="consumptionModal"' in html
     assert 'id="consumptionTiles"' in html
     assert 'id="consumptionTbl"' in html
     assert "Netzverbrauch" in html
+    assert "openConsumptionModal" in html

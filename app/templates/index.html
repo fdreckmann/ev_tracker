@@ -867,20 +867,10 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
       <div class="chart-title">SOC Verlauf (letzte Sessions)</div>
       <div style="height:170px"><canvas id="chartSoc"></canvas></div>
     </div>
-    <div class="card" style="padding:18px">
-      <div class="chart-title">Verbrauch kWh/100km</div>
+    <div class="card" id="chartKmCard" style="padding:18px;cursor:pointer" onclick="openConsumptionModal()" title="Klicken für Details">
+      <div class="chart-title">Verbrauch kWh/100km <span style="font-size:.62rem;color:var(--mute);font-weight:400">· klicken für Details</span></div>
       <div style="height:170px"><canvas id="chartKm"></canvas></div>
     </div>
-  </div>
-
-  <!-- Netzverbrauch granular: pro Ladung + gleitende Durchschnitte -->
-  <div id="consumptionCard" class="card" style="display:none;margin-bottom:14px">
-    <div class="card-title">⚡ Netzverbrauch
-      <span style="font-size:.68rem;color:var(--mute);font-weight:400">geladene kWh / 100 km · inkl. Ladeverluste</span>
-    </div>
-    <div id="consumptionTiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:10px 0 14px"></div>
-    <div style="font-size:.72rem;color:var(--mute);margin-bottom:6px">Letzte Ladevorgänge — Fahrabschnitt seit voriger Ladung</div>
-    <div class="tbl-wrap" id="consumptionTbl"></div>
   </div>
 
   <!-- Missing-charge hint (hidden until candidates exist) -->
@@ -3567,6 +3557,16 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 </div>
 
 <!-- ── Session Detail Modal ── -->
+<div class="modal-overlay" id="consumptionModal" style="display:none" onclick="if(event.target===this)closeConsumptionModal()">
+  <div class="modal" style="max-width:700px;width:96%">
+    <button class="modal-close" onclick="closeConsumptionModal()">✕ Schließen</button>
+    <h2>⚡ Netzverbrauch kWh/100km</h2>
+    <div id="consumptionTiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:10px 0 14px"></div>
+    <div style="font-size:.72rem;color:var(--mute);margin-bottom:6px">Letzte Ladevorgänge — Fahrabschnitt seit voriger Ladung</div>
+    <div class="tbl-wrap" id="consumptionTbl"></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="sessionModal" style="display:none" onclick="if(event.target===this)closeModal()">
   <div class="modal">
     <button class="modal-close" onclick="closeModal()">✕ Schließen</button>

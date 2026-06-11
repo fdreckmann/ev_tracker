@@ -489,17 +489,56 @@ async function loadCharts(){
     }),
   });
 
-  var eff = monthly.map(function(m){
-    if(!m.km_driven||m.km_driven<=0) return null;
-    return +(m.total_kwh/m.km_driven*100).toFixed(1);
-  }).reverse();
-  charts.km = new Chart($('chartKm'), {
-    type:'line',
-    data:{labels:months, datasets:[{data:eff,borderColor:'#3ddc97',backgroundColor:'rgba(61,220,151,.08)',fill:true,tension:.3,pointRadius:4,spanGaps:true}]},
-    options:Object.assign({}, chartDefaults(), {plugins:Object.assign({}, chartDefaults().plugins,{tooltip:{callbacks:{label:function(c){return c.raw+' kWh/100km';}}}})}),
+  // chartKm: per-session scatter from consumption API
+  var vid = window._activeVehicleId || 'v0';
+  apiFetch('/api/stats/consumption?vehicle_id='+encodeURIComponent(vid)).then(function(r){
+    if(!r.ok) return null;
+    return r.json();
+  }).then(function(d){
+    if(charts.km){ charts.km.destroy(); charts.km=null; }
+    var pts = [];
+    if(d && d.per_session){
+      d.per_session.forEach(function(s){
+        if(s.consumption_kwh_per_100km!=null && s.date){
+          pts.push({x:s.date, y:+s.consumption_kwh_per_100km.toFixed(1)});
+        }
+      });
+      pts.sort(function(a,b){ return a.x<b.x?-1:1; });
+    }
+    var labels = pts.map(function(p){
+      return new Date(p.x).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'2-digit'});
+    });
+    var vals = pts.map(function(p){ return p.y; });
+    charts.km = new Chart($('chartKm'), {
+      type:'line',
+      data:{labels:labels, datasets:[{
+        data:vals,
+        borderColor:'rgba(61,220,151,.3)',
+        backgroundColor:'#3ddc97',
+        pointBackgroundColor:'#3ddc97',
+        pointRadius:5,
+        pointHoverRadius:7,
+        showLine:false,
+        tension:0,
+      }]},
+      options:Object.assign({}, chartDefaults(), {
+        plugins:Object.assign({}, chartDefaults().plugins, {
+          tooltip:{callbacks:{label:function(c){ return c.raw+' kWh/100km'; }}},
+        }),
+      }),
+    });
+  }).catch(function(){
+    // fallback to monthly line if consumption API fails
+    var eff = monthly.map(function(m){
+      if(!m.km_driven||m.km_driven<=0) return null;
+      return +(m.total_kwh/m.km_driven*100).toFixed(1);
+    }).reverse();
+    charts.km = new Chart($('chartKm'), {
+      type:'line',
+      data:{labels:months, datasets:[{data:eff,borderColor:'#3ddc97',backgroundColor:'rgba(61,220,151,.08)',fill:true,tension:.3,pointRadius:4,spanGaps:true}]},
+      options:Object.assign({}, chartDefaults(), {plugins:Object.assign({}, chartDefaults().plugins,{tooltip:{callbacks:{label:function(c){return c.raw+' kWh/100km';}}}})}),
+    });
   });
-
-  loadConsumptionStats();
 }
 
 // ── Granularer Netzverbrauch (kWh/100 km pro Ladung + gleitende Schnitte) ────
@@ -512,18 +551,26 @@ var _consExcludeLabels = {
   implausible_low:  'Unplausibel niedrig (<5 kWh/100km) — nicht im Schnitt',
 };
 
+function openConsumptionModal(){
+  var m = $('consumptionModal');
+  if(!m) return;
+  m.style.display='flex';
+  loadConsumptionStats();
+}
+function closeConsumptionModal(){
+  var m = $('consumptionModal');
+  if(m) m.style.display='none';
+}
+
 async function loadConsumptionStats(){
-  var card = $('consumptionCard');
-  if(!card) return;
   var vid = window._activeVehicleId || 'v0';
   var d;
   try {
     var r = await apiFetch('/api/stats/consumption?vehicle_id='+encodeURIComponent(vid));
-    if(!r.ok){ card.style.display='none'; return; }
+    if(!r.ok) return;
     d = await r.json();
-  } catch(e){ card.style.display='none'; return; }
-  if(!d || (!d.valid_count && !(d.per_session||[]).length)){ card.style.display='none'; return; }
-  card.style.display='';
+  } catch(e){ return; }
+  if(!d || (!d.valid_count && !(d.per_session||[]).length)) return;
 
   var fmt1 = function(v){ return v!=null ? v.toFixed(1).replace('.',',') : '—'; };
   var trend = '';
@@ -587,3 +634,5 @@ window.showSessionDetail = showSessionDetail;
 window.closeModal      = closeModal;
 window.loadSessions    = loadSessions;
 window.loadCharts      = loadCharts;
+window.openConsumptionModal  = openConsumptionModal;
+window.closeConsumptionModal = closeConsumptionModal;
