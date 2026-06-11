@@ -633,6 +633,7 @@ def check_for_missing_charge(vehicle_id: str, new_snap_id: int, cfg: dict, con) 
     base_confidence = cand["base_confidence"]
     meter_delta_kwh: float | None = None
     meter_confirmed = 0
+    _meter_no_change_reason: str | None = None
     if cfg.get("missing_charge_meter_fusion_enabled", True):
         try:
             from services.meter_snapshot_service import (
@@ -666,12 +667,47 @@ def check_for_missing_charge(vehicle_id: str, new_snap_id: int, cfg: dict, con) 
                     base_confidence += int(round(mconf * 10))
             elif delta < min_d:
                 # No meaningful rise on a home meter → supports an external stop.
+                mconf = meter_type_confidence(mtype)
                 evidence["signals"].append("meter_no_change")
                 evidence["meter"] = {
                     "source": md["source"], "meter_type": mtype,
                     "delta_kwh": delta, "confidence": 0.0,
                     "start_ts": md["start_ts"], "end_ts": md["end_ts"],
                 }
+                if suggested_location == "unknown":
+                    # Meter available and no home rise → charge was external.
+                    suggested_location = "extern"
+                    evidence["signals"].append("meter_no_change_external")
+                    evidence["meter"]["no_change_inference"] = "extern"
+                    # Confidence targets: EV/wallbox 75–85, house_total 60–70, unknown 50–60.
+                    # The +10 for known location is applied below, so aim 10 pts lower here.
+                    if is_ev_meter(mtype):
+                        base_confidence = max(base_confidence, 72)
+                    elif mtype == "house_total":
+                        base_confidence = max(base_confidence, 57)
+                    else:
+                        base_confidence = max(base_confidence, 47)
+                    _meter_no_change_reason = (
+                        f"Home-/Wallbox-Zähler ({mtype}) im Ladezeitraum "
+                        f"unverändert (+{delta:.2f} kWh) → extern vermutet"
+                    )
+                elif suggested_location == "extern":
+                    # Location source already said extern — meter no-change confirms it.
+                    evidence["signals"].append("meter_no_change_external")
+                    evidence["meter"]["no_change_inference"] = "extern_confirmed"
+                    base_confidence += int(round(mconf * 10))
+                    _meter_no_change_reason = (
+                        f"Home-/Wallbox-Zähler ({mtype}) bestätigt extern "
+                        f"(unverändert, +{delta:.2f} kWh)"
+                    )
+                elif suggested_location == "home":
+                    # Conflict: location source says home but meter didn't change.
+                    evidence["signals"].append("meter_no_change_home_conflict")
+                    evidence["meter"]["no_change_inference"] = "home_conflict"
+                    _meter_no_change_reason = (
+                        f"Standortquelle sagt home, aber Home-/Wallbox-Zähler "
+                        f"({mtype}) im Ladezeitraum unverändert (+{delta:.2f} kWh)"
+                    )
 
     # ── Charger type suggestion ───────────────────────────────────────────────
     gap_hours = gap_minutes / 60.0
@@ -693,6 +729,8 @@ def check_for_missing_charge(vehicle_id: str, new_snap_id: int, cfg: dict, con) 
     reason = cand["reason"]
     if meter_confirmed and meter_delta_kwh is not None:
         reason = f"{reason} · Zähler bestätigt +{meter_delta_kwh:.1f} kWh"
+    elif _meter_no_change_reason:
+        reason = f"{reason} · {_meter_no_change_reason}"
     evidence_json = json.dumps(evidence, ensure_ascii=False)
 
     # ── Plausibler Kilometerstand zum Ladezeitpunkt ───────────────────────────

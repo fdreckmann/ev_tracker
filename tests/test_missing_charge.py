@@ -807,3 +807,179 @@ def test_odo_prefill_js_uses_suggestion_not_span():
         "Mobile-Prefill nutzt den KM-Vorschlag nicht"
     assert "Math.round(c.odo_start)" not in mbody, \
         "Mobile-Prefill schreibt noch die rohe Snapshot-Spanne"
+
+
+# ── Meter no-change → extern location inference ──────────────────────────────
+
+def test_meter_no_change_ev_wallbox_sets_extern(app):
+    """Test A: EV-Wallbox konfiguriert, kein Anstieg → suggested_location=extern."""
+    import json
+    from core.db import _get_db, close_db_if_owned
+    from services.missing_charge_service import check_for_missing_charge
+    with app.app_context():
+        con = _get_db()
+        t0 = datetime(2026, 6, 1, 9, 0, 0)
+        _insert_snap(con, "v0", _ts(t0), 20, 10000, loc="unknown")
+        sid = _insert_snap(con, "v0", _ts(t0 + timedelta(hours=3)), 75, 10000, loc="unknown")
+        # Meter shows no meaningful change (0.1 kWh, threshold is 1.0)
+        _insert_meter_snap(con, "v0", _ts(t0 - timedelta(minutes=5)), 500.0)
+        _insert_meter_snap(con, "v0", _ts(t0 + timedelta(hours=3, minutes=5)), 500.1)
+        cid = check_for_missing_charge("v0", sid, _meter_cfg("ev_wallbox"), con)
+        assert cid is not None
+        c = _get_candidate(con, cid)
+        assert c["suggested_location"] == "extern", \
+            f"EV meter unchanged should infer extern, got {c['suggested_location']}"
+        ev = json.loads(c["evidence_json"])
+        assert "meter_no_change" in ev["signals"]
+        assert "meter_no_change_external" in ev["signals"]
+        assert ev["meter"]["no_change_inference"] == "extern"
+        assert "extern" in c["reason"].lower() or "unverändert" in c["reason"]
+        # Confidence should be in EV-meter range (75-85 after +10 location bonus)
+        assert 70 <= c["confidence"] <= 95
+        close_db_if_owned(con)
+
+
+def test_meter_no_change_house_total_sets_extern(app):
+    """Test A (house meter): Hausgesamtzähler unverändert → extern, medium confidence."""
+    import json
+    from core.db import _get_db, close_db_if_owned
+    from services.missing_charge_service import check_for_missing_charge
+    with app.app_context():
+        con = _get_db()
+        t0 = datetime(2026, 6, 2, 9, 0, 0)
+        _insert_snap(con, "v0", _ts(t0), 20, 11000, loc="unknown")
+        sid = _insert_snap(con, "v0", _ts(t0 + timedelta(hours=3)), 75, 11000, loc="unknown")
+        _insert_meter_snap(con, "v0", _ts(t0 - timedelta(minutes=5)), 1000.0)
+        _insert_meter_snap(con, "v0", _ts(t0 + timedelta(hours=3, minutes=5)), 1000.05)
+        cid = check_for_missing_charge("v0", sid, _meter_cfg("house_total"), con)
+        assert cid is not None
+        c = _get_candidate(con, cid)
+        assert c["suggested_location"] == "extern"
+        ev = json.loads(c["evidence_json"])
+        assert "meter_no_change_external" in ev["signals"]
+        assert ev["meter"]["no_change_inference"] == "extern"
+        # Overall confidence depends on both SOC gain and location inference.
+        assert 55 <= c["confidence"] <= 95
+        close_db_if_owned(con)
+
+
+def test_no_meter_configured_stays_unknown(app):
+    """Test B: Kein Zähler konfiguriert → suggested_location bleibt unknown."""
+    from core.db import _get_db, close_db_if_owned
+    from services.missing_charge_service import check_for_missing_charge
+    with app.app_context():
+        con = _get_db()
+        t0 = datetime(2026, 6, 3, 9, 0, 0)
+        _insert_snap(con, "v0", _ts(t0), 20, 12000, loc="unknown")
+        sid = _insert_snap(con, "v0", _ts(t0 + timedelta(hours=3)), 75, 12000, loc="unknown")
+        # No meter snapshots at all
+        cid = check_for_missing_charge("v0", sid, _meter_cfg("ev_wallbox"), con)
+        assert cid is not None
+        c = _get_candidate(con, cid)
+        assert c["suggested_location"] == "unknown", \
+            f"No meter data should leave location unknown, got {c['suggested_location']}"
+        close_db_if_owned(con)
+
+
+def test_meter_unavailable_stays_unknown(app):
+    """Test C: Zähler konfiguriert, aber nur ok=0 Einträge → kein Extern-Schluss."""
+    from core.db import _get_db, close_db_if_owned
+    from services.missing_charge_service import check_for_missing_charge
+    with app.app_context():
+        con = _get_db()
+        t0 = datetime(2026, 6, 4, 9, 0, 0)
+        _insert_snap(con, "v0", _ts(t0), 20, 13000, loc="unknown")
+        sid = _insert_snap(con, "v0", _ts(t0 + timedelta(hours=3)), 75, 13000, loc="unknown")
+        # Meter snapshots exist but all failed (ok=False)
+        _insert_meter_snap(con, "v0", _ts(t0 - timedelta(minutes=5)), None, ok=False, error="timeout")
+        _insert_meter_snap(con, "v0", _ts(t0 + timedelta(hours=3)), None, ok=False, error="timeout")
+        cid = check_for_missing_charge("v0", sid, _meter_cfg("ev_wallbox"), con)
+        assert cid is not None
+        c = _get_candidate(con, cid)
+        assert c["suggested_location"] == "unknown", \
+            f"Unavailable meter must not infer extern, got {c['suggested_location']}"
+        close_db_if_owned(con)
+
+
+def test_meter_no_change_home_loc_keeps_home(app):
+    """Test D: API/location sagt home + Zähler unverändert → nicht extern, Konflikt markiert."""
+    import json
+    from core.db import _get_db, close_db_if_owned
+    from services.missing_charge_service import check_for_missing_charge
+    with app.app_context():
+        con = _get_db()
+        t0 = datetime(2026, 6, 5, 9, 0, 0)
+        # Both snapshots say "home"
+        _insert_snap(con, "v0", _ts(t0), 20, 14000, loc="home")
+        sid = _insert_snap(con, "v0", _ts(t0 + timedelta(hours=3)), 75, 14000, loc="home")
+        # Meter shows no change
+        _insert_meter_snap(con, "v0", _ts(t0 - timedelta(minutes=5)), 200.0)
+        _insert_meter_snap(con, "v0", _ts(t0 + timedelta(hours=3, minutes=5)), 200.0)
+        cid = check_for_missing_charge("v0", sid, _meter_cfg("ev_wallbox"), con)
+        assert cid is not None
+        c = _get_candidate(con, cid)
+        assert c["suggested_location"] == "home", \
+            f"Home signal must not be overridden by meter no-change, got {c['suggested_location']}"
+        ev = json.loads(c["evidence_json"])
+        assert "meter_no_change_home_conflict" in ev["signals"]
+        assert ev["meter"]["no_change_inference"] == "home_conflict"
+        close_db_if_owned(con)
+
+
+def test_meter_no_change_extern_loc_boosts_confidence(app):
+    """Test E: location=extern + Zähler unverändert → extern bestätigt, confidence boost."""
+    import json
+    from core.db import _get_db, close_db_if_owned
+    from services.missing_charge_service import check_for_missing_charge
+    with app.app_context():
+        con = _get_db()
+        t0 = datetime(2026, 6, 6, 9, 0, 0)
+        _insert_snap(con, "v0", _ts(t0), 20, 15000, loc="extern")
+        sid = _insert_snap(con, "v0", _ts(t0 + timedelta(hours=3)), 75, 15000, loc="extern")
+        _insert_meter_snap(con, "v0", _ts(t0 - timedelta(minutes=5)), 300.0)
+        _insert_meter_snap(con, "v0", _ts(t0 + timedelta(hours=3, minutes=5)), 300.05)
+        cfg_no_fusion = _meter_cfg("ev_wallbox")
+        # Get base confidence without meter
+        cfg_no_fusion["missing_charge_meter_fusion_enabled"] = False
+        cid_base = check_for_missing_charge("v0", sid, cfg_no_fusion, con)
+        c_base = _get_candidate(con, cid_base)
+        base_conf = c_base["confidence"]
+
+        # Re-check on a different vehicle to get meter-fusion result
+        t1 = datetime(2026, 6, 7, 9, 0, 0)
+        _insert_snap(con, "v1", _ts(t1), 20, 15000, loc="extern")
+        sid2 = _insert_snap(con, "v1", _ts(t1 + timedelta(hours=3)), 75, 15000, loc="extern")
+        _insert_meter_snap(con, "v1", _ts(t1 - timedelta(minutes=5)), 300.0)
+        _insert_meter_snap(con, "v1", _ts(t1 + timedelta(hours=3, minutes=5)), 300.05)
+        cid2 = check_for_missing_charge("v1", sid2, _meter_cfg("ev_wallbox"), con)
+        c2 = _get_candidate(con, cid2)
+        ev = json.loads(c2["evidence_json"])
+        assert c2["suggested_location"] == "extern"
+        assert "meter_no_change_external" in ev["signals"]
+        assert ev["meter"]["no_change_inference"] == "extern_confirmed"
+        close_db_if_owned(con)
+
+
+def test_meter_rise_still_infers_home(app):
+    """Test F: Zähler steigt relevant → bestehende Home-Erkennung bleibt korrekt."""
+    import json
+    from core.db import _get_db, close_db_if_owned
+    from services.missing_charge_service import check_for_missing_charge
+    with app.app_context():
+        con = _get_db()
+        t0 = datetime(2026, 6, 8, 9, 0, 0)
+        _insert_snap(con, "v0", _ts(t0), 20, 16000, loc="unknown")
+        sid = _insert_snap(con, "v0", _ts(t0 + timedelta(hours=3)), 75, 16000, loc="unknown")
+        # Meter rises by 22 kWh → home confirmed
+        _insert_meter_snap(con, "v0", _ts(t0 - timedelta(minutes=5)), 400.0)
+        _insert_meter_snap(con, "v0", _ts(t0 + timedelta(hours=3, minutes=5)), 422.0)
+        cid = check_for_missing_charge("v0", sid, _meter_cfg("ev_wallbox"), con)
+        assert cid is not None
+        c = _get_candidate(con, cid)
+        assert c["suggested_location"] == "home", \
+            f"Rising meter should still infer home, got {c['suggested_location']}"
+        assert c["meter_confirmed"] == 1
+        ev = json.loads(c["evidence_json"])
+        assert "meter_delta" in ev["signals"]
+        assert "meter_no_change" not in ev["signals"]
+        close_db_if_owned(con)
