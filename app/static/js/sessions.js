@@ -498,6 +498,84 @@ async function loadCharts(){
     data:{labels:months, datasets:[{data:eff,borderColor:'#3ddc97',backgroundColor:'rgba(61,220,151,.08)',fill:true,tension:.3,pointRadius:4,spanGaps:true}]},
     options:Object.assign({}, chartDefaults(), {plugins:Object.assign({}, chartDefaults().plugins,{tooltip:{callbacks:{label:function(c){return c.raw+' kWh/100km';}}}})}),
   });
+
+  loadConsumptionStats();
+}
+
+// ── Granularer Netzverbrauch (kWh/100 km pro Ladung + gleitende Schnitte) ────
+var _consExcludeLabels = {
+  no_odometer:      'Kein Kilometerstand',
+  no_baseline:      'Erste Ladung — kein Vergleichswert',
+  no_distance:      'Keine Strecke seit voriger Ladung',
+  no_kwh:           'Keine geladenen kWh',
+  implausible_high: 'Unplausibel hoch (>60 kWh/100km) — nicht im Schnitt',
+  implausible_low:  'Unplausibel niedrig (<5 kWh/100km) — nicht im Schnitt',
+};
+
+async function loadConsumptionStats(){
+  var card = $('consumptionCard');
+  if(!card) return;
+  var vid = window._activeVehicleId || 'v0';
+  var d;
+  try {
+    var r = await apiFetch('/api/stats/consumption?vehicle_id='+encodeURIComponent(vid));
+    if(!r.ok){ card.style.display='none'; return; }
+    d = await r.json();
+  } catch(e){ card.style.display='none'; return; }
+  if(!d || (!d.valid_count && !(d.per_session||[]).length)){ card.style.display='none'; return; }
+  card.style.display='';
+
+  var fmt1 = function(v){ return v!=null ? v.toFixed(1).replace('.',',') : '—'; };
+  var trend = '';
+  if(d.trend_30_days_pct!=null){
+    var up = d.trend_30_days_pct > 0;
+    trend = '<span style="font-size:.65rem;color:'+(up?'var(--danger)':'var(--ok)')+'"> '
+          + (up?'▲':'▼')+' '+(up?'+':'')+String(d.trend_30_days_pct).replace('.',',')
+          + ' % vs. vorherige 30 Tage</span>';
+  }
+  var tile = function(label, val, extra){
+    return '<div style="background:var(--bg);border:1px solid var(--brd);border-radius:8px;padding:9px 11px">'
+         + '<div style="font-size:.62rem;color:var(--mute);text-transform:uppercase;letter-spacing:.04em">'+label+'</div>'
+         + '<div style="font-size:1.05rem;font-weight:700;font-family:var(--mono)">'+fmt1(val)
+         + (val!=null?' <span style="font-size:.6rem;font-weight:400;color:var(--mute)">kWh/100km</span>':'')+'</div>'
+         + (extra||'')+'</div>';
+  };
+  var tiles = $('consumptionTiles');
+  if(tiles) tiles.innerHTML =
+    tile('30 Tage', d.average_30_days, trend) +
+    tile('Letzte 3 Ladungen', d.rolling_average_3) +
+    tile('Letzte 5 Ladungen', d.rolling_average_5) +
+    tile('Letzte 10 Ladungen', d.rolling_average_10) +
+    tile('Aktueller Monat', d.current_month_average) +
+    tile('90 Tage', d.average_90_days);
+
+  var tbl = $('consumptionTbl');
+  if(!tbl) return;
+  var rows = (d.per_session||[]).map(function(s){
+    var date = s.date ? new Date(s.date).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '—';
+    var locIcon = s.location==='home' ? '🏠' : s.location==='extern' ? '⚡' : '❓';
+    var typ = (s.charger_type||'').toUpperCase();
+    var cons, quality='';
+    if(s.consumption_kwh_per_100km!=null){
+      cons = '<b>'+fmt1(s.consumption_kwh_per_100km)+'</b>';
+      if(s.odo_estimated) quality = '<span title="Kilometerstand geschätzt (Missing-Charge-Vorschlag)" style="cursor:help">≈</span>';
+      if(s.sessions_in_segment>1) quality += '<span title="Segment umfasst '+s.sessions_in_segment+' Ladungen" style="cursor:help;color:var(--mute)"> ×'+s.sessions_in_segment+'</span>';
+    } else {
+      cons = '<span style="color:var(--mute)">—</span>';
+      var why = _consExcludeLabels[s.excluded_reason] || s.excluded_reason || '';
+      quality = '<span title="'+escapeHtml(why)+'" style="cursor:help;color:var(--mute)">ⓘ</span>';
+    }
+    return '<tr>'
+      +'<td>'+escapeHtml(date)+'</td>'
+      +'<td style="text-align:right">'+(s.kwh!=null?fmt1(s.kwh):'—')+'</td>'
+      +'<td style="text-align:right">'+(s.distance_km!=null?Math.round(s.distance_km).toLocaleString('de'):'—')+'</td>'
+      +'<td style="text-align:right">'+cons+'</td>'
+      +'<td>'+locIcon+' '+escapeHtml(typ)+'</td>'
+      +'<td>'+quality+'</td></tr>';
+  }).join('');
+  tbl.innerHTML = '<table><thead><tr><th>Datum</th><th style="text-align:right">kWh</th>'
+    +'<th style="text-align:right">km</th><th style="text-align:right">kWh/100km</th>'
+    +'<th>Ort/Typ</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
 }
 
 // ── Global registration ───────────────────────────────────────────────────────

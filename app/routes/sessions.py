@@ -782,3 +782,144 @@ def api_monthly_stats():
     if not has_permission(user, "sessions:view") and not has_permission(user, "analytics:view"):
         return jsonify({"error": "Keine Berechtigung: sessions:view oder analytics:view"}), 403
     return jsonify(_get_monthly_stats())
+
+
+# ── Granulare Verbrauchsstatistik (Netzverbrauch kWh/100 km) ─────────────────
+# Bei einer Ladesession steht das Auto (odo_start ≈ odo_end). Die geladenen
+# kWh einer Ladung refüllen die Strecke SEIT der vorigen Ladung:
+#   Verbrauch = kWh seit letztem Odometer-Anker / (odo_jetzt − odo_Anker) × 100
+# Sessions ohne Kilometerstand geben ihre kWh an das nächste Segment weiter.
+# Es handelt sich um NETZVERBRAUCH (geladene Energie inkl. Ladeverlusten),
+# nicht um den Bordcomputer-Fahrzeugverbrauch.
+
+_CONS_MIN_PLAUSIBLE = 5.0    # kWh/100km — darunter gilt das Segment als unplausibel
+_CONS_MAX_PLAUSIBLE = 60.0   # kWh/100km — darüber gilt das Segment als unplausibel
+
+
+def _get_consumption_stats(vehicle_id: str = "v0", per_session_limit: int = 10) -> dict:
+    from datetime import datetime, timedelta
+    from services.session_filter import reportable_session_where_clause
+
+    con = _get_db()
+    cutoff = (datetime.now() - timedelta(days=365)).isoformat(timespec="seconds")
+    rows = con.execute(f"""
+        SELECT s.id, s.start_ts, s.end_ts, s.kwh_charged, s.odo_start, s.odo_end,
+               s.location, s.charger_type, s.created_mode,
+               mc.suggested_odometer_confidence AS odo_confidence
+        FROM sessions s
+        LEFT JOIN missing_charge_candidates mc ON s.missing_charge_candidate_id = mc.id
+        WHERE s.end_ts IS NOT NULL AND s.vehicle_id=? AND s.start_ts>=?
+        {reportable_session_where_clause('s')}
+        ORDER BY s.start_ts ASC
+    """, (vehicle_id, cutoff)).fetchall()
+    close_db_if_owned(con)
+
+    records: list[dict] = []   # ein Eintrag pro Session, chronologisch
+    segments: list[dict] = []  # nur gültige Segmente (für Durchschnitte)
+    excluded_reasons: dict[str, int] = {}
+
+    def _exclude(rec, reason):
+        rec["excluded_reason"] = reason
+        excluded_reasons[reason] = excluded_reasons.get(reason, 0) + 1
+        records.append(rec)
+
+    prev_odo = None
+    acc_kwh = 0.0
+    acc_sessions = 0
+    for r in rows:
+        rd = dict(r)
+        odo = rd["odo_end"] if rd["odo_end"] is not None else rd["odo_start"]
+        if odo is not None and odo < 0:
+            odo = None
+        kwh = float(rd["kwh_charged"]) if rd["kwh_charged"] else 0.0
+        if kwh > 0:
+            acc_kwh += kwh
+            acc_sessions += 1
+        rec = {
+            "session_id": rd["id"], "date": rd["start_ts"],
+            "kwh": round(kwh, 2), "distance_km": None,
+            "consumption_kwh_per_100km": None,
+            "location": rd["location"], "charger_type": rd["charger_type"],
+            "sessions_in_segment": None,
+            # KM-Stand aus Missing-Charge-Vorschlag mit medium-Confidence:
+            # einrechnen, aber als geschätzt markieren (low/none wurden nie
+            # vorbefüllt; manuell eingegebene Werte gelten als hochwertig).
+            "odo_estimated": rd["odo_confidence"] == "medium",
+            "excluded_reason": None,
+        }
+        if odo is None:
+            _exclude(rec, "no_odometer")
+            continue
+        if prev_odo is None:
+            _exclude(rec, "no_baseline")
+            prev_odo = odo; acc_kwh = 0.0; acc_sessions = 0
+            continue
+        dist = float(odo) - float(prev_odo)
+        if dist <= 0:
+            _exclude(rec, "no_distance")
+            prev_odo = odo; acc_kwh = 0.0; acc_sessions = 0
+            continue
+        if acc_kwh <= 0:
+            _exclude(rec, "no_kwh")
+            prev_odo = odo; acc_kwh = 0.0; acc_sessions = 0
+            continue
+        cons = acc_kwh / dist * 100.0
+        rec["distance_km"] = round(dist, 1)
+        rec["kwh"] = round(acc_kwh, 2)
+        rec["sessions_in_segment"] = acc_sessions
+        if cons > _CONS_MAX_PLAUSIBLE:
+            _exclude(rec, "implausible_high")
+        elif cons < _CONS_MIN_PLAUSIBLE:
+            _exclude(rec, "implausible_low")
+        else:
+            rec["consumption_kwh_per_100km"] = round(cons, 1)
+            records.append(rec)
+            segments.append({"date": rd["start_ts"], "kwh": acc_kwh, "dist": dist})
+        prev_odo = odo; acc_kwh = 0.0; acc_sessions = 0
+
+    def _wavg(segs):
+        """Distanz-gewichteter Schnitt: Σ kWh / Σ km × 100."""
+        td = sum(s["dist"] for s in segs)
+        return round(sum(s["kwh"] for s in segs) / td * 100.0, 1) if td > 0 else None
+
+    def _since(days_from, days_to=0):
+        lo = (datetime.now() - timedelta(days=days_from)).isoformat(timespec="seconds")
+        hi = (datetime.now() - timedelta(days=days_to)).isoformat(timespec="seconds")
+        return [s for s in segments if lo <= s["date"] <= hi]
+
+    now = datetime.now()
+    cur_month = now.strftime("%Y-%m")
+    prev_month = (now.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+
+    avg_30 = _wavg(_since(30))
+    prev_30 = _wavg(_since(60, 30))
+    trend_pct = (round((avg_30 - prev_30) / prev_30 * 100.0, 1)
+                 if avg_30 is not None and prev_30 else None)
+
+    return {
+        "vehicle_id": vehicle_id,
+        "label": "Netzverbrauch (geladene kWh / 100 km, inkl. Ladeverluste)",
+        "per_session": list(reversed(records))[:per_session_limit],
+        "rolling_average_3": _wavg(segments[-3:]),
+        "rolling_average_5": _wavg(segments[-5:]),
+        "rolling_average_10": _wavg(segments[-10:]),
+        "average_30_days": avg_30,
+        "average_90_days": _wavg(_since(90)),
+        "previous_30_days_average": prev_30,
+        "trend_30_days_pct": trend_pct,
+        "current_month_average": _wavg([s for s in segments if s["date"][:7] == cur_month]),
+        "previous_month_average": _wavg([s for s in segments if s["date"][:7] == prev_month]),
+        "valid_count": len(segments),
+        "excluded_count": sum(excluded_reasons.values()),
+        "excluded_reasons": excluded_reasons,
+    }
+
+
+@sessions_bp.route("/api/stats/consumption")
+@require_login
+def api_consumption_stats():
+    user = _current_user()
+    if not has_permission(user, "sessions:view") and not has_permission(user, "analytics:view"):
+        return jsonify({"error": "Keine Berechtigung: sessions:view oder analytics:view"}), 403
+    vehicle_id = request.args.get("vehicle_id", "v0")
+    return jsonify(_get_consumption_stats(vehicle_id))

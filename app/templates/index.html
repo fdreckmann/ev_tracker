@@ -873,6 +873,16 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
     </div>
   </div>
 
+  <!-- Netzverbrauch granular: pro Ladung + gleitende Durchschnitte -->
+  <div id="consumptionCard" class="card" style="display:none;margin-bottom:14px">
+    <div class="card-title">⚡ Netzverbrauch
+      <span style="font-size:.68rem;color:var(--mute);font-weight:400">geladene kWh / 100 km · inkl. Ladeverluste</span>
+    </div>
+    <div id="consumptionTiles" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:10px 0 14px"></div>
+    <div style="font-size:.72rem;color:var(--mute);margin-bottom:6px">Letzte Ladevorgänge — Fahrabschnitt seit voriger Ladung</div>
+    <div class="tbl-wrap" id="consumptionTbl"></div>
+  </div>
+
   <!-- Missing-charge hint (hidden until candidates exist) -->
   <div id="missingChargeHint" style="display:none;margin-bottom:14px">
   </div>
