@@ -332,9 +332,14 @@ def api_manual_session_create():
         try:
             candidate_id = int(candidate_id)
             link_con = _get_db()
+            now_link = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
             link_con.execute(
                 "UPDATE missing_charge_candidates SET status='accepted', accepted_session_id=?, updated_at=? WHERE id=?",
-                (sid, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds"), candidate_id),
+                (sid, now_link, candidate_id),
+            )
+            link_con.execute(
+                "UPDATE sessions SET missing_charge_candidate_id=? WHERE id=?",
+                (candidate_id, sid),
             )
             link_con.commit()
             close_db_if_owned(link_con)

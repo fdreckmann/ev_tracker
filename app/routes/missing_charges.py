@@ -135,6 +135,24 @@ def api_accept_missing_charge(cid):
     return jsonify({"ok": True, "prefill": candidate, "candidate_id": cid})
 
 
+@missing_charges_bp.route("/api/missing-charges/<int:cid>/revert", methods=["POST"])
+@require_login
+def api_revert_missing_charge(cid):
+    """Revert an in_review candidate back to open (user opened the dialog but cancelled)."""
+    user = _current_user()
+    if not has_permission(user, "sessions:manual_add"):
+        return jsonify({"error": "Keine Berechtigung: sessions:manual_add"}), 403
+    now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
+    con = _get_db()
+    updated = con.execute(
+        "UPDATE missing_charge_candidates SET status='open',updated_at=? WHERE id=? AND status='in_review'",
+        (now, cid),
+    ).rowcount
+    con.commit()
+    close_db_if_owned(con)
+    return jsonify({"ok": True, "reverted": updated > 0})
+
+
 @missing_charges_bp.route("/api/missing-charges/check", methods=["POST"])
 @require_login
 def api_trigger_check():

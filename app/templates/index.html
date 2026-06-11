@@ -5237,8 +5237,10 @@ async function openCandidateAcceptDialog(id){
   const r = await apiFetch('/api/missing-charges/'+id+'/accept',{method:'POST'}).then(x=>x.json()).catch(()=>({ok:false}));
   if(!r.ok){ toast('Fehler: '+(r.error||'unbekannt'), 'err'); return; }
   const c = r.prefill;
-  // Pre-fill the add-session modal with candidate data
-  openAddSessionModal();
+  // Pre-fill the add-session modal with candidate data.
+  // await so the form reset (including _addSessionCandidateId = null) completes first.
+  await openAddSessionModal();
+  _addSessionCandidateId = r.candidate_id;
   setTimeout(()=>{
     if($('as_start'))    $('as_start').value    = c.start_ts ? c.start_ts.replace('T',' ').substring(0,16) : '';
     if($('as_end'))      $('as_end').value      = c.end_ts   ? c.end_ts.replace('T',' ').substring(0,16)   : '';
@@ -7463,6 +7465,10 @@ function openMobileSheet(html) {
 }
 
 function closeMobileSheet() {
+  if (window._mobileSessionCandidateId) {
+    apiFetch('/api/missing-charges/'+window._mobileSessionCandidateId+'/revert',{method:'POST'}).catch(function(){});
+    window._mobileSessionCandidateId = null;
+  }
   const overlay = document.getElementById('mobileSheet');
   if (overlay) overlay.classList.remove('open');
   document.body.style.overflow = '';
@@ -7471,6 +7477,7 @@ function closeMobileSheet() {
 // ─── Session manuell hinzufügen ──────────────────────────
 
 async function openMobileSessionCreate() {
+  window._mobileSessionCandidateId = null; // reset for manual opens; set by mobileMissingChargeAccept when from candidate
   const vehicles = window._allVehicles || await apiFetch('/api/vehicles').then(r=>r.json()).catch(()=>[]);
   window._allVehicles = vehicles;
   const now = new Date();
@@ -7664,6 +7671,7 @@ async function submitMobileSession(force) {
   if (!isNaN(mOld))     body.meter_old         = mOld;
   if (!isNaN(mNew))     body.meter_new         = mNew;
   if (!isNaN(pwrVal))   body.charger_power_kw  = pwrVal;
+  if (window._mobileSessionCandidateId) body.missing_charge_candidate_id = window._mobileSessionCandidateId;
 
   if (res) res.innerHTML='<p style="color:var(--mute)">⏳ Speichere…</p>';
   const r = await apiFetch('/api/sessions/manual',{
@@ -7671,6 +7679,7 @@ async function submitMobileSession(force) {
   }).then(x=>x.json()).catch(e=>({ok:false,error:e.message}));
 
   if (r.ok) {
+    window._mobileSessionCandidateId = null; // already accepted — no revert on close
     closeMobileSheet();
     toast('✅ Ladevorgang #'+r.id+' gespeichert','ok');
     if (typeof loadMobileSessions === 'function') await loadMobileSessions();
