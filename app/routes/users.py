@@ -36,7 +36,7 @@ def api_get_users():
 def api_create_user():
     if not has_permission(_current_user(), "users:create"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: users:create"}), 403
-    data  = request.json or {}
+    data  = request.get_json(force=True, silent=True) or {}
     name  = (data.get("name") or "").strip()
     email = (data.get("email") or "").strip().lower()
     pw    = data.get("password") or ""
@@ -75,7 +75,7 @@ def api_create_user():
 def api_update_user(uid):
     if not has_permission(_current_user(), "users:edit"):
         return jsonify({"ok": False, "error": "Keine Berechtigung: users:edit"}), 403
-    data = request.json or {}
+    data = request.get_json(force=True, silent=True) or {}
     user = _get_user_by_id(uid)
     if not user:
         return jsonify({"ok": False, "error": "Nicht gefunden"}), 404
@@ -169,7 +169,7 @@ def api_change_password():
     user = _current_user()
     if not user:
         return jsonify({"error": "Nicht eingeloggt"}), 401
-    data    = request.json or {}
+    data    = request.get_json(force=True, silent=True) or {}
     current = data.get("current","")
     new_pw  = data.get("new","")
     if not _verify_password(current, user.get("password_hash", "")):
@@ -202,7 +202,7 @@ def api_my_totp_confirm():
     secret = session.get("pending_totp","")
     if not user or not secret:
         return jsonify({"ok": False, "error": "Kein ausstehender TOTP"})
-    code = (request.json or {}).get("code","").strip().replace(" ","")
+    code = (request.get_json(force=True, silent=True) or {}).get("code","").strip().replace(" ","")
     import pyotp
     if not pyotp.TOTP(secret).verify(code, valid_window=1):
         return jsonify({"ok": False, "error": "Ungültiger Code — bitte erneut versuchen"})

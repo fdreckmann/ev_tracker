@@ -230,6 +230,200 @@ def _find_meaningful_previous(cur, vehicle_id: str, new_snap_id: int):
     return prev
 
 
+# ── Odometer-at-charge suggestion ────────────────────────────────────────────
+# Bei einer Ladesession steht das Auto: km_start ≈ km_end. Die Snapshot-Grenzen
+# prev_odo/new_odo sind nur Fenster-Grenzen — dazwischen kann gefahren worden
+# sein. Diese Logik schlägt EINEN plausiblen Kilometerstand zum Ladezeitpunkt
+# vor, mit Quelle und Confidence (exact / high / medium / low / none).
+# Bei Unsicherheit lieber none als ein falscher Wert.
+
+_ODO_EXACT_MAX_KM    = 1.0   # Fensterdistanz bis zu der der Wert als exakt gilt
+_ODO_HIGH_MAX_KM     = 5.0
+_ODO_MEDIUM_MAX_KM   = 30.0
+_ODO_ANCHOR_MAX_DAYS = 7     # ältere Anker-Werte werden nicht mehr verwendet
+
+
+def _odo_none(reason: str) -> dict:
+    return {"value": None, "confidence": "none", "source": reason}
+
+
+def _fmt_age(minutes: float) -> str:
+    if minutes < 90:
+        return f"{minutes:.0f} min"
+    if minutes < 48 * 60:
+        return f"{minutes / 60:.0f} h"
+    return f"{minutes / 1440:.0f} Tagen"
+
+
+def _age_confidence(age_minutes: float) -> str:
+    if age_minutes <= 120:
+        return "high"
+    if age_minutes <= 24 * 60:
+        return "medium"
+    if age_minutes <= _ODO_ANCHOR_MAX_DAYS * 24 * 60:
+        return "low"
+    return "none"
+
+
+def _last_known_odo_before(vehicle_id: str, ts: str, con) -> dict | None:
+    """Jüngster bekannter Kilometerstand vor ts — aus Snapshots und Sessions.
+
+    Manuell erfasste/korrigierte Sessions gelten als hochwertige Historie.
+    Returns {odo, ts, kind, soc} mit kind in snapshot / session / session_manual.
+    """
+    cur = con.cursor()
+    snap = cur.execute(
+        "SELECT odometer_km, ts, soc FROM vehicle_snapshots "
+        "WHERE vehicle_id=? AND odometer_km IS NOT NULL AND odometer_km>=0 AND ts<=? "
+        "ORDER BY ts DESC LIMIT 1",
+        (vehicle_id, ts),
+    ).fetchone()
+    sess = cur.execute(
+        "SELECT odo_end, end_ts, created_mode FROM sessions "
+        "WHERE vehicle_id=? AND odo_end IS NOT NULL AND odo_end>=0 "
+        "AND end_ts IS NOT NULL AND end_ts<=? "
+        "ORDER BY end_ts DESC LIMIT 1",
+        (vehicle_id, ts),
+    ).fetchone()
+    best = None
+    if snap:
+        best = {"odo": float(snap[0]), "ts": snap[1], "kind": "snapshot", "soc": snap[2]}
+    if sess and (best is None or sess[1] > best["ts"]):
+        kind = "session_manual" if sess[2] == "manual" else "session"
+        best = {"odo": float(sess[0]), "ts": sess[1], "kind": kind, "soc": None}
+    return best
+
+
+def suggest_odometer_at_charge(vehicle_id: str, prev_ts: str, new_ts: str,
+                               prev_odo, new_odo, prev_soc,
+                               candidate_type: str, cfg: dict, con) -> dict:
+    """Plausibler Kilometerstand zum Ladezeitpunkt einer erkannten Ladung.
+
+    Prioritäten:
+      1. Beide Fenstergrenzen bekannt → Fensterdistanz entscheidet
+         (≈0 km → exact, ≤5 km → high, ≤30 km → medium, sonst none).
+      2. Letzter bekannter Stand vor Fensterbeginn (Confidence nach Alter).
+      3. Stand kurz nach Fensterende (nur wenn plausibel zur Historie).
+      4. Frühere Sessions (manuelle Nutzerwerte = hochwertige Historie).
+      5. SOC-/Verbrauchsschätzung als schwacher Zuschlag auf einen alten Anker.
+
+    Returns {"value": float|None, "confidence": exact|high|medium|low|none,
+             "source": str}.
+    """
+    if prev_odo is not None and prev_odo < 0:
+        prev_odo = None
+    if new_odo is not None and new_odo < 0:
+        new_odo = None
+
+    if prev_odo is not None and new_odo is not None and new_odo < prev_odo:
+        return _odo_none("Kilometerstand-Rücksprung im Offline-Fenster — kein Vorschlag")
+
+    # Zwischenladestopp: Ladung mitten in der Fahrt, Position im Fenster
+    # nicht bestimmbar → keine Fantasiewerte.
+    if candidate_type == "energy_balance":
+        return _odo_none("Zwischenladestopp während der Fahrt — "
+                         "Kilometerstand nicht bestimmbar")
+
+    try:
+        gap_minutes = (datetime.fromisoformat(new_ts)
+                       - datetime.fromisoformat(prev_ts)).total_seconds() / 60.0
+    except Exception:
+        gap_minutes = None
+
+    # ── Priorität 1: beide Fenstergrenzen bekannt ─────────────────────────────
+    if prev_odo is not None and new_odo is not None:
+        driven = float(new_odo) - float(prev_odo)
+        if driven <= _ODO_EXACT_MAX_KM:
+            return {"value": round(float(new_odo), 1), "confidence": "exact",
+                    "source": "Kilometerstand im Offline-Fenster unverändert"}
+        if driven <= _ODO_HIGH_MAX_KM:
+            return {"value": round(float(prev_odo), 1), "confidence": "high",
+                    "source": f"Nur {driven:.0f} km im Offline-Fenster — "
+                              "Stand vor der Ladung"}
+        if driven <= _ODO_MEDIUM_MAX_KM:
+            return {"value": round(float(prev_odo), 1), "confidence": "medium",
+                    "source": f"{driven:.0f} km im Offline-Fenster gefahren — "
+                              "Stand vor der Ladung (unsicher)"}
+        return _odo_none(f"{driven:.0f} km im Offline-Fenster gefahren — "
+                         "Kilometerstand bei Ladung nicht bestimmbar")
+
+    # ── Priorität 2/4: letzter bekannter Stand vor Fensterbeginn ─────────────
+    if prev_odo is not None:
+        anchor = {"odo": float(prev_odo), "ts": prev_ts, "kind": "snapshot",
+                  "soc": prev_soc}
+    else:
+        anchor = _last_known_odo_before(vehicle_id, prev_ts, con)
+
+    _kind_label = {
+        "snapshot": "Fahrzeug-Snapshot",
+        "session": "letzter Session",
+        "session_manual": "letzter manueller Session",
+    }
+
+    # ── Priorität 3: Stand kurz nach Fensterende ─────────────────────────────
+    if new_odo is not None:
+        # Rücksprung gegen Historie → Datenfehler, kein Vorschlag
+        if anchor is not None and float(new_odo) < anchor["odo"] - 1.0:
+            return _odo_none("Kilometerstand-Rücksprung gegenüber Historie — "
+                             "kein Vorschlag")
+        conf = _age_confidence(gap_minutes) if gap_minutes is not None else "low"
+        # Unrealistisch große Sprünge gegenüber der Historie nie als high
+        if anchor is not None:
+            jump = float(new_odo) - anchor["odo"]
+            if jump > 1000 and conf == "high":
+                conf = "medium"
+            if jump > 5000:
+                conf = "low"
+        if conf == "none":
+            return _odo_none("Kilometerstand nach der Ladung zu weit vom "
+                             "Ladezeitpunkt entfernt")
+        age_txt = _fmt_age(gap_minutes) if gap_minutes is not None else "?"
+        return {"value": round(float(new_odo), 1), "confidence": conf,
+                "source": f"Kilometerstand {age_txt} nach Fensterbeginn "
+                          "(kein Wert davor bekannt)"}
+
+    # ── Kein Wert nach dem Fenster: Anker vor dem Fenster verwenden ──────────
+    if anchor is None:
+        return _odo_none("Keine Kilometerstand-Historie vorhanden")
+
+    try:
+        ref_ts = datetime.fromisoformat(prev_ts)
+        anchor_age_min = (ref_ts - datetime.fromisoformat(anchor["ts"])
+                          ).total_seconds() / 60.0
+    except Exception:
+        anchor_age_min = None
+    # Die Ladung liegt irgendwo im Fenster — konservativ das halbe Fenster
+    # zum Anker-Alter addieren.
+    if anchor_age_min is not None and gap_minutes is not None:
+        anchor_age_min += gap_minutes / 2.0
+    conf = _age_confidence(anchor_age_min) if anchor_age_min is not None else "low"
+    if conf == "none":
+        return _odo_none("Letzter bekannter Kilometerstand ist zu alt — "
+                         "kein zuverlässiger Vorschlag möglich")
+
+    value = anchor["odo"]
+    src = (f"Kilometerstand aus {_kind_label.get(anchor['kind'], anchor['kind'])} "
+           f"(vor {_fmt_age(anchor_age_min) if anchor_age_min is not None else '?'})")
+
+    # ── Priorität 5: schwache SOC-/Verbrauchsschätzung auf alten Anker ───────
+    # Nur wenn der Anker bereits unsicher ist und seither SOC verfahren wurde.
+    if (conf == "low" and anchor["kind"] == "snapshot"
+            and anchor.get("soc") is not None and prev_soc is not None
+            and anchor["soc"] > prev_soc + 2):
+        batt = _battery_kwh(cfg)
+        if batt > 0:
+            try:
+                exp = get_expected_consumption(vehicle_id, cfg, con)
+                est_km = (anchor["soc"] - prev_soc) / 100.0 * batt / exp["value"] * 100.0
+                value = anchor["odo"] + est_km
+                src = (f"Geschätzt aus SOC-/Verbrauchshistorie "
+                       f"(+~{est_km:.0f} km seit letztem bekannten Stand)")
+            except Exception:
+                pass
+
+    return {"value": round(float(value), 1), "confidence": conf, "source": src}
+
+
 # ── Main detection ───────────────────────────────────────────────────────────
 
 def check_for_missing_charge(vehicle_id: str, new_snap_id: int, cfg: dict, con) -> int | None:
@@ -501,6 +695,17 @@ def check_for_missing_charge(vehicle_id: str, new_snap_id: int, cfg: dict, con) 
         reason = f"{reason} · Zähler bestätigt +{meter_delta_kwh:.1f} kWh"
     evidence_json = json.dumps(evidence, ensure_ascii=False)
 
+    # ── Plausibler Kilometerstand zum Ladezeitpunkt ───────────────────────────
+    # odo_start/odo_end bleiben die rohen Fenster-Grenzen (Anzeige); für das
+    # Formular wird EIN plausibler Wert mit Quelle/Confidence vorgeschlagen.
+    try:
+        odo_sug = suggest_odometer_at_charge(
+            vehicle_id, prev_ts, new_ts, prev_odo, new_odo, prev_soc,
+            cand["candidate_type"], cfg, con)
+    except Exception as _os_err:
+        log.warning("[%s] Odometer-Vorschlag fehlgeschlagen: %s", vehicle_id, _os_err)
+        odo_sug = _odo_none("Vorschlag fehlgeschlagen")
+
     # ── Insert candidate ──────────────────────────────────────────────────────
     now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
     cur.execute(
@@ -515,8 +720,10 @@ def check_for_missing_charge(vehicle_id: str, new_snap_id: int, cfg: dict, con) 
             observed_energy_kwh, estimated_missing_soc_percent,
             expected_consumption_source, expected_consumption_confidence,
             historical_sample_distance_km, historical_sample_segments,
-            evidence_json, meter_delta_kwh, meter_confirmed)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            evidence_json, meter_delta_kwh, meter_confirmed,
+            suggested_odometer_km, suggested_odometer_confidence,
+            suggested_odometer_source)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             vehicle_id, prev_id, new_snap_id, prev_ts, new_ts,
             prev_soc, new_soc, prev_odo, new_odo, driven_km,
@@ -529,6 +736,7 @@ def check_for_missing_charge(vehicle_id: str, new_snap_id: int, cfg: dict, con) 
             cand["expected_consumption_source"], cand["expected_consumption_confidence"],
             cand["historical_sample_distance_km"], cand["historical_sample_segments"],
             evidence_json, meter_delta_kwh, meter_confirmed,
+            odo_sug["value"], odo_sug["confidence"], odo_sug["source"],
         ),
     )
     con.commit()

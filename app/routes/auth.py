@@ -381,7 +381,7 @@ def api_auth_setup():
         user = _current_user()
         if not user or user.get("role") != "admin":
             return jsonify({"error": "Keine Berechtigung: admin erforderlich"}), 403
-    data = request.json or {}
+    data = request.get_json(force=True, silent=True) or {}
     cfg  = load_config()
     if "password" in data and data["password"]:
         cfg["auth_password_hash"] = _hash_password(data["password"])

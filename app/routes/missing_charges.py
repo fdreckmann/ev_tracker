@@ -144,8 +144,14 @@ def api_trigger_check():
         return jsonify({"error": "Keine Berechtigung: sessions:manual_add"}), 403
     from core.config import load_config
     from services.missing_charge_service import check_for_missing_charge
-    vehicle_id = (request.json or {}).get("vehicle_id", "v0")
+    vehicle_id = (request.get_json(force=True, silent=True) or {}).get("vehicle_id", "v0")
     cfg = load_config()
+    # Extra-Fahrzeuge: fahrzeugspezifische Config mergen (Batterie, Verbrauch, Meter)
+    if vehicle_id != "v0":
+        from services.vehicle_service import build_vehicle_config
+        _veh = next((v for v in cfg.get("extra_vehicles", []) if v.get("id") == vehicle_id), None)
+        if _veh:
+            cfg = build_vehicle_config(_veh, cfg)
     con = _get_db()
     # Re-check all snapshot pairs that don't already have a candidate
     snaps = con.execute(

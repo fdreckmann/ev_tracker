@@ -538,3 +538,272 @@ def test_meter_delta_too_large_ignored(app):
         ev = json.loads(c["evidence_json"])
         assert "meter_delta" not in ev["signals"]
         close_db_if_owned(con)
+
+
+# ── Odometer-at-charge suggestion (Tests A–G) ────────────────────────────────
+# Bei einer Ladesession steht das Auto: km_start ≈ km_end. Die Vorschlagslogik
+# darf nie blind die Snapshot-Spanne (prev_odo→new_odo) ins Formular schreiben.
+
+
+def _insert_session(con, vehicle_id, start_ts, end_ts, odo_start=None,
+                    odo_end=None, created_mode="auto"):
+    cur = con.execute(
+        "INSERT INTO sessions (vehicle_id, start_ts, end_ts, odo_start, odo_end, "
+        "created_mode, kwh_charged) VALUES (?,?,?,?,?,?,1.0)",
+        (vehicle_id, start_ts, end_ts, odo_start, odo_end, created_mode),
+    )
+    con.commit()
+    return cur.lastrowid
+
+
+def test_odo_suggestion_exact_when_window_unchanged(app):
+    """Test A: Odometer im Offline-Fenster unverändert → exact, ein Wert."""
+    from core.db import _get_db, close_db_if_owned
+    from services.missing_charge_service import check_for_missing_charge
+    with app.app_context():
+        con = _get_db()
+        t0 = datetime(2026, 5, 31, 8, 0, 0)
+        _insert_snap(con, "v0", _ts(t0), 40, 12000)
+        sid = _insert_snap(con, "v0", _ts(t0 + timedelta(hours=5)), 80, 12000)
+        cid = check_for_missing_charge("v0", sid, _cfg(), con)
+        assert cid is not None
+        c = _get_candidate(con, cid)
+        assert c["suggested_odometer_km"] == 12000
+        assert c["suggested_odometer_confidence"] == "exact"
+        assert c["suggested_odometer_source"]
+        close_db_if_owned(con)
+
+
+def test_odo_suggestion_high_for_small_window_distance(app):
+    """Test A2: nur 3 km im Fenster → high, Stand vor der Ladung."""
+    from core.db import _get_db, close_db_if_owned
+    from services.missing_charge_service import check_for_missing_charge
+    with app.app_context():
+        con = _get_db()
+        t0 = datetime(2026, 5, 31, 8, 0, 0)
+        _insert_snap(con, "v0", _ts(t0), 40, 12000)
+        sid = _insert_snap(con, "v0", _ts(t0 + timedelta(hours=5)), 80, 12003)
+        cid = check_for_missing_charge("v0", sid, _cfg(), con)
+        assert cid is not None
+        c = _get_candidate(con, cid)
+        assert c["suggested_odometer_km"] == 12000
+        assert c["suggested_odometer_confidence"] == "high"
+        close_db_if_owned(con)
+
+
+def test_odo_suggestion_after_value_when_no_prev(app):
+    """Test B: kein Wert davor, plausibler Wert kurz danach → wird genutzt."""
+    from core.db import _get_db, close_db_if_owned
+    from services.missing_charge_service import check_for_missing_charge
+    with app.app_context():
+        con = _get_db()
+        t0 = datetime(2026, 5, 31, 8, 0, 0)
+        _insert_snap(con, "v0", _ts(t0), 40, None)
+        sid = _insert_snap(con, "v0", _ts(t0 + timedelta(hours=2)), 80, 12345)
+        cid = check_for_missing_charge("v0", sid, _cfg(), con)
+        assert cid is not None
+        c = _get_candidate(con, cid)
+        assert c["suggested_odometer_km"] == 12345
+        assert c["suggested_odometer_confidence"] in ("high", "medium")
+        close_db_if_owned(con)
+
+
+def test_odo_suggestion_none_for_large_window_span(app):
+    """Test C: 9270 → 12500 — niemals die Spanne übernehmen → none."""
+    from core.db import _get_db, close_db_if_owned
+    from services.missing_charge_service import check_for_missing_charge
+    with app.app_context():
+        con = _get_db()
+        t0 = datetime(2026, 5, 31, 8, 0, 0)
+        _insert_snap(con, "v0", _ts(t0), 40, 9270)
+        sid = _insert_snap(con, "v0", _ts(t0 + timedelta(days=2)), 80, 12500)
+        cid = check_for_missing_charge("v0", sid, _cfg(), con)
+        assert cid is not None
+        c = _get_candidate(con, cid)
+        assert c["suggested_odometer_km"] is None
+        assert c["suggested_odometer_confidence"] == "none"
+        # Rohe Fenster-Grenzen bleiben als Info erhalten
+        assert c["odo_start"] == 9270 and c["odo_end"] == 12500
+        close_db_if_owned(con)
+
+
+def test_odo_suggestion_none_without_history(app):
+    """Test D: keine Odometer-Historie → keine Fantasiewerte, none."""
+    from core.db import _get_db, close_db_if_owned
+    from services.missing_charge_service import check_for_missing_charge
+    with app.app_context():
+        con = _get_db()
+        t0 = datetime(2026, 5, 31, 8, 0, 0)
+        _insert_snap(con, "v0", _ts(t0), 40, None)
+        sid = _insert_snap(con, "v0", _ts(t0 + timedelta(hours=2)), 80, None)
+        cid = check_for_missing_charge("v0", sid, _cfg(), con)
+        assert cid is not None
+        c = _get_candidate(con, cid)
+        assert c["suggested_odometer_km"] is None
+        assert c["suggested_odometer_confidence"] == "none"
+        close_db_if_owned(con)
+
+
+def test_odo_suggestion_uses_manual_session_anchor(app):
+    """Test E: manuell korrigierte Session als hochwertige Historie."""
+    from core.db import _get_db, close_db_if_owned
+    from services.missing_charge_service import check_for_missing_charge
+    with app.app_context():
+        con = _get_db()
+        t0 = datetime(2026, 5, 31, 8, 0, 0)
+        _insert_session(con, "v0",
+                        _ts(t0 - timedelta(hours=4)), _ts(t0 - timedelta(hours=3)),
+                        odo_start=9000, odo_end=9000, created_mode="manual")
+        _insert_snap(con, "v0", _ts(t0), 40, None)
+        sid = _insert_snap(con, "v0", _ts(t0 + timedelta(hours=2)), 80, None)
+        cid = check_for_missing_charge("v0", sid, _cfg(), con)
+        assert cid is not None
+        c = _get_candidate(con, cid)
+        assert c["suggested_odometer_km"] == 9000
+        assert c["suggested_odometer_confidence"] in ("high", "medium")
+        assert "manuell" in (c["suggested_odometer_source"] or "")
+        close_db_if_owned(con)
+
+
+def test_odo_detection_never_touches_existing_sessions(app):
+    """Test F: Erkennung verändert nie gespeicherte (manuelle) Session-Werte."""
+    from core.db import _get_db, close_db_if_owned
+    from services.missing_charge_service import check_for_missing_charge
+    with app.app_context():
+        con = _get_db()
+        t0 = datetime(2026, 5, 31, 8, 0, 0)
+        sid_sess = _insert_session(
+            con, "v0", _ts(t0 - timedelta(days=10)),
+            _ts(t0 - timedelta(days=10) + timedelta(hours=1)),
+            odo_start=5555, odo_end=5555, created_mode="manual")
+        _insert_snap(con, "v0", _ts(t0), 40, 12000)
+        sid = _insert_snap(con, "v0", _ts(t0 + timedelta(hours=2)), 80, 12000)
+        cid = check_for_missing_charge("v0", sid, _cfg(), con)
+        assert cid is not None
+        row = con.execute(
+            "SELECT odo_start, odo_end FROM sessions WHERE id=?", (sid_sess,)
+        ).fetchone()
+        assert row[0] == 5555 and row[1] == 5555, \
+            "Detection überschrieb manuelle Session-Werte"
+        close_db_if_owned(con)
+
+
+def test_odo_suggestion_rejects_backwards_window(app):
+    """Test G: new_odo < prev_odo (Rücksprung im Fenster) → none."""
+    from services.missing_charge_service import suggest_odometer_at_charge
+    with app.app_context():
+        from core.db import _get_db, close_db_if_owned
+        con = _get_db()
+        r = suggest_odometer_at_charge(
+            "v0", "2026-05-31T08:00:00", "2026-05-31T10:00:00",
+            5000, 4000, 40, "soc_gain", _cfg(), con)
+        assert r["value"] is None
+        assert r["confidence"] == "none"
+        close_db_if_owned(con)
+
+
+def test_odo_suggestion_negative_treated_as_missing(app):
+    """Test G: negative Kilometerstände werden wie fehlende behandelt."""
+    from services.missing_charge_service import suggest_odometer_at_charge
+    with app.app_context():
+        from core.db import _get_db, close_db_if_owned
+        con = _get_db()
+        r = suggest_odometer_at_charge(
+            "v_neg", "2026-05-31T08:00:00", "2026-05-31T10:00:00",
+            -5, None, 40, "soc_gain", _cfg(), con)
+        assert r["value"] is None
+        assert r["confidence"] == "none"
+        close_db_if_owned(con)
+
+
+def test_odo_suggestion_big_jump_never_high(app):
+    """Test G: unrealistischer Sprung gegenüber Historie wird nie high."""
+    from core.db import _get_db, close_db_if_owned
+    from services.missing_charge_service import check_for_missing_charge
+    with app.app_context():
+        con = _get_db()
+        t0 = datetime(2026, 5, 31, 8, 0, 0)
+        _insert_snap(con, "v0", _ts(t0 - timedelta(hours=1)), 85, 1000)
+        _insert_snap(con, "v0", _ts(t0), 40, None)
+        sid = _insert_snap(con, "v0", _ts(t0 + timedelta(hours=1)), 80, 7000)
+        cid = check_for_missing_charge("v0", sid, _cfg(), con)
+        assert cid is not None
+        c = _get_candidate(con, cid)
+        assert c["suggested_odometer_confidence"] in ("low", "none"), \
+            f"+6000 km Sprung darf nicht {c['suggested_odometer_confidence']} sein"
+        close_db_if_owned(con)
+
+
+def test_odo_suggestion_backwards_vs_history_rejected(app):
+    """Test G: Wert nach dem Fenster liegt UNTER der Historie → none."""
+    from core.db import _get_db, close_db_if_owned
+    from services.missing_charge_service import check_for_missing_charge
+    with app.app_context():
+        con = _get_db()
+        t0 = datetime(2026, 5, 31, 8, 0, 0)
+        _insert_snap(con, "v0", _ts(t0 - timedelta(hours=1)), 85, 5000)
+        _insert_snap(con, "v0", _ts(t0), 40, None)
+        sid = _insert_snap(con, "v0", _ts(t0 + timedelta(hours=1)), 80, 3000)
+        cid = check_for_missing_charge("v0", sid, _cfg(), con)
+        assert cid is not None
+        c = _get_candidate(con, cid)
+        assert c["suggested_odometer_km"] is None
+        assert c["suggested_odometer_confidence"] == "none"
+        close_db_if_owned(con)
+
+
+def test_odo_energy_balance_candidate_gets_none(app):
+    """Zwischenladestopp (energy_balance): Position im Fenster unbekannt → none."""
+    from core.db import _get_db, close_db_if_owned
+    from services.missing_charge_service import check_for_missing_charge
+    with app.app_context():
+        con = _get_db()
+        t0 = datetime(2026, 5, 31, 8, 0, 0)
+        _insert_snap(con, "v0", _ts(t0), 80, 10000)
+        sid = _insert_snap(con, "v0", _ts(t0 + timedelta(hours=4)), 38, 10250)
+        cid = check_for_missing_charge("v0", sid, _cfg(
+            missing_charge_expected_consumption_kwh_per_100km=19.0), con)
+        assert cid is not None
+        c = _get_candidate(con, cid)
+        assert c["candidate_type"] == "energy_balance"
+        assert c["suggested_odometer_km"] is None
+        assert c["suggested_odometer_confidence"] == "none"
+        close_db_if_owned(con)
+
+
+def test_odo_prefill_js_uses_suggestion_not_span():
+    """Test F/G (Frontend): Formular-Prefill nutzt den Vorschlag, nie die
+    rohe Snapshot-Spanne; Helper befüllt nur exact/high/medium."""
+    import os
+    here = os.path.dirname(__file__)
+    root = os.path.normpath(os.path.join(here, ".."))
+
+    with open(os.path.join(root, "app", "static", "js", "api.js")) as fh:
+        api_src = fh.read()
+    assert "_candidateOdoSuggestion" in api_src
+    helper = api_src[api_src.find("function _candidateOdoSuggestion"):][:700]
+    for lvl in ("'exact'", "'high'", "'medium'"):
+        assert lvl in helper, f"{lvl} fehlt im Confidence-Gate"
+    assert "'low'" not in helper, "low darf NICHT vorbefüllt werden"
+
+    with open(os.path.join(root, "app", "templates", "index.html")) as fh:
+        html = fh.read()
+    idx = html.find("async function openCandidateAcceptDialog")
+    assert idx >= 0
+    body = html[idx:idx + 2500]
+    assert "_candidateOdoSuggestion" in body, \
+        "Desktop-Prefill nutzt den KM-Vorschlag nicht"
+    assert "Math.round(c.odo_start)" not in body, \
+        "Desktop-Prefill schreibt noch die rohe Snapshot-Spanne (odo_start)"
+    assert "Math.round(c.odo_end)" not in body, \
+        "Desktop-Prefill schreibt noch die rohe Snapshot-Spanne (odo_end)"
+
+    with open(os.path.join(root, "app", "static", "js", "mobile.js")) as fh:
+        mob = fh.read()
+    midx = mob.find("function mobileMissingChargeAccept")
+    assert midx >= 0
+    mbody = mob[midx:midx + 2500]
+    assert "_candidateOdoSuggestion" in mbody, \
+        "Mobile-Prefill nutzt den KM-Vorschlag nicht"
+    assert "Math.round(c.odo_start)" not in mbody, \
+        "Mobile-Prefill schreibt noch die rohe Snapshot-Spanne"

@@ -539,8 +539,10 @@ async function mobileMissingChargeAccept(id) {
       if(el('msKwh'))      el('msKwh').value      = c.estimated_kwh!=null ? c.estimated_kwh.toFixed(2) : '';
       if(el('msSocStart')) el('msSocStart').value = c.soc_start!=null ? c.soc_start.toFixed(0) : '';
       if(el('msSocEnd'))   el('msSocEnd').value   = c.soc_end!=null   ? c.soc_end.toFixed(0)   : '';
-      if(el('msOdoStart')) el('msOdoStart').value = c.odo_start!=null ? Math.round(c.odo_start) : '';
-      if(el('msOdoEnd'))   el('msOdoEnd').value   = c.odo_end!=null   ? Math.round(c.odo_end)   : '';
+      // Einzelner plausibler KM-Stand zum Ladezeitpunkt — nie die rohe Snapshot-Spanne
+      var _mOdoSug = (typeof _candidateOdoSuggestion==='function') ? _candidateOdoSuggestion(c) : null;
+      if(el('msOdoStart')) el('msOdoStart').value = _mOdoSug!=null ? Math.round(_mOdoSug) : '';
+      if(el('msOdoEnd'))   el('msOdoEnd').value   = _mOdoSug!=null ? Math.round(_mOdoSug) : '';
       if(el('msLoc')&&c.suggested_location)         el('msLoc').value  = c.suggested_location;
       if(el('msType')&&c.suggested_charger_type)    el('msType').value = c.suggested_charger_type;
       if(el('msReason'))   el('msReason').value   = 'Offline-Abweichung erkannt';

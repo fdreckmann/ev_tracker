@@ -79,6 +79,22 @@ async function apiJson(url, opts) {
   return data;
 }
 
+// ── Missing-Charge: Kilometerstand-Vorschlag ─────────────────────────────────
+// Bei einer Ladesession steht das Auto (km_start ≈ km_end). Nur exact/high/
+// medium-Vorschläge vorbefüllen; low/none → Felder leer lassen. Legacy-
+// Kandidaten ohne Vorschlag: nur wenn das Fenster praktisch keine Fahrt enthält.
+function _candidateOdoSuggestion(c) {
+  if (!c) return null;
+  if (c.suggested_odometer_km != null &&
+      ['exact', 'high', 'medium'].indexOf(c.suggested_odometer_confidence) >= 0) {
+    return c.suggested_odometer_km;
+  }
+  if (c.odo_start != null && c.odo_end != null && (c.odo_end - c.odo_start) <= 1) {
+    return c.odo_end;
+  }
+  return null;
+}
+
 // ── Location normalization ────────────────────────────────────────────────────
 // Single source of truth — used by status.js, mobile.js, vehicles.js.
 function normalizeLocation(val) {
