@@ -269,10 +269,13 @@ function locBadge(loc, locSource) {
   else if (locSource === 'meter_conflict') badge += '<span title="Zähler steigt, aber Standort extern gemeldet" style="color:#f59e0b;font-size:.6rem;margin-left:3px">⚠</span>';
   return badge;
 }
-function typeBadge(t, kw) {
+function typeBadge(t, kw, source) {
   const pw = kw ? ` ${Number(kw).toFixed(1)} kW` : '';
-  if (t === 'dc') return `<span style="color:#f59e0b;font-size:.7rem">⚡ DC${pw}</span>`;
-  if (t === 'ac') return `<span style="color:#00b4ff;font-size:.7rem">🔌 AC${pw}</span>`;
+  const autoSources = ['estimated_power', 'location_home', 'meter_home'];
+  const isAuto = source && autoSources.includes(source);
+  const hint = isAuto ? `<span title="Automatisch erkannt (${source})" style="color:var(--mute);font-size:.6rem;margin-left:2px">~</span>` : '';
+  if (t === 'dc') return `<span style="color:#f59e0b;font-size:.7rem">⚡ DC${pw}</span>${hint}`;
+  if (t === 'ac') return `<span style="color:#00b4ff;font-size:.7rem">🔌 AC${pw}</span>${hint}`;
   return `<span style="color:var(--mute);font-size:.7rem">—</span>`;
 }
 
@@ -296,7 +299,7 @@ function renderTbl(el, rows, showDel = true) {
       <td>${fmtTime(r.start_ts)} → ${r.end_ts ? fmtTime(r.end_ts) : '…'}</td>
       ${hasVehicle ? `<td style="font-size:.72rem;font-family:var(--mono);color:var(--acc2)">${escapeHtml(r.vehicle_id || 'v0')}</td>` : ''}
       <td>${fmt(r.soc_start, 0)}% → ${fmt(r.soc_end, 0)}%</td>
-      <td>${typeBadge(r.charger_type, r.max_power_kw)}</td>
+      <td>${typeBadge(r.charger_type, r.max_power_kw, r.charger_type_source)}</td>
       <td class="g">${fmt(r.kwh_charged)} kWh</td>
       <td style="font-size:.72rem;color:var(--mute)">${r.price_per_kwh ? fmt(r.price_per_kwh, 4) + ' €/kWh' : '—'}</td>
       <td class="w" id="cost_${r.id}">

@@ -329,6 +329,8 @@ def init_db():
         ("charging_contract_name", "TEXT"),
         ("meter_source_start",  "TEXT"),
         ("meter_source_end",    "TEXT"),
+        ("charger_type_source",     "TEXT DEFAULT NULL"),
+        ("charger_type_confidence", "INTEGER DEFAULT 0"),
     ]
     for col, typedef in _ALL_SESSION_COLS:
         try:
@@ -816,6 +818,8 @@ def init_db():
         ("suggested_odometer_km", "REAL"),
         ("suggested_odometer_confidence", "TEXT"),
         ("suggested_odometer_source", "TEXT"),
+        ("suggested_charger_type_source", "TEXT DEFAULT NULL"),
+        ("suggested_charger_type_confidence", "INTEGER DEFAULT 0"),
     ]:
         try:
             con.execute(f"ALTER TABLE missing_charge_candidates ADD COLUMN {_col} {_typedef}")
@@ -1200,6 +1204,18 @@ def tracker_loop(vehicle_id: str = "v0"):
             power_kw     = state.charge_power
             location     = state.location or "unknown"
             charger_type = state.charge_type or "unknown"
+            _ct_src  = "api" if (state.charge_type and state.charge_type != "unknown") else None
+            _ct_conf = 95 if _ct_src else 0
+            if not _ct_src:
+                try:
+                    from services.missing_charge_service import suggest_charger_type as _sct_fn
+                    _sug = _sct_fn(location, power_kw, None, None, False, vcfg)
+                    if _sug["type"] != "unknown":
+                        charger_type = _sug["type"]
+                        _ct_src  = _sug["source"]
+                        _ct_conf = _sug["confidence"]
+                except Exception:
+                    pass
 
             st.update(
                 charging=charging, soc_current=soc, odo_current=odo,
@@ -1337,15 +1353,15 @@ def tracker_loop(vehicle_id: str = "v0"):
                      meter_home_detection_start_value,meter_home_detection_start_ts,
                      location_source,location_confidence,
                      price_source,price_confidence,charging_contract_id,charging_contract_name,
-                     meter_source_start)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     meter_source_start,charger_type_source,charger_type_confidence)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (datetime.now().isoformat(timespec="seconds"),
                      odo_start,soc_start,_effective_location,charger_type,power_kw,price_kwh,spot,
                      provider_id,meter_start_val,vehicle_id,sess_charger_kw,
                      mhd_start_val, mhd_start_ts,
                      _loc_src, 0 if _effective_location == "unknown" else 80,
                      _price_source, _price_conf, _price_contract_id, _price_contract_name,
-                     _meter_src_start))
+                     _meter_src_start, _ct_src, _ct_conf))
                 con.commit(); session_id=cur.lastrowid; session_active=True
                 st["session_id"]=session_id
                 try:
@@ -1455,9 +1471,15 @@ def tracker_loop(vehicle_id: str = "v0"):
                             spot = st.get("entsoe_spot")
                             price = (vcfg.get("price_per_kwh_home", 0.30) if _effective_location=="home"
                                      else calc_extern_price(vcfg,new_type,spot))
-                        cur.execute("UPDATE sessions SET charger_type=?,max_power_kw=?,price_per_kwh=? WHERE id=?",
-                                    (new_type,peak_power,price,session_id))
-                        con.commit(); charger_type=new_type
+                        _pwr_ct_src = "api" if (_ct_src == "api") else "power_kw"
+                        _pwr_ct_conf = 95 if _pwr_ct_src == "api" else min(90, 70 + int(
+                            abs(power_kw - float(vcfg.get("dc_threshold_kw",22))) /
+                            max(float(vcfg.get("dc_threshold_kw",22)), 1.0) * 25))
+                        cur.execute(
+                            "UPDATE sessions SET charger_type=?,max_power_kw=?,price_per_kwh=?,"
+                            "charger_type_source=?,charger_type_confidence=? WHERE id=?",
+                            (new_type,peak_power,price,_pwr_ct_src,_pwr_ct_conf,session_id))
+                        con.commit(); charger_type=new_type; _ct_src=_pwr_ct_src; _ct_conf=_pwr_ct_conf
 
             elif not charging and session_active:
                 row = cur.execute("SELECT price_per_kwh,cost_manual FROM sessions WHERE id=?",
@@ -1609,6 +1631,24 @@ def tracker_loop(vehicle_id: str = "v0"):
                 end_ts_str = datetime.now().isoformat(timespec="seconds")
                 _fin_loc_src = st.get("location_source", "unknown")
                 _fin_loc_conf = 70 if _fin_loc_src == "meter_delta" else (80 if _effective_location != "unknown" else 0)
+                # If charger_type still unknown at close, try location/power-based suggestion
+                _fin_ct_src = _ct_src; _fin_ct_conf = _ct_conf
+                if charger_type == "unknown":
+                    try:
+                        _sess_start_row = cur.execute(
+                            "SELECT start_ts FROM sessions WHERE id=?", (session_id,)).fetchone()
+                        _dur_h = None
+                        if _sess_start_row and _sess_start_row[0]:
+                            from datetime import datetime as _dt2
+                            _dur_h = (datetime.now() - _dt2.fromisoformat(_sess_start_row[0])).total_seconds() / 3600
+                        from services.missing_charge_service import suggest_charger_type as _sct_fn2
+                        _sug2 = _sct_fn2(_effective_location, peak_power, kwh, _dur_h, False, vcfg)
+                        if _sug2["type"] != "unknown":
+                            charger_type = _sug2["type"]
+                            _fin_ct_src  = _sug2["source"]
+                            _fin_ct_conf = _sug2["confidence"]
+                    except Exception:
+                        pass
                 cur.execute("""UPDATE sessions
                     SET end_ts=?,odo_end=?,soc_end=?,kwh_charged=?,
                     cost_eur=CASE WHEN cost_manual=1 THEN cost_eur ELSE ? END,
@@ -1620,7 +1660,9 @@ def tracker_loop(vehicle_id: str = "v0"):
                     location_source=COALESCE(location_source,?),location_confidence=COALESCE(location_confidence,?),
                     charging_contract_id=COALESCE(charging_contract_id,?),
                     charging_contract_name=COALESCE(charging_contract_name,?),
-                    price_source=?,price_confidence=?
+                    price_source=?,price_confidence=?,
+                    charger_type=?,charger_type_source=COALESCE(charger_type_source,?),
+                    charger_type_confidence=COALESCE(charger_type_confidence,?)
                     WHERE id=?""",
                     (end_ts_str,odo,soc,kwh,cost,effective_price,
                      tariff_prov_name,_pc_price_source,peak_power,
@@ -1630,6 +1672,7 @@ def tracker_loop(vehicle_id: str = "v0"):
                      _fin_loc_src, _fin_loc_conf,
                      _pc_contract_id, _pc_contract_name,
                      _pc_price_source, _pc_price_conf,
+                     charger_type, _fin_ct_src, _fin_ct_conf,
                      session_id))
                 con.commit(); session_active=False
                 st.update(session_active=False,session_id=None)
