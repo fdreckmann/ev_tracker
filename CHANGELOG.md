@@ -1,5 +1,33 @@
 # Changelog
 
+## v2.2.0 — 2026-06-12
+
+### Provider-Review, AC/DC-Schätzung & Dokumentation
+
+**AC/DC-Ladertyp automatisch schätzen**
+- Wenn die Hersteller-API keinen Ladetyp liefert, schätzt EV Tracker ihn aus verfügbaren Daten:
+  Priorität: API → Zuhause/Zähler bestätigt → Ladeleistung → geschätzte Durchschnittsleistung → Unbekannt
+- Schätzungen werden mit `~` in der Ladevorgangsliste markiert
+- Quelle und Konfidenz werden in der DB gespeichert (`charger_type_source`, `charger_type_confidence`)
+- Manuelle Korrekturen überschreiben Schätzungen und werden als `source=manual` gespeichert
+
+**Provider-Review**
+- **VW WeConnect**: ab Juni 2026 gesperrt — klare Fehlermeldung mit Empfehlung auf Home Assistant wechseln
+- **Audi**: alte `msg.volkswagen.de`-Endpunkte seit 2023 abgeschaltet — als fragil markiert
+- Alle Provider haben jetzt korrekte `stability_level`- und `official_api`-Flags
+- Graceful Imports: eine fehlende Bibliothek bei einem Provider blockiert nicht mehr den App-Start
+- Stabilitätsbadge (Stabil / Mittel / Fragil) in der Provider-Auswahl der Fahrzeugkonfiguration
+- `type=info` Config-Felder werden als gestylte Warning-Box gerendert
+
+**Dokumentation**
+- `docs/quickstart.md`: 5-Schritte-Kurzanleitung (Docker → Benutzer → Fahrzeug → Template → E-Mail)
+- `docs/anleitung.md`: vollständige Referenz aller Funktionen
+- `docs/provider-status.md`: Provider-Statustabelle mit bekannten Einschränkungen und HA-Fallback-Links
+- Hilfe-Links unter Konfiguration → Version & Update
+- README neu strukturiert mit Fokus auf Excel-Ladeabrechnung
+
+---
+
 ## v2.1.0 — 2026-06-07
 
 ### Erster Stable-Release: Heimladung, Fahrzeugprofil & Docker-Hardening

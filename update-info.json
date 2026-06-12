@@ -1,30 +1,26 @@
 {
-  "latest_version": "2.1.0",
-  "release_date": "2026-06-07",
+  "latest_version": "2.2.0",
+  "release_date": "2026-06-12",
   "channel": "stable",
-  "title": "Stable Release 2.1.0 — Heimladung, Fahrzeugprofil & Docker-Hardening",
+  "title": "Stable Release 2.2.0 — Provider-Review, AC/DC-Schätzung & Dokumentation",
   "summary": [
-    "Automatische Heimladungs-Erkennung über Wallbox/Energiezähler mit Fahrzeugzuordnung",
-    "go-e RFID/Ladekarten-Zuordnung: welche Karte hat geladen (confirmed/unassigned)",
-    "Schnelleingabe externe Ladung mit Smart-Defaults (letztes Fahrzeug, letzter Vertrag)",
-    "Fehlende Ladevorgänge erkennen: SOC-Vergleich nach Offline-Phasen mit Konfidenz-Score",
-    "Fahrzeugprofil-UI: dedizierte Profilseite mit Tabs, Provider-Felder zuverlässig befüllt",
-    "Update-Check read-only: kein In-App-Update, kein Docker-Socket-Mount",
-    "PUID/PGID-User-Mapping für Unraid/NAS-Betrieb",
-    "Security: PBKDF2-Passwort-Hashing, Credentials in API-Antworten maskiert, XSS-Fixes"
+    "AC/DC-Ladertyp wird automatisch geschätzt wenn API keine Info liefert (Priorität: Standort → Leistung → Schätzung)",
+    "Provider-Status: VW WeConnect seit Juni 2026 gesperrt — klare Fehlermeldung mit HA-Fallback-Empfehlung",
+    "Stabilitätsbadge für alle Provider in der Fahrzeugkonfiguration (Stabil / Mittel / Fragil)",
+    "Graceful Provider-Imports: fehlende Bibliothek bei einem Provider blockiert nicht mehr den App-Start",
+    "Neue Dokumentation: docs/quickstart.md, docs/anleitung.md, docs/provider-status.md",
+    "Hilfe-Links in Konfiguration → Version & Update",
+    "README neu strukturiert mit Fokus auf Excel-Ladeabrechnung"
   ],
   "fixes": [
-    "_resolve_vehicle: allow_probable-Bug behoben (default_vehicle_always + allow_probable=False → unassigned)",
-    "Fahrzeugprofil: Provider-Felder werden mit gespeicherten Werten befüllt (_vprofilFetchProviderFields)",
-    "PUT /api/vehicles: leere oder maskierte Passwortfelder überschreiben gespeicherte Secrets nicht",
-    "Mobile-UI: alle Buttons und Schnellaktionen vollständig funktionstüchtig",
-    "Status-Polling mit In-Flight-Guard und AbortController-Timeout (15 s)",
-    "Cache-Busting für JS/CSS via ASSET_VERSION-Suffix",
-    "/api/health: db_writable, startup_error, data_ok ohne Login abrufbar"
+    "VW / Audi Provider: test_connection gibt jetzt erklärende Fehlermeldung statt rohen Exception-Text",
+    "Provider-Felder type=info werden als styled Warning-Box gerendert (nicht als Textinput)",
+    "charger_type_source / charger_type_confidence werden korrekt in DB gespeichert und an API weitergegeben"
   ],
   "breaking_changes": [],
   "migration_notes": [
     "DB-Migrationen laufen automatisch beim Container-Start — kein manueller Eingriff nötig",
+    "VW WeConnect-Provider: Integration funktioniert seit Juni 2026 nicht mehr — auf Home Assistant Provider wechseln",
     "Empfehlung: /data-Verzeichnis vor dem Update sichern",
     "Unraid CA-Template: https://github.com/fdreckmann/ev-tracker-unraid-app"
   ],
