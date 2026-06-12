@@ -30,8 +30,8 @@ Fahrzeug lädt → EV Tracker erkennt den Ladevorgang automatisch
 | Provider | Laden | SOC | KM | Leistung | Standort | AC/DC |
 |----------|-------|-----|----|----------|----------|-------|
 | 🏠 Home Assistant | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| ⚠️ VW / Skoda / Seat / Cupra | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ |
-| ⚠️ Audi (MyAudi Connect) | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ |
+| 🚫 VW / Skoda / Seat / Cupra | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ |
+| 🚫 Audi (MyAudi Connect) | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ |
 | ⚡ Tesla (TeslaPy) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | 🔵 Volvo Cars API | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 | 🔷 BMW / Mini (bimmer-connected) | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
