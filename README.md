@@ -1,10 +1,27 @@
-# EV Tracker — Ladeprotokoll für Elektrofahrzeuge
+# EV Tracker — Automatische Ladeabrechnung für Elektrofahrzeuge
 
-Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API oder Home Assistant. Läuft als Docker Container auf Unraid oder jedem anderen Docker-Host.
+**EV Tracker** erstellt automatisch Excel-Reports deiner Ladevorgänge — damit du deine Ladekosten monatlich als Abrechnung an deinen Arbeitgeber schicken kannst, ohne manuell etwas zusammentragen zu müssen.
+
+Die App läuft als Docker Container auf Unraid, Synology, Proxmox oder jedem anderen Docker-Host. Sie verbindet sich direkt mit der Hersteller-API deines Fahrzeugs oder über Home Assistant und speichert jeden Ladevorgang mit Datum, Dauer, kWh, Kosten, Standort und AC/DC-Typ.
 
 ![Docker Hub](https://img.shields.io/docker/pulls/19121412/ev-tracker)
 ![GitHub Actions](https://github.com/fdreckmann/ev_tracker/actions/workflows/docker-build.yml/badge.svg)
 ![Version](https://img.shields.io/badge/version-2.1.0-blue)
+
+---
+
+## Hauptanwendungsfall
+
+```
+Fahrzeug lädt → EV Tracker erkennt den Ladevorgang automatisch
+             → speichert kWh, Kosten, Standort, AC/DC, SOC, KM-Stand
+             → erstellt monatlichen Excel-Report (eigenes Template oder vorgefertigt)
+             → verschickt den Report automatisch per E-Mail
+```
+
+**Typisches Szenario:** Du lädst dein Dienst- oder Privatfahrzeug regelmäßig zuhause. Am Monatsende soll dein Arbeitgeber die Ladekosten erstatten. EV Tracker protokolliert alles automatisch und schickt den fertigen Excel-Bericht auf Knopfdruck oder automatisch am Monatsende an die Buchhaltung.
+
+📖 **[Quickstart-Anleitung](docs/quickstart.md)** · **[Ausführliche Anleitung](docs/anleitung.md)**
 
 ---
 
@@ -13,8 +30,8 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 | Provider | Laden | SOC | KM | Leistung | Standort | AC/DC |
 |----------|-------|-----|----|----------|----------|-------|
 | 🏠 Home Assistant | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 🚗 VW / Skoda / Seat / Cupra | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ |
-| 🔵 Audi (MyAudi Connect) | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ |
+| 🚫 VW / Skoda / Seat / Cupra | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ |
+| 🚫 Audi (MyAudi Connect) | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ |
 | ⚡ Tesla (TeslaPy) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | 🔵 Volvo Cars API | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 | 🔷 BMW / Mini (bimmer-connected) | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
@@ -32,6 +49,12 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 | 🌐 TRONITY Aggregator (90+ Marken) | ✅ | ✅ | ✅ | ⚠ | ✅ | ⚠ |
 | 🌐 Enode Aggregator (50+ Marken) | ✅ | ✅ | ✅ | ⚠ | ✅ | ⚠ |
 | 🌐 Smartcar Aggregator (30+ Marken) | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| 🔵 XPeng (via Enode/TRONITY) | ✅¹ | ✅¹ | ✅¹ | — | ✅¹ | — |
+| 🟢 BYD (via Enode/TRONITY) | ✅¹ | ✅¹ | ✅¹ | — | ✅¹ | — |
+
+> ⚠ = nur teilweise / abhängig vom Modell · ❌ = nicht verfügbar · ¹ = empfohlen über Aggregator (keine stabile Direkt-API)
+>
+> **🚫 VW / Audi:** VW hat die WeConnect-API für Drittanwendungen ab **Juni 2026 gesperrt** — direkte Verbindung funktioniert nicht mehr. **Empfehlung: Home Assistant Provider** mit der VW WeConnect ID HACS-Integration verwenden. → [Provider-Status](docs/provider-status.md)
 
 ---
 
@@ -42,10 +65,12 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 | Feature | Beschreibung |
 |---------|-------------|
 | ⚡ Auto-Erkennung | Ladevorgänge werden automatisch erkannt und gespeichert |
-| ✏️ Manuell erfassen | Ladevorgänge nachträglich manuell anlegen (Desktop + Mobile) — mit Standort, AC/DC, kWh oder Zählerständen, SOC, KM-Stand, Kosten, Notiz, Grund |
-| 🔍 Fehlende Ladevorgänge | Automatische Erkennung verpasster Sessions via SOC-Delta-Analyse; Vorschlag mit Konfidenz-Score, Vorausfüll-Dialog, einmalig ignorieren oder dauerhaft ignorieren |
+| 📊 Excel-Report | Monatlicher Ladebericht als XLSX — eigenes Template oder vorgefertigt |
+| 📧 Auto-Versand | Excel-Report automatisch per E-Mail an Arbeitgeber oder Buchhaltung schicken |
+| ✏️ Manuell erfassen | Ladevorgänge nachträglich manuell anlegen (Desktop + Mobile) — mit Standort, AC/DC, kWh oder Zählerständen, SOC, KM-Stand, Kosten, Notiz |
+| 🔍 Fehlende Ladevorgänge | Automatische Erkennung verpasster Sessions via SOC-Delta-Analyse; Vorschlag mit Konfidenz-Score und Vorausfüll-Dialog |
 | 🏠 Standort | Unterscheidet Zuhause / Extern — GPS + Home Assistant Entities + Geofence + Zähler-Fallback |
-| 🔌 AC / DC | Ladertyp-Erkennung via Leistungssensor oder HA Sensor |
+| 🔌 AC / DC | Ladertyp-Erkennung via Leistungssensor oder HA Sensor; automatische Schätzung wenn API keine Info liefert |
 | 💰 Preismodell | Heimtarif fix · dynamisch via Tibber/Octopus/HA/EVCC · Extern via ENTSO-E oder EnBW Spotpreis |
 | 📋 Ladeabos | Öffentliche Ladepreis-Verträge (ADAC, EnBW, Ionity etc.) als Preisquelle für Extern-Sessions |
 | ✎ Manuelle Korrektur | Kosten, Standort, kWh, SOC, KM-Stand und alle weiteren Felder pro Session bearbeitbar |
@@ -58,7 +83,6 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 | 👥 Multi-User | Mehrere Benutzer mit Rollen und granularen Berechtigungen |
 | 🔐 Auth | E-Mail/Passwort, TOTP 2FA, Google/Microsoft OAuth, Passkeys (FIDO2) |
 | 🚗 Mehrfahrzeuge | Beliebig viele Fahrzeuge parallel tracken |
-| 🗃 Fahrzeug-Archiv | Soft-Delete (Archivieren) oder Hard-Delete mit Bestätigung |
 
 ### Excel Export & Templates
 
@@ -74,7 +98,7 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 | {{Platzhalter}} | 25+ Platzhalter in Templates: `{{month_year}}`, `{{total_kwh}}`, `{{meter_start_value}}` … |
 | 👁 Vorschau | Echte XLSX-Vorschau mit befüllten Daten vor dem Download |
 | 📄 PDF-Export | reportlab-basierter PDF-Report mit Kopfband, Zusammenfassung und Signaturfeld |
-| 🔢 Zähleranzeige | meter_old/meter_new im Export als ganze kWh (exakter Rohwert intern) |
+| 📅 Auto-Berichte | Automatische Reports: täglich, wöchentlich, monatlich, quartalsweise, jährlich, oder benutzerdefiniert |
 
 ### Zählerstand-Integration
 
@@ -82,7 +106,7 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 |----------|-----------|-------------|
 | Shelly (Gen1/Gen2/Pro/Plus) | HTTP RPC | Auto-Erkennung, EMData/EM1Data, Phasen A/B/C |
 | Tasmota | HTTP | SML-Sensor, benutzerdefinierter JSON-Pfad, Basic Auth |
-| go-e Charger | HTTP | |
+| go-e Charger | HTTP | RFID/Karten-Mapping |
 | openWB | HTTP | Konfigurierbarer Ladepunkt-Index |
 | WARP Charger | HTTP | |
 | EVCC | HTTP | |
@@ -92,9 +116,7 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 | Generic HTTP | HTTP | Beliebige URL, JSON-Pfad, Einheit konfigurierbar |
 | Home Assistant | REST | Beliebiger HA-Sensor (Wh/kWh/MWh auto-erkannt) |
 
-**Zähler-Scope (`meter_scope`):** Der lokale Stromzähler kann auf Zuhause-Ladevorgänge beschränkt werden (`home_only`, Standard). Externe Ladevorgänge überspringen die Zählerablesung automatisch. Der Grund wird pro Session gespeichert (`meter_skipped_reason`).
-
-**Zähler-basierte Heimerkennung:** Wenn Standort unbekannt ist und der lokale Zähler während des Ladens steigt, erkennt EV Tracker die Session automatisch als Zuhause. Schwellwert (Standard: 0,2 kWh / 10 Minuten) und Ratengrenze konfigurierbar.
+Der lokale Zähler kann auf Zuhause-Ladevorgänge beschränkt werden (`meter_scope = home_only`, Standard). Externe Ladevorgänge überspringen die Zählerablesung. Wenn Standort unbekannt ist und der lokale Zähler während des Ladens steigt, erkennt EV Tracker die Session automatisch als Zuhause.
 
 ### Stromtarif
 
@@ -103,14 +125,14 @@ Automatisches Ladeprotokoll für Elektrofahrzeuge via direkter Hersteller-API od
 | Fester Preis | Separat für Zuhause, AC Extern, DC Extern |
 | Tibber | Stündliche Spotpreise via GraphQL API |
 | Octopus Energy | Halbstündliche Tarife (Agile u.a.) via REST API |
-| Home Assistant | Beliebiger HA-Sensor als Preisquelle, inkl. History-API |
-| EVCC | Netz-Tarif aus `/api/state` (tariffGrid/gridPrice) |
+| Home Assistant | Beliebiger HA-Sensor als Preisquelle |
+| EVCC | Netz-Tarif aus `/api/state` |
 | Generic HTTP | Beliebige Preis-API mit JSON-Pfad |
 | ENTSO-E | Spotpreise für externe Ladevorgänge |
-| EnBW | Öffentliche Ladepreise via EnBW API (mit Subscription Key) |
-| Ladeabos | Eigene Vertrags-Preismodelle (kWh, Minute, Session-Fee) für öffentliche Ladevorgänge |
+| EnBW | Öffentliche Ladepreise via EnBW API |
+| Ladeabos | Eigene Vertrags-Preismodelle (kWh, Minute, Session-Fee) |
 
-Preise werden **zeitgewichtet** über den Ladezeitraum gemittelt. Bestehende Home-Sessions können im UI per Knopfdruck mit dem aktuellen Tarif neu berechnet werden.
+Dynamische Preise werden zeitgewichtet über den Ladezeitraum gemittelt. Bestehende Home-Sessions können per Knopfdruck mit dem aktuellen Tarif neu berechnet werden.
 
 ### Abrechnung & Reports
 
@@ -119,24 +141,11 @@ Preise werden **zeitgewichtet** über den Ladezeitraum gemittelt. Bestehende Hom
 | 📊 Auto-Berichte | Automatischer Monats-/Mehrmonats-Report per E-Mail |
 | 📁 Report-Archiv | Reports erstellen, verwalten, herunterladen, versenden, genehmigen |
 | 💼 Billing-Wizard | Schritt-für-Schritt Abrechnung: Fahrzeug, Zeitraum, Format, Signatur |
-| 📧 E-Mail-Versand | SMTP-Konfiguration, HTML-E-Mails mit Übersichtstabelle |
+| 📧 E-Mail-Versand | SMTP (inkl. OAuth2 für Google & Microsoft 365), HTML-Tabelle + Excel-Anhang |
 | 📄 PDF-Export | Professioneller PDF-Report mit reportlab |
 | 🔑 API-Tokens | SHA-256-gesicherte Tokens mit Scopes, einmalige Anzeige |
 | 📡 MQTT | Home Assistant Auto-Discovery, Fahrzeugstatus-Publish |
-| 🔔 Regeln | DB-getriebene Benachrichtigungsregeln mit Ruhezeitfenstern (ntfy, Gotify, Telegram, MQTT, E-Mail, Webhook) |
-| 🔔 Notification-Bell | Ungelesene Benachrichtigungen als Badge — kein permanentes Polling ohne Berechtigung |
-
-### Fahrzeug-Standorterkennung
-
-| Feature | Beschreibung |
-|---------|-------------|
-| 📍 GPS-Geofence | Haversine-Distanz zur Heimadresse, konfigurierbare Radius |
-| 🏠 HA Entities | Home Assistant `device_tracker` Entities als Standortquelle |
-| 🔀 Kombiniert | Provider-GPS + HA kombinierbar (any/all/provider_only/ha_only/manual) |
-| 📊 Zähler-Fallback | Steigender Wallbox-Zähler bei unbekanntem Standort → automatisch Zuhause |
-| 📜 Historie | Standort-Verlauf mit Zeitstempel (lat/lon nur mit `vehicles:location_exact_view`) |
-| 🏷 Standortquelle | Jede Session speichert die Erkennungsquelle: provider / ha / gps / meter_delta / manual |
-| 🔄 TTL-Cache | Standortabfrage intern gecacht (30 s) — verhindert HA-Stampede bei parallelen JS-Fetches |
+| 🔔 Regeln | Benachrichtigungsregeln mit Ruhezeitfenstern (ntfy, Gotify, Telegram, MQTT, E-Mail, Webhook) |
 
 ### Benutzerverwaltung & Sicherheit
 
@@ -151,27 +160,6 @@ Preise werden **zeitgewichtet** über den Ladezeitraum gemittelt. Bestehende Hom
 | 📝 Audit-Log | Alle sicherheitsrelevanten Aktionen protokolliert |
 | 🎭 Rollen | admin, user, readonly + eigene Rollen |
 | ✅ Berechtigungen | 70+ granulare Permissions, pro Rolle konfigurierbar |
-| 🛡 CSRF-Schutz | Alle POST/PUT/DELETE-Endpunkte geschützt |
-| 🔒 Security Headers | X-Frame-Options, X-Content-Type-Options, Referrer-Policy |
-| 🔑 Passwort-Hashing | PBKDF2:SHA-256 (werkzeug); Legacy-SHA-256-Hashes werden beim Login transparent migriert |
-
----
-
-## Berechtigungssystem (RBAC)
-
-Flexibles rollenbasiertes Berechtigungssystem mit 70+ granularen Permissions.
-
-**Standardrollen:**
-
-| Rolle | Beschreibung |
-|-------|-------------|
-| `admin` | Vollzugriff (`admin:all`) |
-| `user` | Normaler Benutzer — Export, Sessions, Fahrzeuge, Signatur |
-| `readonly` | Nur-Lese-Zugriff auf Dashboard, Sessions, Export-Vorschau |
-
-**Eigene Rollen:** Der Admin kann zusätzliche Rollen erstellen (z.B. Buchhaltung, Fuhrpark) und ihnen beliebige Berechtigungen zuweisen.
-
-**Berechtigungsgruppen:** Dashboard · Fahrzeuge · Ladevorgänge · Analyse · Export · Templates · Signatur · Zählerstand · Provider · Tarife · Einstellungen · Benutzer · Backup · Updates · Audit · System · MQTT · Benachrichtigungen
 
 ---
 
@@ -181,8 +169,6 @@ Das Unraid Community Apps Template wird in einem separaten Repository gepflegt:
 
 ➡ **https://github.com/fdreckmann/ev-tracker-unraid-app**
 
-Dort findest du das aktuelle CA-Template, Installationsanleitung und Icons.
-
 ### Kurzanleitung
 
 1. Community Apps → Suche nach **ev-tracker** → **Install**
@@ -190,17 +176,13 @@ Dort findest du das aktuelle CA-Template, Installationsanleitung und Icons.
 3. Zeitzone setzen (Standard: `Europe/Berlin`)
 4. **Apply** → Container startet automatisch
 
-### Web UI öffnen
-
 ```
 http://<unraid-ip>:8054
 ```
 
-→ Einrichtungsassistent folgen → Provider wählen → Verbindung einrichten → Speichern
-
 ---
 
-## Installation (normales Docker)
+## Installation (Docker)
 
 ```bash
 docker run -d --name ev-tracker \
@@ -212,78 +194,52 @@ docker run -d --name ev-tracker \
   19121412/ev-tracker:latest
 ```
 
-> **Sicherheitshinweis:** Der Docker Socket (`/var/run/docker.sock`) wird **nicht** benötigt und darf nicht gemountet werden. Updates erfolgen ausschließlich über Docker Compose, Unraid, Portainer oder Watchtower — nicht über die Web-UI.
+**Docker Compose:**
+
+```yaml
+services:
+  ev-tracker:
+    image: 19121412/ev-tracker:latest
+    restart: unless-stopped
+    ports:
+      - "8054:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      DATA_DIR: /data
+      TZ: Europe/Berlin
+```
+
+> **Sicherheitshinweis:** Der Docker Socket (`/var/run/docker.sock`) wird **nicht** benötigt und darf nicht gemountet werden.
 
 ---
 
 ## Benutzer & Berechtigungen (PUID / PGID)
 
-Der Container läuft **nicht als Root**. Der effektive User wird über `PUID` und `PGID` gesteuert — das `/data`-Volume muss demselben User gehören.
-
-### Werte setzen (empfohlen: `.env`-Datei)
-
-```bash
-cp .env.example .env
-# .env anpassen:
-PUID=10001   # Standard
-PGID=100
-```
+Der Container läuft nicht als Root. Der effektive User wird über `PUID` und `PGID` gesteuert — das `/data`-Volume muss demselben User gehören (Standard: `10001:100`).
 
 ```yaml
-# docker-compose.yml — liest automatisch aus .env:
-user: "${PUID:-10001}:${PGID:-100}"
+environment:
+  PUID: "10001"   # Standard
+  PGID: "100"
 ```
 
-### Für Unraid (nobody:users = 99:100)
-
-Unraid verwaltet Appdata standardmäßig als `nobody:users` (UID 99, GID 100). `.env` anpassen:
-
-```
-PUID=99
-PGID=100
-```
-
-Oder direkt in `docker-compose.yml`:
-
+Für Unraid (`nobody:users = 99:100`):
 ```yaml
-user: "99:100"
+environment:
+  PUID: "99"
+  PGID: "100"
 ```
 
-### /data-Berechtigungen anpassen (falls nötig)
-
-Der Eigentümer des `/data`-Verzeichnisses muss mit PUID:PGID übereinstimmen.
-
-**Unraid (Appdata-Pfad):**
+Falls nötig, Berechtigungen anpassen:
 ```bash
-chown -R 99:100 /mnt/user/appdata/ev-tracker
-chmod -R u+rwX,g+rwX /mnt/user/appdata/ev-tracker
+chown -R 99:100 /mnt/user/appdata/ev-tracker   # Unraid
+chown -R 10001:100 ./data                        # Standard
 ```
 
-**Standard (UID 10001):**
-```bash
-chown -R 10001:100 /mnt/user/appdata/ev-tracker
-```
+### Diagnose bei Zugriffsfehlern
 
-**Docker named volume:**
-```bash
-docker run --rm -v ev-tracker_data:/data alpine chown -R 10001:100 /data
-```
-
----
-
-## Fehlerbehebung
-
-### "First User Setup" erscheint obwohl Admin bereits existiert
-
-Ursache: Der Container kann `/data` nicht lesen oder schreiben — der Eigentümer stimmt nicht mit PUID:PGID überein.
-
-**Diagnose:** `/api/health` aufrufen — zeigt `db_writable`, `users_table_exists`, `users_count` und `startup_error` ohne Login.
-
-Lösung: PUID/PGID korrekt setzen (siehe oben) und `/data`-Berechtigungen anpassen.
-
-### "attempt to write a readonly database" / "Permission denied"
-
-Gleiche Ursache wie oben. Die App zeigt eine Fehlerseite mit dem konkreten Fix-Hinweis statt dem Setup-Formular.
+`/api/health` aufrufen (ohne Login) — zeigt `db_writable`, `users_count` und `startup_error`. Ursache ist fast immer ein PUID/PGID-Mismatch.
 
 ---
 
@@ -291,20 +247,12 @@ Gleiche Ursache wie oben. Die App zeigt eine Fehlerseite mit dem konkreten Fix-H
 
 Updates erfolgen **ausschließlich über den Container-Daemon** — kein Docker Socket, kein In-App-Update.
 
-### Docker Compose
 ```bash
-docker compose pull
-docker compose up -d
-docker image prune -f
+# Docker Compose:
+docker compose pull && docker compose up -d && docker image prune -f
+
+# Unraid: Update-Button neben dem Container
 ```
-
-### Unraid
-Container über die Unraid Docker-GUI aktualisieren (Update-Button neben dem Container).
-
-### Portainer / Watchtower
-Image auf `latest` aktualisieren oder Watchtower für automatische Updates konfigurieren.
-
-Die Web-UI zeigt unter **Konfiguration → Version & Update** ob eine neue Version verfügbar ist und was sich geändert hat — installiert wird dabei nichts.
 
 ### Image-Tags
 
@@ -316,68 +264,63 @@ Die Web-UI zeigt unter **Konfiguration → Version & Update** ob eine neue Versi
 
 ---
 
-## Reverse Proxy / External Mode
-
-Für den Betrieb hinter einem Reverse Proxy (nginx, Traefik, Caddy) die Umgebungsvariable setzen:
+## Reverse Proxy
 
 ```yaml
 environment:
-  EV_TRACKER_EXPOSURE: "external"
+  EV_TRACKER_EXPOSURE: "external"   # aktiviert HTTPS-Cookies, HSTS, ProxyFix
 ```
 
-**Was `external` aktiviert:**
-- `ProxyFix` — liest `X-Forwarded-Proto`, `X-Forwarded-For`, `Host` korrekt aus
-- Session-Cookies mit `Secure`, `HttpOnly`, `SameSite=Lax`
-- `Strict-Transport-Security` (HSTS)
-- `X-Frame-Options: DENY`
-- `Referrer-Policy: no-referrer`
-
-**Reverse-Proxy muss setzen:**
-```
-X-Forwarded-Proto: https
-X-Forwarded-For: <client-ip>
-Host: <your-domain>
-```
-
-**Intern (kein Reverse Proxy):**
-```yaml
-environment:
-  EV_TRACKER_EXPOSURE: "internal"   # default
-```
-Kein Secure-Cookie-Zwang, kein HSTS. Direkter HTTP-Zugriff im lokalen Netz.
-
----
-
-## Preismodell
-
-```
-🏠 Zuhause  → Fixer Heimtarif oder dynamisch (Tibber/Octopus/HA/EVCC/Generic HTTP)
-🔌 Extern   → Ladeabo · EnBW · ENTSO-E Spot · Fixpreis (AC/DC getrennt konfigurierbar)
-✎ Manuell  → Jede Session einzeln korrigierbar
-```
-
-Dynamische Preise werden **zeitgewichtet** über den Ladezeitraum gemittelt (z.B. 30 min zu 0,25 € + 30 min zu 0,35 € = 0,30 €/kWh). Bei API-Fehler greift automatisch der konfigurierte Fallback-Preis.
-
-### ENTSO-E API Key (optional, für externe Ladevorgänge)
-
-1. Registrieren auf [transparency.entsoe.eu](https://transparency.entsoe.eu)
-2. Email an `transparency@entsoe.eu` — Betreff: "Restful API access"
-3. Key per Email erhalten (wenige Tage)
-4. Im Web UI → Konfiguration → ENTSO-E eintragen
+Der Reverse Proxy muss `X-Forwarded-Proto: https` und `X-Forwarded-For` setzen.
 
 ---
 
 ## Dateistruktur
 
 ```
-/mnt/user/appdata/ev-tracker/
-├── config.json          ← Konfiguration
-├── sessions.db          ← SQLite Datenbank (Users, Sessions, Vehicles, Roles …)
-├── template.xlsx        ← Eigene Excel-Vorlage (optional)
-├── signature.png        ← Unterschrift für Export (optional)
-├── exports/             ← Generierte Monatsberichte
-└── backups/             ← Automatische Backups
+/data/                          ← Volume-Mount
+├── config.json                 ← Konfiguration (alle Einstellungen)
+├── sessions.db                 ← SQLite (Sessions, Users, Vehicles, Rollen …)
+├── template.xlsx               ← Eigene Excel-Vorlage (optional)
+├── signature.png               ← Unterschrift für Export (optional)
+├── exports/                    ← Generierte Monatsberichte
+└── backups/                    ← Automatische Backups
 ```
+
+---
+
+## Bekannte Einschränkungen
+
+- Manche Provider-APIs liefern keinen Standort oder AC/DC-Typ — EV Tracker versucht, diese Werte automatisch zu schätzen (Leistungsschwelle, Zähler, Standorthistorie). Unsichere Werte können manuell korrigiert werden.
+- Verpasste Ladevorgänge (Fahrzeug war offline) werden erkannt, müssen aber vom Nutzer bestätigt werden.
+- Dynamic Pricing (Tibber/Octopus) erfordert einen gültigen API-Key und Internetzugang.
+- Der PDF-Export hat ein einfacheres Layout als der Excel-Export; für Arbeitgeberabrechnungen empfiehlt sich XLSX.
+
+---
+
+## Technologie
+
+| Bereich | Technologie |
+|---------|-------------|
+| Backend | Python 3.12 + Flask (modular via Blueprints) |
+| Datenbank | SQLite (WAL-Modus) |
+| Frontend | Vanilla JS + Chart.js (responsive, PWA-fähig) |
+| Excel | openpyxl |
+| PDF | reportlab |
+| Auth | Flask-Session, pyotp (TOTP), py_webauthn (FIDO2), Authlib (OAuth) |
+| Fahrzeug-APIs | bimmer-connected, teslaPy, myrenaultapi, bluelinky u.v.m. |
+| CI/CD | GitHub Actions → Docker Hub |
+| Hosting | Docker (Unraid, Synology, Proxmox, bare metal …) |
+
+---
+
+## Dokumentation
+
+| Dokument | Inhalt |
+|----------|--------|
+| [docs/quickstart.md](docs/quickstart.md) | Schnelleinstieg: Installation und erste Abrechnung |
+| [docs/anleitung.md](docs/anleitung.md) | Ausführliche Anleitung mit allen Features |
+| [CHANGELOG.md](CHANGELOG.md) | Versionshistorie |
 
 ---
 
@@ -388,35 +331,6 @@ git clone https://github.com/fdreckmann/ev_tracker.git
 cd ev_tracker
 pip install -r requirements.txt
 python app/server.py
-
-# oder via Docker:
-docker build -t ev-tracker:latest .
-docker run -d --name ev-tracker -p 8054:8080 \
-  -v $(pwd)/data:/data -e DATA_DIR=/data -e TZ=Europe/Berlin \
-  ev-tracker:latest
 ```
 
 Änderungen pushen → GitHub Actions baut automatisch → Docker Hub.
-
----
-
-## Technologie
-
-| Bereich | Technologie |
-|---------|-------------|
-| Backend | Python 3.12 + Flask (modular via Blueprints) |
-| Datenbank | SQLite (WAL-Modus, 21+ Indexe) |
-| Frontend | Vanilla JS + Chart.js (responsive, PWA-fähig) |
-| Excel | openpyxl |
-| PDF | reportlab |
-| Authentifizierung | Flask-Session, pyotp (TOTP), py_webauthn (FIDO2), Authlib (OAuth) |
-| Fahrzeug-APIs | bimmer-connected, teslaPy, myrenaultapi, bluelinky u.v.m. |
-| Tarif-APIs | Tibber GraphQL, Octopus Energy REST, ENTSO-E, EnBW, Home Assistant, EVCC, Generic HTTP |
-| CI/CD | GitHub Actions → Docker Hub |
-| Hosting | Docker (Unraid, Synology, Proxmox, bare metal …) |
-
----
-
-## Changelog
-
-Alle Versionen und Änderungen: **[CHANGELOG.md](CHANGELOG.md)**

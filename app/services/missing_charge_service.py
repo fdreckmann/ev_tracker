@@ -30,6 +30,44 @@ _HIST_CONS_MIN = 8.0
 _HIST_CONS_MAX = 35.0
 
 
+def suggest_charger_type(
+    location: str | None,
+    power_kw: float | None,
+    kwh: float | None,
+    duration_hours: float | None,
+    meter_confirmed: bool,
+    cfg: dict,
+) -> dict:
+    """Suggest charger type from available signals.
+
+    Returns {"type": "ac"|"dc"|"unknown", "source": str, "confidence": int}.
+    Priority: home location / meter → peak power_kw → estimated average power → unknown.
+    Caller must check manual overrides before calling this function.
+    """
+    threshold = float(cfg.get("dc_threshold_kw", 22.0))
+
+    # Home location or meter-confirmed home charge → always AC
+    if meter_confirmed or location == "home":
+        src = "meter_home" if meter_confirmed else "location_home"
+        return {"type": "ac", "source": src, "confidence": 88 if meter_confirmed else 75}
+
+    # Real-time or peak power known
+    if power_kw and power_kw > 0:
+        ctype = "dc" if power_kw >= threshold else "ac"
+        margin = abs(power_kw - threshold) / max(threshold, 1.0)
+        conf = min(90, 70 + int(margin * 25))
+        return {"type": ctype, "source": "power_kw", "confidence": conf}
+
+    # Estimated average power from kWh + duration
+    if kwh and kwh > 0 and duration_hours and duration_hours > 0:
+        avg = kwh / duration_hours
+        if avg > 0.3:
+            ctype = "dc" if avg >= threshold else "ac"
+            return {"type": ctype, "source": "estimated_power", "confidence": 50}
+
+    return {"type": "unknown", "source": "none", "confidence": 0}
+
+
 def save_snapshot(vehicle_id: str, soc, odometer_km, range_km,
                   location_status: str, provider: str, con) -> int | None:
     """Persist a vehicle state snapshot. Returns the new row id, or None if skipped."""
@@ -633,6 +671,7 @@ def check_for_missing_charge(vehicle_id: str, new_snap_id: int, cfg: dict, con) 
     base_confidence = cand["base_confidence"]
     meter_delta_kwh: float | None = None
     meter_confirmed = 0
+    _meter_no_change_reason: str | None = None
     if cfg.get("missing_charge_meter_fusion_enabled", True):
         try:
             from services.meter_snapshot_service import (
@@ -666,24 +705,68 @@ def check_for_missing_charge(vehicle_id: str, new_snap_id: int, cfg: dict, con) 
                     base_confidence += int(round(mconf * 10))
             elif delta < min_d:
                 # No meaningful rise on a home meter → supports an external stop.
+                mconf = meter_type_confidence(mtype)
                 evidence["signals"].append("meter_no_change")
                 evidence["meter"] = {
                     "source": md["source"], "meter_type": mtype,
                     "delta_kwh": delta, "confidence": 0.0,
                     "start_ts": md["start_ts"], "end_ts": md["end_ts"],
                 }
+                if suggested_location == "unknown":
+                    # Meter available and no home rise → charge was external.
+                    suggested_location = "extern"
+                    evidence["signals"].append("meter_no_change_external")
+                    evidence["meter"]["no_change_inference"] = "extern"
+                    # Confidence targets: EV/wallbox 75–85, house_total 60–70, unknown 50–60.
+                    # The +10 for known location is applied below, so aim 10 pts lower here.
+                    if is_ev_meter(mtype):
+                        base_confidence = max(base_confidence, 72)
+                    elif mtype == "house_total":
+                        base_confidence = max(base_confidence, 57)
+                    else:
+                        base_confidence = max(base_confidence, 47)
+                    _meter_no_change_reason = (
+                        f"Home-/Wallbox-Zähler ({mtype}) im Ladezeitraum "
+                        f"unverändert (+{delta:.2f} kWh) → extern vermutet"
+                    )
+                elif suggested_location == "extern":
+                    # Location source already said extern — meter no-change confirms it.
+                    evidence["signals"].append("meter_no_change_external")
+                    evidence["meter"]["no_change_inference"] = "extern_confirmed"
+                    base_confidence += int(round(mconf * 10))
+                    _meter_no_change_reason = (
+                        f"Home-/Wallbox-Zähler ({mtype}) bestätigt extern "
+                        f"(unverändert, +{delta:.2f} kWh)"
+                    )
+                elif suggested_location == "home":
+                    # Conflict: location source says home but meter didn't change.
+                    evidence["signals"].append("meter_no_change_home_conflict")
+                    evidence["meter"]["no_change_inference"] = "home_conflict"
+                    _meter_no_change_reason = (
+                        f"Standortquelle sagt home, aber Home-/Wallbox-Zähler "
+                        f"({mtype}) im Ladezeitraum unverändert (+{delta:.2f} kWh)"
+                    )
 
     # ── Charger type suggestion ───────────────────────────────────────────────
     gap_hours = gap_minutes / 60.0
     avg_power_kw = round(estimated_kwh / gap_hours, 2) if gap_hours > 0 else None
-    if not avg_power_kw or avg_power_kw <= 0:
+    _sct = suggest_charger_type(
+        location=suggested_location,
+        power_kw=avg_power_kw,
+        kwh=estimated_kwh,
+        duration_hours=gap_hours,
+        meter_confirmed=meter_confirmed,
+        cfg=cfg,
+    )
+    suggested_charger_type = _sct["type"]
+    suggested_charger_type_source = _sct["source"]
+    suggested_charger_type_confidence = _sct["confidence"]
+    # Long gap + implausibly low avg power + large kWh: estimate is unreliable
+    if (gap_hours > 8 and avg_power_kw is not None
+            and avg_power_kw < 1.5 and estimated_kwh > 20):
         suggested_charger_type = "unknown"
-    elif avg_power_kw > 22:
-        suggested_charger_type = "dc"
-    else:
-        suggested_charger_type = "ac"
-    if gap_hours > 8 and avg_power_kw and avg_power_kw < 1.5 and estimated_kwh > 20:
-        suggested_charger_type = "unknown"
+        suggested_charger_type_source = "none"
+        suggested_charger_type_confidence = 0
 
     confidence = base_confidence
     if suggested_location != "unknown":
@@ -693,6 +776,8 @@ def check_for_missing_charge(vehicle_id: str, new_snap_id: int, cfg: dict, con) 
     reason = cand["reason"]
     if meter_confirmed and meter_delta_kwh is not None:
         reason = f"{reason} · Zähler bestätigt +{meter_delta_kwh:.1f} kWh"
+    elif _meter_no_change_reason:
+        reason = f"{reason} · {_meter_no_change_reason}"
     evidence_json = json.dumps(evidence, ensure_ascii=False)
 
     # ── Plausibler Kilometerstand zum Ladezeitpunkt ───────────────────────────
@@ -713,7 +798,8 @@ def check_for_missing_charge(vehicle_id: str, new_snap_id: int, cfg: dict, con) 
            (vehicle_id, snapshot_before_id, snapshot_after_id, start_ts, end_ts,
             soc_start, soc_end, odo_start, odo_end, driven_km,
             estimated_kwh, estimated_consumption_kwh, estimated_battery_delta_kwh,
-            estimated_avg_power_kw, suggested_charger_type, suggested_location,
+            estimated_avg_power_kw, suggested_charger_type, suggested_charger_type_source,
+            suggested_charger_type_confidence, suggested_location,
             confidence, reason, status, created_at, updated_at,
             candidate_type, expected_consumption_kwh_per_100km,
             observed_consumption_kwh_per_100km, expected_energy_kwh,
@@ -723,12 +809,13 @@ def check_for_missing_charge(vehicle_id: str, new_snap_id: int, cfg: dict, con) 
             evidence_json, meter_delta_kwh, meter_confirmed,
             suggested_odometer_km, suggested_odometer_confidence,
             suggested_odometer_source)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             vehicle_id, prev_id, new_snap_id, prev_ts, new_ts,
             prev_soc, new_soc, prev_odo, new_odo, driven_km,
             estimated_kwh, cand["estimated_consumption_kwh"], cand["estimated_battery_delta_kwh"],
-            avg_power_kw, suggested_charger_type, suggested_location,
+            avg_power_kw, suggested_charger_type, suggested_charger_type_source,
+            suggested_charger_type_confidence, suggested_location,
             confidence, reason, "open", now, now,
             cand["candidate_type"], cand["expected_consumption_kwh_per_100km"],
             cand["observed_consumption_kwh_per_100km"], cand["expected_energy_kwh"],

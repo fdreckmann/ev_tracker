@@ -21,16 +21,22 @@ class VWProvider(BaseProvider):
     PROVIDER_ID   = "vw"
     PROVIDER_NAME = "VW / Audi / Skoda / Seat (WeConnect ID)"
     CAPABILITIES  = ProviderCapabilities(
-        charging_state = True,
-        soc            = True,
-        odometer       = True,
-        charge_power   = True,
-        location       = True,
-        charge_type    = False,
+        charging_state  = True,
+        soc             = True,
+        odometer        = True,
+        charge_power    = True,
+        location        = True,
+        charge_type     = False,
+        official_api    = False,
+        requires_oauth  = False,
+        requires_password = True,
+        stability_level = "fragile",
+        region_support  = "EU",
         notes          = [
+            "🚫 API nicht mehr nutzbar — VW hat WeConnect für Drittanwendungen ab Juni 2026 gesperrt",
+            "Verbindungen schlagen fehl — direkte Integration ist aktuell nicht funktionsfähig",
+            "Bitte Home Assistant Provider verwenden (VW WeConnect ID HACS-Integration)",
             "AC/DC Erkennung nicht direkt verfügbar — wird via Leistungsschwelle berechnet",
-            "Standort liefert nur home/nicht-home — keine genaue Position",
-            "API ist inoffiziell — kann sich ohne Vorwarnung ändern",
         ]
     )
 
@@ -114,13 +120,21 @@ class VWProvider(BaseProvider):
             return {"ok": False, "message": "weconnect Bibliothek fehlt — requirements.txt prüfen"}
         try:
             v = self._get_vehicle()
-            return {"ok": True, "message": f"✅ Verbunden · Fahrzeug: {v.nickname.value or v.vin.value}"}
+            return {"ok": True, "message": f"✅ Verbunden · Fahrzeug: {v.nickname.value or v.vin.value} "
+                                           f"(⚠️ API gesperrt seit Juni 2026 — bei nächsten Fehlern HA-Provider verwenden)"}
         except Exception as e:
-            return {"ok": False, "message": f"❌ {e}"}
+            return {"ok": False, "message": f"❌ Verbindung fehlgeschlagen: {e} — "
+                                            f"VW hat die WeConnect-API gesperrt (Juni 2026). "
+                                            f"Bitte Home Assistant Provider verwenden."}
 
     @classmethod
     def get_config_fields(cls) -> list[dict]:
         return [
+            {"id":"_vw_api_warning", "label":"🚫 VW WeConnect API gesperrt (Juni 2026)", "type":"info",
+             "placeholder":"VW hat die WeConnect-API für Drittanwendungen ab Juni 2026 gesperrt. "
+                           "Verbindungen schlagen fehl. Bitte Home Assistant Provider verwenden — "
+                           "dort ist die VW WeConnect ID HACS-Integration verfügbar und funktioniert zuverlässig.",
+             "required":False},
             {"id":"vw_username",    "label":"WeConnect ID Email",       "type":"text",     "placeholder":"email@example.com", "required":True},
             {"id":"vw_password",    "label":"WeConnect ID Passwort",    "type":"password", "placeholder":"",                  "required":True},
             {"id":"vw_vin",         "label":"Fahrzeug VIN (optional)",  "type":"text",     "placeholder":"WVWZZZE1ZME000000","required":False,

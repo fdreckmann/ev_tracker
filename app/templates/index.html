@@ -2772,7 +2772,32 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
         </div>
 
         <button class="btn-s" style="font-size:.78rem;margin-top:8px" onclick="loadUpdateInfo(true)">🔄 Jetzt prüfen</button>
-      </div>
+
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--brd)">
+          <div style="font-size:.7rem;font-family:var(--mono);color:var(--mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Dokumentation &amp; Hilfe</div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <a href="https://github.com/fdreckmann/ev_tracker/blob/main/docs/quickstart.md"
+               target="_blank" rel="noopener noreferrer"
+               style="font-size:.78rem;color:var(--acc2);text-decoration:none;display:flex;align-items:center;gap:6px">
+              📖 Quickstart-Anleitung
+            </a>
+            <a href="https://github.com/fdreckmann/ev_tracker/blob/main/docs/anleitung.md"
+               target="_blank" rel="noopener noreferrer"
+               style="font-size:.78rem;color:var(--acc2);text-decoration:none;display:flex;align-items:center;gap:6px">
+              📚 Ausführliche Anleitung
+            </a>
+            <a href="https://github.com/fdreckmann/ev_tracker/blob/main/README.md"
+               target="_blank" rel="noopener noreferrer"
+               style="font-size:.78rem;color:var(--mute);text-decoration:none;display:flex;align-items:center;gap:6px">
+              📋 README (Provider, Installation, Features)
+            </a>
+            <a href="https://github.com/fdreckmann/ev_tracker/issues"
+               target="_blank" rel="noopener noreferrer"
+               style="font-size:.78rem;color:var(--mute);text-decoration:none;display:flex;align-items:center;gap:6px">
+              🐛 Fehler melden / Feature-Wunsch
+            </a>
+          </div>
+        </div>
       <!-- Backup Codes Modal -->
       <div id="backupCodesModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
         <div style="background:var(--surf);border:1px solid var(--brd);border-radius:16px;padding:32px;max-width:360px;width:100%;margin:16px">
@@ -4915,7 +4940,7 @@ $('expM')?.addEventListener('change',()=>{ _lastExportPreviewToken=null; loadExp
 
 
 function escapeHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 function normalizeRows(rows) {
@@ -5237,8 +5262,10 @@ async function openCandidateAcceptDialog(id){
   const r = await apiFetch('/api/missing-charges/'+id+'/accept',{method:'POST'}).then(x=>x.json()).catch(()=>({ok:false}));
   if(!r.ok){ toast('Fehler: '+(r.error||'unbekannt'), 'err'); return; }
   const c = r.prefill;
-  // Pre-fill the add-session modal with candidate data
-  openAddSessionModal();
+  // Pre-fill the add-session modal with candidate data.
+  // await so the form reset (including _addSessionCandidateId = null) completes first.
+  await openAddSessionModal();
+  _addSessionCandidateId = r.candidate_id;
   setTimeout(()=>{
     if($('as_start'))    $('as_start').value    = c.start_ts ? c.start_ts.replace('T',' ').substring(0,16) : '';
     if($('as_end'))      $('as_end').value      = c.end_ts   ? c.end_ts.replace('T',' ').substring(0,16)   : '';
@@ -6551,6 +6578,8 @@ async function loadContracts(){
   }catch(e){ const el=$('contract_list'); if(el) el.innerHTML='<div style="color:#f87171;font-size:.78rem">'+escapeHtml(e.message||'Fehler')+'</div>'; }
 }
 
+window._builtinContractsById = {};
+
 async function loadBuiltinContracts(){
   try{
     const [builtins, existing] = await Promise.all([
@@ -6560,11 +6589,14 @@ async function loadBuiltinContracts(){
     const importedNames = new Set((existing||[]).map(c=>c.name));
     const el=$('builtin_contract_list');
     if(!el) return;
-    el.innerHTML=builtins.map(c=>{
+    window._builtinContractsById = {};
+    el.innerHTML=builtins.map((c,i)=>{
+      const key = String(c.id || 'idx_'+i);
+      window._builtinContractsById[key] = c;
       const imported=importedNames.has(c.name);
       const btn=imported
         ? `<span style="font-size:.72rem;color:var(--acc);font-weight:600">✓ Importiert</span>`
-        : `<button class="btn-s" style="font-size:.72rem;padding:3px 8px" onclick="importBuiltinContract(${JSON.stringify(JSON.stringify(c))})" data-requires-permission="public_charging:manage_contracts">📥 Importieren</button>`;
+        : `<button class="btn-s" style="font-size:.72rem;padding:3px 8px" data-builtin-id="${escapeHtml(key)}" onclick="importBuiltinContractById(this.dataset.builtinId)" data-requires-permission="public_charging:manage_contracts">📥 Importieren</button>`;
       return `<div style="padding:10px 12px;background:var(--surf2);border-radius:8px;border:1px solid ${imported?'var(--acc)':'var(--brd)'}">
         <div style="font-size:.82rem;font-weight:600;margin-bottom:2px">${escapeHtml(c.name)}</div>
         <div style="font-size:.72rem;color:var(--mute);margin-bottom:6px">${escapeHtml(c.description||'')}
@@ -6579,23 +6611,25 @@ async function loadBuiltinContracts(){
   }catch(e){ console.warn('loadBuiltinContracts',e); }
 }
 
-async function importBuiltinContract(jsonStr){
+async function importBuiltinContractById(id){
+  const c = window._builtinContractsById[id];
+  if(!c){ console.error('importBuiltinContractById: unbekannte Vorlage', id); toast('Ungültige Vorlage','err'); return; }
   try{
-    const c=JSON.parse(jsonStr);
     const res=await apiFetch('/api/charging-contracts',{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({name:c.name,cpo:c.cpo||'',price_ac_kwh:c.price_ac_kwh,price_dc_kwh:c.price_dc_kwh,monthly_fee_eur:c.monthly_fee_eur||0,notes:c.description||''})
     });
-    const r=await res.json();
+    const r=await res.json().catch(()=>({}));
     if(r.id){
       const dflt=r.is_default?' (als Standard gesetzt)':'';
-      toast(`✓ ${escapeHtml(c.name)} importiert${dflt}`);
+      toast(`✓ ${c.name} importiert${dflt}`);
       await loadContracts();
       await loadBuiltinContracts();
     } else {
-      toast(r.error||'Fehler beim Importieren','err');
+      console.warn('importBuiltinContractById failed', res.status, r);
+      toast(r.error||(res.status===409?'Vorlage existiert bereits':res.status===403?'Keine Berechtigung':'Fehler beim Importieren'),'err');
     }
-  }catch(e){ toast(e.message,'err'); }
+  }catch(e){ console.error('importBuiltinContractById', e); toast(e.message||'Netzwerkfehler','err'); }
 }
 
 function showContractForm(data){
@@ -7463,6 +7497,10 @@ function openMobileSheet(html) {
 }
 
 function closeMobileSheet() {
+  if (window._mobileSessionCandidateId) {
+    apiFetch('/api/missing-charges/'+window._mobileSessionCandidateId+'/revert',{method:'POST'}).catch(function(){});
+    window._mobileSessionCandidateId = null;
+  }
   const overlay = document.getElementById('mobileSheet');
   if (overlay) overlay.classList.remove('open');
   document.body.style.overflow = '';
@@ -7471,6 +7509,7 @@ function closeMobileSheet() {
 // ─── Session manuell hinzufügen ──────────────────────────
 
 async function openMobileSessionCreate() {
+  window._mobileSessionCandidateId = null; // reset for manual opens; set by mobileMissingChargeAccept when from candidate
   const vehicles = window._allVehicles || await apiFetch('/api/vehicles').then(r=>r.json()).catch(()=>[]);
   window._allVehicles = vehicles;
   const now = new Date();
@@ -7664,6 +7703,7 @@ async function submitMobileSession(force) {
   if (!isNaN(mOld))     body.meter_old         = mOld;
   if (!isNaN(mNew))     body.meter_new         = mNew;
   if (!isNaN(pwrVal))   body.charger_power_kw  = pwrVal;
+  if (window._mobileSessionCandidateId) body.missing_charge_candidate_id = window._mobileSessionCandidateId;
 
   if (res) res.innerHTML='<p style="color:var(--mute)">⏳ Speichere…</p>';
   const r = await apiFetch('/api/sessions/manual',{
@@ -7671,6 +7711,7 @@ async function submitMobileSession(force) {
   }).then(x=>x.json()).catch(e=>({ok:false,error:e.message}));
 
   if (r.ok) {
+    window._mobileSessionCandidateId = null; // already accepted — no revert on close
     closeMobileSheet();
     toast('✅ Ladevorgang #'+r.id+' gespeichert','ok');
     if (typeof loadMobileSessions === 'function') await loadMobileSessions();
@@ -8771,8 +8812,12 @@ function testNotifChannel(channel) {
       card.onclick = function(){ _vprofilSelectProvider(p.provider_id); };
       card.style.cssText = 'background:var(--bg);border:2px solid '+(selected?'var(--acc)':'var(--brd)')+
         ';border-radius:10px;padding:12px 14px;cursor:pointer;transition:all .15s';
-      card.innerHTML = '<div style="font-weight:700;font-size:.8rem;color:'+(selected?'var(--acc)':'#fff')+'">'+
-        _eh(p.provider_name)+'</div>'+
+      var stabColor = p.stability_level === 'stable' ? '#22c55e' : p.stability_level === 'fragile' ? '#ef4444' : '#f59e0b';
+      var stabLabel = p.stability_level === 'stable' ? '● Stabil' : p.stability_level === 'fragile' ? '⚠ Fragil' : '● Mittel';
+      card.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
+        '<div style="font-weight:700;font-size:.8rem;color:'+(selected?'var(--acc)':'#fff')+'">'+_eh(p.provider_name)+'</div>'+
+        '<span style="font-size:.6rem;color:'+stabColor+';font-family:var(--mono);white-space:nowrap;margin-left:6px">'+stabLabel+'</span>'+
+        '</div>'+
         '<div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);margin-top:5px;line-height:1.7">'+
         (p.charging_state?'✅':'❌')+' Laden &nbsp;'+(p.soc?'✅':'❌')+' SOC<br>'+
         (p.odometer?'✅':'❌')+' KM &nbsp;'+(p.charge_power?'✅':'❌')+' kW &nbsp;'+(p.location?'✅':'❌')+' Standort</div>';
@@ -8837,7 +8882,10 @@ function testNotifChannel(channel) {
     fields.forEach(function(f){
       var wrap = document.createElement('div'); wrap.className = 'fg full';
       var val = existingVehicle ? (existingVehicle[f.id]||'') : '';
-      if(f.type==='select'){
+      if(f.type==='info'){
+        wrap.innerHTML = '<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:6px;padding:9px 12px;font-size:.72rem;color:#f59e0b;line-height:1.6;font-family:var(--mono)">'+
+          _eh(f.placeholder||f.label)+'</div>';
+      } else if(f.type==='select'){
         wrap.innerHTML = '<label>'+_eh(f.label)+'</label>'+
           '<select id="vpf_'+_eh(f.id)+'">'+(f.options||[]).map(function(o){
             return '<option value="'+_eh(o)+'"'+(o===val?' selected':'')+'>'+_eh(o)+'</option>';

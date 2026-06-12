@@ -14,14 +14,19 @@ class VolvoProvider(BaseProvider):
     PROVIDER_ID   = "volvo"
     PROVIDER_NAME = "Volvo"
     CAPABILITIES  = ProviderCapabilities(
-        charging_state = True,
-        soc            = True,
-        odometer       = False,
-        charge_power   = False,
-        location       = False,
-        charge_type    = False,
-        notes          = [
-            "Offizielle API — stabil und zuverlässig",
+        charging_state  = True,
+        soc             = True,
+        odometer        = False,
+        charge_power    = False,
+        location        = False,
+        charge_type     = False,
+        official_api    = True,
+        requires_oauth  = True,
+        requires_password = False,
+        stability_level = "stable",
+        region_support  = "global",
+        notes           = [
+            "Offizielle Volvo Cars API (developer.volvocars.com) — stabil und zuverlässig",
             "Kilometerstand nicht verfügbar via API",
             "Ladeleistung nicht verfügbar — AC/DC Erkennung nicht möglich",
             "Standort nicht verfügbar via API",
@@ -175,14 +180,19 @@ class MercedesProvider(BaseProvider):
     PROVIDER_ID   = "mercedes"
     PROVIDER_NAME = "Mercedes-Benz"
     CAPABILITIES  = ProviderCapabilities(
-        charging_state = True,
-        soc            = True,
-        odometer       = True,
-        charge_power   = False,
-        location       = False,
-        charge_type    = False,
-        notes          = [
-            "Offizielle Mercedes API — benötigt Developer Account",
+        charging_state  = True,
+        soc             = True,
+        odometer        = True,
+        charge_power    = False,
+        location        = False,
+        charge_type     = False,
+        official_api    = True,
+        requires_oauth  = True,
+        requires_password = False,
+        stability_level = "stable",
+        region_support  = "global",
+        notes           = [
+            "Offizielle Mercedes-Benz API (developer.mercedes-benz.com) — stabil",
             "Ladeleistung und Standort nicht verfügbar",
             "Kostenloser Developer-Zugang unter developer.mercedes-benz.com",
         ]

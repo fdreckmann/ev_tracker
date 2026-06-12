@@ -103,6 +103,7 @@ async function delSession(id){
 // ── Manual Add Modal ─────────────────────────────────────────────────────────
 
 var _addSessionOverlapData = null;
+var _addSessionCandidateId = null;
 
 async function openAddSessionModal() {
   var vehicles = [];
@@ -150,12 +151,17 @@ async function openAddSessionModal() {
   $('as_result').innerHTML = '';
   $('as_overlap_row').style.display = 'none';
   _addSessionOverlapData = null;
+  _addSessionCandidateId = null;
 
   modal.style.display = 'flex';
   $('as_start').focus();
 }
 
 function closeAddSessionModal() {
+  if (_addSessionCandidateId) {
+    apiFetch('/api/missing-charges/'+_addSessionCandidateId+'/revert', {method:'POST'}).catch(function(){});
+    _addSessionCandidateId = null;
+  }
   var modal = $('addSessionModal');
   if (modal) modal.style.display = 'none';
   _addSessionOverlapData = null;
@@ -258,6 +264,7 @@ async function submitAddSession(force) {
   if (!isNaN(m_new)) body.meter_new       = m_new;
   if (!isNaN(cpwr))  body.charger_power_kw= cpwr;
   if (!isNaN(mpwr))  body.max_power_kw    = mpwr;
+  if (_addSessionCandidateId) body.missing_charge_candidate_id = _addSessionCandidateId;
 
   res.innerHTML = '<p style="color:var(--mute)">⏳ Speichere…</p>';
 
@@ -268,6 +275,7 @@ async function submitAddSession(force) {
   }).then(function(x){return x.json();}).catch(function(e){return {ok:false,error:e.message};});
 
   if (r.ok) {
+    _addSessionCandidateId = null; // already accepted by backend — no revert on close
     closeAddSessionModal();
     toast('✅ Session #' + r.id + ' gespeichert');
     loadSessions();

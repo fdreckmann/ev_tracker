@@ -221,8 +221,9 @@ def api_manual_session_create():
     from core.location import normalize_location as _normalize_location
     location = _normalize_location((data.get("location") or "home").strip())
 
-    charger_type = (data.get("charger_type") or "unknown").strip()
-    if charger_type not in ("ac", "dc", "unknown"):
+    _raw_ct = (data.get("charger_type") or "").strip()
+    charger_type = _raw_ct if _raw_ct in ("ac", "dc", "unknown") else "unknown"
+    if _raw_ct and _raw_ct not in ("ac", "dc", "unknown"):
         return jsonify({"ok": False, "error": "Ungültige Ladeart. Erlaubt: ac, dc, unknown."}), 400
 
     charger_power_kw = _float_or_none(data.get("charger_power_kw"))
@@ -276,6 +277,30 @@ def api_manual_session_create():
         except Exception as _e:
             log.debug("Auto-pricing for manual session failed: %s", _e)
 
+    # ── Charger type source ───────────────────────────────────────────────────
+    if _raw_ct in ("ac", "dc"):
+        _ct_src = "manual"; _ct_conf = 100
+    else:
+        try:
+            from services.missing_charge_service import suggest_charger_type as _sct_fn
+            _kwh_for_sug = kwh if kwh and kwh > 0 else None
+            _dur_for_sug = None
+            if start_ts and end_ts:
+                try:
+                    from datetime import datetime as _dt3
+                    _dur_for_sug = (_dt3.fromisoformat(end_ts) - _dt3.fromisoformat(start_ts)).total_seconds() / 3600
+                except Exception:
+                    pass
+            from core.config import load_config as _lc2
+            _sug = _sct_fn(location, charger_power_kw or max_power_kw, _kwh_for_sug, _dur_for_sug, False, _lc2())
+            if _sug["type"] != "unknown":
+                charger_type = _sug["type"]
+                _ct_src = _sug["source"]; _ct_conf = _sug["confidence"]
+            else:
+                _ct_src = None; _ct_conf = 0
+        except Exception:
+            _ct_src = None; _ct_conf = 0
+
     # ── Metadata ─────────────────────────────────────────────────────────────
     manual_note   = (data.get("manual_note") or data.get("note") or "").strip() or None
     manual_reason = (data.get("manual_reason") or "").strip() or None
@@ -310,8 +335,9 @@ def api_manual_session_create():
          meter_old, meter_new, meter_delta_kwh, meter_used,
          vehicle_id, provider, kwh_source, created_mode,
          manual_note, manual_reason,
-         price_source, price_confidence, charging_contract_id, charging_contract_name)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+         price_source, price_confidence, charging_contract_id, charging_contract_name,
+         charger_type_source, charger_type_confidence)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (start_ts, end_ts, round(kwh, 3), cost_eur, cost_manual, price_kwh,
          location, "manual", location_confidence,
          charger_type, charger_power_kw, max_power_kw,
@@ -319,7 +345,8 @@ def api_manual_session_create():
          meter_old, meter_new, meter_delta, meter_used,
          vehicle_id, "manual", "manual", "manual",
          manual_note, manual_reason,
-         _auto_price_source, _auto_price_conf, _auto_contract_id, _auto_contract_name))
+         _auto_price_source, _auto_price_conf, _auto_contract_id, _auto_contract_name,
+         _ct_src, _ct_conf))
     sid = cur.lastrowid
     con.commit()
     row = con.execute("SELECT * FROM sessions WHERE id=?", (sid,)).fetchone()
@@ -332,9 +359,14 @@ def api_manual_session_create():
         try:
             candidate_id = int(candidate_id)
             link_con = _get_db()
+            now_link = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
             link_con.execute(
                 "UPDATE missing_charge_candidates SET status='accepted', accepted_session_id=?, updated_at=? WHERE id=?",
-                (sid, datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds"), candidate_id),
+                (sid, now_link, candidate_id),
+            )
+            link_con.execute(
+                "UPDATE sessions SET missing_charge_candidate_id=? WHERE id=?",
+                (candidate_id, sid),
             )
             link_con.commit()
             close_db_if_owned(link_con)
@@ -452,7 +484,8 @@ def _quick_add_external_insert(data: dict):
 
     vehicle_id   = (data.get("vehicle_id") or "v0").strip()
     location     = "extern"
-    charger_type = (data.get("charger_type") or "unknown").strip()
+    _raw_ct2 = (data.get("charger_type") or "").strip()
+    charger_type = _raw_ct2 if _raw_ct2 in ("ac", "dc", "unknown") else "unknown"
 
     price_kwh  = _float_or_none_local(data.get("price_per_kwh"))
     cost_eur   = _float_or_none_local(data.get("cost_eur"))
@@ -480,6 +513,28 @@ def _quick_add_external_insert(data: dict):
         except Exception:
             pass
 
+    if _raw_ct2 in ("ac", "dc"):
+        _ct_src2 = "manual"; _ct_conf2 = 100
+    else:
+        try:
+            from services.missing_charge_service import suggest_charger_type as _sct_fn3
+            _dur2 = None
+            if start_ts and end_ts:
+                try:
+                    from datetime import datetime as _dt4
+                    _dur2 = (_dt4.fromisoformat(end_ts) - _dt4.fromisoformat(start_ts)).total_seconds() / 3600
+                except Exception:
+                    pass
+            from core.config import load_config as _lc2b
+            _sug2 = _sct_fn3(location, _float_or_none_local(data.get("charger_power_kw")), kwh, _dur2, False, _lc2b())
+            if _sug2["type"] != "unknown":
+                charger_type = _sug2["type"]
+                _ct_src2 = _sug2["source"]; _ct_conf2 = _sug2["confidence"]
+            else:
+                _ct_src2 = None; _ct_conf2 = 0
+        except Exception:
+            _ct_src2 = None; _ct_conf2 = 0
+
     manual_note = (data.get("manual_note") or data.get("note") or "").strip() or None
 
     con = _get_db()
@@ -491,15 +546,17 @@ def _quick_add_external_insert(data: dict):
             vehicle_id, provider, kwh_source, created_mode,
             manual_note,
             charging_contract_id, charging_contract_name,
-            vehicle_assignment_status, excluded_from_reports)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            vehicle_assignment_status, excluded_from_reports,
+            charger_type_source, charger_type_confidence)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (start_ts, end_ts, round(kwh, 3), cost_eur, cost_manual, price_kwh,
          location, "manual", 100,
          charger_type, _float_or_none_local(data.get("charger_power_kw")),
          vehicle_id, "manual", "manual", "manual",
          manual_note,
          data.get("charging_contract_id"), data.get("charging_contract_name"),
-         "confirmed", 0),
+         "confirmed", 0,
+         _ct_src2, _ct_conf2),
     )
     sid = cur.lastrowid
     con.commit()
@@ -590,6 +647,9 @@ def api_patch_session(sid):
     if "charger_type" in fields and fields["charger_type"] not in ("ac", "dc", "unknown"):
         close_db_if_owned(con)
         return jsonify({"ok": False, "error": "charger_type muss ac, dc oder unknown sein"}), 400
+    if "charger_type" in fields and fields["charger_type"] in ("ac", "dc"):
+        fields["charger_type_source"] = "manual"
+        fields["charger_type_confidence"] = 100
 
     # ── Numeric range validation ──────────────────────────────────────────────
     def _fv(key):

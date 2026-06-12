@@ -531,7 +531,8 @@ async function mobileMissingChargeAccept(id) {
   var c = r.prefill;
   // Switch to desktop view and open add-session modal pre-filled
   if (typeof openMobileSessionCreate === 'function') {
-    openMobileSessionCreate();
+    openMobileSessionCreate(); // resets _mobileSessionCandidateId = null at start
+    window._mobileSessionCandidateId = r.candidate_id || id;
     setTimeout(function(){
       var el = function(id){ return document.getElementById(id); };
       if(el('msStart'))    el('msStart').value    = c.start_ts ? c.start_ts.replace('T',' ').substring(0,16) : '';
@@ -549,8 +550,9 @@ async function mobileMissingChargeAccept(id) {
       if(el('msNote'))     el('msNote').value     = 'Kandidat #'+id+': '+(c.reason||'');
     }, 200);
   } else if (typeof openCandidateAcceptDialog === 'function') {
-    // Fall back to desktop dialog via re-accept (already accepted, just prefill)
+    // Fall back to desktop dialog (openAddSessionModal resets _addSessionCandidateId, set it after)
     openAddSessionModal();
+    _addSessionCandidateId = r.candidate_id || id;
     setTimeout(function(){
       if(typeof $==='function'){
         if($('as_start'))    $('as_start').value    = c.start_ts ? c.start_ts.replace('T',' ').substring(0,16) : '';
