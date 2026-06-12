@@ -759,8 +759,8 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   <button class="active" onclick="tab('dashboard',this)">Dashboard</button>
   <button onclick="tab('config',this)">Konfiguration</button>
   <button onclick="tab('sessions',this)">Ladevorgänge</button>
-  <button onclick="tab('export',this)">Export</button>
-  <button onclick="tab('backup',this)">Backup</button>
+  <button onclick="tab('export',this)" data-requires-permission="export:view">Export</button>
+  <button onclick="tab('backup',this)" data-requires-permission="backup:view">Backup</button>
   <a href="/logout" id="navLogout" style="display:none;margin-left:auto;padding:8px 14px;font-size:.78rem;color:var(--mute);text-decoration:none;border-radius:8px;border:1px solid var(--brd)" title="">Abmelden</a>
 </nav>
 
@@ -3052,6 +3052,7 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   <!-- Preview stats -->
   <div class="card">
     <div class="card-title">Vorschau</div>
+    <div id="expPreviewError" style="display:none;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:.78rem;color:#ef4444;font-family:var(--mono)"></div>
     <div class="stats">
       <div class="stat"><div class="sl">Ladevorgänge</div><div class="sv" id="es_n">—</div></div>
       <div class="stat"><div class="sl">Zuhause</div><div class="sv g" id="es_home">—</div></div>
@@ -3067,6 +3068,8 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
      BACKUP
 ══════════════════════════════════════════════════════ -->
 <div class="panel" id="panel-backup">
+
+  <div id="backupError" style="display:none;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:.8rem;color:#ef4444;font-family:var(--mono)"></div>
 
   <!-- Manual backup card -->
   <div class="card">
@@ -3637,9 +3640,17 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
 // ── Nav ───────────────────────────────────────────────────────────────────────
 function tab(id, btn){
-  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  // Mobile-Sections ausblenden (Desktop-Navigation hat Vorrang)
+  ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore','mobileVehicles'].forEach(function(mid){
+    var mel = document.getElementById(mid);
+    if(mel) mel.style.display = 'none';
+  });
+  // Inline display:none (von setDesktopPanelsVisible auf Mobile gesetzt) entfernen,
+  // damit die .panel.active CSS-Regel wieder greift.
+  document.querySelectorAll('.panel').forEach(p=>{ p.classList.remove('active'); p.style.removeProperty('display'); });
   document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
-  $('panel-'+id).classList.add('active');
+  var target = $('panel-'+id);
+  if(target) target.classList.add('active');
   if(btn) btn.classList.add('active');
   if(id==='sessions'){ loadSessions(); loadMissingChargeCandidates(); }
   if(id==='export'){loadExpPreview();refreshTplInfo();checkTemplateMappingHash();}
@@ -4914,23 +4925,36 @@ function initExpSelects(){
 }
 
 async function loadExpPreview(){
-  const y=$('expY').value, m=$('expM').value, loc=$('expLoc')?.value||'all';
-  const rows=await fetch(`/api/sessions?year=${y}&month=${m}&location=${loc}`).then(r=>r.json());
-  const homeN = rows.filter(r=>r.location==='home').length;
-  const extN  = rows.filter(r=>r.location==='extern').length;
-  const kwh   = rows.reduce((s,r)=>s+(r.kwh_charged||0),0);
-  const cost  = rows.reduce((s,r)=>s+(r.cost_eur||0),0);
-  // calc efficiency
-  const oStart= rows.length ? (rows[rows.length-1].odo_start||0) : 0;
-  const oEnd  = rows.length ? (rows[0].odo_end||0) : 0;
-  const km    = oEnd - oStart;
-  const eff   = km>0 ? (kwh/km*100).toFixed(1)+' kWh/100km' : '—';
-  $('es_n').textContent    = rows.length;
-  $('es_home').textContent = homeN;
-  $('es_ext').textContent  = extN;
-  $('es_kwh').textContent  = fmt(kwh)+' kWh';
-  $('es_cost').textContent = fmt(cost)+' €';
-  $('es_eff').textContent  = eff;
+  const errEl = $('expPreviewError');
+  if(errEl){ errEl.style.display='none'; errEl.textContent=''; }
+  try {
+    const y=$('expY').value, m=$('expM').value, loc=$('expLoc')?.value||'all';
+    const resp = await fetch(`/api/sessions?year=${y}&month=${m}&location=${loc}`);
+    if(!resp.ok){
+      let detail = 'HTTP '+resp.status;
+      try { const j = await resp.json(); detail = j.error || detail; } catch(e){}
+      throw new Error(detail);
+    }
+    const rows = await resp.json();
+    if(!Array.isArray(rows)) throw new Error((rows && rows.error) || 'Unerwartete Antwort von /api/sessions');
+    const homeN = rows.filter(r=>r.location==='home').length;
+    const extN  = rows.filter(r=>r.location==='extern').length;
+    const kwh   = rows.reduce((s,r)=>s+(r.kwh_charged||0),0);
+    const cost  = rows.reduce((s,r)=>s+(r.cost_eur||0),0);
+    // calc efficiency
+    const oStart= rows.length ? (rows[rows.length-1].odo_start||0) : 0;
+    const oEnd  = rows.length ? (rows[0].odo_end||0) : 0;
+    const km    = oEnd - oStart;
+    const eff   = km>0 ? (kwh/km*100).toFixed(1)+' kWh/100km' : '—';
+    $('es_n').textContent    = rows.length;
+    $('es_home').textContent = homeN;
+    $('es_ext').textContent  = extN;
+    $('es_kwh').textContent  = fmt(kwh)+' kWh';
+    $('es_cost').textContent = fmt(cost)+' €';
+    $('es_eff').textContent  = eff;
+  } catch(e){
+    if(errEl){ errEl.style.display='block'; errEl.textContent='❌ Vorschau konnte nicht geladen werden: '+(e.message||e); }
+  }
 }
 
 $('expY')?.addEventListener('change',()=>{ _lastExportPreviewToken=null; loadExpPreview(); });
@@ -5793,19 +5817,42 @@ function _bufToB64u(buf){
 
 // ── Backup ───────────────────────────────────────────────────────────────────
 async function loadBackups(){
-  const data = await fetch('/api/backup/list').then(r=>r.json());
+  const errEl = $('backupError');
+  if(errEl){ errEl.style.display='none'; errEl.textContent=''; }
+  let data;
+  try {
+    const resp = await fetch('/api/backup/list');
+    if(resp.status===403){
+      if(errEl){ errEl.style.display='block'; errEl.textContent='🔒 Keine Berechtigung für den Backup-Bereich (backup:view).'; }
+      const le=$('backupList'); if(le) le.innerHTML='';
+      return;
+    }
+    if(!resp.ok){
+      let detail='HTTP '+resp.status;
+      try { const j=await resp.json(); detail=j.error||detail; } catch(e){}
+      throw new Error(detail);
+    }
+    data = await resp.json();
+  } catch(e){
+    if(errEl){ errEl.style.display='block'; errEl.textContent='❌ Backups konnten nicht geladen werden: '+(e.message||e); }
+    const le=$('backupList'); if(le) le.innerHTML='';
+    return;
+  }
   // update cron info
-  $('backupCron').value = data.cron||'';
-  if(data.next_backup){
-    $('cronInfo').innerHTML=`<span style="color:var(--acc)">⏰ Nächstes Backup: ${escapeHtml(data.next_backup)}</span>`;
-  } else if(data.cron) {
-    $('cronInfo').textContent='⚠ Ungültiger Cron-Ausdruck';
-  } else {
-    $('cronInfo').textContent='Kein automatisches Backup konfiguriert';
+  if($('backupCron')) $('backupCron').value = data.cron||'';
+  if($('cronInfo')){
+    if(data.next_backup){
+      $('cronInfo').innerHTML=`<span style="color:var(--acc)">⏰ Nächstes Backup: ${escapeHtml(data.next_backup)}</span>`;
+    } else if(data.cron) {
+      $('cronInfo').textContent='⚠ Ungültiger Cron-Ausdruck';
+    } else {
+      $('cronInfo').textContent='Kein automatisches Backup konfiguriert';
+    }
   }
 
   const el=$('backupList');
-  if(!data.backups.length){
+  if(!el) return;
+  if(!data.backups || !data.backups.length){
     el.innerHTML='<div class="empty">Noch keine Backups vorhanden</div>'; return;
   }
   el.innerHTML=`<table>
@@ -7473,15 +7520,9 @@ function setMobileExportFilter(filter, btn) {
 // =========================================================
 
 // =========================================================
-// MOBILE INIT
+// MOBILE INIT — initMobileView() wird von mobile.js registriert (DOMContentLoaded
+// + resize-Handler). Hier NICHT erneut registrieren, sonst doppelte Initialisierung.
 // =========================================================
-
-// Beim Laden initialisieren
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initMobileView);
-} else {
-  initMobileView();
-}
 
 // =========================================================
 // MOBILE BOTTOM SHEET
@@ -7950,20 +7991,7 @@ function _fabOutsideClick(e) {
   if (!document.getElementById('fab')?.contains(e.target)) closeFab();
 }
 
-// Beim Resize zwischen Mobile und Desktop umschalten
-window.addEventListener('resize', function() {
-  if (window.innerWidth > 768) {
-    // Desktop: alle Mobile-Sections ausblenden, Main-Content zeigen
-    ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore','mobileVehicles'].forEach(function(id) {
-      const el = document.getElementById(id);
-      if (el) el.style.display = 'none';
-    });
-    if (typeof setDesktopPanelsVisible === 'function') setDesktopPanelsVisible(true);
-  } else {
-    // Mobile: aktuelle Section anzeigen
-    mobileNavTo(_mobileCurrentSection || 'home');
-  }
-});
+// Resize-Handler (Mobile ↔ Desktop) wird von mobile.js registriert — hier nicht doppeln.
 
 // =========================================================
 // PERMISSION SYSTEM
