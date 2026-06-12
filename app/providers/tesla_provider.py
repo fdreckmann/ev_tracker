@@ -19,13 +19,21 @@ class TeslaProvider(BaseProvider):
     PROVIDER_ID   = "tesla"
     PROVIDER_NAME = "Tesla"
     CAPABILITIES  = ProviderCapabilities(
-        charging_state = True,
-        soc            = True,
-        odometer       = True,
-        charge_power   = True,
-        location       = True,
-        charge_type    = True,
-        notes          = ["Beste API-Abdeckung · Alle Features verfügbar"]
+        charging_state  = True,
+        soc             = True,
+        odometer        = True,
+        charge_power    = True,
+        location        = True,
+        charge_type     = True,
+        official_api    = False,
+        requires_oauth  = True,
+        requires_password = False,
+        stability_level = "medium",
+        region_support  = "global",
+        notes           = [
+            "Beste API-Abdeckung — alle Features verfügbar (SOC, Leistung, Standort, AC/DC)",
+            "Nutzt teslapy (inoffiziell) — einmalige Token-Autorisierung per CLI erforderlich",
+        ]
     )
 
     def __init__(self, config: dict):

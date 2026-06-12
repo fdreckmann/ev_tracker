@@ -11,14 +11,23 @@ class HomeAssistantProvider(BaseProvider):
     PROVIDER_ID   = "ha"
     PROVIDER_NAME = "Home Assistant"
     CAPABILITIES  = ProviderCapabilities(
-        charging_state = True,
-        soc            = True,
-        odometer       = True,
-        charge_power   = True,
-        location       = True,
-        charge_type    = True,
-        image          = True,
-        notes          = ["Alle Funktionen verfügbar je nach konfigurierten Sensoren"]
+        charging_state  = True,
+        soc             = True,
+        odometer        = True,
+        charge_power    = True,
+        location        = True,
+        charge_type     = True,
+        image           = True,
+        official_api    = True,
+        requires_oauth  = False,
+        requires_password = False,
+        stability_level = "stable",
+        region_support  = "global",
+        notes           = [
+            "Empfohlene Integration — stabil und herstellerunabhängig",
+            "Alle Funktionen verfügbar je nach konfigurierten Sensoren",
+            "Funktioniert mit jedem Fahrzeug, das in Home Assistant eingebunden ist",
+        ]
     )
 
     def _headers(self):

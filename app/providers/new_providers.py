@@ -373,16 +373,22 @@ class AudiProvider(BaseProvider):
     PROVIDER_ID   = "audi"
     PROVIDER_NAME = "Audi"
     CAPABILITIES  = ProviderCapabilities(
-        charging_state = True,
-        soc            = True,
-        odometer       = True,
-        charge_power   = False,
-        location       = False,
-        charge_type    = False,
+        charging_state  = True,
+        soc             = True,
+        odometer        = True,
+        charge_power    = False,
+        location        = False,
+        charge_type     = False,
+        official_api    = False,
+        requires_oauth  = False,
+        requires_password = True,
+        stability_level = "fragile",
+        region_support  = "EU",
         notes = [
-            "MyAudi Connect API (inoffiziell) — für e-tron, Q4, A6/A8 TFSI e",
+            "⚠️ API eingeschränkt — nutzt alte VW-Infrastruktur (msg.volkswagen.de), die abgeschaltet wurde",
+            "Die MyAudi App nutzt seit 2023 ein neues Backend — diese Integration funktioniert ggf. nicht mehr",
+            "Empfehlung: Home Assistant Provider als stabile Alternative verwenden",
             "Ladeleistung und Standort nicht verfügbar",
-            "Audi Q4 e-tron / ID-Plattform: alternativ VW Provider verwenden",
         ]
     )
 
@@ -457,6 +463,10 @@ class AudiProvider(BaseProvider):
     @classmethod
     def get_config_fields(cls) -> list[dict]:
         return [
+            {"id":"_audi_api_warning", "label":"⚠️ Audi Connect API eingeschränkt", "type":"info",
+             "placeholder":"Diese Integration nutzt die alte VW-Gruppeninfrastruktur, die seit 2023 eingeschränkt ist. "
+                           "Bei Problemen bitte Home Assistant Provider verwenden.",
+             "required":False},
             {"id":"audi_username", "label":"MyAudi E-Mail",            "type":"text",     "placeholder":"email@example.com", "required":True},
             {"id":"audi_password", "label":"Passwort",                  "type":"password", "placeholder":"",                  "required":True},
             {"id":"audi_vin",      "label":"Fahrzeug VIN",              "type":"text",     "placeholder":"WAU...",            "required":True,

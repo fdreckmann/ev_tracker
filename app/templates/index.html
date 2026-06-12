@@ -8812,8 +8812,12 @@ function testNotifChannel(channel) {
       card.onclick = function(){ _vprofilSelectProvider(p.provider_id); };
       card.style.cssText = 'background:var(--bg);border:2px solid '+(selected?'var(--acc)':'var(--brd)')+
         ';border-radius:10px;padding:12px 14px;cursor:pointer;transition:all .15s';
-      card.innerHTML = '<div style="font-weight:700;font-size:.8rem;color:'+(selected?'var(--acc)':'#fff')+'">'+
-        _eh(p.provider_name)+'</div>'+
+      var stabColor = p.stability_level === 'stable' ? '#22c55e' : p.stability_level === 'fragile' ? '#ef4444' : '#f59e0b';
+      var stabLabel = p.stability_level === 'stable' ? '● Stabil' : p.stability_level === 'fragile' ? '⚠ Fragil' : '● Mittel';
+      card.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
+        '<div style="font-weight:700;font-size:.8rem;color:'+(selected?'var(--acc)':'#fff')+'">'+_eh(p.provider_name)+'</div>'+
+        '<span style="font-size:.6rem;color:'+stabColor+';font-family:var(--mono);white-space:nowrap;margin-left:6px">'+stabLabel+'</span>'+
+        '</div>'+
         '<div style="font-size:.65rem;font-family:var(--mono);color:var(--mute);margin-top:5px;line-height:1.7">'+
         (p.charging_state?'✅':'❌')+' Laden &nbsp;'+(p.soc?'✅':'❌')+' SOC<br>'+
         (p.odometer?'✅':'❌')+' KM &nbsp;'+(p.charge_power?'✅':'❌')+' kW &nbsp;'+(p.location?'✅':'❌')+' Standort</div>';
@@ -8878,7 +8882,10 @@ function testNotifChannel(channel) {
     fields.forEach(function(f){
       var wrap = document.createElement('div'); wrap.className = 'fg full';
       var val = existingVehicle ? (existingVehicle[f.id]||'') : '';
-      if(f.type==='select'){
+      if(f.type==='info'){
+        wrap.innerHTML = '<div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:6px;padding:9px 12px;font-size:.72rem;color:#f59e0b;line-height:1.6;font-family:var(--mono)">'+
+          _eh(f.placeholder||f.label)+'</div>';
+      } else if(f.type==='select'){
         wrap.innerHTML = '<label>'+_eh(f.label)+'</label>'+
           '<select id="vpf_'+_eh(f.id)+'">'+(f.options||[]).map(function(o){
             return '<option value="'+_eh(o)+'"'+(o===val?' selected':'')+'>'+_eh(o)+'</option>';

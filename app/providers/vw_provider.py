@@ -21,15 +21,22 @@ class VWProvider(BaseProvider):
     PROVIDER_ID   = "vw"
     PROVIDER_NAME = "VW / Audi / Skoda / Seat (WeConnect ID)"
     CAPABILITIES  = ProviderCapabilities(
-        charging_state = True,
-        soc            = True,
-        odometer       = True,
-        charge_power   = True,
-        location       = True,
-        charge_type    = False,
+        charging_state  = True,
+        soc             = True,
+        odometer        = True,
+        charge_power    = True,
+        location        = True,
+        charge_type     = False,
+        official_api    = False,
+        requires_oauth  = False,
+        requires_password = True,
+        stability_level = "fragile",
+        region_support  = "EU",
         notes          = [
+            "⚠️ API eingeschränkt — VW hat WeConnect für Drittanwendungen stark beschränkt (ab 2024)",
+            "Direkte Integration funktioniert möglicherweise nicht mehr zuverlässig",
+            "Empfehlung: Home Assistant Provider als stabile Alternative verwenden",
             "AC/DC Erkennung nicht direkt verfügbar — wird via Leistungsschwelle berechnet",
-            "Standort liefert nur home/nicht-home — keine genaue Position",
             "API ist inoffiziell — kann sich ohne Vorwarnung ändern",
         ]
     )
@@ -121,6 +128,10 @@ class VWProvider(BaseProvider):
     @classmethod
     def get_config_fields(cls) -> list[dict]:
         return [
+            {"id":"_vw_api_warning", "label":"⚠️ VW WeConnect API eingeschränkt", "type":"info",
+             "placeholder":"Die WeConnect-API für Drittanwendungen wurde von VW ab 2024 stark eingeschränkt. "
+                           "Bei Verbindungsproblemen bitte Home Assistant Provider verwenden — dieser ist stabiler und zuverlässiger.",
+             "required":False},
             {"id":"vw_username",    "label":"WeConnect ID Email",       "type":"text",     "placeholder":"email@example.com", "required":True},
             {"id":"vw_password",    "label":"WeConnect ID Passwort",    "type":"password", "placeholder":"",                  "required":True},
             {"id":"vw_vin",         "label":"Fahrzeug VIN (optional)",  "type":"text",     "placeholder":"WVWZZZE1ZME000000","required":False,

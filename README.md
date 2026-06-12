@@ -30,8 +30,8 @@ Fahrzeug lädt → EV Tracker erkennt den Ladevorgang automatisch
 | Provider | Laden | SOC | KM | Leistung | Standort | AC/DC |
 |----------|-------|-----|----|----------|----------|-------|
 | 🏠 Home Assistant | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 🚗 VW / Skoda / Seat / Cupra | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ |
-| 🔵 Audi (MyAudi Connect) | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ |
+| ⚠️ VW / Skoda / Seat / Cupra | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ |
+| ⚠️ Audi (MyAudi Connect) | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠ |
 | ⚡ Tesla (TeslaPy) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | 🔵 Volvo Cars API | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 | 🔷 BMW / Mini (bimmer-connected) | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
@@ -53,6 +53,8 @@ Fahrzeug lädt → EV Tracker erkennt den Ladevorgang automatisch
 | 🟢 BYD (via Enode/TRONITY) | ✅¹ | ✅¹ | ✅¹ | — | ✅¹ | — |
 
 > ⚠ = nur teilweise / abhängig vom Modell · ❌ = nicht verfügbar · ¹ = empfohlen über Aggregator (keine stabile Direkt-API)
+>
+> **⚠️ VW / Audi:** Die WeConnect-API und die alten MyAudi-Endpunkte sind seit 2024 stark eingeschränkt und funktionieren für viele Nutzer nicht mehr. **Empfehlung: Home Assistant Provider** mit der jeweiligen HACS-Integration verwenden. → [Provider-Status](docs/provider-status.md)
 
 ---
 
