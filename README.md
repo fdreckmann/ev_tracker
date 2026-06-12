@@ -54,7 +54,7 @@ Fahrzeug lädt → EV Tracker erkennt den Ladevorgang automatisch
 
 > ⚠ = nur teilweise / abhängig vom Modell · ❌ = nicht verfügbar · ¹ = empfohlen über Aggregator (keine stabile Direkt-API)
 >
-> **⚠️ VW / Audi:** Die WeConnect-API und die alten MyAudi-Endpunkte sind seit 2024 stark eingeschränkt und funktionieren für viele Nutzer nicht mehr. **Empfehlung: Home Assistant Provider** mit der jeweiligen HACS-Integration verwenden. → [Provider-Status](docs/provider-status.md)
+> **🚫 VW / Audi:** VW hat die WeConnect-API für Drittanwendungen ab **Juni 2026 gesperrt** — direkte Verbindung funktioniert nicht mehr. **Empfehlung: Home Assistant Provider** mit der VW WeConnect ID HACS-Integration verwenden. → [Provider-Status](docs/provider-status.md)
 
 ---
 

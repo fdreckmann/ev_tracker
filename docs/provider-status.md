@@ -36,7 +36,7 @@ Stand: Juni 2026 · Wird bei bekannten API-Änderungen aktualisiert.
 
 | Provider | Stabilität | Status | Empfehlung |
 |----------|-----------|--------|------------|
-| **VW / Skoda / Seat** (WeConnect) | 🔴 Fragil | VW hat WeConnect-API für Drittanwendungen ab 2024 stark eingeschränkt. Verbindung schlägt bei vielen Nutzern fehl. | **Home Assistant Provider** verwenden (VW/Skoda/Seat HACS-Integration vorhanden) |
+| **VW / Skoda / Seat** (WeConnect) | 🚫 Gesperrt | VW hat die WeConnect-API für Drittanwendungen ab **Juni 2026 vollständig gesperrt**. Verbindungen schlagen fehl. | **Home Assistant Provider** verwenden (VW WeConnect ID HACS-Integration) |
 | **Audi** (MyAudi Connect) | 🔴 Fragil | Nutzt alte VW-Gruppeninfrastruktur (`msg.volkswagen.de`), die seit 2023 weitgehend abgeschaltet wurde. | **Home Assistant Provider** verwenden |
 | **XPeng** | 🔴 Fragil | Keine stabile direkte EU-API verfügbar. | Aggregator (Tronity, Enode, Smartcar) verwenden |
 | **BYD** | 🔴 Fragil | Keine stabile direkte EU-API verfügbar. | Aggregator (Tronity, Enode, Smartcar) verwenden |
@@ -87,10 +87,10 @@ Wenn HA bereits installiert ist und das Fahrzeug dort eingebunden ist, ist **Hom
 
 ## Bekannte Probleme
 
-### VW / WeConnect (Stand 2024)
-VW hat den API-Zugang für Drittanwendungen im Rahmen der WeConnect ID-Plattform deutlich eingeschränkt.
-- Verbindungsaufbau schlägt bei vielen Nutzern mit Authentifizierungsfehlern fehl
-- 2FA-Pflicht erscheint im WeConnect-Portal und wird von teslapy/weconnect nicht unterstützt
+### VW / WeConnect (gesperrt seit Juni 2026)
+VW hat die WeConnect-API für Drittanwendungen ab Juni 2026 vollständig gesperrt.
+- Alle Verbindungsversuche über die `weconnect`-Bibliothek schlagen fehl
+- Die offizielle WeConnect-App funktioniert weiterhin — nur Drittanbieter-Zugriff ist gesperrt
 - **Lösung**: Home Assistant mit der [Volkswagen We Connect ID HACS-Integration](https://github.com/mitch-dc/volkswagen_we_connect_id)
 
 ### Audi / MyAudi Connect
