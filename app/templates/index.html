@@ -3640,23 +3640,36 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
 
 // ── Nav ───────────────────────────────────────────────────────────────────────
 function tab(id, btn){
-  // Mobile-Sections ausblenden (Desktop-Navigation hat Vorrang)
-  ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore','mobileVehicles'].forEach(function(mid){
-    var mel = document.getElementById(mid);
-    if(mel) mel.style.display = 'none';
-  });
-  // Inline display:none (von setDesktopPanelsVisible auf Mobile gesetzt) entfernen,
-  // damit die .panel.active CSS-Regel wieder greift.
-  document.querySelectorAll('.panel').forEach(p=>{ p.classList.remove('active'); p.style.removeProperty('display'); });
-  document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
-  var target = $('panel-'+id);
-  if(target) target.classList.add('active');
-  if(btn) btn.classList.add('active');
-  if(id==='sessions'){ loadSessions(); loadMissingChargeCandidates(); }
-  if(id==='export'){loadExpPreview();refreshTplInfo();checkTemplateMappingHash();}
-  if(id==='backup') loadBackups();
-  if(id==='dashboard') loadCharts();
-  if(id==='config'){ cfgSection('fahrzeuge', document.querySelector('.cfg-nav-btn.active')||document.querySelector('.cfg-nav-btn')); }
+  // ── Schritt 1: Panel-Sichtbarkeit IMMER zuerst herstellen ──────────────────
+  // Dieser Block darf niemals durch einen Daten-Loader unterbrochen werden,
+  // sonst bleibt der Reiter leer. Datenladen passiert erst danach in Schritt 2.
+  try {
+    // Mobile-Sections ausblenden (Desktop-Navigation hat Vorrang)
+    ['mobileDashboard','mobileSessionCards','mobileExportFlow','mobileMore','mobileVehicles'].forEach(function(mid){
+      var mel = document.getElementById(mid);
+      if(mel) mel.style.display = 'none';
+    });
+    // Inline display:none (von setDesktopPanelsVisible auf Mobile gesetzt) entfernen,
+    // damit die .panel.active CSS-Regel wieder greift.
+    document.querySelectorAll('.panel').forEach(function(p){ p.classList.remove('active'); p.style.removeProperty('display'); });
+    document.querySelectorAll('nav button').forEach(function(b){ b.classList.remove('active'); });
+    var target = document.getElementById('panel-'+id);
+    if(target){ target.classList.add('active'); target.style.removeProperty('display'); }
+    if(btn) btn.classList.add('active');
+  } catch(e){ console.error('tab(): Panel-Anzeige fehlgeschlagen', e); }
+
+  // ── Schritt 2: Daten laden — jeder Loader einzeln gekapselt ────────────────
+  // Ein Fehler in einem Loader darf weder die anderen noch die Sichtbarkeit
+  // des Panels beeinträchtigen.
+  function _safe(fn, name){
+    try { if(typeof fn === 'function') fn(); }
+    catch(e){ console.error('tab(): '+name+' fehlgeschlagen', e); }
+  }
+  if(id==='sessions'){ _safe(loadSessions,'loadSessions'); _safe(loadMissingChargeCandidates,'loadMissingChargeCandidates'); }
+  if(id==='export'){ _safe(loadExpPreview,'loadExpPreview'); _safe(refreshTplInfo,'refreshTplInfo'); _safe(checkTemplateMappingHash,'checkTemplateMappingHash'); }
+  if(id==='backup') _safe(loadBackups,'loadBackups');
+  if(id==='dashboard') _safe(loadCharts,'loadCharts');
+  if(id==='config'){ _safe(function(){ cfgSection('fahrzeuge', document.querySelector('.cfg-nav-btn.active')||document.querySelector('.cfg-nav-btn')); },'cfgSection'); }
 }
 
 // ── Auto-scale stat values to fit their tile ─────────────────────────────────
@@ -3816,31 +3829,43 @@ function renderGallery(){
 
 // ── Template upload ───────────────────────────────────────────────────────────
 async function refreshTplInfo(){
-  const info=await fetch('/api/template/info').then(r=>r.json());
   const dot=$('tplDot'), lbl=$('tplLbl'), meta=$('tplMeta'), delBtn=$('tplDelBtn');
-  updateActiveTemplateInfo(info.active_template || {});
-  if(info.exists){
-    dot.style.background='var(--acc)'; dot.style.boxShadow='0 0 6px var(--acc)';
-    lbl.style.color='var(--acc)';
-    lbl.textContent='✓ Template aktiv — deine Vorlage wird beim Export verwendet';
-    meta.textContent=`${(info.size/1024).toFixed(1)} KB · ${info.modified.replace('T',' ')}`;
-    delBtn.style.display='';
-    $('tplHeaderCard').style.display='';
-    loadMappingPreview();
-    // load saved header field values
-    const cfg=await fetch('/api/config').then(r=>r.json()).catch(()=>({}));
-    ['fahrer','kennzeichen','abteilung','kostenstelle'].forEach(k=>{
-      const el=$('c_template_'+k); if(el) el.value=cfg['template_'+k]||'';
-    });
-    const ms=$('c_template_meter_start');
-    if(ms) ms.value=cfg['template_meter_start']||'';
-  } else {
-    dot.style.background='var(--mute)'; dot.style.boxShadow='none';
-    lbl.style.color='var(--mute)';
-    lbl.textContent='Kein Template — eingebautes Format wird verwendet';
-    meta.textContent=''; delBtn.style.display='none';
-    $('mappingSection').style.display='none';
-    $('tplHeaderCard').style.display='none';
+  try {
+    const resp=await fetch('/api/template/info');
+    if(!resp.ok){
+      let detail='HTTP '+resp.status;
+      try { const j=await resp.json(); detail=j.error||detail; } catch(e){}
+      throw new Error(detail);
+    }
+    const info=await resp.json();
+    if(typeof updateActiveTemplateInfo==='function') updateActiveTemplateInfo(info.active_template || {});
+    if(info.exists){
+      if(dot){ dot.style.background='var(--acc)'; dot.style.boxShadow='0 0 6px var(--acc)'; }
+      if(lbl){ lbl.style.color='var(--acc)';
+        lbl.textContent='✓ Template aktiv — deine Vorlage wird beim Export verwendet'; }
+      if(meta) meta.textContent=`${(info.size/1024).toFixed(1)} KB · ${(info.modified||'').replace('T',' ')}`;
+      if(delBtn) delBtn.style.display='';
+      if($('tplHeaderCard')) $('tplHeaderCard').style.display='';
+      if(typeof loadMappingPreview==='function') loadMappingPreview();
+      // load saved header field values
+      const cfg=await fetch('/api/config').then(r=>r.json()).catch(()=>({}));
+      ['fahrer','kennzeichen','abteilung','kostenstelle'].forEach(k=>{
+        const el=$('c_template_'+k); if(el) el.value=cfg['template_'+k]||'';
+      });
+      const ms=$('c_template_meter_start');
+      if(ms) ms.value=cfg['template_meter_start']||'';
+    } else {
+      if(dot){ dot.style.background='var(--mute)'; dot.style.boxShadow='none'; }
+      if(lbl){ lbl.style.color='var(--mute)';
+        lbl.textContent='Kein Template — eingebautes Format wird verwendet'; }
+      if(meta) meta.textContent=''; if(delBtn) delBtn.style.display='none';
+      if($('mappingSection')) $('mappingSection').style.display='none';
+      if($('tplHeaderCard')) $('tplHeaderCard').style.display='none';
+    }
+  } catch(e){
+    console.error('refreshTplInfo:', e);
+    if(lbl){ lbl.style.color='var(--danger)';
+      lbl.textContent='⚠ Template-Status konnte nicht geladen werden: '+(e.message||e); }
   }
 }
 
