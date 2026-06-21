@@ -6,9 +6,11 @@ create a missing-charge candidate for user review:
 
   * SOC-gain     — SOC rose between two meaningful snapshots (a charge happened
                    while the vehicle was offline).
-  * Energy-balance — SOC fell, but by far too little for the distance driven.
-                   The trip is energetically implausible, so a short charge stop
-                   probably happened mid-trip even though SOC ended lower.
+  * Energy-balance — the trip is energetically implausible for the distance
+                   driven, so a charge stop probably happened mid-trip. This
+                   covers both SOC falling far too little AND SOC staying equal
+                   or even rising while a meaningful distance was driven (you
+                   cannot drive and end with more charge without charging).
 
 The expected consumption used by the energy-balance check is derived primarily
 from the vehicle's own historical driving snapshots, falling back to official
@@ -242,13 +244,17 @@ def get_expected_consumption(vehicle_id: str, cfg: dict, con,
 def _find_meaningful_previous(cur, vehicle_id: str, new_snap_id: int):
     """Return the last *meaningful* snapshot before new_snap_id.
 
-    HA can report stale (identical) values repeatedly. Walk back over a contiguous
-    run of snapshots sharing the same soc & odometer so the trip window starts
-    where the values last actually changed, not at a stale duplicate.
+    Snapshots without SOC (sensor temporarily unavailable) are skipped: SOC is
+    required by both detectors, so a NULL-SOC snapshot must never become the
+    comparison baseline and silently block detection of a charge that happened
+    during an outage. HA can also report stale (identical) values repeatedly,
+    so walk back over a contiguous run of snapshots sharing the same soc &
+    odometer — the trip window then starts where the values last actually
+    changed, not at a stale duplicate.
     """
     prev = cur.execute(
         "SELECT id,ts,soc,odometer_km,location_status FROM vehicle_snapshots "
-        "WHERE vehicle_id=? AND id<? ORDER BY id DESC LIMIT 1",
+        "WHERE vehicle_id=? AND id<? AND soc IS NOT NULL ORDER BY id DESC LIMIT 1",
         (vehicle_id, new_snap_id),
     ).fetchone()
     if not prev:
@@ -256,7 +262,7 @@ def _find_meaningful_previous(cur, vehicle_id: str, new_snap_id: int):
     while True:
         earlier = cur.execute(
             "SELECT id,ts,soc,odometer_km,location_status FROM vehicle_snapshots "
-            "WHERE vehicle_id=? AND id<? ORDER BY id DESC LIMIT 1",
+            "WHERE vehicle_id=? AND id<? AND soc IS NOT NULL ORDER BY id DESC LIMIT 1",
             (vehicle_id, prev[0]),
         ).fetchone()
         if not earlier:
@@ -550,14 +556,20 @@ def check_for_missing_charge(vehicle_id: str, new_snap_id: int, cfg: dict, con) 
             }
 
     # ── B) Energy-balance detection ───────────────────────────────────────────
+    # Runs whenever the SOC-gain detector did not fire. It fires not only when SOC
+    # fell too little for the distance driven, but ALSO when SOC stayed equal or
+    # even rose slightly while a meaningful distance was driven — driving and
+    # ending with *more* charge is only possible if energy was added mid-trip
+    # (an external charge). observed_energy_kwh becomes negative for rising SOC,
+    # which correctly increases the estimated missing energy.
     if (cand is None
             and cfg.get("missing_charge_energy_balance_enabled", True)
             and battery_kwh > 0
-            and driven_km is not None
-            and prev_soc > new_soc):
+            and driven_km is not None):
         distance_km = driven_km
         min_distance = float(cfg.get("missing_charge_min_distance_km", 30))
-        observed_soc_drop = prev_soc - new_soc
+        soc_rose = new_soc >= prev_soc
+        observed_soc_drop = prev_soc - new_soc          # negative when SOC rose
         observed_energy_kwh = round(battery_kwh * observed_soc_drop / 100.0, 2)
         observed_consumption = (observed_energy_kwh / distance_km * 100.0
                                 if distance_km > 0 else 0.0)
@@ -583,9 +595,14 @@ def check_for_missing_charge(vehicle_id: str, new_snap_id: int, cfg: dict, con) 
         min_deviation = float(cfg.get("missing_charge_energy_balance_min_deviation_percent", 25))
         min_missing_kwh = float(cfg.get("missing_charge_min_missing_kwh", 4))
         min_missing_soc = float(cfg.get("missing_charge_min_missing_soc_percent", 5))
+        # When SOC rose/stayed equal despite driving, the trip is inherently
+        # implausible — the deviation gate (meant for the falling-SOC case) is
+        # trivially satisfied, so don't require it explicitly.
+        deviation_ok = soc_rose or deviation_pct >= min_deviation
 
         if (distance_km >= min_distance
-                and deviation_pct >= min_deviation
+                and gap_minutes >= min_gap
+                and deviation_ok
                 and missing_energy_kwh >= min_missing_kwh
                 and missing_soc_percent >= min_missing_soc):
             confidence = 45
@@ -596,6 +613,15 @@ def check_for_missing_charge(vehicle_id: str, new_snap_id: int, cfg: dict, con) 
             if distance_km >= 100:
                 confidence += 10
             confidence += int(round(exp["confidence"] * 15))
+            if soc_rose:
+                reason = (f"{distance_km:.0f} km gefahren, SOC "
+                          f"{prev_soc:.0f}% → {new_soc:.0f}%; rechnerisch ca. "
+                          f"{missing_energy_kwh:.0f} kWh externe Ladung nötig")
+            else:
+                reason = (f"{distance_km:.0f} km gefahren, SOC "
+                          f"{prev_soc:.0f}% → {new_soc:.0f}%; Verbrauch nur "
+                          f"{observed_consumption:.1f} statt {expected_consumption:.1f} "
+                          f"kWh/100km → ca. {missing_energy_kwh:.1f} kWh fehlen")
             cand = {
                 "candidate_type": "energy_balance",
                 "estimated_kwh": missing_energy_kwh,
@@ -611,10 +637,7 @@ def check_for_missing_charge(vehicle_id: str, new_snap_id: int, cfg: dict, con) 
                 "historical_sample_distance_km": exp["sample_distance_km"],
                 "historical_sample_segments": exp["sample_segments"],
                 "base_confidence": confidence,
-                "reason": (f"{distance_km:.0f} km gefahren, SOC "
-                           f"{prev_soc:.0f}% → {new_soc:.0f}%; Verbrauch nur "
-                           f"{observed_consumption:.1f} statt {expected_consumption:.1f} "
-                           f"kWh/100km → ca. {missing_energy_kwh:.1f} kWh fehlen"),
+                "reason": reason,
             }
 
     if cand is None:
