@@ -157,6 +157,91 @@ def test_frugal_but_plausible_trip_no_candidate(app):
         close_db_if_owned(con)
 
 
+# ── Energy-balance with rising/equal SOC (drive + external charge) ───────────
+
+def test_energy_balance_rising_soc_with_distance(app):
+    """Drove 150 km but SOC rose 33→35 % → must have charged externally mid-trip.
+
+    Real-world case: SOC/odometer were temporarily unavailable; when data
+    returned, SOC was slightly higher despite a long drive. The +2 % gain is
+    below the soc_gain threshold (3 %), so only energy-balance can catch this.
+    """
+    import json
+    from core.db import _get_db, close_db_if_owned
+    from services.missing_charge_service import check_for_missing_charge
+    with app.app_context():
+        con = _get_db()
+        t0 = datetime(2026, 6, 10, 8, 0, 0)
+        _insert_snap(con, "v0", _ts(t0), 33, 10000, loc="unknown")
+        sid = _insert_snap(con, "v0", _ts(t0 + timedelta(hours=5)), 35, 10150, loc="unknown")
+        # Home/wallbox meter did not move in the window (+0.05 kWh, threshold 1.0)
+        _insert_meter_snap(con, "v0", _ts(t0 - timedelta(minutes=5)), 500.0)
+        _insert_meter_snap(con, "v0", _ts(t0 + timedelta(hours=5, minutes=5)), 500.05)
+        cid = check_for_missing_charge("v0", sid, _meter_cfg(
+            "ev_wallbox",
+            missing_charge_expected_consumption_kwh_per_100km=19.0), con)
+        assert cid is not None
+        c = _get_candidate(con, cid)
+        assert c["candidate_type"] == "energy_balance"
+        assert c["driven_km"] == 150
+        # expected 150*19/100 = 28.5; observed = 77*(33-35)/100 = -1.54
+        # estimated missing = 28.5 - (-1.54) = ~30.0 kWh
+        assert 29.0 <= c["estimated_kwh"] <= 31.0
+        assert c["suggested_location"] == "extern"
+        ev = json.loads(c["evidence_json"])
+        assert "meter_no_change" in ev["signals"]
+        assert "meter_no_change_external" in ev["signals"]
+        # No real session must be created automatically.
+        n_sess = con.execute(
+            "SELECT COUNT(*) FROM sessions WHERE vehicle_id='v0'").fetchone()[0]
+        assert n_sess == 0
+        close_db_if_owned(con)
+
+
+def test_energy_balance_rising_soc_short_distance_no_candidate(app):
+    """Same +2 % SOC gain but only 5 km driven → below min distance → no candidate."""
+    from core.db import _get_db, close_db_if_owned
+    from services.missing_charge_service import check_for_missing_charge
+    with app.app_context():
+        con = _get_db()
+        t0 = datetime(2026, 6, 11, 8, 0, 0)
+        _insert_snap(con, "v0", _ts(t0), 33, 10000, loc="unknown")
+        sid = _insert_snap(con, "v0", _ts(t0 + timedelta(hours=5)), 35, 10005, loc="unknown")
+        cid = check_for_missing_charge("v0", sid, _cfg(
+            missing_charge_expected_consumption_kwh_per_100km=19.0), con)
+        assert cid is None
+        close_db_if_owned(con)
+
+
+def test_energy_balance_skips_null_soc_snapshots(app):
+    """SOC unavailable (NULL) mid-window must not block detection.
+
+    The last *usable* snapshot (with SOC) is used as the baseline, so the long
+    drive with a slight SOC rise is still caught despite NULL-SOC snapshots in
+    between.
+    """
+    from core.db import _get_db, close_db_if_owned
+    from services.missing_charge_service import check_for_missing_charge
+    with app.app_context():
+        con = _get_db()
+        t0 = datetime(2026, 6, 12, 8, 0, 0)
+        _insert_snap(con, "v0", _ts(t0), 33, 10000, loc="unknown")
+        # Sensors temporarily unavailable: SOC NULL (odometer still ticking)
+        _insert_snap(con, "v0", _ts(t0 + timedelta(hours=2)), None, 10080, loc="unknown")
+        _insert_snap(con, "v0", _ts(t0 + timedelta(hours=3)), None, 10120, loc="unknown")
+        # Data returns
+        sid = _insert_snap(con, "v0", _ts(t0 + timedelta(hours=5)), 35, 10150, loc="unknown")
+        cid = check_for_missing_charge("v0", sid, _cfg(
+            missing_charge_expected_consumption_kwh_per_100km=19.0), con)
+        assert cid is not None
+        c = _get_candidate(con, cid)
+        assert c["candidate_type"] == "energy_balance"
+        assert c["soc_start"] == 33 and c["soc_end"] == 35
+        assert c["odo_start"] == 10000 and c["odo_end"] == 10150
+        assert c["driven_km"] == 150
+        close_db_if_owned(con)
+
+
 # ── SOC-gain detection ───────────────────────────────────────────────────────
 
 def test_soc_gain_still_detected(app):
