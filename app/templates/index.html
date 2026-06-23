@@ -3611,6 +3611,80 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   </div>
 </div>
 
+<!-- Edit Session Modal -->
+<div class="modal-overlay" id="editSessionModal" style="display:none" onclick="if(event.target===this)closeEditSessionModal()">
+  <div class="modal" style="width:min(480px,95vw)">
+    <button class="modal-close" onclick="closeEditSessionModal()">✕ Schließen</button>
+    <h2 id="es_title">Ladevorgang bearbeiten</h2>
+    <input type="hidden" id="es_id">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
+
+      <div style="grid-column:1/-1">
+        <label class="lbl">Standort</label>
+        <select id="es_location" class="inp" style="width:100%">
+          <option value="home">🏠 Zuhause / Intern</option>
+          <option value="extern">⚡ Extern / Öffentlich</option>
+          <option value="unknown">— Unbekannt</option>
+        </select>
+      </div>
+
+      <div style="grid-column:1/-1">
+        <label class="lbl">Ladetyp</label>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;flex:1;background:rgba(61,220,151,.1);border:1px solid rgba(61,220,151,.2);border-radius:6px;padding:7px 10px;font-size:.83rem;color:var(--txt)">
+            <input type="radio" name="es_charger_type" value="ac" id="es_ct_ac"> AC
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;flex:1;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.2);border-radius:6px;padding:7px 10px;font-size:.83rem;color:var(--txt)">
+            <input type="radio" name="es_charger_type" value="dc" id="es_ct_dc"> DC
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;flex:1;background:rgba(100,116,139,.1);border:1px solid rgba(100,116,139,.2);border-radius:6px;padding:7px 10px;font-size:.83rem;color:var(--txt)">
+            <input type="radio" name="es_charger_type" value="unknown" id="es_ct_unknown"> Unbekannt
+          </label>
+        </div>
+      </div>
+
+      <div>
+        <label class="lbl">KM-Stand Start</label>
+        <input type="number" id="es_odo_start" class="inp" min="0" step="1" placeholder="km" style="width:100%;box-sizing:border-box">
+      </div>
+      <div>
+        <label class="lbl">KM-Stand Ende</label>
+        <input type="number" id="es_odo_end" class="inp" min="0" step="1" placeholder="km" style="width:100%;box-sizing:border-box">
+      </div>
+
+      <div>
+        <label class="lbl">Preis pro kWh (€)</label>
+        <input type="number" id="ees_price" class="inp" min="0" step="0.0001" placeholder="0.0000" style="width:100%;box-sizing:border-box">
+      </div>
+      <div>
+        <label class="lbl">Gesamtkosten (€) <span id="ees_cost_manual_info" style="display:none;background:rgba(100,200,255,.15);color:#64c8ff;border-radius:3px;padding:1px 5px;font-size:.6rem">✎ manuell</span></label>
+        <input type="number" id="ees_cost" class="inp" min="0" step="0.01" placeholder="0.00" style="width:100%;box-sizing:border-box">
+      </div>
+
+      <div style="grid-column:1/-1">
+        <label class="lbl">Geladene kWh</label>
+        <input type="number" id="ees_kwh" class="inp" min="0" step="0.001" placeholder="kWh" style="width:100%;box-sizing:border-box">
+      </div>
+
+      <div>
+        <label class="lbl">Max. Ladeleistung (kW) <span style="color:var(--mute);font-size:.65rem">optional</span></label>
+        <input type="number" id="es_max_power" class="inp" min="0" step="0.1" placeholder="kW" style="width:100%;box-sizing:border-box">
+      </div>
+      <div>
+        <label class="lbl">Notiz <span style="color:var(--mute);font-size:.65rem">optional</span></label>
+        <input type="text" id="es_note" class="inp" placeholder="…" style="width:100%;box-sizing:border-box">
+      </div>
+    </div>
+
+    <div id="es_result" style="margin-top:10px"></div>
+
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button onclick="closeEditSessionModal()" style="background:transparent;color:var(--mute);border:1px solid var(--brd2);border-radius:8px;padding:7px 16px;font-size:.82rem;cursor:pointer;font-family:inherit">Abbrechen</button>
+      <button onclick="submitEditSession()" style="background:rgba(61,220,151,.15);color:#3ddc97;border:1px solid rgba(61,220,151,.3);border-radius:8px;padding:7px 16px;font-size:.82rem;cursor:pointer;font-weight:600;font-family:inherit">Speichern</button>
+    </div>
+  </div>
+</div>
+
 </div><!-- shell -->
 
 <!-- Toasts -->

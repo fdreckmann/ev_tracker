@@ -1,11 +1,11 @@
 {
-  "version": "2.2.0",
+  "version": "2.3.0",
   "channel": "local",
   "branch": "local/source",
   "commit": "",
   "commit_short": "",
   "image_tag": "local",
-  "build_utc": "2026-06-12",
+  "build_utc": "2026-06-23",
   "build_source": "local",
   "github_run_id": "",
   "github_ref": ""

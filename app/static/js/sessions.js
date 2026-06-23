@@ -633,10 +633,124 @@ async function loadConsumptionStats(){
     +'<th>Ort/Typ</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
 }
 
+// ── Session Edit Modal ────────────────────────────────────────────────────────
+
+async function editSession(id) {
+  var s = (window._sessionCache || {})[id];
+  if (!s) {
+    try {
+      var rows = await apiFetch('/api/sessions?limit=200').then(function(r){return r.json();});
+      s = rows.find(function(r){return r.id===id;});
+    } catch(_e) {}
+  }
+  if (!s) { toast('Session nicht gefunden', 'err'); return; }
+
+  var modal = $('editSessionModal');
+  if (!modal) return;
+
+  $('es_id').value = id;
+  $('es_title').textContent = 'Session #' + id + ' bearbeiten';
+
+  // Location
+  $('es_location').value = s.location || 'unknown';
+
+  // Charger type via radio
+  var ctVal = s.charger_type || 'unknown';
+  var ctRadio = document.querySelector('input[name="es_charger_type"][value="' + ctVal + '"]');
+  if (ctRadio) ctRadio.checked = true;
+
+  // Numeric fields — show empty if null so user can see "not set"
+  $('es_odo_start').value  = s.odo_start  != null ? s.odo_start  : '';
+  $('es_odo_end').value    = s.odo_end    != null ? s.odo_end    : '';
+  $('ees_price').value     = s.price_per_kwh != null ? s.price_per_kwh : '';
+  $('ees_cost').value      = s.cost_eur   != null ? s.cost_eur   : '';
+  $('ees_kwh').value       = s.kwh_charged != null ? s.kwh_charged : '';
+  $('es_max_power').value  = s.max_power_kw != null ? s.max_power_kw : '';
+  $('es_note').value       = s.manual_note || '';
+
+  var costManualInfo = $('ees_cost_manual_info');
+  if (costManualInfo) costManualInfo.style.display = s.cost_manual ? 'inline' : 'none';
+
+  $('es_result').innerHTML = '';
+  modal.style.display = 'flex';
+}
+
+function closeEditSessionModal() {
+  var modal = $('editSessionModal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function submitEditSession() {
+  var id = parseInt($('es_id').value);
+  if (!id) return;
+
+  var res = $('es_result');
+  res.innerHTML = '';
+
+  // Client-side validation
+  var odoStartStr = $('es_odo_start').value.trim();
+  var odoEndStr   = $('es_odo_end').value.trim();
+  var odoStartVal = odoStartStr !== '' ? parseFloat(odoStartStr) : null;
+  var odoEndVal   = odoEndStr   !== '' ? parseFloat(odoEndStr)   : null;
+
+  if (odoStartVal !== null && odoStartVal < 0) {
+    res.innerHTML = '<p class="as-err">⚠ KM-Stand Start muss ≥ 0 sein.</p>'; return;
+  }
+  if (odoEndVal !== null && odoEndVal < 0) {
+    res.innerHTML = '<p class="as-err">⚠ KM-Stand Ende muss ≥ 0 sein.</p>'; return;
+  }
+  if (odoStartVal !== null && odoEndVal !== null && odoEndVal < odoStartVal) {
+    res.innerHTML = '<p class="as-err">⚠ KM-Stand Ende darf nicht kleiner als KM-Stand Start sein.</p>'; return;
+  }
+
+  var ctRadio = document.querySelector('input[name="es_charger_type"]:checked');
+  var chargerType = ctRadio ? ctRadio.value : 'unknown';
+  if (['ac','dc','unknown'].indexOf(chargerType) === -1) {
+    res.innerHTML = '<p class="as-err">⚠ Ungültiger Ladetyp.</p>'; return;
+  }
+
+  var body = { location: $('es_location').value, charger_type: chargerType };
+  if (odoStartVal !== null) body.odo_start = odoStartVal;
+  if (odoEndVal   !== null) body.odo_end   = odoEndVal;
+
+  var priceStr   = $('ees_price').value.trim();
+  var costStr    = $('ees_cost').value.trim();
+  var kwhStr     = $('ees_kwh').value.trim();
+  var maxPwrStr  = $('es_max_power').value.trim();
+  var noteStr    = $('es_note').value.trim();
+
+  if (priceStr  !== '') { var p = parseFloat(priceStr);  if (!isNaN(p)) body.price_per_kwh = p; }
+  if (costStr   !== '') { var c = parseFloat(costStr);   if (!isNaN(c)) body.cost_eur = c; }
+  if (kwhStr    !== '') { var k = parseFloat(kwhStr);    if (!isNaN(k)) body.kwh_charged = k; }
+  if (maxPwrStr !== '') { var m = parseFloat(maxPwrStr); if (!isNaN(m)) body.max_power_kw = m; }
+  if (noteStr   !== '') body.manual_note = noteStr;
+
+  res.innerHTML = '<p style="color:var(--mute)">⏳ Speichere…</p>';
+
+  var r = await apiFetch('/api/sessions/' + encodeURIComponent(id), {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  }).then(function(x){return x.json();}).catch(function(e){return {ok:false,error:e.message};});
+
+  if (r.ok) {
+    closeEditSessionModal();
+    toast('✅ Session #' + id + ' gespeichert');
+    loadSessions();
+    if (typeof loadCharts === 'function') loadCharts();
+    if (typeof refreshStatus === 'function') refreshStatus();
+  } else {
+    res.innerHTML = '<p class="as-err">❌ ' + escapeHtml(r.error || 'Unbekannter Fehler') + '</p>';
+  }
+}
+
 // ── Global registration ───────────────────────────────────────────────────────
 // Inline onclick attributes in dynamically-built rows need these on window.
 window.editCost        = editCost;
 window.editLocation    = editLocation;
+window.editSession     = editSession;
+window.closeEditSessionModal = closeEditSessionModal;
+window.submitEditSession = submitEditSession;
 window.delSession      = delSession;
 window.showSessionDetail = showSessionDetail;
 window.closeModal      = closeModal;
