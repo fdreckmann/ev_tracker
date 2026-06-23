@@ -1,26 +1,24 @@
 {
-  "latest_version": "2.2.0",
-  "release_date": "2026-06-12",
+  "latest_version": "2.3.0",
+  "release_date": "2026-06-23",
   "channel": "stable",
-  "title": "Stable Release 2.2.0 — Provider-Review, AC/DC-Schätzung & Dokumentation",
+  "title": "Stable Release 2.3.0 — Zentraler Bearbeiten-Dialog für Ladevorgänge",
   "summary": [
-    "AC/DC-Ladertyp wird automatisch geschätzt wenn API keine Info liefert (Priorität: Standort → Leistung → Schätzung)",
-    "Provider-Status: VW WeConnect seit Juni 2026 gesperrt — klare Fehlermeldung mit HA-Fallback-Empfehlung",
-    "Stabilitätsbadge für alle Provider in der Fahrzeugkonfiguration (Stabil / Mittel / Fragil)",
-    "Graceful Provider-Imports: fehlende Bibliothek bei einem Provider blockiert nicht mehr den App-Start",
-    "Neue Dokumentation: docs/quickstart.md, docs/anleitung.md, docs/provider-status.md",
-    "Hilfe-Links in Konfiguration → Version & Update",
-    "README neu strukturiert mit Fokus auf Excel-Ladeabrechnung"
+    "Zentraler ✎ Bearbeiten-Button ersetzt separate Preis- und Standort-Buttons in der Ladeliste",
+    "Bearbeiten-Dialog: Standort, Ladetyp (AC/DC/Unbekannt), KM-Stand Start/Ende, Preis/kWh, Gesamtkosten, kWh, max. Leistung, Notiz",
+    "Manuelles Setzen von AC/DC setzt charger_type_source=manual und charger_type_confidence=100",
+    "Manuelle Kosten (cost_manual=1) werden bei Ladetyp-Änderung nicht überschrieben",
+    "Validierung: Ladetyp muss ac/dc/unknown sein, KM-Stand ≥ 0, KM-Ende ≥ KM-Start",
+    "Missing-Charge-Erkennung: Energy-Balance erkennt jetzt auch Ladevorgänge bei steigendem SOC mit großer Fahrtstrecke",
+    "Snapshots ohne SOC-Wert werden bei der Baseline-Ermittlung übersprungen"
   ],
   "fixes": [
-    "VW / Audi Provider: test_connection gibt jetzt erklärende Fehlermeldung statt rohen Exception-Text",
-    "Provider-Felder type=info werden als styled Warning-Box gerendert (nicht als Textinput)",
-    "charger_type_source / charger_type_confidence werden korrekt in DB gespeichert und an API weitergegeben"
+    "PATCH /api/sessions/<id>: odo_start und odo_end werden einzeln auf < 0 geprüft",
+    "renderTbl: Session-Cache (window._sessionCache) wird beim Rendern befüllt"
   ],
   "breaking_changes": [],
   "migration_notes": [
     "DB-Migrationen laufen automatisch beim Container-Start — kein manueller Eingriff nötig",
-    "VW WeConnect-Provider: Integration funktioniert seit Juni 2026 nicht mehr — auf Home Assistant Provider wechseln",
     "Empfehlung: /data-Verzeichnis vor dem Update sichern",
     "Unraid CA-Template: https://github.com/fdreckmann/ev-tracker-unraid-app"
   ],

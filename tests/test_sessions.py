@@ -498,3 +498,123 @@ class TestConfigValidatorUnit:
         result = validate({"some_string_field": "hello", "some_bool": True})
         assert result["some_string_field"] == "hello"
         assert result["some_bool"] is True
+
+
+class TestSessionPatchExtended:
+    """12 tests for the PATCH /api/sessions/<id> endpoint covering the edit-session dialog."""
+
+    def _create(self, client, **kw):
+        data = dict(start_ts="2026-05-01T10:00:00", end_ts="2026-05-01T11:00:00",
+                    kwh_charged=20.0, location="home", charger_type="ac")
+        data.update(kw)
+        rv = client.post("/api/sessions/manual", json=data)
+        assert rv.status_code in (200, 201)
+        return rv.get_json()["id"]
+
+    def _row(self, app, sid):
+        from core.db import _get_db, close_db_if_owned
+        with app.app_context():
+            con = _get_db()
+            row = con.execute("SELECT * FROM sessions WHERE id=?", (sid,)).fetchone()
+            close_db_if_owned(con)
+        return dict(row) if row else {}
+
+    # 1. charger_type ac is accepted and sets source=manual, confidence=100
+    def test_patch_charger_type_ac_sets_source_manual(self, authed_client, app):
+        sid = self._create(authed_client, charger_type="unknown")
+        rv = authed_client.patch(f"/api/sessions/{sid}", json={"charger_type": "ac"})
+        assert rv.status_code == 200
+        row = self._row(app, sid)
+        assert row["charger_type"] == "ac"
+        assert row.get("charger_type_source") == "manual"
+        assert row.get("charger_type_confidence") == 100
+
+    # 2. charger_type dc is accepted and sets source=manual, confidence=100
+    def test_patch_charger_type_dc_sets_source_manual(self, authed_client, app):
+        sid = self._create(authed_client, charger_type="ac")
+        rv = authed_client.patch(f"/api/sessions/{sid}", json={"charger_type": "dc"})
+        assert rv.status_code == 200
+        row = self._row(app, sid)
+        assert row["charger_type"] == "dc"
+        assert row.get("charger_type_source") == "manual"
+        assert row.get("charger_type_confidence") == 100
+
+    # 3. charger_type unknown is accepted (source not forced to manual)
+    def test_patch_charger_type_unknown_accepted(self, authed_client, app):
+        sid = self._create(authed_client, charger_type="ac")
+        rv = authed_client.patch(f"/api/sessions/{sid}", json={"charger_type": "unknown"})
+        assert rv.status_code == 200
+        row = self._row(app, sid)
+        assert row["charger_type"] == "unknown"
+
+    # 4. invalid charger_type is rejected with 400
+    def test_patch_charger_type_invalid_rejected(self, authed_client):
+        sid = self._create(authed_client)
+        rv = authed_client.patch(f"/api/sessions/{sid}", json={"charger_type": "turbo"})
+        assert rv.status_code == 400
+        assert rv.get_json().get("ok") is False
+
+    # 5. odo_start and odo_end are stored correctly
+    def test_patch_odo_start_end_stored(self, authed_client, app):
+        sid = self._create(authed_client)
+        rv = authed_client.patch(f"/api/sessions/{sid}", json={"odo_start": 12000.0, "odo_end": 12150.0})
+        assert rv.status_code == 200
+        row = self._row(app, sid)
+        assert row["odo_start"] == 12000.0
+        assert row["odo_end"] == 12150.0
+
+    # 6. odo_end < odo_start is rejected with 400
+    def test_patch_odo_end_less_than_start_rejected(self, authed_client):
+        sid = self._create(authed_client)
+        rv = authed_client.patch(f"/api/sessions/{sid}", json={"odo_start": 15000.0, "odo_end": 14000.0})
+        assert rv.status_code == 400
+        assert rv.get_json().get("ok") is False
+
+    # 7. odo_start alone (without odo_end) is accepted
+    def test_patch_odo_start_alone_accepted(self, authed_client, app):
+        sid = self._create(authed_client)
+        rv = authed_client.patch(f"/api/sessions/{sid}", json={"odo_start": 50000.0})
+        assert rv.status_code == 200
+        row = self._row(app, sid)
+        assert row["odo_start"] == 50000.0
+
+    # 8. cost_manual=1 session: patching charger_type does NOT reset cost_eur
+    def test_patch_charger_type_preserves_manual_cost(self, authed_client, app):
+        sid = self._create(authed_client, cost_eur=9.99, charger_type="unknown")
+        row_before = self._row(app, sid)
+        original_cost = row_before.get("cost_eur")
+        rv = authed_client.patch(f"/api/sessions/{sid}", json={"charger_type": "ac"})
+        assert rv.status_code == 200
+        row = self._row(app, sid)
+        assert row.get("cost_eur") == original_cost
+
+    # 9. cost_eur patch sets cost_manual=1
+    def test_patch_cost_eur_sets_cost_manual(self, authed_client, app):
+        sid = self._create(authed_client)
+        rv = authed_client.patch(f"/api/sessions/{sid}", json={"cost_eur": 7.50})
+        assert rv.status_code == 200
+        row = self._row(app, sid)
+        assert row.get("cost_manual") == 1
+
+    # 10. price_per_kwh patch sets cost_manual=1
+    def test_patch_price_per_kwh_sets_cost_manual(self, authed_client, app):
+        sid = self._create(authed_client)
+        rv = authed_client.patch(f"/api/sessions/{sid}", json={"price_per_kwh": 0.45})
+        assert rv.status_code == 200
+        row = self._row(app, sid)
+        assert row.get("cost_manual") == 1
+
+    # 11. negative odo_start is rejected with 400
+    def test_patch_negative_odo_start_rejected(self, authed_client):
+        sid = self._create(authed_client)
+        rv = authed_client.patch(f"/api/sessions/{sid}", json={"odo_start": -1.0})
+        assert rv.status_code == 400
+        assert rv.get_json().get("ok") is False
+
+    # 12. patching kwh_charged alone is accepted and stored
+    def test_patch_kwh_charged_stored(self, authed_client, app):
+        sid = self._create(authed_client, kwh_charged=20.0)
+        rv = authed_client.patch(f"/api/sessions/{sid}", json={"kwh_charged": 33.5})
+        assert rv.status_code == 200
+        row = self._row(app, sid)
+        assert abs(row["kwh_charged"] - 33.5) < 0.001

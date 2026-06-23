@@ -281,6 +281,9 @@ function typeBadge(t, kw, source) {
 
 function renderTbl(el, rows, showDel = true) {
   if (!rows.length) { el.innerHTML = '<div class="empty">Keine Ladevorgänge</div>'; return; }
+  // Cache session objects so editSession(id) can look them up without a re-fetch
+  window._sessionCache = window._sessionCache || {};
+  rows.forEach(function(r){ window._sessionCache[r.id] = r; });
   const hasMeter   = rows.some(r => r.meter_old != null || r.meter_new != null);
   const hasVehicle = rows.some(r => r.vehicle_id && r.vehicle_id !== 'v0') || new Set(rows.map(r => r.vehicle_id)).size > 1;
   const fmtMeter   = v => v != null ? Math.round(Number(v)).toLocaleString('de') : '—';
@@ -309,12 +312,9 @@ function renderTbl(el, rows, showDel = true) {
       ${hasMeter ? `<td style="font-size:.72rem;color:#a78bfa;font-family:var(--mono)">${fmtMeter(r.meter_old)} → ${fmtMeter(r.meter_new)}</td>` : ''}
       <td>${locBadge(r.location, r.location_source)}${(r.provider==='manual'||r.created_mode==='manual')?' <span title="Manuell erfasst" style="background:rgba(100,200,255,.12);color:#64c8ff;border:1px solid rgba(100,200,255,.25);border-radius:3px;padding:1px 5px;font-size:.6rem;font-family:var(--mono)">✏</span>':''}</td>
       ${showDel ? `<td style="display:flex;gap:4px;padding:8px 4px">
-        <button onclick="event.stopPropagation();editCost(${r.id},${r.kwh_charged || 0},${r.price_per_kwh || 0})"
+        <button onclick="event.stopPropagation();editSession(${r.id})"
           style="background:rgba(0,180,255,.12);color:#00b4ff;border:1px solid rgba(0,180,255,.25);
-          border-radius:6px;padding:3px 8px;font-size:.65rem;cursor:pointer" title="Kosten bearbeiten">✎</button>
-        <button data-sid="${r.id}" data-loc="${escapeHtml(r.location||'unknown')}" onclick="event.stopPropagation();editLocation(+this.dataset.sid,this.dataset.loc)"
-          style="background:rgba(61,220,151,.12);color:#3ddc97;border:1px solid rgba(61,220,151,.25);
-          border-radius:6px;padding:3px 8px;font-size:.65rem;cursor:pointer" title="Standort ändern">📍</button>
+          border-radius:6px;padding:3px 8px;font-size:.65rem;cursor:pointer" title="Ladevorgang bearbeiten">✎ Bearbeiten</button>
         <button onclick="event.stopPropagation();delSession(${r.id})"
           style="background:rgba(239,68,68,.12);color:#ef4444;border:1px solid rgba(239,68,68,.25);
           border-radius:6px;padding:3px 8px;font-size:.65rem;cursor:pointer">✕</button>

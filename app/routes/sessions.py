@@ -686,6 +686,12 @@ def api_patch_session(sid):
 
     odo_start = _fv("odo_start")
     odo_end   = _fv("odo_end")
+    if odo_start is not None and odo_start < 0:
+        close_db_if_owned(con)
+        return jsonify({"ok": False, "error": "odo_start darf nicht negativ sein"}), 400
+    if odo_end is not None and odo_end < 0:
+        close_db_if_owned(con)
+        return jsonify({"ok": False, "error": "odo_end darf nicht negativ sein"}), 400
     if odo_start is not None and odo_end is not None and odo_end < odo_start:
         close_db_if_owned(con)
         return jsonify({"ok": False, "error": "odo_end darf nicht kleiner als odo_start sein"}), 400
