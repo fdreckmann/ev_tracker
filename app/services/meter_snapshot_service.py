@@ -76,18 +76,28 @@ def maybe_record_poll_snapshot(vehicle_id: str, cfg: dict, st: dict, con) -> int
     """Read the meter once per poll and store a snapshot with change/heartbeat
     dedupe. Updates the tracker state ``st`` in place. Never raises.
 
-    Live state (``meter_snap_last_power`` / ``meter_snap_last_val``) is
-    updated on EVERY successful poll — this is what ChargingStateMachine
-    reads to detect charge-stop. DB persistence has its own, separate dedupe
-    so the table doesn't explode; that dedupe must never gate the live state.
+    Two state groups are kept strictly separate:
+
+      * LIVE state (``meter_snap_last_power`` / ``meter_snap_last_val`` /
+        ``meter_snap_last_ok``) represents ONLY the current poll. It is
+        overwritten on every call — success or failure — and is what
+        ChargingStateMachine reads via app.server.py. A failed or
+        power-only poll always clears the stale field(s) to ``None``; a
+        prior positive power or cumulative-counter reading must never
+        keep being reported as "current" once the poll that produced it
+        is no longer the latest one.
+      * DEDUPE state (``meter_snap_last_saved_val`` / ``meter_snap_last_dt``)
+        tracks what was actually written to the ``meter_snapshots`` table,
+        purely to decide whether a new DB row is needed (change/heartbeat).
+        It intentionally does NOT track the live value — a live value going
+        to None (power-only/failed poll) must not affect what the next
+        *real* reading gets compared against.
 
     Storage rules:
-      * ok reading  → store when the value changed by >= min_delta, or once per
-                      heartbeat interval.
+      * ok reading  → store when the value changed by >= min_delta from the
+                      last SAVED value, or once per heartbeat interval.
       * failed read → stored at most once per heartbeat and capped per vehicle;
-                      a failing meter also backs reads off to the heartbeat rate,
-                      and immediately clears the live power signal so a stale
-                      positive power value cannot linger after an error.
+                      a failing meter also backs reads off to the heartbeat rate.
     """
     try:
         if not cfg.get("meter_snapshot_enabled", True):
@@ -102,7 +112,7 @@ def maybe_record_poll_snapshot(vehicle_id: str, cfg: dict, st: dict, con) -> int
         min_delta = float(cfg.get("meter_snapshot_min_delta_kwh", 0.05) or 0.0)
         now = _now()
         last_dt = st.get("meter_snap_last_dt")
-        last_val = st.get("meter_snap_last_val")
+        last_saved_val = st.get("meter_snap_last_saved_val")
         last_ok = st.get("meter_snap_last_ok", True)
         mins_since = (now - last_dt).total_seconds() / 60.0 if last_dt else None
         heartbeat_due = mins_since is None or mins_since >= hb_minutes
@@ -116,47 +126,51 @@ def maybe_record_poll_snapshot(vehicle_id: str, cfg: dict, st: dict, con) -> int
         ts = now.isoformat(timespec="seconds")
 
         if res.ok:
-            # Live state (power + cumulative value) is updated on EVERY
-            # successful poll, independent of whether a DB snapshot row gets
-            # written. The ChargingStateMachine reads meter_snap_last_power
-            # every poll to detect charge-stop — if this only updated when a
-            # DB row was stored (change/heartbeat dedupe), a stale positive
-            # power value could survive for a full heartbeat interval after
-            # charging actually stopped (unchanged cumulative counter, 0 kW
-            # reported), and stop-detection would silently miss the event.
+            # Live state represents ONLY this poll — always overwritten,
+            # never left stale from a previous poll. A valid reading of 0
+            # is a real value (checked via `is not None`, never truthiness)
+            # and must be reflected here just like any other value.
             st["meter_snap_last_power"] = res.power_kw  # None when provider doesn't expose it
-            if res.value is not None:
-                st["meter_snap_last_val"] = res.value
-            elif res.power_kw is not None:
-                log.debug("meter snapshot [%s]: power-only read (%.2f kW), kein kumulativer "
-                          "Zähler diesen Poll — meter_snap_last_val bleibt unverändert",
-                          vehicle_id, res.power_kw)
-            st["meter_snap_last_ok"] = True
+            st["meter_snap_last_val"]   = res.value      # None when no cumulative counter this poll
+            st["meter_snap_last_ok"]    = True
 
             if res.value is None:
-                # Nothing to persist as a meter reading this poll (power-only).
+                if res.power_kw is not None:
+                    log.debug("meter snapshot [%s]: Power-only Poll (%.2f kW) — kein kumulativer "
+                              "Zähler in diesem Poll, Live-Zählerwert ist None (kein veralteter "
+                              "Wert wird weitergereicht)", vehicle_id, res.power_kw)
+                else:
+                    log.debug("meter snapshot [%s]: Poll ok, aber weder Zähler noch Leistung "
+                              "vorhanden", vehicle_id)
                 st["meter_snap_last_dt"] = now
                 return None
 
-            changed = last_val is None or abs(res.value - last_val) >= min_delta
+            changed = last_saved_val is None or abs(res.value - last_saved_val) >= min_delta
             if not (changed or heartbeat_due):
                 return None
             rid = store_meter_snapshot(vehicle_id, source, res.value, res.raw_value,
                                        res.unit, True, None, con, ts=ts)
             st["meter_snap_last_dt"] = now
+            st["meter_snap_last_saved_val"] = res.value
             return rid
 
         # Failed read: the live power/energy signal must NOT keep serving a
         # stale value from a previous successful poll — otherwise a positive
-        # power reading could "live forever" and the ChargingStateMachine
-        # would never see charging stop. Clear both live fields immediately;
-        # only the DB error-row write itself is rate-limited to the heartbeat.
-        if st.get("meter_snap_last_power") is not None or st.get("meter_snap_last_val") is not None:
-            log.info("meter snapshot [%s]: Poll fehlgeschlagen (%s) — verwerfe zuletzt bekannte "
-                     "Live-Werte (Power/Zähler), damit kein veralteter Ladezustand hängen bleibt",
-                     vehicle_id, res.error)
+        # power reading (or an old cumulative counter) could "live forever"
+        # and the ChargingStateMachine would evaluate a reading that isn't
+        # from the current poll at all. Clear both live fields immediately.
+        # The dedupe baseline (meter_snap_last_saved_val) is deliberately
+        # left untouched — it must survive a transient failure so the next
+        # real reading is still compared against the last known-good value.
+        stale_power = st.get("meter_snap_last_power")
+        stale_val   = st.get("meter_snap_last_val")
+        if stale_power is not None or stale_val is not None:
+            log.info("meter snapshot [%s]: Poll fehlgeschlagen (%s) — verwerfe veraltete "
+                     "Live-Werte (Power=%s, Zähler=%s), damit kein veralteter Ladezustand "
+                     "hängen bleibt", vehicle_id, res.error, stale_power, stale_val)
         st["meter_snap_last_power"] = None
-        st["meter_snap_last_ok"] = False
+        st["meter_snap_last_val"]   = None
+        st["meter_snap_last_ok"]    = False
 
         if not heartbeat_due:
             return None
