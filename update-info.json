@@ -1,20 +1,14 @@
 {
-  "latest_version": "2.3.0",
-  "release_date": "2026-06-23",
+  "latest_version": "2.3.1",
+  "release_date": "2026-08-04",
   "channel": "stable",
-  "title": "Stable Release 2.3.0 — Zentraler Bearbeiten-Dialog für Ladevorgänge",
+  "title": "Stable Release 2.3.1 — Fix: Zählerstand-Ende fehlt bei Zuhause-Ladevorgängen",
   "summary": [
-    "Zentraler ✎ Bearbeiten-Button ersetzt separate Preis- und Standort-Buttons in der Ladeliste",
-    "Bearbeiten-Dialog: Standort, Ladetyp (AC/DC/Unbekannt), KM-Stand Start/Ende, Preis/kWh, Gesamtkosten, kWh, max. Leistung, Notiz",
-    "Manuelles Setzen von AC/DC setzt charger_type_source=manual und charger_type_confidence=100",
-    "Manuelle Kosten (cost_manual=1) werden bei Ladetyp-Änderung nicht überschrieben",
-    "Validierung: Ladetyp muss ac/dc/unknown sein, KM-Stand ≥ 0, KM-Ende ≥ KM-Start",
-    "Missing-Charge-Erkennung: Energy-Balance erkennt jetzt auch Ladevorgänge bei steigendem SOC mit großer Fahrtstrecke",
-    "Snapshots ohne SOC-Wert werden bei der Baseline-Ermittlung übersprungen"
+    "Session-Ende: Standortprüfung für den Zählerstand (meter_scope=home_only) fällt nicht mehr fälschlich auf 'unknown' zurück, wenn das Live-Standortsignal genau beim Ladeende kurzzeitig aussetzt",
+    "Bereits während der Session bestätigter Standort (z.B. via Zähler-Delta-Erkennung) wird jetzt als Fallback verwendet, statt den Zählerstand-Endwert zu verwerfen"
   ],
   "fixes": [
-    "PATCH /api/sessions/<id>: odo_start und odo_end werden einzeln auf < 0 geprüft",
-    "renderTbl: Session-Cache (window._sessionCache) wird beim Rendern befüllt"
+    "Zuhause-Ladevorgänge: 'Zähler Neu' blieb leer, obwohl 'Zähler Alt' korrekt gesetzt war, weil die Standorterkennung am exakten Ladeende kurzzeitig 'unknown' meldete und meter_scope=home_only das Auslesen deswegen übersprang"
   ],
   "breaking_changes": [],
   "migration_notes": [

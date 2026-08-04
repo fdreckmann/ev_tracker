@@ -1,5 +1,25 @@
 # Changelog
 
+## v2.3.1 — 2026-08-04
+
+### Fix: Zählerstand-Ende fehlt bei Zuhause-Ladevorgängen
+
+- Bei Ladevorgängen zu Hause wurde `meter_new` (Zählerstand Ende) manchmal nicht gespeichert, obwohl `meter_old` (Zählerstand Start) korrekt gesetzt war
+- Ursache: Die Standortprüfung am Session-Ende (`meter_scope=home_only`) wurde live neu ermittelt und konnte genau im Moment des Ladeendes kurzzeitig `unknown` liefern (z. B. GPS-/Provider-Daten hinken dem Ladeende-Event hinterher), wodurch das Auslesen des Zählerstands übersprungen wurde
+- Fix: Wenn das Live-Standortsignal beim Session-Ende `unknown` ist, wird jetzt auf den bereits während der Session bestätigten Standort zurückgefallen (z. B. durch Zähler-Delta-Erkennung), statt den Zählerstand-Endwert zu verwerfen
+
+## v2.3.0 — 2026-06-23
+
+### Zentraler Bearbeiten-Dialog für Ladevorgänge
+
+- Zentraler ✎ Bearbeiten-Button ersetzt separate Preis- und Standort-Buttons in der Ladeliste
+- Bearbeiten-Dialog: Standort, Ladetyp (AC/DC/Unbekannt), KM-Stand Start/Ende, Preis/kWh, Gesamtkosten, kWh, max. Leistung, Notiz — alle über `PATCH /api/sessions/<id>`
+- Manuelles Setzen von AC/DC setzt `charger_type_source=manual` und `charger_type_confidence=100`
+- Manuelle Kosten (`cost_manual=1`) werden bei Ladetyp-Änderung nicht überschrieben
+- Validierung: Ladetyp muss `ac`/`dc`/`unknown` sein, KM-Stand ≥ 0, KM-Ende ≥ KM-Start
+- Missing-Charge-Erkennung: Energy-Balance erkennt jetzt auch Ladevorgänge bei steigendem SOC mit großer Fahrtstrecke
+- Snapshots ohne SOC-Wert werden bei der Baseline-Ermittlung übersprungen
+
 ## v2.2.0 — 2026-06-12
 
 ### Provider-Review, AC/DC-Schätzung & Dokumentation

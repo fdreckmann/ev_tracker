@@ -1492,6 +1492,17 @@ def tracker_loop(vehicle_id: str = "v0"):
                         cost = round(kwh*(db_price or vcfg.get("price_per_kwh_home", 0.30)),2)
                 _meter_scope = vcfg.get("meter_scope", "home_only")
                 _effective_location = effective_session_location(location, st.get("location_status"))
+                if _effective_location == "unknown":
+                    # Live location signal is unavailable right at disconnect (common —
+                    # GPS/provider data lags behind the charging-stopped event). Fall back
+                    # to the location already persisted for this session, which may have
+                    # been confirmed mid-session (e.g. via meter-delta home detection) and
+                    # is more reliable than a fresh read at this exact poll.
+                    _db_loc_row = cur.execute(
+                        "SELECT location FROM sessions WHERE id=?", (session_id,)).fetchone()
+                    _db_loc = normalize_location(_db_loc_row[0]) if _db_loc_row and _db_loc_row[0] else "unknown"
+                    if _db_loc != "unknown":
+                        _effective_location = _db_loc
 
                 # Final meter-based home detection at session end
                 _mhd_enabled = vcfg.get("meter_home_detection_enabled", True)
