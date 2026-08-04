@@ -1,17 +1,25 @@
 {
-  "latest_version": "2.3.1",
+  "latest_version": "2.4.0",
   "release_date": "2026-08-04",
   "channel": "stable",
-  "title": "Stable Release 2.3.1 — Fix: Zählerstand-Ende fehlt bei Zuhause-Ladevorgängen",
+  "title": "Stable Release 2.4.0 — Zuhause-Laden-Logik vollständig überarbeitet",
   "summary": [
-    "Session-Ende: Standortprüfung für den Zählerstand (meter_scope=home_only) fällt nicht mehr fälschlich auf 'unknown' zurück, wenn das Live-Standortsignal genau beim Ladeende kurzzeitig aussetzt",
-    "Bereits während der Session bestätigter Standort (z.B. via Zähler-Delta-Erkennung) wird jetzt als Fallback verwendet, statt den Zählerstand-Endwert zu verwerfen"
+    "EVCC-Provider: chargedEnergy (Session-Energie) wird nicht mehr fälschlich als kumulativer Zählerstand verwendet — nur chargeTotalImport zählt, per Existenzprüfung statt Truthiness (0 ist ein gültiger Wert)",
+    "Live-Leistung und Live-Zählerwert werden jetzt bei jedem erfolgreichen Poll aktualisiert, unabhängig von der DB-Snapshot-Deduplizierung — Stop-Erkennung funktioniert jetzt auch bei unverändertem Zähler",
+    "Ein fehlgeschlagener Meter-Poll verwirft sofort den zuletzt bekannten Leistungswert, damit kein veralteter Ladezustand endlos weiterlebt",
+    "Offene Ladevorgänge (normale Sessions) überstehen jetzt einen Tracker-/App-Neustart: die neueste offene Session pro Fahrzeug wird automatisch wieder aufgenommen statt eine zweite anzulegen",
+    "Aktive Wallbox-Sessions werden nach einem Neustart aus der Datenbank rehydriert statt dupliziert zu werden",
+    "Energy-only-Erkennung öffnet keine Phantom-Session mehr beim allerersten Messwert — nur ein tatsächlicher Zähleranstieg öffnet eine Session, ein Zählerreset erzeugt keine negative Energie",
+    "Endzähler wird jetzt auch bei einem vorübergehend unbekannten Standort geschrieben, sofern die Session bereits als Heimladung feststeht (Fix aus 2.3.1, jetzt vollständig abgesichert)"
   ],
   "fixes": [
-    "Zuhause-Ladevorgänge: 'Zähler Neu' blieb leer, obwohl 'Zähler Alt' korrekt gesetzt war, weil die Standorterkennung am exakten Ladeende kurzzeitig 'unknown' meldete und meter_scope=home_only das Auslesen deswegen übersprang"
+    "Ursache des 'Zähler Alt = 1'-Fehlers behoben: EVCC chargedEnergy (z.B. 1000 Wh) wurde bei fehlendem chargeTotalImport fälschlich als 1 kWh Zählerstand interpretiert",
+    "meter_snapshot_service: Live-State-Update war an die DB-Schreib-Deduplizierung gekoppelt — dadurch blieb bei unverändertem Zähler ein veralteter Leistungswert stehen und die Stop-Erkennung griff nicht",
+    "Doppelte Sessions nach Neustart: sowohl normale Sessions als auch Wallbox-Sessions werden nach einem Neustart fortgesetzt statt dupliziert"
   ],
   "breaking_changes": [],
   "migration_notes": [
+    "Keine Datenbankmigration nötig — alle verwendeten Felder existierten bereits",
     "DB-Migrationen laufen automatisch beim Container-Start — kein manueller Eingriff nötig",
     "Empfehlung: /data-Verzeichnis vor dem Update sichern",
     "Unraid CA-Template: https://github.com/fdreckmann/ev-tracker-unraid-app"
