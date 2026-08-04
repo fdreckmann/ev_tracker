@@ -1,5 +1,19 @@
 # Changelog
 
+## v2.5.1 — 2026-08-05
+
+### Bearbeitung von Ladevorgängen an einer Stelle gebündelt
+
+Die in 2.5.0 eingeführte separate Zähler-Bearbeitung in der Detailansicht und der bestehende „✎ Bearbeiten“-Dialog stellten zwei parallele Bearbeitungswege für denselben Ladevorgang dar. Beide wurden zu einem zusammengeführt.
+
+- **Detailansicht** (Klick auf eine Session-Zeile) ist jetzt konsequent read-only: keine Buttons „📍 Standort ändern“, „✎ Kosten“ oder „🔌 Zählerstände“ mehr, kein separater Zähler-Dialog. Zeigt weiterhin alle relevanten Informationen an, inkl. neuer „Dauer“-Zeile und der bereits vorhandenen Zähler-Infos (Alt/Neu/Differenz/Quelle/manuell-Kennzeichnung) — nur eben nicht mehr editierbar
+- **„✎ Bearbeiten“-Dialog** enthält jetzt zusätzlich Zählerstand Start/Ende, direkt bei den Energiedaten platziert, mit einer client-seitigen Live-Vorschau der Differenz (verbindliche Berechnung bleibt serverseitig)
+- **Ein Speichern-Button, ein Ergebnis**: intern ruft der Dialog weiterhin zwei Endpunkte auf (`PATCH /api/sessions/<id>` für allgemeine Felder, `PATCH /api/sessions/<id>/meter-values` für die Zählerstände), aber der Nutzer sieht nur einen Button und entweder eine Erfolgsmeldung für beides oder eine klare Fehlermeldung — nie eine irreführende Teilerfolgsmeldung. Schlägt der zweite Aufruf fehl, obwohl der erste erfolgreich war, wird die Ansicht mit dem echten Serverstand neu geladen
+- Zählerfelder sind für noch laufende Ladevorgänge (kein `end_ts`) deaktiviert, mit Hinweistext „Zählerstände können erst nach Abschluss des Ladevorgangs bearbeitet werden.“
+- Backend-Validierung, Schutz vor automatischem Überschreiben (`meter_values_manual`) und die dedizierte Route aus 2.5.0 bleiben unverändert bestehen
+
+20 neue Tests in `tests/test_session_edit_consolidation.py`. Build-/Asset-Version aktualisiert, damit das neue Frontend zuverlässig ausgeliefert wird.
+
 ## v2.5.0 — 2026-08-04
 
 ### Zählerstände bei Ladevorgängen manuell bearbeiten

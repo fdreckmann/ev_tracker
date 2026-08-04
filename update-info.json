@@ -1,22 +1,22 @@
 {
-  "latest_version": "2.5.0",
-  "release_date": "2026-08-04",
+  "latest_version": "2.5.1",
+  "release_date": "2026-08-05",
   "channel": "stable",
-  "title": "Stable Release 2.5.0 — Zählerstände manuell bearbeiten",
+  "title": "Stable Release 2.5.1 — Bearbeitung von Ladevorgängen an einer Stelle gebündelt",
   "summary": [
-    "Neue Aktion in der Ladevorgangs-Detailansicht: 🔌 Zählerstände — Zählerstand Start/Ende eines abgeschlossenen Ladevorgangs manuell korrigieren, inkl. vollständigem Leeren auf NULL",
-    "Damit lässt sich der bekannte Legacy-Fehler (Zähler Alt=1, Zähler Neu leer) direkt über die Oberfläche bereinigen",
-    "Differenz (meter_delta_kwh) wird ausschließlich serverseitig neu berechnet, nie im Browser — Endwert < Startwert wird abgelehnt",
-    "Manuell korrigierte Zählerstände werden als solche markiert (meter_values_manual) und von späteren Hintergrundprozessen (z.B. Wallbox-Zuordnung/Reconciliation) nicht mehr überschrieben",
-    "Bearbeitung nur für bereits abgeschlossene Ladevorgänge (end_ts gesetzt) möglich"
+    "Die Detailansicht eines Ladevorgangs (Klick auf die Zeile) ist jetzt vollständig schreibgeschützt — keine Buttons, keine Eingabefelder, kein separater Zähler-Dialog mehr",
+    "Zählerstand Start/Ende sind jetzt Teil des zentralen Dialogs „✎ Bearbeiten“, direkt bei den Energiedaten (geladene kWh, Zählerstand Start/Ende, Live-Vorschau der Differenz)",
+    "Nur noch ein Bearbeitungsweg, ein Speichern-Button, eine Erfolgsmeldung für alle Änderungen (allgemeine Daten + Zählerstände)",
+    "Schlägt das Speichern der Zählerstände fehl, wird keine falsche Erfolgsmeldung mehr angezeigt — stattdessen eine klare Fehlermeldung und ein Reload mit dem echten Serverzustand",
+    "Zählerfelder sind für noch laufende Ladevorgänge deaktiviert, mit Hinweistext darunter"
   ],
   "fixes": [
-    "reconciliation_service.py: eine manuell auf NULL gesetzte Zählerkorrektur wurde bei einer späteren Wallbox-Zuordnung wieder automatisch aufgefüllt — jetzt durch meter_values_manual-Flag verhindert"
+    "Zwei parallele Bearbeitungswege für Ladevorgänge (allgemeiner Dialog + separater Zähler-Dialog in der Detailansicht) zu einem einzigen zusammengeführt"
   ],
   "breaking_changes": [],
   "migration_notes": [
-    "Minimale DB-Migration: neue Spalten sessions.meter_values_manual, sessions.meter_values_manual_ts (automatisch beim Start)",
-    "Bereits fehlerhaft gespeicherte Legacy-Sessions können jetzt direkt in der Oberfläche unter Ladevorgänge → Session öffnen → 🔌 Zählerstände korrigiert werden — die SQL-Anleitung in docs/maintenance-fix-legacy-evcc-session.md bleibt als Alternative für Massenbereinigungen bestehen",
+    "Keine Datenbankmigration nötig — nutzt die bereits in 2.5.0 eingeführten Felder/Route weiter",
+    "Der bekannte Legacy-Fehler (Zähler Alt=1, Zähler Neu leer) wird jetzt über Ladevorgänge → Session öffnen → ✎ Bearbeiten korrigiert (statt über den entfernten separaten Zähler-Dialog)",
     "DB-Migrationen laufen automatisch beim Container-Start — kein manueller Eingriff nötig",
     "Empfehlung: /data-Verzeichnis vor dem Update sichern",
     "Unraid CA-Template: https://github.com/fdreckmann/ev-tracker-unraid-app"
