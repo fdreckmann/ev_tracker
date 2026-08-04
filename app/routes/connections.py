@@ -158,8 +158,12 @@ def api_meter_test():
     from meter_providers import read_meter as _read_meter_impl
     result = _read_meter_impl(cfg)
 
-    msg = (f"Zählerstand: {result.value:.3f} kWh" if result.ok
-           else result.error or "Kein Wert erhalten")
+    if result.value is not None:
+        msg = f"Zählerstand: {result.value:.3f} kWh"
+    elif result.ok and result.power_kw is not None:
+        msg = f"Kein kumulativer Zähler verfügbar — Leistung: {result.power_kw:.2f} kW"
+    else:
+        msg = result.error or "Kein Wert erhalten"
 
     return jsonify({
         "ok":             result.ok,

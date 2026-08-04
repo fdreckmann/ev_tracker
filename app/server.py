@@ -1106,6 +1106,79 @@ def read_meter_value() -> Optional[float]:
         log.warning("Meter read error (%s): %s", result.source, result.error)
     return None
 
+def _resume_open_session(vehicle_id: str, st: dict) -> dict:
+    """Look up an already-open session (end_ts IS NULL) for ``vehicle_id`` and
+    return the state needed to resume it after a tracker/app restart.
+
+    Returns a dict with keys: session_active, session_id, soc_start, odo_start,
+    peak_power, meter_start_val. All values are None / False when no open
+    session exists. Never raises — a lookup failure just means "start fresh",
+    matching the pre-fix behaviour.
+
+    If more than one open session exists for the vehicle (should not normally
+    happen), the newest one is resumed and a warning is logged; older rows are
+    left untouched (never auto-deleted).
+    """
+    result = {
+        "session_active": False, "session_id": None,
+        "soc_start": None, "odo_start": None,
+        "peak_power": None, "meter_start_val": None,
+    }
+    try:
+        rcon = sqlite3.connect(DB_PATH)
+        rcon.row_factory = sqlite3.Row
+        rows = rcon.execute(
+            "SELECT * FROM sessions WHERE vehicle_id=? AND end_ts IS NULL ORDER BY id DESC",
+            (vehicle_id,),
+        ).fetchall()
+        rcon.close()
+    except Exception as e:
+        log.warning("Tracker [%s]: Suche nach offener Session beim Start fehlgeschlagen: %s",
+                    vehicle_id, e)
+        return result
+
+    if not rows:
+        return result
+
+    if len(rows) > 1:
+        log.warning(
+            "Tracker [%s]: %d offene Sessions gefunden (end_ts IS NULL) — setze nur "
+            "die neueste (id=%s) fort, ältere bleiben unangetastet offen",
+            vehicle_id, len(rows), rows[0]["id"],
+        )
+
+    resume = dict(rows[0])
+    result["session_active"]  = True
+    result["session_id"]      = resume["id"]
+    result["soc_start"]       = resume.get("soc_start")
+    result["odo_start"]       = resume.get("odo_start")
+    result["peak_power"]      = resume.get("max_power_kw")
+    result["meter_start_val"] = resume.get("meter_old")
+    st["session_active"] = True
+    st["session_id"]     = result["session_id"]
+
+    # Meter-Home-Detection: nur fortsetzen, wenn sie beim Neustart noch offen
+    # (Standort noch 'unknown') war — ist die Session bereits als home/extern
+    # aufgelöst, keine erneute Erkennung anstoßen (sonst Re-Trigger-Risiko).
+    if resume.get("location") == "unknown" and resume.get("meter_home_detection_start_value") is not None:
+        st["meter_home_det_start_val"] = resume.get("meter_home_detection_start_value")
+        st["meter_home_det_start_ts"]  = resume.get("meter_home_detection_start_ts")
+    else:
+        st["meter_home_det_start_val"] = None
+        st["meter_home_det_start_ts"]  = None
+    if resume.get("location") == "home":
+        st["location_status"] = "home"
+        st["location_source"] = resume.get("location_source") or "meter_delta"
+
+    log.info(
+        "Tracker [%s]: offene Session #%s wiederaufgenommen (start=%s, location=%s, "
+        "meter_old=%s, meter_source_start=%s)",
+        vehicle_id, result["session_id"], resume.get("start_ts"), resume.get("location"),
+        result["meter_start_val"], resume.get("meter_source_start"),
+    )
+    return result
+
+
 def tracker_loop(vehicle_id: str = "v0"):
     st   = _vehicle_states[vehicle_id]
     stop = _vehicle_stops[vehicle_id]
@@ -1114,8 +1187,19 @@ def tracker_loop(vehicle_id: str = "v0"):
     st["tracker_alive"] = True
     st["tracker_start_time"] = datetime.now().isoformat(timespec="seconds")
     st["tracker_thread_id"] = threading.get_ident()
-    session_active = False; session_id = None
-    soc_start = odo_start = peak_power = meter_start_val = None
+
+    # Session-Wiederaufnahme nach Tracker-/App-Neustart: eine bereits offene
+    # Session (end_ts IS NULL) für dieses Fahrzeug wird fortgesetzt statt eine
+    # zweite anzulegen und die alte verwaist offen zu lassen.
+    _resumed = _resume_open_session(vehicle_id, st)
+    session_active  = _resumed["session_active"]
+    session_id      = _resumed["session_id"]
+    soc_start       = _resumed["soc_start"]
+    odo_start       = _resumed["odo_start"]
+    peak_power      = _resumed["peak_power"]
+    meter_start_val = _resumed["meter_start_val"]
+    st["session_active"] = session_active
+    st["session_id"]     = session_id
 
     log.info("Tracker gestartet: %s", vehicle_id)
     while not stop.is_set():
@@ -1482,9 +1566,16 @@ def tracker_loop(vehicle_id: str = "v0"):
                         con.commit(); charger_type=new_type; _ct_src=_pwr_ct_src; _ct_conf=_pwr_ct_conf
 
             elif not charging and session_active:
-                row = cur.execute("SELECT price_per_kwh,cost_manual FROM sessions WHERE id=?",
-                                  (session_id,)).fetchone()
+                row = cur.execute(
+                    "SELECT price_per_kwh,cost_manual,meter_old FROM sessions WHERE id=?",
+                    (session_id,)).fetchone()
                 db_price=row[0] if row else None; cost_manual=row[1] if row else 0
+                # DB ist Source of Truth für den Startzähler — nicht ausschließlich die
+                # lokale Variable, die z.B. nach einem Tracker-Neustart None sein könnte,
+                # obwohl die Session bereits einen gültigen meter_old-Wert in der DB hat.
+                _db_meter_old = row[2] if row else None
+                if _db_meter_old is not None:
+                    meter_start_val = _db_meter_old
                 kwh=cost=None
                 if soc is not None and soc_start is not None:
                     kwh  = round(max(0.0,soc-soc_start)/100.0*vcfg["battery_capacity_kwh"],2)
@@ -1492,6 +1583,17 @@ def tracker_loop(vehicle_id: str = "v0"):
                         cost = round(kwh*(db_price or vcfg.get("price_per_kwh_home", 0.30)),2)
                 _meter_scope = vcfg.get("meter_scope", "home_only")
                 _effective_location = effective_session_location(location, st.get("location_status"))
+                if _effective_location == "unknown":
+                    # Live location signal is unavailable right at disconnect (common —
+                    # GPS/provider data lags behind the charging-stopped event). Fall back
+                    # to the location already persisted for this session, which may have
+                    # been confirmed mid-session (e.g. via meter-delta home detection) and
+                    # is more reliable than a fresh read at this exact poll.
+                    _db_loc_row = cur.execute(
+                        "SELECT location FROM sessions WHERE id=?", (session_id,)).fetchone()
+                    _db_loc = normalize_location(_db_loc_row[0]) if _db_loc_row and _db_loc_row[0] else "unknown"
+                    if _db_loc != "unknown":
+                        _effective_location = _db_loc
 
                 # Final meter-based home detection at session end
                 _mhd_enabled = vcfg.get("meter_home_detection_enabled", True)
@@ -1560,6 +1662,12 @@ def tracker_loop(vehicle_id: str = "v0"):
                 else:
                     _meter_end_res = _read_meter_impl(vcfg)
                     meter_end_val = _meter_end_res.value
+                    if meter_end_val is None:
+                        meter_skipped_reason = "read_failed"
+                        log.warning(
+                            "[%s] Endzähler konnte nicht gelesen werden (Session #%s, Quelle=%s): %s",
+                            vehicle_id, session_id, _meter_src_end, _meter_end_res.error or "unbekannter Fehler",
+                        )
                 prefer_delta = vcfg.get("meter_prefer_meter_delta", False)
                 kwh_source = "soc"
                 if (prefer_delta and meter_start_val is not None and meter_end_val is not None

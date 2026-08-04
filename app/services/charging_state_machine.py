@@ -245,7 +245,7 @@ class ChargingStateMachine:
 
         wbs_id = closed_id
         if wbs_id is None:
-            active = get_active_wallbox_session(src, self.st)
+            active = get_active_wallbox_session(src, self.st, self.con)
             if active:
                 wbs_id = active.get("id")
         if wbs_id is None:

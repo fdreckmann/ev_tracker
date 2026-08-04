@@ -177,10 +177,13 @@ class BaseMeterProvider:
 
     def _result(self, value=None, debug=None, error=None, endpoint=None,
                 raw_value=None, unit=None, normalized_from=None, suggestions=None,
-                power_kw=None):
+                power_kw=None, ok=None):
+        """Build a MeterResult. ``ok`` defaults to "value is present", but can be
+        overridden — e.g. a power-only read (no cumulative counter available)
+        is still a successful poll, not an error."""
         return MeterResult(
             value=value,
-            ok=value is not None,
+            ok=(value is not None) if ok is None else ok,
             source=self.__class__.__name__,
             endpoint=endpoint,
             raw_value=raw_value,
@@ -722,9 +725,32 @@ class EvccMeterProvider(BaseMeterProvider):
         if lp_idx >= len(lps):
             return self._result(error=f"Loadpoint {lp_idx} nicht vorhanden (nur {len(lps)})", debug=debug)
         lp = lps[lp_idx]
-        v = lp.get("chargeTotalImport") or (lp.get("chargedEnergy", 0) / 1000)
-        val = round(float(v), 3)
-        debug.append(f"  → LP{lp_idx} chargeTotalImport={val} kWh")
+
+        # chargeTotalImport is the cumulative lifetime counter for this
+        # loadpoint — the ONLY field allowed to become meter_old/meter_new.
+        # chargedEnergy is the energy of the current/last charging session
+        # and must never be used as a cumulative meter value (it would look
+        # like a tiny, ever-resetting "counter" and corrupt meter_old/new).
+        # Evaluated by key presence, not truthiness, so a genuine 0.0 kWh
+        # reading is not mistaken for "missing".
+        cumulative_kwh = None
+        if "chargeTotalImport" in lp and lp.get("chargeTotalImport") is not None:
+            try:
+                cumulative_kwh = round(float(lp["chargeTotalImport"]), 3)
+                debug.append(f"  → LP{lp_idx} chargeTotalImport={cumulative_kwh} kWh (kumulativ)")
+            except (TypeError, ValueError):
+                cumulative_kwh = None
+
+        session_energy_kwh = None
+        ce = lp.get("chargedEnergy")
+        if ce is not None:
+            try:
+                session_energy_kwh = round(float(ce) / 1000.0, 3)
+                debug.append(f"  → LP{lp_idx} chargedEnergy={ce} Wh → {session_energy_kwh} kWh "
+                             f"(Session-Energie, NICHT Zählerstand)")
+            except (TypeError, ValueError):
+                session_energy_kwh = None
+
         power_kw = None
         try:
             pw = lp.get("chargePower")
@@ -733,7 +759,25 @@ class EvccMeterProvider(BaseMeterProvider):
                 debug.append(f"  → LP{lp_idx} chargePower={pw} W → {power_kw} kW")
         except (TypeError, ValueError):
             pass
-        return self._result(value=val, power_kw=power_kw, debug=debug)
+
+        if cumulative_kwh is None:
+            if power_kw is not None or session_energy_kwh is not None:
+                log.info(
+                    "EVCC LP%d: kein kumulativer Zähler (chargeTotalImport fehlt) — "
+                    "Power-only Read (power=%s kW, session_energy=%s kWh). "
+                    "Kein Zählerstand wird geschrieben.",
+                    lp_idx, power_kw, session_energy_kwh,
+                )
+                debug.append("  → chargeTotalImport fehlt — Power-/Session-only Read, "
+                              "kein Zählerstand (meter_old/meter_new bleiben leer)")
+                return self._result(value=None, power_kw=power_kw,
+                                     raw_value=session_energy_kwh, unit="session_kwh",
+                                     ok=True, debug=debug)
+            return self._result(error="Weder chargeTotalImport noch chargePower/chargedEnergy verfügbar",
+                                 debug=debug)
+
+        return self._result(value=cumulative_kwh, power_kw=power_kw,
+                             raw_value=session_energy_kwh, debug=debug)
 
 
 class WebastoMeterProvider(BaseMeterProvider):

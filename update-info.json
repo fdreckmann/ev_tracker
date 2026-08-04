@@ -1,23 +1,25 @@
 {
-  "latest_version": "2.3.0",
-  "release_date": "2026-06-23",
+  "latest_version": "2.4.0",
+  "release_date": "2026-08-04",
   "channel": "stable",
-  "title": "Stable Release 2.3.0 — Zentraler Bearbeiten-Dialog für Ladevorgänge",
+  "title": "Stable Release 2.4.0 — Zuhause-Laden-Logik vollständig überarbeitet",
   "summary": [
-    "Zentraler ✎ Bearbeiten-Button ersetzt separate Preis- und Standort-Buttons in der Ladeliste",
-    "Bearbeiten-Dialog: Standort, Ladetyp (AC/DC/Unbekannt), KM-Stand Start/Ende, Preis/kWh, Gesamtkosten, kWh, max. Leistung, Notiz",
-    "Manuelles Setzen von AC/DC setzt charger_type_source=manual und charger_type_confidence=100",
-    "Manuelle Kosten (cost_manual=1) werden bei Ladetyp-Änderung nicht überschrieben",
-    "Validierung: Ladetyp muss ac/dc/unknown sein, KM-Stand ≥ 0, KM-Ende ≥ KM-Start",
-    "Missing-Charge-Erkennung: Energy-Balance erkennt jetzt auch Ladevorgänge bei steigendem SOC mit großer Fahrtstrecke",
-    "Snapshots ohne SOC-Wert werden bei der Baseline-Ermittlung übersprungen"
+    "EVCC-Provider: chargedEnergy (Session-Energie) wird nicht mehr fälschlich als kumulativer Zählerstand verwendet — nur chargeTotalImport zählt, per Existenzprüfung statt Truthiness (0 ist ein gültiger Wert)",
+    "Live-Leistung und Live-Zählerwert werden jetzt bei jedem erfolgreichen Poll aktualisiert, unabhängig von der DB-Snapshot-Deduplizierung — Stop-Erkennung funktioniert jetzt auch bei unverändertem Zähler",
+    "Ein fehlgeschlagener Meter-Poll verwirft sofort den zuletzt bekannten Leistungswert, damit kein veralteter Ladezustand endlos weiterlebt",
+    "Offene Ladevorgänge (normale Sessions) überstehen jetzt einen Tracker-/App-Neustart: die neueste offene Session pro Fahrzeug wird automatisch wieder aufgenommen statt eine zweite anzulegen",
+    "Aktive Wallbox-Sessions werden nach einem Neustart aus der Datenbank rehydriert statt dupliziert zu werden",
+    "Energy-only-Erkennung öffnet keine Phantom-Session mehr beim allerersten Messwert — nur ein tatsächlicher Zähleranstieg öffnet eine Session, ein Zählerreset erzeugt keine negative Energie",
+    "Endzähler wird jetzt auch bei einem vorübergehend unbekannten Standort geschrieben, sofern die Session bereits als Heimladung feststeht (Fix aus 2.3.1, jetzt vollständig abgesichert)"
   ],
   "fixes": [
-    "PATCH /api/sessions/<id>: odo_start und odo_end werden einzeln auf < 0 geprüft",
-    "renderTbl: Session-Cache (window._sessionCache) wird beim Rendern befüllt"
+    "Ursache des 'Zähler Alt = 1'-Fehlers behoben: EVCC chargedEnergy (z.B. 1000 Wh) wurde bei fehlendem chargeTotalImport fälschlich als 1 kWh Zählerstand interpretiert",
+    "meter_snapshot_service: Live-State-Update war an die DB-Schreib-Deduplizierung gekoppelt — dadurch blieb bei unverändertem Zähler ein veralteter Leistungswert stehen und die Stop-Erkennung griff nicht",
+    "Doppelte Sessions nach Neustart: sowohl normale Sessions als auch Wallbox-Sessions werden nach einem Neustart fortgesetzt statt dupliziert"
   ],
   "breaking_changes": [],
   "migration_notes": [
+    "Keine Datenbankmigration nötig — alle verwendeten Felder existierten bereits",
     "DB-Migrationen laufen automatisch beim Container-Start — kein manueller Eingriff nötig",
     "Empfehlung: /data-Verzeichnis vor dem Update sichern",
     "Unraid CA-Template: https://github.com/fdreckmann/ev-tracker-unraid-app"

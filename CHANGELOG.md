@@ -1,5 +1,58 @@
 # Changelog
 
+## v2.4.0 — 2026-08-04
+
+### Zuhause-Laden-Logik vollständig überarbeitet
+
+Root-Cause-Fix für den "Zähler Alt = 1 kWh / Zähler Neu leer"-Fehler samt umfassender Absicherung der gesamten Home-Charging-Kette (EVCC-Zählerwerte, Live-State, Session-Start/-Ende, Tracker-/App-Neustart):
+
+**1. EVCC-Provider verwechselte Gesamtzähler und Session-Energie**
+- `chargeTotalImport` (kumulativer Gesamtzähler) und `chargedEnergy` (Energie der aktuellen/letzten Session) wurden bisher mit `or` verknüpft — dadurch landete `chargedEnergy` (z.B. 1000 Wh → "1") fälschlich als Zählerstand in `meter_old`/`meter_new`, und ein echter Zählerwert von `0` wurde als "fehlend" behandelt
+- `chargeTotalImport` wird jetzt ausschließlich per Existenzprüfung ausgewertet, nie über Truthiness
+- Fehlt `chargeTotalImport`, bleibt der kumulative Wert `None` — `chargedEnergy` wird optional als reine Session-Info mitgeliefert, niemals als Zählerstand
+- Ein Ergebnis mit gültiger Leistung aber ohne Gesamtzähler gilt als erfolgreicher Power-only-Read (kein Fehler)
+
+**2. Live-Leistung wurde bei unverändertem Zähler nicht aktualisiert**
+- `maybe_record_poll_snapshot()` aktualisierte den Live-State (`meter_snap_last_power`) nur, wenn auch ein DB-Snapshot geschrieben wurde — bei unverändertem Zähler + Ladeende (0 kW) blieb der alte Leistungswert stehen und die Stop-Erkennung griff nicht
+- Live-State und DB-Schreib-Deduplizierung sind jetzt getrennt: die Leistung/der Zähler im Laufzeit-State wird bei jedem erfolgreichen Poll aktualisiert, unabhängig davon ob ein neuer Snapshot gespeichert wird
+- Ein fehlgeschlagener Poll verwirft sofort den zuletzt bekannten Leistungswert, damit kein veralteter Ladezustand endlos an die ChargingStateMachine weitergegeben wird
+
+**3. Offene normale Sessions gingen bei einem Tracker-/App-Neustart verloren**
+- Der Tracker sucht beim Start jetzt nach einer bereits offenen Session (`end_ts IS NULL`) für das Fahrzeug und nimmt sie wieder auf (Startzähler, SOC, Odometer, Standort, Meter-Home-Detection-State)
+- Keine zweite Session mehr bei laufendem Ladevorgang nach Neustart; mehrere offene Sessions führen zu einer klaren Warnung, ältere Duplikate werden nicht automatisch gelöscht
+- Der in der DB gespeicherte Startzähler ist beim Abschluss Source of Truth, nicht ausschließlich die lokale Laufzeitvariable
+
+**4. Zähler-Endwert wurde bei zwischenzeitlich unbekanntem Standort übersprungen** (Fix aus 2.3.1, jetzt zusätzlich testabgesichert)
+
+**5. Aktive `wallbox_sessions` existierten nur im RAM**
+- Findet der Tracker nach einem Neustart keine aktive Wallbox-Session im Laufzeit-State, wird eine in der DB aktive Session derselben Quelle automatisch rehydriert — keine doppelten Wallbox-Sessions mehr, Stop-Debounce beginnt sauber neu und schließt dieselbe Session
+
+**6. Energy-only-Erkennung öffnete beim ersten Messwert eine Phantom-Session**
+- Der erste Messwert setzt nur noch eine Baseline; eine Session öffnet erst bei einem tatsächlichen, plausiblen Zähleranstieg, mit dem Wert vor Beginn des Anstiegs als Startwert
+- Ein fallender/zurückgesetzter Zähler erzeugt keine negative Energie und keine Phantom-Session mehr
+
+21 neue Regressionstests in `tests/test_home_charging_meter_fixes.py`.
+
+## v2.3.1 — 2026-08-04
+
+### Fix: Zählerstand-Ende fehlt bei Zuhause-Ladevorgängen
+
+- Bei Ladevorgängen zu Hause wurde `meter_new` (Zählerstand Ende) manchmal nicht gespeichert, obwohl `meter_old` (Zählerstand Start) korrekt gesetzt war
+- Ursache: Die Standortprüfung am Session-Ende (`meter_scope=home_only`) wurde live neu ermittelt und konnte genau im Moment des Ladeendes kurzzeitig `unknown` liefern (z. B. GPS-/Provider-Daten hinken dem Ladeende-Event hinterher), wodurch das Auslesen des Zählerstands übersprungen wurde
+- Fix: Wenn das Live-Standortsignal beim Session-Ende `unknown` ist, wird jetzt auf den bereits während der Session bestätigten Standort zurückgefallen (z. B. durch Zähler-Delta-Erkennung), statt den Zählerstand-Endwert zu verwerfen
+
+## v2.3.0 — 2026-06-23
+
+### Zentraler Bearbeiten-Dialog für Ladevorgänge
+
+- Zentraler ✎ Bearbeiten-Button ersetzt separate Preis- und Standort-Buttons in der Ladeliste
+- Bearbeiten-Dialog: Standort, Ladetyp (AC/DC/Unbekannt), KM-Stand Start/Ende, Preis/kWh, Gesamtkosten, kWh, max. Leistung, Notiz — alle über `PATCH /api/sessions/<id>`
+- Manuelles Setzen von AC/DC setzt `charger_type_source=manual` und `charger_type_confidence=100`
+- Manuelle Kosten (`cost_manual=1`) werden bei Ladetyp-Änderung nicht überschrieben
+- Validierung: Ladetyp muss `ac`/`dc`/`unknown` sein, KM-Stand ≥ 0, KM-Ende ≥ KM-Start
+- Missing-Charge-Erkennung: Energy-Balance erkennt jetzt auch Ladevorgänge bei steigendem SOC mit großer Fahrtstrecke
+- Snapshots ohne SOC-Wert werden bei der Baseline-Ermittlung übersprungen
+
 ## v2.2.0 — 2026-06-12
 
 ### Provider-Review, AC/DC-Schätzung & Dokumentation
