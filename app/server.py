@@ -331,6 +331,8 @@ def init_db():
         ("meter_source_end",    "TEXT"),
         ("charger_type_source",     "TEXT DEFAULT NULL"),
         ("charger_type_confidence", "INTEGER DEFAULT 0"),
+        ("meter_values_manual",     "INTEGER DEFAULT 0"),
+        ("meter_values_manual_ts",  "TEXT"),
     ]
     for col, typedef in _ALL_SESSION_COLS:
         try:

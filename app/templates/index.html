@@ -3685,6 +3685,34 @@ td.g{color:var(--acc)}td.w{color:var(--warn)}
   </div>
 </div>
 
+<!-- Meter Values Edit Modal -->
+<div class="modal-overlay" id="meterValuesModal" style="display:none" onclick="if(event.target===this)closeMeterValuesModal()">
+  <div class="modal" style="width:min(420px,95vw)">
+    <button class="modal-close" onclick="closeMeterValuesModal()">✕ Schließen</button>
+    <h2 id="mv_title">Zählerstände bearbeiten</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
+      <div>
+        <label class="lbl">Zählerstand Start (kWh)</label>
+        <input type="text" id="mv_old" class="inp" placeholder="leer = kein Wert" style="width:100%;box-sizing:border-box">
+      </div>
+      <div>
+        <label class="lbl">Zählerstand Ende (kWh)</label>
+        <input type="text" id="mv_new" class="inp" placeholder="leer = kein Wert" style="width:100%;box-sizing:border-box">
+      </div>
+    </div>
+    <div style="margin-top:10px;font-size:.75rem;color:var(--mute);display:flex;flex-direction:column;gap:2px">
+      <span id="mv_delta_info">Aktuelle Differenz: —</span>
+      <span id="mv_source_info">Zählerquelle: —</span>
+      <span id="mv_manual_info" style="color:#f59e0b"></span>
+    </div>
+    <div id="mv_result" style="margin-top:10px"></div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button onclick="closeMeterValuesModal()" style="background:transparent;color:var(--mute);border:1px solid var(--brd2);border-radius:8px;padding:7px 16px;font-size:.82rem;cursor:pointer;font-family:inherit">Abbrechen</button>
+      <button onclick="submitMeterValues()" style="background:rgba(167,139,250,.15);color:#a78bfa;border:1px solid rgba(167,139,250,.3);border-radius:8px;padding:7px 16px;font-size:.82rem;cursor:pointer;font-weight:600;font-family:inherit">Speichern</button>
+    </div>
+  </div>
+</div>
+
 </div><!-- shell -->
 
 <!-- Toasts -->

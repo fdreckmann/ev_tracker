@@ -1,22 +1,22 @@
 {
-  "latest_version": "2.4.1",
+  "latest_version": "2.5.0",
   "release_date": "2026-08-04",
   "channel": "stable",
-  "title": "Stable Release 2.4.1 — Restfehler: veralteter Live-Zählerwert nach Poll-Fehler",
+  "title": "Stable Release 2.5.0 — Zählerstände manuell bearbeiten",
   "summary": [
-    "Live-State (meter_snap_last_power / meter_snap_last_val) wird jetzt strikt vom letzten gespeicherten DB-Snapshot getrennt (neuer Vergleichswert meter_snap_last_saved_val)",
-    "Nach einem fehlgeschlagenen Poll werden Leistung UND kumulativer Zählerwert auf None gesetzt — vorher blieb der Zählerwert stehen und konnte als aktuelles Signal missinterpretiert werden",
-    "Nach einem Power-only-Poll (kein chargeTotalImport) ist der kumulative Zähler ebenfalls None statt eines veralteten Vorwerts",
-    "Ein gültiger Zählerwert von 0 wird weiterhin korrekt als vorhanden erkannt (keine Truthiness-Prüfung)",
-    "Snapshot-Deduplizierung (Heartbeat/Delta) beeinflusst ausschließlich, ob ein DB-Snapshot geschrieben wird — nie mehr die Live-Werte"
+    "Neue Aktion in der Ladevorgangs-Detailansicht: 🔌 Zählerstände — Zählerstand Start/Ende eines abgeschlossenen Ladevorgangs manuell korrigieren, inkl. vollständigem Leeren auf NULL",
+    "Damit lässt sich der bekannte Legacy-Fehler (Zähler Alt=1, Zähler Neu leer) direkt über die Oberfläche bereinigen",
+    "Differenz (meter_delta_kwh) wird ausschließlich serverseitig neu berechnet, nie im Browser — Endwert < Startwert wird abgelehnt",
+    "Manuell korrigierte Zählerstände werden als solche markiert (meter_values_manual) und von späteren Hintergrundprozessen (z.B. Wallbox-Zuordnung/Reconciliation) nicht mehr überschrieben",
+    "Bearbeitung nur für bereits abgeschlossene Ladevorgänge (end_ts gesetzt) möglich"
   ],
   "fixes": [
-    "meter_snap_last_val blieb nach einem fehlgeschlagenen oder Power-only-Poll auf dem letzten bekannten Wert stehen und konnte von der ChargingStateMachine als aktueller Zählerstand fehlinterpretiert werden (Restfehler aus 2.4.0)"
+    "reconciliation_service.py: eine manuell auf NULL gesetzte Zählerkorrektur wurde bei einer späteren Wallbox-Zuordnung wieder automatisch aufgefüllt — jetzt durch meter_values_manual-Flag verhindert"
   ],
   "breaking_changes": [],
   "migration_notes": [
-    "Keine Datenbankmigration nötig",
-    "Bereits fehlerhaft gespeicherte Legacy-Sessions (meter_old=1, meter_new leer) werden NICHT automatisch korrigiert — siehe docs/maintenance-fix-legacy-evcc-session.md für eine manuell auszuführende Bereinigung einzelner Session-IDs",
+    "Minimale DB-Migration: neue Spalten sessions.meter_values_manual, sessions.meter_values_manual_ts (automatisch beim Start)",
+    "Bereits fehlerhaft gespeicherte Legacy-Sessions können jetzt direkt in der Oberfläche unter Ladevorgänge → Session öffnen → 🔌 Zählerstände korrigiert werden — die SQL-Anleitung in docs/maintenance-fix-legacy-evcc-session.md bleibt als Alternative für Massenbereinigungen bestehen",
     "DB-Migrationen laufen automatisch beim Container-Start — kein manueller Eingriff nötig",
     "Empfehlung: /data-Verzeichnis vor dem Update sichern",
     "Unraid CA-Template: https://github.com/fdreckmann/ev-tracker-unraid-app"

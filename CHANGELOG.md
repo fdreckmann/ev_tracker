@@ -1,5 +1,21 @@
 # Changelog
 
+## v2.5.0 — 2026-08-04
+
+### Zählerstände bei Ladevorgängen manuell bearbeiten
+
+Neue Möglichkeit, `meter_old`/`meter_new` eines abgeschlossenen Ladevorgangs direkt in der Oberfläche zu korrigieren — u.a. um bereits vorhandene fehlerhafte Datensätze (z.B. `meter_old=1`, `meter_new` leer) ohne SQL-Zugriff zu bereinigen.
+
+- **UI**: neue Aktion „🔌 Zählerstände" in der Session-Detailansicht (nur für abgeschlossene Ladevorgänge sichtbar); eigener Dialog mit Start-/Endwert-Eingabe, Info zu aktueller Differenz/Zählerquelle/manuell-Kennzeichnung
+- **API**: `PATCH /api/sessions/<id>/meter-values` — dedizierte Route, die (anders als die generische Session-PATCH-Route) explizites `null` als "Wert löschen" behandelt und ausschließlich `meter_old`/`meter_new`/`meter_delta_kwh`/`meter_used`/`meter_skipped_reason`/`meter_values_manual`/`meter_values_manual_ts` anfasst
+- **Validierung serverseitig**: Dezimalzahlen mit Punkt oder Komma, negative Werte abgelehnt, `meter_new < meter_old` abgelehnt (400), leere Werte werden als `NULL` gespeichert (nie als `0`), einzelne Werte (nur Start, nur Ende, beide leer, beide vorhanden) sind erlaubt
+- **Automatische Neuberechnung**: `meter_delta_kwh`/`meter_used`/`meter_skipped_reason` werden bei jeder manuellen Änderung serverseitig neu berechnet — nie im Browser
+- **Manuelle Änderung nachvollziehbar**: neue Spalten `sessions.meter_values_manual` / `meter_values_manual_ts`; Audit-Log-Eintrag (`session_meter_values_edited`) inkl. Benutzer; Logzeile im Format „Session 123: meter values manually changed | meter_old: 1.0 -> None | meter_new: None -> None" (keine sensiblen Daten)
+- **Schutz vor stillem Überschreiben**: `reconciliation_service.py` (Wallbox-Zuordnung) füllt `meter_old`/`meter_new`/`meter_used` nicht mehr automatisch auf, wenn `meter_values_manual=1` gesetzt ist — eine manuell auf `NULL` korrigierte Session bleibt so
+- Bearbeitung ist auf bereits abgeschlossene Sessions beschränkt (`end_ts` gesetzt), damit eine automatische Session-Fertigstellung nicht mit einer manuellen Korrektur kollidiert
+
+16 neue Tests in `tests/test_meter_values_manual_edit.py`.
+
 ## v2.4.1 — 2026-08-04
 
 ### Fix: Restfehler — veralteter Live-Zählerwert nach fehlgeschlagenem/Power-only-Poll

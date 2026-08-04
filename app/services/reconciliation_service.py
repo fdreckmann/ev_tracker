@@ -62,20 +62,26 @@ def enrich_session_with_meter(con, session_id: int, wbs: dict) -> bool:
     if not row:
         return False
     sess = dict(row)
+    meter_locked = bool(sess.get("meter_values_manual"))
 
     updates: dict = {}
 
-    # Enrich meter values if not already set from a meter source
-    if sess.get("meter_old") is None and wbs.get("meter_start_kwh") is not None:
-        updates["meter_old"] = wbs["meter_start_kwh"]
-    if sess.get("meter_new") is None and wbs.get("meter_end_kwh") is not None:
-        updates["meter_new"] = wbs["meter_end_kwh"]
+    # Enrich meter values if not already set from a meter source — but never
+    # when the user manually corrected/cleared them (meter_values_manual=1).
+    # A cleared meter_old/meter_new (NULL) must stay NULL, not get silently
+    # refilled by a later wallbox-session reconciliation.
+    if not meter_locked:
+        if sess.get("meter_old") is None and wbs.get("meter_start_kwh") is not None:
+            updates["meter_old"] = wbs["meter_start_kwh"]
+        if sess.get("meter_new") is None and wbs.get("meter_end_kwh") is not None:
+            updates["meter_new"] = wbs["meter_end_kwh"]
 
     # Prefer wallbox kWh when no meter was used
     if wbs.get("energy_kwh") is not None and not sess.get("meter_used"):
         updates["kwh_charged"] = wbs["energy_kwh"]
         updates["kwh_source"]  = "meter"
-        updates["meter_used"]  = 1
+        if not meter_locked:
+            updates["meter_used"]  = 1
 
     # Mark source
     if sess.get("source_primary") is None:
