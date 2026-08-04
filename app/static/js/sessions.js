@@ -306,50 +306,23 @@ async function showSessionDetail(id){
   var _ehS = typeof escapeHtml === 'function' ? escapeHtml : function(s){return String(s||'').replace(/[&<>"']/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});};
   $('modalTitle').innerHTML = 'Session #'+_ehS(String(s.id))+' — '+new Date(s.start_ts).toLocaleDateString('de-DE') + manualBadge;
   $('modalMeta').innerHTML = dt(s.start_ts)+' → '+(s.end_ts?dt(s.end_ts):'läuft noch')+' &nbsp;·&nbsp; '+locBadge(s.location)+' &nbsp;·&nbsp; '+typeBadge(s.charger_type,s.max_power_kw);
-  // Show action buttons in the detail modal
+  // Read-only detail view — all editing happens exclusively via the
+  // "✎ Bearbeiten" dialog (editSession/submitEditSession). No action
+  // buttons or inputs are shown here.
   var _modalActions = $('modalActions');
-  if(_modalActions){
-    // Use data attributes to avoid quoting issues in onclick; functions are on window.
-    var _actLocBtn  = document.createElement('button');
-    _actLocBtn.textContent = '📍 Standort ändern';
-    _actLocBtn.style.cssText = 'background:rgba(61,220,151,.12);color:#3ddc97;border:1px solid rgba(61,220,151,.25);border-radius:6px;padding:5px 12px;font-size:.75rem;cursor:pointer';
-    _actLocBtn.addEventListener('click', function(ev){
-      ev.stopPropagation();
-      window.editLocation(s.id, s.location||'unknown').then(function(){
-        closeModal();
-        loadSessions();
-        if(typeof loadCharts==='function') loadCharts();
-      });
-    });
-    var _actCostBtn = document.createElement('button');
-    _actCostBtn.textContent = '✎ Kosten';
-    _actCostBtn.style.cssText = 'background:rgba(0,180,255,.12);color:#00b4ff;border:1px solid rgba(0,180,255,.25);border-radius:6px;padding:5px 12px;font-size:.75rem;cursor:pointer';
-    _actCostBtn.addEventListener('click', function(ev){
-      ev.stopPropagation();
-      window.editCost(s.id, s.kwh_charged||0, s.price_per_kwh||0);
-    });
-    _modalActions.innerHTML = '';
-    _modalActions.appendChild(_actLocBtn);
-    _modalActions.appendChild(_actCostBtn);
-    if (s.end_ts) {
-      var _actMeterBtn = document.createElement('button');
-      _actMeterBtn.textContent = '🔌 Zählerstände';
-      _actMeterBtn.style.cssText = 'background:rgba(167,139,250,.12);color:#a78bfa;border:1px solid rgba(167,139,250,.25);border-radius:6px;padding:5px 12px;font-size:.75rem;cursor:pointer';
-      _actMeterBtn.addEventListener('click', function(ev){
-        ev.stopPropagation();
-        window.editMeterValues(s.id);
-      });
-      _modalActions.appendChild(_actMeterBtn);
-    } else {
-      var _actMeterHint = document.createElement('span');
-      _actMeterHint.textContent = 'ℹ Zählerstände können erst nach Ladeende bearbeitet werden';
-      _actMeterHint.style.cssText = 'color:var(--mute);font-size:.7rem;align-self:center';
-      _modalActions.appendChild(_actMeterHint);
-    }
-  }
+  if(_modalActions) _modalActions.innerHTML = '';
 
   var fmtMeterVal = function(v){ return v!=null ? Number(v).toLocaleString('de',{minimumFractionDigits:3,maximumFractionDigits:3})+' kWh' : null; };
+  var durationLabel = '—';
+  if (s.start_ts && s.end_ts) {
+    var _durMin = Math.round((new Date(s.end_ts) - new Date(s.start_ts)) / 60000);
+    if (_durMin >= 0) {
+      var _h = Math.floor(_durMin / 60), _m = _durMin % 60;
+      durationLabel = (_h > 0 ? _h + 'h ' : '') + _m + 'min';
+    }
+  }
   var stats = [
+    {l:'Dauer',          v:durationLabel},
     {l:'SOC Start',      v:fmt(s.soc_start,0)+'%'},
     {l:'SOC Ende',       v:fmt(s.soc_end,0)+'%'},
     {l:'Geladen',        v:fmt(s.kwh_charged)+' kWh'},
@@ -669,6 +642,8 @@ async function loadConsumptionStats(){
 
 // ── Session Edit Modal ────────────────────────────────────────────────────────
 
+var _editSessionClosed = false;
+
 async function editSession(id) {
   var s = (window._sessionCache || {})[id];
   if (!s) {
@@ -705,6 +680,19 @@ async function editSession(id) {
   var costManualInfo = $('ees_cost_manual_info');
   if (costManualInfo) costManualInfo.style.display = s.cost_manual ? 'inline' : 'none';
 
+  // Meter values — editable only for a completed session (end_ts set).
+  _editSessionClosed = !!s.end_ts;
+  var meterOldEl = $('es_meter_old'), meterNewEl = $('es_meter_new');
+  meterOldEl.value = s.meter_old != null ? s.meter_old : '';
+  meterNewEl.value = s.meter_new != null ? s.meter_new : '';
+  meterOldEl.disabled = !_editSessionClosed;
+  meterNewEl.disabled = !_editSessionClosed;
+  $('es_meter_open_hint').style.display = _editSessionClosed ? 'none' : '';
+  $('es_meter_source_info').textContent = (s.meter_source_end || s.meter_source_start)
+    ? ('Zählerquelle: ' + (s.meter_source_end || s.meter_source_start)) : '';
+  $('es_meter_manual_info').textContent = s.meter_values_manual ? '✎ Bereits manuell angepasst' : '';
+  window._esMeterDeltaPreview();
+
   $('es_result').innerHTML = '';
   modal.style.display = 'flex';
 }
@@ -713,6 +701,40 @@ function closeEditSessionModal() {
   var modal = $('editSessionModal');
   if (modal) modal.style.display = 'none';
 }
+
+// Parses a manual meter-value input. Accepts '.' and ',' as decimal
+// separator; empty means "clear to NULL". Returns {value, error}. `error`
+// is truthy only for genuinely unparsable text — not for empty input.
+function _parseMeterFieldValue(raw){
+  var s = (raw || '').trim();
+  if (s === '') return {value: null, error: null};
+  var n = parseFloat(s.replace(',', '.'));
+  if (isNaN(n)) return {value: null, error: 'invalid'};
+  return {value: n, error: null};
+}
+
+// Client-side preview only — the binding calculation always happens on the
+// server (see PATCH /api/sessions/<id>/meter-values).
+function _esMeterDeltaPreview(){
+  var previewEl = $('es_meter_delta_preview');
+  if (!previewEl) return;
+  var oldR = _parseMeterFieldValue($('es_meter_old').value);
+  var newR = _parseMeterFieldValue($('es_meter_new').value);
+  if (oldR.error || newR.error || oldR.value == null || newR.value == null) {
+    previewEl.textContent = 'Differenz: —';
+    previewEl.style.color = '';
+    return;
+  }
+  var delta = newR.value - oldR.value;
+  if (delta < 0) {
+    previewEl.textContent = 'Differenz: ⚠ Zählerstand Ende darf nicht kleiner als Start sein';
+    previewEl.style.color = 'var(--danger)';
+  } else {
+    previewEl.textContent = 'Differenz: ' + fmt(delta, 2) + ' kWh (Vorschau)';
+    previewEl.style.color = '';
+  }
+}
+window._esMeterDeltaPreview = _esMeterDeltaPreview;
 
 async function submitEditSession() {
   var id = parseInt($('es_id').value);
@@ -743,6 +765,21 @@ async function submitEditSession() {
     res.innerHTML = '<p class="as-err">⚠ Ungültiger Ladetyp.</p>'; return;
   }
 
+  // Meter values — only relevant/editable when the session is completed.
+  var meterBody = null;
+  if (_editSessionClosed) {
+    var oldR = _parseMeterFieldValue($('es_meter_old').value);
+    var newR = _parseMeterFieldValue($('es_meter_new').value);
+    if (oldR.error) { res.innerHTML = '<p class="as-err">⚠ Zählerstand Start muss eine gültige Zahl oder leer sein.</p>'; return; }
+    if (newR.error) { res.innerHTML = '<p class="as-err">⚠ Zählerstand Ende muss eine gültige Zahl oder leer sein.</p>'; return; }
+    if (oldR.value !== null && oldR.value < 0) { res.innerHTML = '<p class="as-err">⚠ Zählerstand Start darf nicht negativ sein.</p>'; return; }
+    if (newR.value !== null && newR.value < 0) { res.innerHTML = '<p class="as-err">⚠ Zählerstand Ende darf nicht negativ sein.</p>'; return; }
+    if (oldR.value !== null && newR.value !== null && newR.value < oldR.value) {
+      res.innerHTML = '<p class="as-err">⚠ Zählerstand Ende darf nicht kleiner als Zählerstand Start sein.</p>'; return;
+    }
+    meterBody = { meter_old: oldR.value, meter_new: newR.value };
+  }
+
   var body = { location: $('es_location').value, charger_type: chargerType };
   if (odoStartVal !== null) body.odo_start = odoStartVal;
   if (odoEndVal   !== null) body.odo_end   = odoEndVal;
@@ -761,93 +798,44 @@ async function submitEditSession() {
 
   res.innerHTML = '<p style="color:var(--mute)">⏳ Speichere…</p>';
 
+  // One save action for the user — internally this may be two API calls
+  // (general session fields + dedicated meter-values endpoint). Both must
+  // succeed for a single success message; any failure shows one error and
+  // re-syncs the view with the real server state (no misleading "saved").
   var r = await apiFetch('/api/sessions/' + encodeURIComponent(id), {
     method: 'PATCH',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(body),
   }).then(function(x){return x.json();}).catch(function(e){return {ok:false,error:e.message};});
 
-  if (r.ok) {
-    closeEditSessionModal();
-    toast('✅ Session #' + id + ' gespeichert');
-    loadSessions();
-    if (typeof loadCharts === 'function') loadCharts();
-    if (typeof refreshStatus === 'function') refreshStatus();
-  } else {
+  if (!r.ok) {
     res.innerHTML = '<p class="as-err">❌ ' + escapeHtml(r.error || 'Unbekannter Fehler') + '</p>';
+    return;
   }
-}
 
-// ── Meter Values Edit Modal ───────────────────────────────────────────────────
+  var deltaMsg = '';
+  if (meterBody) {
+    var mr = await apiFetch('/api/sessions/' + encodeURIComponent(id) + '/meter-values', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(meterBody),
+    }).then(function(x){return x.json();}).catch(function(e){return {ok:false,error:e.message};});
 
-var _meterValuesSessionId = null;
-
-async function editMeterValues(id){
-  var s = (window._sessionCache || {})[id];
-  if (!s || s.id !== id) {
-    try {
-      var rows = await apiFetch('/api/sessions?limit=200').then(function(r){return r.json();});
-      s = rows.find(function(r){return r.id===id;});
-    } catch(_e) {}
-  }
-  if (!s) { toast('Session nicht gefunden', 'err'); return; }
-  if (!s.end_ts) { toast('Zählerstände können erst nach Ladeende bearbeitet werden', 'err'); return; }
-
-  var modal = $('meterValuesModal');
-  if (!modal) return;
-
-  _meterValuesSessionId = id;
-  $('mv_title').textContent = 'Zählerstände — Session #' + id;
-  $('mv_old').value = s.meter_old != null ? s.meter_old : '';
-  $('mv_new').value = s.meter_new != null ? s.meter_new : '';
-  $('mv_delta_info').textContent = s.meter_delta_kwh != null
-    ? ('Aktuelle Differenz: ' + fmt(s.meter_delta_kwh, 2) + ' kWh') : 'Aktuelle Differenz: —';
-  $('mv_source_info').textContent = 'Zählerquelle: ' + (s.meter_source_end || s.meter_source_start || '—');
-  $('mv_manual_info').textContent = s.meter_values_manual ? '✎ Bereits manuell angepasst' : '';
-  $('mv_result').innerHTML = '';
-  modal.style.display = 'flex';
-}
-
-function closeMeterValuesModal(){
-  var modal = $('meterValuesModal');
-  if (modal) modal.style.display = 'none';
-  _meterValuesSessionId = null;
-}
-
-async function submitMeterValues(){
-  var id = _meterValuesSessionId;
-  if (!id) return;
-  var res = $('mv_result');
-  res.innerHTML = '';
-
-  var oldStr = $('mv_old').value.trim();
-  var newStr = $('mv_new').value.trim();
-
-  var body = {
-    meter_old: oldStr === '' ? null : oldStr,
-    meter_new: newStr === '' ? null : newStr,
-  };
-
-  res.innerHTML = '<p style="color:var(--mute)">⏳ Speichere…</p>';
-
-  var r = await apiFetch('/api/sessions/' + encodeURIComponent(id) + '/meter-values', {
-    method: 'PATCH',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(body),
-  }).then(function(x){return x.json();}).catch(function(e){return {ok:false,error:e.message};});
-
-  if (r.ok) {
-    closeMeterValuesModal();
-    var deltaMsg = r.meter_delta_kwh != null ? (' Verbrauch: ' + fmt(r.meter_delta_kwh, 2) + ' kWh') : '';
-    toast('✅ Zählerstände wurden gespeichert.' + deltaMsg);
-    if (window._sessionCache && window._sessionCache[id] && r.session) {
-      window._sessionCache[id] = r.session;
+    if (!mr.ok) {
+      // General fields WERE saved — sync the view with the true server
+      // state instead of showing a misleading success message.
+      res.innerHTML = '<p class="as-err">❌ Zählerstände: ' + escapeHtml(mr.error || 'Unbekannter Fehler') + '</p>';
+      loadSessions();
+      return;
     }
-    loadSessions();
-    if (typeof loadCharts === 'function') loadCharts();
-  } else {
-    res.innerHTML = '<p class="as-err">❌ ' + escapeHtml(r.error || 'Unbekannter Fehler') + '</p>';
+    if (mr.meter_delta_kwh != null) deltaMsg = ' Verbrauch: ' + fmt(mr.meter_delta_kwh, 2) + ' kWh';
   }
+
+  closeEditSessionModal();
+  toast('✅ Session #' + id + ' gespeichert.' + deltaMsg);
+  loadSessions();
+  if (typeof loadCharts === 'function') loadCharts();
+  if (typeof refreshStatus === 'function') refreshStatus();
 }
 
 // ── Global registration ───────────────────────────────────────────────────────
@@ -857,9 +845,6 @@ window.editLocation    = editLocation;
 window.editSession     = editSession;
 window.closeEditSessionModal = closeEditSessionModal;
 window.submitEditSession = submitEditSession;
-window.editMeterValues  = editMeterValues;
-window.closeMeterValuesModal = closeMeterValuesModal;
-window.submitMeterValues = submitMeterValues;
 window.delSession      = delSession;
 window.showSessionDetail = showSessionDetail;
 window.closeModal      = closeModal;
