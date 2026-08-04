@@ -331,6 +331,21 @@ async function showSessionDetail(id){
     _modalActions.innerHTML = '';
     _modalActions.appendChild(_actLocBtn);
     _modalActions.appendChild(_actCostBtn);
+    if (s.end_ts) {
+      var _actMeterBtn = document.createElement('button');
+      _actMeterBtn.textContent = '🔌 Zählerstände';
+      _actMeterBtn.style.cssText = 'background:rgba(167,139,250,.12);color:#a78bfa;border:1px solid rgba(167,139,250,.25);border-radius:6px;padding:5px 12px;font-size:.75rem;cursor:pointer';
+      _actMeterBtn.addEventListener('click', function(ev){
+        ev.stopPropagation();
+        window.editMeterValues(s.id);
+      });
+      _modalActions.appendChild(_actMeterBtn);
+    } else {
+      var _actMeterHint = document.createElement('span');
+      _actMeterHint.textContent = 'ℹ Zählerstände können erst nach Ladeende bearbeitet werden';
+      _actMeterHint.style.cssText = 'color:var(--mute);font-size:.7rem;align-self:center';
+      _modalActions.appendChild(_actMeterHint);
+    }
   }
 
   var fmtMeterVal = function(v){ return v!=null ? Number(v).toLocaleString('de',{minimumFractionDigits:3,maximumFractionDigits:3})+' kWh' : null; };
@@ -344,9 +359,28 @@ async function showSessionDetail(id){
     {l:'Kosten',         v:s.cost_eur!=null?fmt(s.cost_eur)+' €':'—'},
     {l:'Max. Leistung',  v:s.max_power_kw?Number(s.max_power_kw).toFixed(1)+' kW':'—'},
   ];
-  if(s.meter_old!=null||s.meter_new!=null){
-    stats.push({l:'Zähler Alt', v:fmtMeterVal(s.meter_old)||'—', c:'#a78bfa'});
-    stats.push({l:'Zähler Neu', v:fmtMeterVal(s.meter_new)||'—', c:'#a78bfa'});
+  if(s.meter_old!=null||s.meter_new!=null||s.meter_values_manual){
+    var _meterManualSuffix = s.meter_values_manual ? ' ✎' : '';
+    stats.push({l:'Zähler Alt', v:(fmtMeterVal(s.meter_old)||'—')+_meterManualSuffix, c:'#a78bfa'});
+    stats.push({l:'Zähler Neu', v:(fmtMeterVal(s.meter_new)||'—')+_meterManualSuffix, c:'#a78bfa'});
+    if(s.meter_values_manual){
+      stats.push({l:'Zählerstände manuell angepasst', v:'Ja', c:'#f59e0b'});
+    }
+    if(s.meter_delta_kwh!=null){
+      stats.push({l:'Zähler-Differenz', v:Number(s.meter_delta_kwh).toLocaleString('de',{minimumFractionDigits:2,maximumFractionDigits:2})+' kWh', c:'#34d399'});
+    }
+    if(s.meter_source_start||s.meter_source_end){
+      stats.push({l:'Zählerquelle', v:escapeHtml(s.meter_source_end||s.meter_source_start||'—')});
+    }
+    if(s.meter_skipped_reason){
+      var _meterSkipLabels = {
+        disabled: 'Zähler deaktiviert', external_charging: 'Extern geladen (nicht erfasst)',
+        unknown_location: 'Standort unbekannt', meter_source_changed: 'Zählerquelle geändert',
+        read_failed: 'Lesefehler', manual_meter_value_incomplete: 'Manuell — unvollständig',
+        manual_meter_values_cleared: 'Manuell geleert', legacy_evcc_charged_energy: 'Alter EVCC-Fehler bereinigt',
+      };
+      stats.push({l:'Zähler nicht verwendet', v:_meterSkipLabels[s.meter_skipped_reason]||s.meter_skipped_reason, c:'#f59e0b'});
+    }
   }
   if(s.location_source){
     var locSrcLabels = {
@@ -744,6 +778,78 @@ async function submitEditSession() {
   }
 }
 
+// ── Meter Values Edit Modal ───────────────────────────────────────────────────
+
+var _meterValuesSessionId = null;
+
+async function editMeterValues(id){
+  var s = (window._sessionCache || {})[id];
+  if (!s || s.id !== id) {
+    try {
+      var rows = await apiFetch('/api/sessions?limit=200').then(function(r){return r.json();});
+      s = rows.find(function(r){return r.id===id;});
+    } catch(_e) {}
+  }
+  if (!s) { toast('Session nicht gefunden', 'err'); return; }
+  if (!s.end_ts) { toast('Zählerstände können erst nach Ladeende bearbeitet werden', 'err'); return; }
+
+  var modal = $('meterValuesModal');
+  if (!modal) return;
+
+  _meterValuesSessionId = id;
+  $('mv_title').textContent = 'Zählerstände — Session #' + id;
+  $('mv_old').value = s.meter_old != null ? s.meter_old : '';
+  $('mv_new').value = s.meter_new != null ? s.meter_new : '';
+  $('mv_delta_info').textContent = s.meter_delta_kwh != null
+    ? ('Aktuelle Differenz: ' + fmt(s.meter_delta_kwh, 2) + ' kWh') : 'Aktuelle Differenz: —';
+  $('mv_source_info').textContent = 'Zählerquelle: ' + (s.meter_source_end || s.meter_source_start || '—');
+  $('mv_manual_info').textContent = s.meter_values_manual ? '✎ Bereits manuell angepasst' : '';
+  $('mv_result').innerHTML = '';
+  modal.style.display = 'flex';
+}
+
+function closeMeterValuesModal(){
+  var modal = $('meterValuesModal');
+  if (modal) modal.style.display = 'none';
+  _meterValuesSessionId = null;
+}
+
+async function submitMeterValues(){
+  var id = _meterValuesSessionId;
+  if (!id) return;
+  var res = $('mv_result');
+  res.innerHTML = '';
+
+  var oldStr = $('mv_old').value.trim();
+  var newStr = $('mv_new').value.trim();
+
+  var body = {
+    meter_old: oldStr === '' ? null : oldStr,
+    meter_new: newStr === '' ? null : newStr,
+  };
+
+  res.innerHTML = '<p style="color:var(--mute)">⏳ Speichere…</p>';
+
+  var r = await apiFetch('/api/sessions/' + encodeURIComponent(id) + '/meter-values', {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  }).then(function(x){return x.json();}).catch(function(e){return {ok:false,error:e.message};});
+
+  if (r.ok) {
+    closeMeterValuesModal();
+    var deltaMsg = r.meter_delta_kwh != null ? (' Verbrauch: ' + fmt(r.meter_delta_kwh, 2) + ' kWh') : '';
+    toast('✅ Zählerstände wurden gespeichert.' + deltaMsg);
+    if (window._sessionCache && window._sessionCache[id] && r.session) {
+      window._sessionCache[id] = r.session;
+    }
+    loadSessions();
+    if (typeof loadCharts === 'function') loadCharts();
+  } else {
+    res.innerHTML = '<p class="as-err">❌ ' + escapeHtml(r.error || 'Unbekannter Fehler') + '</p>';
+  }
+}
+
 // ── Global registration ───────────────────────────────────────────────────────
 // Inline onclick attributes in dynamically-built rows need these on window.
 window.editCost        = editCost;
@@ -751,6 +857,9 @@ window.editLocation    = editLocation;
 window.editSession     = editSession;
 window.closeEditSessionModal = closeEditSessionModal;
 window.submitEditSession = submitEditSession;
+window.editMeterValues  = editMeterValues;
+window.closeMeterValuesModal = closeMeterValuesModal;
+window.submitMeterValues = submitMeterValues;
 window.delSession      = delSession;
 window.showSessionDetail = showSessionDetail;
 window.closeModal      = closeModal;

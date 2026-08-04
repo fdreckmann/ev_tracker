@@ -198,6 +198,197 @@ class TestLivePowerAndStopDetection:
 
 
 # ---------------------------------------------------------------------------
+# 2b. Live-state vs. snapshot-dedupe separation — driven through the REAL
+# EvccMeterProvider (only the HTTP boundary is faked) and the REAL
+# maybe_record_poll_snapshot() / ChargingStateMachine production functions.
+# ---------------------------------------------------------------------------
+
+class TestLiveStateNeverStale:
+    """Regression tests for: after a failed or power-only poll, no stale
+    live power/meter value may survive in `st`, independent of the
+    snapshot-write dedupe (heartbeat/min-delta), which must only ever
+    decide whether a DB row is written."""
+
+    def _evcc_cfg(self, **overrides):
+        cfg = {
+            "meter_source": "evcc", "meter_device_ip": "192.0.2.20",
+            "meter_evcc_port": 7070, "meter_evcc_lp": 0,
+            "meter_snapshot_enabled": True,
+            "meter_snapshot_heartbeat_minutes": 30,
+            "meter_snapshot_min_delta_kwh": 0.5,
+        }
+        cfg.update(overrides)
+        return cfg
+
+    def _patch_evcc_payload(self, monkeypatch, loadpoint):
+        import meter_providers
+        monkeypatch.setattr(meter_providers, "_get_json",
+                            lambda *a, **k: {"result": {"loadpoints": [loadpoint]}})
+
+    def _patch_evcc_unreachable(self, monkeypatch):
+        import meter_providers
+        monkeypatch.setattr(meter_providers, "_get_json", lambda *a, **k: None)
+
+    # -- Test 1: failure after a successful full poll -----------------------
+
+    def test_1_failed_poll_clears_power_and_meter_value(self, app, monkeypatch):
+        from services.meter_snapshot_service import maybe_record_poll_snapshot
+        from core.db import _get_db, close_db_if_owned
+        with app.app_context():
+            con = _get_db()
+            cfg = self._evcc_cfg()
+            st = {}
+
+            self._patch_evcc_payload(monkeypatch,
+                {"chargeTotalImport": 50.0, "chargePower": 11000})
+            maybe_record_poll_snapshot("v0", cfg, st, con)
+            assert st["meter_snap_last_power"] == pytest.approx(11.0)
+            assert st["meter_snap_last_val"] == pytest.approx(50.0)
+            assert st["meter_snap_last_ok"] is True
+
+            self._patch_evcc_unreachable(monkeypatch)
+            maybe_record_poll_snapshot("v0", cfg, st, con)
+            close_db_if_owned(con)
+
+        assert st["meter_snap_last_power"] is None
+        assert st["meter_snap_last_val"] is None
+        assert st["meter_snap_last_ok"] is False
+
+    # -- Test 2: power-only poll after a full poll ---------------------------
+
+    def test_2_power_only_poll_clears_previous_cumulative_value(self, app, monkeypatch):
+        from services.meter_snapshot_service import maybe_record_poll_snapshot
+        from core.db import _get_db, close_db_if_owned
+        with app.app_context():
+            con = _get_db()
+            cfg = self._evcc_cfg()
+            st = {}
+
+            self._patch_evcc_payload(monkeypatch,
+                {"chargeTotalImport": 50.0, "chargePower": 11000})
+            maybe_record_poll_snapshot("v0", cfg, st, con)
+            assert st["meter_snap_last_val"] == pytest.approx(50.0)
+
+            # Next poll: chargeTotalImport absent (EVCC restarted/loadpoint
+            # without a cumulative counter this tick), only power available.
+            self._patch_evcc_payload(monkeypatch, {"chargePower": 7400})
+            maybe_record_poll_snapshot("v0", cfg, st, con)
+            close_db_if_owned(con)
+
+        current_power = st["meter_snap_last_power"]
+        current_meter_value = st["meter_snap_last_val"]
+        poll_ok = st["meter_snap_last_ok"]
+        assert current_power == pytest.approx(7.4)
+        assert current_meter_value is None
+        assert poll_ok is True
+
+    # -- Test 3: unchanged meter, power falls to 0 — dedupe must not block --
+
+    def test_3_unchanged_meter_power_drop_still_updates_live_power(self, app, monkeypatch):
+        from services.meter_snapshot_service import maybe_record_poll_snapshot
+        from services.charging_state_machine import (
+            ChargingStateMachine, SignalBundle, classify_meter_kind,
+        )
+        from core.db import _get_db, close_db_if_owned
+        with app.app_context():
+            con = _get_db()
+            cfg = self._evcc_cfg(
+                home_charge_detection_enabled=True,
+                home_charge_power_start_threshold_kw=1.0,
+                home_charge_power_stop_threshold_kw=0.2,
+                home_charge_start_debounce_seconds=1,
+                home_charge_stop_debounce_seconds=1,
+                home_charge_min_energy_kwh=0.0,
+                home_charge_vehicle_assignment_mode="always_ask_if_unclear",
+            )
+            st = {}
+
+            def _poll(power_w, ts):
+                self._patch_evcc_payload(monkeypatch,
+                    {"chargeTotalImport": 50.0, "chargePower": power_w})
+                maybe_record_poll_snapshot("v0", cfg, st, con)
+                bundle = SignalBundle(
+                    ts=ts, vehicle_id="v0", api_available=False,
+                    meter_power_kw=st.get("meter_snap_last_power"),
+                    meter_energy_total_kwh=st.get("meter_snap_last_val"),
+                    meter_source="evcc", meter_kind=classify_meter_kind("evcc"),
+                )
+                return ChargingStateMachine(cfg, st, con).ingest(bundle)
+
+            _poll(11000, _ts(0))
+            _poll(11000, _ts(2))  # start-debounce elapsed -> session opens
+            assert con.execute(
+                "SELECT COUNT(*) FROM wallbox_sessions WHERE status='active'").fetchone()[0] == 1
+
+            # Meter (chargeTotalImport) stays exactly 50.0 the whole time —
+            # dedupe would skip writing a new snapshot row, but the LIVE
+            # power must still flip to 0.0 immediately.
+            closed = _poll(0, _ts(3))
+            assert st["meter_snap_last_power"] == 0.0
+            closed = closed or _poll(0, _ts(5))  # stop-debounce elapsed -> closes
+            close_db_if_owned(con)
+
+        assert closed is not None
+
+    # -- Test 4: valid meter value of exactly 0 --------------------------
+
+    def test_4_meter_value_zero_is_valid_not_missing(self, app, monkeypatch):
+        from services.meter_snapshot_service import maybe_record_poll_snapshot
+        from core.db import _get_db, close_db_if_owned
+        with app.app_context():
+            con = _get_db()
+            cfg = self._evcc_cfg()
+            st = {}
+            self._patch_evcc_payload(monkeypatch, {"chargeTotalImport": 0, "chargePower": 0})
+            maybe_record_poll_snapshot("v0", cfg, st, con)
+            close_db_if_owned(con)
+
+        current_meter_value = st["meter_snap_last_val"]
+        assert current_meter_value == 0
+        assert current_meter_value is not None
+        assert st["meter_snap_last_ok"] is True
+
+    # -- Test 5: ChargingStateMachine never sees a stale value ---------------
+
+    def test_5_state_machine_receives_no_stale_meter_value_after_failure(self, app, monkeypatch):
+        from services.meter_snapshot_service import maybe_record_poll_snapshot
+        from services.charging_state_machine import (
+            ChargingStateMachine, SignalBundle, classify_meter_kind,
+        )
+        from core.db import _get_db, close_db_if_owned
+        with app.app_context():
+            con = _get_db()
+            cfg = self._evcc_cfg(home_charge_detection_enabled=True)
+            st = {}
+
+            self._patch_evcc_payload(monkeypatch,
+                {"chargeTotalImport": 50.0, "chargePower": 11000})
+            maybe_record_poll_snapshot("v0", cfg, st, con)
+            assert st["meter_snap_last_val"] == pytest.approx(50.0)
+
+            # Failed poll — live meter value must clear...
+            self._patch_evcc_unreachable(monkeypatch)
+            maybe_record_poll_snapshot("v0", cfg, st, con)
+
+            bundle = SignalBundle(
+                ts=_ts(10), vehicle_id="v0", api_available=False,
+                meter_power_kw=st.get("meter_snap_last_power"),
+                meter_energy_total_kwh=st.get("meter_snap_last_val"),
+                meter_source="evcc", meter_kind=classify_meter_kind("evcc"),
+            )
+            assert bundle.meter_energy_total_kwh is None
+            assert bundle.meter_energy_total_kwh != 50.0
+
+            # ...and feeding it into the real state machine must not open a
+            # phantom energy-only session from the stale 50.0 kWh reading.
+            ChargingStateMachine(cfg, st, con).ingest(bundle)
+            count = con.execute("SELECT COUNT(*) FROM wallbox_sessions").fetchone()[0]
+            close_db_if_owned(con)
+
+        assert count == 0
+
+
+# ---------------------------------------------------------------------------
 # 3. Normal sessions — full meter delta, unknown-location fallback, restart
 # ---------------------------------------------------------------------------
 

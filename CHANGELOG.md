@@ -1,5 +1,36 @@
 # Changelog
 
+## v2.5.0 — 2026-08-04
+
+### Zählerstände bei Ladevorgängen manuell bearbeiten
+
+Neue Möglichkeit, `meter_old`/`meter_new` eines abgeschlossenen Ladevorgangs direkt in der Oberfläche zu korrigieren — u.a. um bereits vorhandene fehlerhafte Datensätze (z.B. `meter_old=1`, `meter_new` leer) ohne SQL-Zugriff zu bereinigen.
+
+- **UI**: neue Aktion „🔌 Zählerstände" in der Session-Detailansicht (nur für abgeschlossene Ladevorgänge sichtbar); eigener Dialog mit Start-/Endwert-Eingabe, Info zu aktueller Differenz/Zählerquelle/manuell-Kennzeichnung
+- **API**: `PATCH /api/sessions/<id>/meter-values` — dedizierte Route, die (anders als die generische Session-PATCH-Route) explizites `null` als "Wert löschen" behandelt und ausschließlich `meter_old`/`meter_new`/`meter_delta_kwh`/`meter_used`/`meter_skipped_reason`/`meter_values_manual`/`meter_values_manual_ts` anfasst
+- **Validierung serverseitig**: Dezimalzahlen mit Punkt oder Komma, negative Werte abgelehnt, `meter_new < meter_old` abgelehnt (400), leere Werte werden als `NULL` gespeichert (nie als `0`), einzelne Werte (nur Start, nur Ende, beide leer, beide vorhanden) sind erlaubt
+- **Automatische Neuberechnung**: `meter_delta_kwh`/`meter_used`/`meter_skipped_reason` werden bei jeder manuellen Änderung serverseitig neu berechnet — nie im Browser
+- **Manuelle Änderung nachvollziehbar**: neue Spalten `sessions.meter_values_manual` / `meter_values_manual_ts`; Audit-Log-Eintrag (`session_meter_values_edited`) inkl. Benutzer; Logzeile im Format „Session 123: meter values manually changed | meter_old: 1.0 -> None | meter_new: None -> None" (keine sensiblen Daten)
+- **Schutz vor stillem Überschreiben**: `reconciliation_service.py` (Wallbox-Zuordnung) füllt `meter_old`/`meter_new`/`meter_used` nicht mehr automatisch auf, wenn `meter_values_manual=1` gesetzt ist — eine manuell auf `NULL` korrigierte Session bleibt so
+- Bearbeitung ist auf bereits abgeschlossene Sessions beschränkt (`end_ts` gesetzt), damit eine automatische Session-Fertigstellung nicht mit einer manuellen Korrektur kollidiert
+
+16 neue Tests in `tests/test_meter_values_manual_edit.py`.
+
+## v2.4.1 — 2026-08-04
+
+### Fix: Restfehler — veralteter Live-Zählerwert nach fehlgeschlagenem/Power-only-Poll
+
+Nachprüfung des 2.4.0-Fixes ergab einen Restfehler in `meter_snapshot_service.py`: `meter_snap_last_val` (kumulativer Live-Zählerwert) wurde nur bei einem vollständigen erfolgreichen Poll aktualisiert. Nach einem fehlgeschlagenen Poll oder einem Power-only-Poll (kein `chargeTotalImport`) blieb der alte Wert stehen und konnte über `app/server.py` als aktuelles Signal an die `ChargingStateMachine` weitergereicht werden — mit dem Risiko einer falschen Energy-only-Start-/Stop-Erkennung anhand veralteter Daten.
+
+- **Live-State** (`meter_snap_last_power`, `meter_snap_last_val`, `meter_snap_last_ok`) repräsentiert jetzt ausschließlich den aktuellen Poll: bei Fehlschlag werden beide Werte auf `None` gesetzt, bei einem Power-only-Poll wird der kumulative Wert auf `None` gesetzt statt den vorherigen zu behalten
+- **Snapshot-Deduplizierung** (Heartbeat/Delta-Vergleich) verwendet jetzt einen eigenen Vergleichswert `meter_snap_last_saved_val`, der unabhängig vom volatilen Live-Wert den zuletzt in die DB geschriebenen Zählerstand hält — die Dedupe-Logik beeinflusst dadurch ausschließlich, ob ein DB-Snapshot geschrieben wird, nie mehr die Live-Werte
+- Ein gültiger Zählerwert von `0` wird weiterhin korrekt erkannt (keine Truthiness-Prüfung)
+- Neue Debug-/Info-Logs für: fehlgeschlagenen Poll, Power-only-Poll, fehlenden kumulativen Zähler im aktuellen Poll, verworfene veraltete Live-Werte
+
+5 neue Regressionstests in `tests/test_home_charging_meter_fixes.py::TestLiveStateNeverStale`, getrieben über die echte `EvccMeterProvider`/`maybe_record_poll_snapshot`/`ChargingStateMachine`-Kette (nur die HTTP-Grenze wird gemockt).
+
+Für bereits fehlerhaft gespeicherte Legacy-Sessions (`meter_old=1`, `meter_new` leer) gibt es **keine automatische Migration** — siehe `docs/maintenance-fix-legacy-evcc-session.md` für eine manuell auszuführende, gezielte Bereinigung einzelner Session-IDs.
+
 ## v2.4.0 — 2026-08-04
 
 ### Zuhause-Laden-Logik vollständig überarbeitet

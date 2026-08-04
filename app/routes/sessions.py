@@ -780,6 +780,131 @@ def api_patch_session(sid):
     return jsonify({"ok": True, "id": sid})
 
 
+def _parse_manual_meter_value(raw):
+    """Parse a manually entered meter value. Accepts '.' and ',' as decimal
+    separator; empty/None means "clear to NULL". Returns (value, error) where
+    error is None on success (value may legitimately be None = cleared)."""
+    if raw is None:
+        return None, None
+    if isinstance(raw, bool):
+        return None, "invalid"
+    if isinstance(raw, (int, float)):
+        return float(raw), None
+    s = str(raw).strip()
+    if s == "":
+        return None, None
+    try:
+        return float(s.replace(",", ".")), None
+    except ValueError:
+        return None, "invalid"
+
+
+@sessions_bp.route("/api/sessions/<int:sid>/meter-values", methods=["PATCH"])
+@require_login
+def api_patch_meter_values(sid):
+    """Manually correct meter_old/meter_new on a completed session.
+
+    Unlike PATCH /api/sessions/<id>, this route treats an explicit `null` as
+    "clear this value" (the generic route silently drops None fields), and
+    only ever touches meter_old/meter_new/meter_delta_kwh/meter_used/
+    meter_skipped_reason/meter_values_manual/meter_values_manual_ts — no
+    other session field is reachable through it. Restricted to already
+    completed sessions (end_ts set) so a still-running session's automatic
+    close doesn't fight a manual edit for the same fields.
+    """
+    if not has_permission(_current_user(), "sessions:edit"):
+        return jsonify({"ok": False, "error": "Keine Berechtigung: sessions:edit"}), 403
+
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"ok": False, "error": "Ungültiger Request-Body"}), 400
+    if "meter_old" not in data and "meter_new" not in data:
+        return jsonify({"ok": False, "error": "meter_old oder meter_new erforderlich"}), 400
+
+    con = _get_db()
+    existing = con.execute("SELECT * FROM sessions WHERE id=?", (sid,)).fetchone()
+    if not existing:
+        close_db_if_owned(con)
+        return jsonify({"ok": False, "error": "Session nicht gefunden"}), 404
+    existing = dict(existing)
+
+    if not existing.get("end_ts"):
+        close_db_if_owned(con)
+        return jsonify({"ok": False, "error":
+            "Zählerstände können erst bearbeitet werden, wenn der Ladevorgang abgeschlossen ist."}), 400
+
+    meter_old = existing.get("meter_old")
+    meter_new = existing.get("meter_new")
+
+    if "meter_old" in data:
+        meter_old, err = _parse_manual_meter_value(data["meter_old"])
+        if err:
+            close_db_if_owned(con)
+            return jsonify({"ok": False, "error": "meter_old muss eine gültige Zahl oder leer sein"}), 400
+    if "meter_new" in data:
+        meter_new, err = _parse_manual_meter_value(data["meter_new"])
+        if err:
+            close_db_if_owned(con)
+            return jsonify({"ok": False, "error": "meter_new muss eine gültige Zahl oder leer sein"}), 400
+
+    if meter_old is not None and meter_old < 0:
+        close_db_if_owned(con)
+        return jsonify({"ok": False, "error": "meter_old darf nicht negativ sein"}), 400
+    if meter_new is not None and meter_new < 0:
+        close_db_if_owned(con)
+        return jsonify({"ok": False, "error": "meter_new darf nicht negativ sein"}), 400
+    if meter_old is not None and meter_new is not None and meter_new < meter_old:
+        close_db_if_owned(con)
+        return jsonify({"ok": False, "error": "meter_new darf nicht kleiner als meter_old sein"}), 400
+
+    # ── Recompute dependent values server-side (never trust the client) ──────
+    if meter_old is not None and meter_new is not None:
+        meter_delta = round(meter_new - meter_old, 3)
+        meter_used = 1
+        meter_skipped_reason = None
+    else:
+        meter_delta = None
+        meter_used = 0
+        meter_skipped_reason = ("manual_meter_values_cleared" if meter_old is None and meter_new is None
+                                else "manual_meter_value_incomplete")
+
+    now_iso = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds")
+    old_meter_old, old_meter_new = existing.get("meter_old"), existing.get("meter_new")
+
+    con.execute(
+        """UPDATE sessions
+           SET meter_old=?, meter_new=?, meter_delta_kwh=?, meter_used=?,
+               meter_skipped_reason=?, meter_values_manual=1, meter_values_manual_ts=?
+           WHERE id=?""",
+        (meter_old, meter_new, meter_delta, meter_used, meter_skipped_reason, now_iso, sid),
+    )
+    con.commit()
+
+    log.info(
+        "Session %s: meter values manually changed | meter_old: %s -> %s | meter_new: %s -> %s",
+        sid, old_meter_old, meter_old, old_meter_new, meter_new,
+    )
+    _audit("session_meter_values_edited",
+           f"session_id={sid} meter_old={old_meter_old}->{meter_old} meter_new={old_meter_new}->{meter_new}",
+           ip=request.remote_addr)
+
+    updated = dict(con.execute("SELECT * FROM sessions WHERE id=?", (sid,)).fetchone())
+    close_db_if_owned(con)
+
+    return jsonify({
+        "ok": True,
+        "id": sid,
+        "meter_old": meter_old,
+        "meter_new": meter_new,
+        "meter_delta_kwh": meter_delta,
+        "meter_used": bool(meter_used),
+        "meter_skipped_reason": meter_skipped_reason,
+        "meter_values_manual": True,
+        "message": "Zählerstände wurden gespeichert.",
+        "session": updated,
+    })
+
+
 @sessions_bp.route("/api/sessions/<int:sid>/recalculate-cost", methods=["POST"])
 @require_login
 def api_session_recalculate_cost(sid):
